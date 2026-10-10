@@ -20,6 +20,15 @@
 #     seaweedfs-init (one-shot) — generates the S3 credentials both sides
 #                            load, once, onto their own volume.
 #
+#   observability (opt-in):  docker compose --profile observability up -d
+#          → loki + grafana + a one-shot loki-init. Loki (log aggregation,
+#          winston-loki push API) publishes NO port — webpi reaches it as
+#          http://loki:3100 over the compose network (set WEB_PI_LOKI_URL
+#          when bringing the profile up). Grafana is loopback-published on
+#          :3300 with the datasource provisioned. Plain `up` and the dev
+#          profile start none of it — the server logs console-only when
+#          loki is absent, by design.
+#
 #   dev:   docker compose --profile dev up dev     → single-user dev servers
 #          with the repo bind-mounted (the split is a prod shape; dev
 #          stays one container).
@@ -120,6 +129,12 @@ services:
       # into /run/web-pi-s3/credentials.env and docker-entrypoint.sh loads
       # them (WEB_PI_S3_ACCESS_KEY / WEB_PI_S3_SECRET_KEY).
       WEB_PI_S3_ENDPOINT: http://seaweedfs:8333
+      # task/winston-loki: winston-loki push URL — set on the host (or .env)
+      # when you bring the observability profile up: 
+      #   WEB_PI_LOKI_URL=http://loki:3100 docker compose --profile observability up -d
+      # (up -d then recreates webpi to pick it up). Unset/empty = console-only
+      # logging; the dev profile and plain hosts stay that way.
+      WEB_PI_LOKI_URL: ${WEB_PI_LOKI_URL:-}
     networks: [default, storage]
     volumes:
       - webpi-state:/state
@@ -220,6 +235,68 @@ services:
     restart: "no"
     volumes:
       - webpi-s3-credentials:/run/web-pi-s3
+
+  # task/winston-loki: log aggregation, opt-in via the `observability`
+  # profile. Single-binary Loki, filesystem storage on the webpi-loki
+  # volume (deploy/loki/config.yaml: retention 14d, hard caps on
+  # entry/label sizes, no telemetry). No published port — webpi pushes
+  # over the compose network; a down/restarted loki degrades silently on
+  # the server side (batch drops + 60s retry backoff, src/lib/logger.ts).
+  loki:
+    profiles: ["observability"]
+    image: grafana/loki:3.7.8
+    depends_on:
+      loki-init:
+        condition: service_completed_successfully
+    command: ["-config.file=/etc/loki/config.yaml"]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - ./deploy/loki/config.yaml:/etc/loki/config.yaml:ro
+      - webpi-loki:/loki
+    deploy:
+      resources:
+        limits: { memory: 512m, cpus: "1.0" }
+    restart: unless-stopped
+
+  # One-shot (same pattern as workspace-init/dev-init): empty named
+  # volumes start root-owned and the loki image runs as uid 10001 — it
+  # needs /loki writable before it boots. Runs on every `up` of the
+  # profile; a no-op chown once ownership is right.
+  loki-init:
+    profiles: ["observability"]
+    build: *webpi-build # same build as webpi (BuildKit dedupes; never PULLs web-pi:local)
+    image: ${WEB_PI_IMAGE:-web-pi:local}
+    user: "0:0"
+    entrypoint: ["sh", "-c", "chown -R 10001:10001 /loki"]
+    restart: "no"
+    volumes:
+      - webpi-loki:/loki
+
+  # task/winston-loki: log UI, opt-in via the `observability` profile.
+  # Loopback-published on :3300 (3000/3001/4321 are web-pi's). Auth:
+  # anonymous read-only browsing (it's loopback-only; no default-password
+  # exposure), the admin account for edits — first login forces the
+  # default-password change. No data volume: grafana state is disposable;
+  # the datasource (and any dashboards worth keeping) is provisioned from
+  # deploy/grafana/provisioning, checked in.
+  grafana:
+    profiles: ["observability"]
+    image: grafana/grafana:13.2.3
+    depends_on:
+      - loki
+    security_opt: ["no-new-privileges:true"]
+    ports:
+      - "127.0.0.1:3300:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+    deploy:
+      resources:
+        limits: { memory: 512m, cpus: "0.5" }
+    restart: unless-stopped
 
   # One-shot: empty named volumes are created root-owned; the dev service
   # runs as ${UID:-1000} and must write node_modules. Runs on every `up` — a
@@ -335,6 +412,11 @@ volumes:
     name: webpi-seaweedfs
   webpi-s3-credentials:
     name: webpi-s3-credentials
+  # task/winston-loki: Loki's filesystem storage (chunks, index, WAL,
+  # compactor working dir) — owned by the loki image's uid 10001
+  # (loki-init chowns it on first up).
+  webpi-loki:
+    name: webpi-loki
 
 networks:
   # webpi ↔ seaweedfs only. internal: no route out (and none in from
