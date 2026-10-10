@@ -14,6 +14,13 @@
 #     workspace-init (one-shot) — chowns/chmods the shared volumes: socket
 #                            dir 2770 setgid webpi, /workspace owned by
 #                            uid 2000 (same pattern as dev-init below).
+#     builder   (task/mgmt-page) — release builds for /management: dev-
+#                            target image, uid 2010, offline; watches
+#                            marker files on the webpi-releases volume
+#                            (deploy/builder-entrypoint.sh, docs/
+#                            management-page.md §2).
+#     releases-init (one-shot) — the releases volume's group layout
+#                            (web+builder shared dirs, web-only pointer).
 #     seaweedfs  object storage (S3 API, src/lib/storage.ts) — on the
 #                            internal `storage` network with webpi ONLY:
 #                            workspace (pi sessions) can't reach it.
@@ -63,6 +70,12 @@ x-webpi-build: &webpi-build
   args:
     # Baked into the pages at build time AND needed at runtime — keep in sync.
     WEB_PI_BASE: ${WEB_PI_BASE:-/}
+    # task/mgmt-page (docs/management-page.md §1.2): the source commit the
+    # image is built from — the trusted root of the management page's
+    # enforcement base. Build with: GIT_SHA=$(git rev-parse HEAD) docker
+    # compose build . Without it version.json records "unknown" and the
+    # management page refuses applies (base_unknown) until it does.
+    GIT_SHA: ${GIT_SHA:-unknown}
 
 services:
   webpi:
@@ -75,6 +88,10 @@ services:
       # an upload while it is still booting is a retryable 502.
       seaweedfs:
         condition: service_started
+      # task/mgmt-page: the releases volume's layout must exist before web
+      # reads/writes markers or the pointer on it.
+      releases-init:
+        condition: service_completed_successfully
     build: *webpi-build
     # web-pi:local is built on this box (below). To run a CI-built image
     # instead (release tags publish ghcr.io/<owner>/web-pi), set WEB_PI_IMAGE
@@ -120,6 +137,12 @@ services:
       # into /run/web-pi-s3/credentials.env and docker-entrypoint.sh loads
       # them (WEB_PI_S3_ACCESS_KEY / WEB_PI_S3_SECRET_KEY).
       WEB_PI_S3_ENDPOINT: http://seaweedfs:8333
+      # task/mgmt-page (docs/management-page.md): the release-swap half of
+      # /management. The releases volume is shared with the `builder`
+      # service below; the checkout is web's read-only view of the
+      # sessions' tree (a checkout pi edits — README "Updating").
+      WEB_PI_RELEASES_DIR: /releases
+      WEB_PI_MANAGEMENT_CHECKOUT: /workspace/web-pi
     networks: [default, storage]
     volumes:
       - webpi-state:/state
@@ -130,6 +153,10 @@ services:
       # cwd /workspace only needs to exist, which :ro preserves).
       - webpi-workspace:/workspace:ro
       - webpi-tmux:/run/web-pi
+      # task/mgmt-page: releases web built + swapped (rw — web writes the
+      # pending markers and the web-only pointer/ dir; the builder writes
+      # the releases themselves via the shared `releases` group).
+      - webpi-releases:/releases
     restart: unless-stopped
 
   # The working half of the split: same image, uid 2000, owns the tmux
@@ -171,6 +198,56 @@ services:
     volumes:
       - webpi-tmux:/run/web-pi
       - webpi-workspace:/workspace
+
+  # task/mgmt-page — the releases volume's layout (docs/management-page.md
+  # §2): group-shared protocol dirs (web + builder, NEVER the sessions'
+  # uid — the group is the boundary) and a web-ONLY pointer dir (what the
+  # next boot serves — the trusted diff base). Runs on every `up`.
+  releases-init:
+    build: *webpi-build
+    image: ${WEB_PI_IMAGE:-web-pi:local}
+    user: "0:0"
+    entrypoint: ["sh", "-c", "mkdir -p /releases/pending /releases/building /releases/done /releases/pointer && chown -R node:releases /releases/pending /releases/building /releases/done && chmod 2770 /releases/pending /releases/building /releases/done && chown node:node /releases /releases/pointer && chmod 0750 /releases /releases/pointer"]
+    restart: "no"
+    volumes:
+      - webpi-releases:/releases
+
+  # task/mgmt-page — the management page's build half: watches the pending
+  # markers on the releases volume and builds content-addressed releases
+  # (deploy/builder-entrypoint.sh has the contract). Runs as user
+  # `builder` (uid 2010: webpi group to READ the checkout, `releases`
+  # group to write the volume — deliberately NOT uid 2000, which pi
+  # sessions share). Dev image target (toolchain); NO network at all —
+  # the build reuses the image's node_modules (protected lockfile ⇒ same
+  # deps) and fetches nothing. Never a docker socket; web only ever
+  # triggers it by writing a marker file.
+  builder:
+    depends_on:
+      releases-init:
+        condition: service_completed_successfully
+      workspace-init:
+        condition: service_completed_successfully
+    build:
+      context: .
+      target: dev # toolchain — this is the image's dev target's day job
+      args:
+        WEB_PI_BASE: ${WEB_PI_BASE:-/}
+        GIT_SHA: ${GIT_SHA:-unknown}
+    image: web-pi:local-dev
+    user: "builder"
+    init: true
+    security_opt: ["no-new-privileges:true"]
+    entrypoint: ["/usr/local/bin/builder-entrypoint.sh"]
+    healthcheck:
+      disable: true # the image's healthcheck probes the web server; this container only builds
+    environment:
+      WEB_PI_RELEASES_DIR: /releases
+      WEB_PI_MANAGEMENT_CHECKOUT: /workspace/web-pi
+    network_mode: none # offline by design — nothing is fetched at build time
+    volumes:
+      - webpi-workspace:/workspace:ro # the checkout, read-only (never writes the sessions' tree)
+      - webpi-releases:/releases
+    restart: unless-stopped
 
   # Object storage for the web side: only webpi shares its network (no
   # published port). Its gRPC/filer/master ports are unauthenticated —
@@ -304,6 +381,11 @@ services:
       WEB_PI_S3_ENDPOINT: http://dev-seaweedfs:8333
       WEB_PI_S3_ACCESS_KEY: webpi-dev
       WEB_PI_S3_SECRET_KEY: webpi-dev-secret
+      # task/mgmt-page: dev's "workspace checkout" is the bind-mounted
+      # repo itself (version.json won't exist — /management then runs in
+      # its read-only/dry-run mode unless you write one by hand; the
+      # releases half needs the volume wiring from the prod services).
+      WEB_PI_MANAGEMENT_CHECKOUT: /app
     healthcheck:
       disable: true # the prod image probes :3000; dev serves :4321/:3001
     volumes:
@@ -327,6 +409,11 @@ volumes:
     name: webpi-tmux
   webpi-workspace:
     name: webpi-workspace
+  # task/mgmt-page: built releases + the marker protocol + the web-only
+  # pointer (docs/management-page.md §2–3). Group `releases` (web +
+  # builder) is the boundary — the sessions' uid is not in it.
+  webpi-releases:
+    name: webpi-releases
   webpi-dev-node-modules:
     name: webpi-dev-node-modules
   # Object storage data, and the generated credentials that unlock it —
