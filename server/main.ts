@@ -17,10 +17,11 @@ import { findSession } from '../src/lib/sessions';
 import { HiddenSessions } from '../src/lib/hidden-sessions';
 import { StateDb } from '../src/lib/db';
 import * as tmux from '../src/lib/tmux';
-import { ENV, RAW_ENV, APP_ROOT, PI_BIN, PI_AGENT_DIR, PI_SESSION_DIR, readObjectStoreConfig } from '../src/lib/env';
+import { ENV, RAW_ENV, APP_ROOT, PI_BIN, PI_AGENT_DIR, PI_SESSION_DIR, readObjectStoreConfig, RELEASES_DIR } from '../src/lib/env';
 import * as jobs from '../src/lib/jobs';
 import { AutoUpdater } from '../src/lib/auto-update';
 import { createServices, type ServerConfig, type WebPiLocals } from '../src/lib/services';
+import { resolveServingDirs } from '../src/lib/releases';
 import { ObjectStore } from '../src/lib/storage';
 import type { ClientMsg, ServerMsg } from '../src/lib/types';
 import { loginBody } from '../src/schemas/api';
@@ -68,6 +69,39 @@ const CFG: ServerConfig = {
   // whitespace-split command line; resume appends --session <id> (pi-family CLI)
   command: ENV.WEB_PI_COMMAND.trim().split(/\s+/).filter(Boolean),
   trustProxy: Math.max(0, ENV.WEB_PI_TRUST_PROXY),
+};
+
+// task/mgmt-page (docs/management-page.md §3.2): what THIS boot serves —
+// the release the trusted pointer file names (on the releases volume;
+// deliberately not the state db, which must keep opening lazily — db.ts),
+// when a valid one exists, else the image copy. Resolved once, before the
+// Astro entry import or any asset is served: the running process never
+// changes its mind mid-flight; a release becomes served only by the
+// restart below. An invalid/missing release falls back to the image —
+// loudly.
+const SERVING = resolveServingDirs({
+  imageClientDir: CFG.clientDir,
+  imageAstroEntry: CFG.astroEntry,
+  releasesDir: RELEASES_DIR,
+});
+CFG.clientDir = SERVING.dirs.clientDir;
+CFG.astroEntry = SERVING.dirs.astroEntry;
+if (SERVING.note !== 'serving the image copy') console.warn(`web-pi management: ${SERVING.note}`);
+
+// task/mgmt-page: the swap's restart. No docker socket exists anywhere in
+// webpi (it would be root on the host); instead the process exits through
+// its own graceful shutdown path and the container's restart policy (or a
+// host install's supervisor) brings it back on the new release. The delay
+// lets the activate response reach the browser first; shutdown() guards
+// re-entry itself.
+const RESTART_DELAY_MS = 1500;
+let mgmtRestartTimer: ReturnType<typeof setTimeout> | null = null;
+const requestRestart = (): void => {
+  if (mgmtRestartTimer) return;
+  mgmtRestartTimer = setTimeout(() => {
+    mgmtRestartTimer = null;
+    shutdown('management-activate');
+  }, RESTART_DELAY_MS);
 };
 
 /** Seed the runtime agent dir from the versioned template, only where the
@@ -150,7 +184,10 @@ console.log(objectStore.describe() === null
 // once here and passed to the Astro handler in locals — never imported
 // there (a Vite-bundled second copy would carry its own state; see
 // src/lib/services.ts).
-const services = createServices({ cfg: CFG, stateDb, auth, hiddenSessions, scheduler, autoUpdater, objectStore, sessionEnv });
+const services = createServices({ cfg: CFG, stateDb, auth, hiddenSessions, scheduler, autoUpdater, objectStore, sessionEnv,
+  // task/mgmt-page: the swap service's restart trigger + the honest
+  // "serving now" boot snapshot (docs/management-page.md §3.2).
+  requestRestart, bootServing: { kind: SERVING.dirs.releaseDir === null ? 'image' : 'release', sha: SERVING.dirs.sha } });
 // The scheduler's single shutdown hook. The SIGTERM/SIGINT handler is a
 // sibling task (task/session-lifecycle, merged separately); at merge time
 // it calls shutdownScheduler() — wired here so teardown has exactly one

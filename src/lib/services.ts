@@ -15,9 +15,10 @@ import type { Auth } from './auth';
 import type { AutoUpdater } from './auto-update';
 import { autoUpdateEnabled, lastCheck, lastUpdate } from './auto-update';
 import type { StateDb } from './db';
-import { APP_ROOT } from './env';
+import { APP_ROOT, MANAGEMENT_CHECKOUT, RELEASES_DIR } from './env';
 import type { HiddenSessions } from './hidden-sessions';
 import { checkCron, type Scheduler } from './jobs';
+import { Releases } from './releases';
 import { listSessions } from './sessions';
 import type { ObjectStore } from './storage';
 import {
@@ -68,6 +69,9 @@ export interface WebPiServices {
   autoUpdater: AutoUpdater;
   /** Object storage (S3-compatible): POST /api/files stores uploads here. */
   objectStore: ObjectStore;
+  // task/mgmt-page: the management page's service — enforcement, git
+  // reads, release bookkeeping, the swap (docs/management-page.md).
+  management: Releases;
   /** GET /api/state's body: pi's session store (title-cached scan) +
    *  the live tmux list + hidden flags. */
   consoleState(): Promise<ConsoleStateResult>;
@@ -102,12 +106,29 @@ export interface ServiceDeps {
   objectStore: ObjectStore;
   /** env for processes spawned inside tmux sessions (pi) */
   sessionEnv: Record<string, string>;
+  // task/mgmt-page: graceful-restart trigger for the swap step (the
+  // server's own shutdown path — no docker socket anywhere), and the
+  // boot snapshot of what this process serves (the honest "serving now").
+  requestRestart: () => void;
+  bootServing: { kind: 'image' | 'release'; sha: string | null };
 }
 
 export function createServices(deps: ServiceDeps): WebPiServices {
-  const { cfg, stateDb, auth, hiddenSessions, scheduler, autoUpdater, objectStore, sessionEnv } = deps;
+  const { cfg, stateDb, auth, hiddenSessions, scheduler, autoUpdater, objectStore, sessionEnv, requestRestart } = deps;
+  // task/mgmt-page: the management page's domain service. Its verify
+  // callback is auth.verify (re-auth for the dangerous verbs); its
+  // requestRestart is main.ts's own shutdown path.
+  const management = new Releases({
+    db: stateDb,
+    checkout: MANAGEMENT_CHECKOUT,
+    releasesDir: RELEASES_DIR,
+    appRoot: APP_ROOT,
+    bootServing: deps.bootServing,
+    requestRestart,
+    verify: (username, password) => auth.verify(username, password),
+  });
   return {
-    cfg, auth, hiddenSessions, scheduler, autoUpdater, objectStore,
+    cfg, auth, hiddenSessions, scheduler, autoUpdater, objectStore, management,
 
     async consoleState() {
       // Both scans are async (and the session scan title-cached), so the

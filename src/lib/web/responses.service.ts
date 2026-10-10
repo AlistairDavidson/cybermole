@@ -8,6 +8,7 @@
 // Type-only imports from the domain modules: safe for the Astro bundle.
 import type { DatabaseUpdateFailure } from '../db';
 import type { DeleteJobFailure, ListJobsFailure, RunJobFailure, SaveJobFailure } from '../jobs';
+import type { ActivateFailure, EnforcementFailure, ListCommitsFailure, ManagementStateFailure, RequestBuildFailure } from '../releases';
 import type { ConsoleStateFailure, SettingsStateFailure } from '../services';
 import type { PiUpdateFailure, PiUpdateResult } from '../settings';
 import type { StoreUploadFailure } from '../storage';
@@ -165,4 +166,41 @@ export function databaseUpdateFailureResponse(f: DatabaseUpdateFailure, error: s
   // (a one-member union can't narrow to never in a switch).
   const code: 'database_error' = f.errorCode;
   return jsonResponse({ error, code }, 500);
+}
+
+// task/mgmt-page: the management families' failures → status + the
+// { error, code } body the /management element reads (statuses:
+// docs/management-page.md §5).
+export type ManagementFailure =
+  | ManagementStateFailure | ListCommitsFailure | EnforcementFailure | RequestBuildFailure | ActivateFailure;
+
+export function managementFailureResponse(f: ManagementFailure): Response {
+  const body = (status: number, extra: Record<string, unknown> = {}): Response =>
+    jsonResponse({ error: f.errorMessage ?? f.errorCode, ...extra, code: f.errorCode }, status);
+  switch (f.errorCode) {
+    case 'invalid_credentials': // the password re-confirmation failed
+      return body(401);
+    case 'checkout_missing':    // no checkout configured/present
+      return body(404);
+    case 'base_unknown':        // no trustworthy diff base — operator must rebuild the image
+    case 'base_not_in_checkout':
+      return body(409);
+    case 'target_not_found':    // the picked sha does not resolve
+      return body(404);
+    case 'git_error':           // git failed (incl. an unparseable diff — fail closed)
+    case 'marker_error':        // could not write the builder request
+    case 'database_error':
+      return body(500);
+    case 'enforcement_rejected': // the protected set changed — THE refusal
+      return body(422);
+    case 'releases_not_configured': // no WEB_PI_RELEASES_DIR volume
+      return body(503);
+    case 'build_active':        // another build is in flight
+    case 'release_invalid':     // manifest mismatch / bad layout
+      return body(409);
+    case 'release_not_built':   // nothing built for that sha
+      return body(404);
+    default:
+      return f satisfies never;
+  }
 }

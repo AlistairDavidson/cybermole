@@ -30,6 +30,12 @@ function readSchemaEnv(): SchemaEnv {
 
 export const RAW_ENV: SchemaEnv = readSchemaEnv();
 
+// task/mgmt-page: optional — empty string counts as unset (compose `VAR: ""`).
+const optionalPath = (v: string | undefined): string | null =>
+  v === undefined || v.trim() === '' ? null : v.trim();
+export const RELEASES_DIR: string | null = optionalPath(RAW_ENV.WEB_PI_RELEASES_DIR);
+export const MANAGEMENT_CHECKOUT: string | null = optionalPath(RAW_ENV.WEB_PI_MANAGEMENT_CHECKOUT);
+
 export const PI_AGENT_DIR: string | undefined = process.env.PI_CODING_AGENT_DIR;
 export const PI_SESSION_DIR: string | undefined = process.env.PI_CODING_AGENT_SESSION_DIR;
 
