@@ -12,6 +12,7 @@ import type { ConsoleStateFailure, SettingsStateFailure } from '../services';
 import type { PiUpdateFailure, PiUpdateResult } from '../settings';
 import type { StoreUploadFailure } from '../storage';
 import type { TmuxSessionFailure } from '../tmux';
+import type { ZedOpenFailure } from '../zed';
 import type { UpdateResult } from '../types';
 import type { FileUploadFailure, ParseFailure, ValidationFailure } from './parsing.service';
 
@@ -142,6 +143,24 @@ export function updateResultBody(r: PiUpdateResult): UpdateResult {
 
 export function piUpdateResponse(r: PiUpdateResult): Response {
   return jsonResponse(updateResultBody(r), r.ok ? 200 : piUpdateStatus(r));
+}
+
+/** POST /api/zed/open failures: not configured is the operator's to fix
+ *  (503, like storage — the zed profile isn't deployed); an unreachable
+ *  or refusing launcher is the zed container's (502, the upstream that
+ *  failed); a path the web side can't see is the caller's (400). */
+export function zedOpenFailureResponse(f: ZedOpenFailure): Response {
+  switch (f.errorCode) {
+    case 'zed_not_configured':
+      return jsonResponse({ error: f.errorMessage ?? 'the Zed webapp is not configured', code: f.errorCode }, 503);
+    case 'invalid_path':
+      return jsonResponse({ error: f.errorMessage ?? 'invalid path', code: f.errorCode }, 400);
+    case 'launcher_unreachable':
+    case 'launch_failed':
+      return jsonResponse({ error: f.errorMessage ?? 'could not open the folder in Zed', code: f.errorCode }, 502);
+    default:
+      return f satisfies never;
+  }
 }
 
 /** GET /api/state failures (the console's poll ignores any non-OK answer

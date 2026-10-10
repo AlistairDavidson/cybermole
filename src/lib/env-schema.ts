@@ -58,4 +58,12 @@ export const envSchema = {
   WEB_PI_S3_BUCKET: { type: 'string', context: 'server', access: 'secret', default: 'webpi' },
   // SigV4 signs with a region; self-hosted servers accept any, us-east-1 is the convention.
   WEB_PI_S3_REGION: { type: 'string', context: 'server', access: 'secret', default: 'us-east-1' },
+  // task/zed-webapp: the Zed webapp (docs/zed-webapp.md) — all three set
+  // together or none (readZedConfig in env.ts stops the boot on a
+  // half-set). URL is browser-facing (the reverse-proxied stream); the
+  // launcher pair is how the server asks the zed container to open a
+  // folder (compose generates the token via zed-init).
+  WEB_PI_ZED_URL: { type: 'string', context: 'server', access: 'secret', optional: true },
+  WEB_PI_ZED_LAUNCH_URL: { type: 'string', context: 'server', access: 'secret', optional: true },
+  WEB_PI_ZED_LAUNCH_TOKEN: { type: 'string', context: 'server', access: 'secret', optional: true },
 } as const satisfies Record<string, ServerEnvField>;

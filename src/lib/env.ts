@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { envSchema, type EnvValue, type ServerEnvField } from './env-schema';
 import type { ObjectStoreConfig } from './storage';
+import type { ZedLaunchConfig } from './zed';
 
 
 export const APP_ROOT = path.join(__dirname, '..', '..', '..');
@@ -86,4 +87,26 @@ export function readObjectStoreConfig(): ObjectStoreConfig | null {
     throw new Error(`WEB_PI_S3_BUCKET=${JSON.stringify(RAW_ENV.WEB_PI_S3_BUCKET)} is not a valid bucket name`);
   }
   return { endpoint, accessKeyId, secretAccessKey, bucket: RAW_ENV.WEB_PI_S3_BUCKET, region: RAW_ENV.WEB_PI_S3_REGION };
+}
+
+/** Zed webapp config (src/lib/zed.ts, docs/zed-webapp.md), or null when
+ *  unset — the console then hides its Zed affordances. All three set or
+ *  none, like object storage: compose supplies the launch URL default,
+ *  the token arrives via docker-entrypoint.sh from zed-init's generated
+ *  file. Empty strings count as unset (compose's `VAR: ""`). */
+export function readZedConfig(): ZedLaunchConfig | null {
+  const set = (v: string | undefined): v is string => v !== undefined && v.trim() !== '';
+  const url = RAW_ENV.WEB_PI_ZED_URL;
+  const launchUrl = RAW_ENV.WEB_PI_ZED_LAUNCH_URL;
+  const token = RAW_ENV.WEB_PI_ZED_LAUNCH_TOKEN;
+  if (!set(url) && !set(launchUrl) && !set(token)) return null;
+  if (!set(url) || !set(launchUrl) || !set(token)) {
+    throw new Error('WEB_PI_ZED_URL, WEB_PI_ZED_LAUNCH_URL and WEB_PI_ZED_LAUNCH_TOKEN must be set together');
+  }
+  for (const [name, value] of [['WEB_PI_ZED_URL', url], ['WEB_PI_ZED_LAUNCH_URL', launchUrl]] as const) {
+    if (!URL.canParse(value) || !/^https?:$/.test(new URL(value).protocol)) {
+      throw new Error(`${name}=${JSON.stringify(value)} is not an http(s) URL`);
+    }
+  }
+  return { url, launchUrl, token };
 }

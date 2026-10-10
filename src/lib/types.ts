@@ -22,6 +22,9 @@ export interface LiveSession {
   attached: boolean;
   /** tmux socket name owning the session */
   socket: string;
+  /** the session's active pane cwd (where a dive-in editor should open);
+   *  null when tmux reports none (e.g. the pane is dying) */
+  cwd: string | null;
 }
 
 export interface ConsoleState {
@@ -32,6 +35,9 @@ export interface ConsoleState {
   /** total ids in the hidden-sessions state file (may exceed the
    *  hidden ones inside `sessions`, which is capped like the list) */
   hiddenCount: number;
+  /** the Zed webapp (docs/zed-webapp.md), or null when not configured:
+   *  the console hides its "open in Zed" affordances without it. */
+  zed: { url: string } | null;
 }
 
 // ---- scheduled jobs (in-process scheduler — see src/lib/jobs.ts) ----

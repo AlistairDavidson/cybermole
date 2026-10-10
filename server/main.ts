@@ -17,7 +17,7 @@ import { findSession } from '../src/lib/sessions';
 import { HiddenSessions } from '../src/lib/hidden-sessions';
 import { StateDb } from '../src/lib/db';
 import * as tmux from '../src/lib/tmux';
-import { ENV, RAW_ENV, APP_ROOT, PI_BIN, PI_AGENT_DIR, PI_SESSION_DIR, readObjectStoreConfig } from '../src/lib/env';
+import { ENV, RAW_ENV, APP_ROOT, PI_BIN, PI_AGENT_DIR, PI_SESSION_DIR, readObjectStoreConfig, readZedConfig } from '../src/lib/env';
 import * as jobs from '../src/lib/jobs';
 import { AutoUpdater } from '../src/lib/auto-update';
 import { createServices, type ServerConfig, type WebPiLocals } from '../src/lib/services';
@@ -68,6 +68,7 @@ const CFG: ServerConfig = {
   // whitespace-split command line; resume appends --session <id> (pi-family CLI)
   command: ENV.WEB_PI_COMMAND.trim().split(/\s+/).filter(Boolean),
   trustProxy: Math.max(0, ENV.WEB_PI_TRUST_PROXY),
+  zed: readZedConfig(),
 };
 
 /** Seed the runtime agent dir from the versioned template, only where the
