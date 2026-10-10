@@ -5,6 +5,7 @@
 // Runs serially (workers: 1) — see playwright.config.ts.
 import { execFileSync, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -17,7 +18,8 @@ import { expect, test, type Cookie, type Page } from '@playwright/test';
 import { WebSocket as NodeWebSocket } from 'ws';
 import { setCredential } from '../src/lib/auth';
 import { StateDb } from '../src/lib/db';
-import { MARKER, PASSWORD, TMUX_SOCKET, USERNAME, UUIDV7_SIBLINGS, WORKSPACE } from './env';
+import { MARKER, PASSWORD, S3_BUCKET, S3_PORT, TMUX_SOCKET, USERNAME, UUIDV7_SIBLINGS, WORKSPACE } from './env';
+import { UPLOAD_MAX_BODY_BYTES, UPLOAD_MAX_FILE_BYTES } from '../src/schemas/uploads';
 
 const FIXTURE_A = '11111111-1111-1111-1111-111111111111';
 const FIXTURE_B = '22222222-2222-2222-2222-222222222222';
@@ -309,9 +311,9 @@ test('malformed requests and frames are rejected without taking the server down'
   // JSON bodies must be objects.
   expect(await status('POST', '/api/session/hide', '[]')).toBe(400);
   expect(await status('POST', '/api/new', '"just a string"')).toBe(400);
-  // Bodies are capped (the adapter's bodySizeLimit, 10 KiB): an oversized
-  // one aborts mid-read and fails to parse — never buffered whole.
-  expect(await status('POST', '/api/new', JSON.stringify({ name: 'x'.repeat(20_000) }))).toBe(400);
+  // Bodies are capped at 10 KiB off the upload route: server/main.ts
+  // refuses an oversized one from its Content-Length before Astro reads it.
+  expect(await status('POST', '/api/new', JSON.stringify({ name: 'x'.repeat(20_000) }))).toBe(413);
   // The JSON API only parses JSON (or form) bodies.
   expect(await page.evaluate(async () => (await fetch('/api/new', {
     method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '{"name":"x"}',
@@ -340,6 +342,56 @@ test('malformed requests and frames are rejected without taking the server down'
   }, junk);
   expect(stillOpen).toBe(true);
   expect(await status('GET', '/api/state')).toBe(200);
+});
+
+test('file upload: stored in object storage; type, size and length caps answer before storage', async ({ page }) => {
+  await login(page);
+  type Upload = { status: number; body: { key?: string; name?: string; size?: number; contentType?: string; code?: string } };
+  const upload = (size: number, type: string, name = 'notes.txt'): Promise<Upload> =>
+    page.evaluate(async ([n, t, f]) => {
+      const form = new FormData();
+      // Bytes of 'a' (0x61), so the stored body is checkable.
+      form.append('file', new File([new Uint8Array(n!).fill(0x61)], f!, { type: t! }));
+      const r = await fetch('/api/files', { method: 'POST', body: form });
+      return { status: r.status, body: await r.json().catch(() => ({})) };
+    }, [size, type, name] as const);
+
+  const ok = await upload(12, 'text/plain', 'q1 notes (draft).txt');
+  expect(ok.status).toBe(201);
+  expect(ok.body).toMatchObject({ name: 'q1 notes (draft).txt', size: 12, contentType: 'text/plain' });
+  expect(ok.body.key).toMatch(/^uploads\/[0-9a-f-]{36}$/);
+  // It reached the S3 server (tests/fake-s3.mjs), body and headers intact.
+  const stored = await (await fetch(`http://127.0.0.1:${S3_PORT}/__fake/objects/${S3_BUCKET}/${ok.body.key}`)).json() as
+    { body: string; contentType: string; contentDisposition: string };
+  expect(Buffer.from(stored.body, 'base64').toString()).toBe('a'.repeat(12));
+  expect(stored.contentType).toBe('text/plain');
+  expect(stored.contentDisposition).toBe("attachment; filename*=UTF-8''q1%20notes%20%28draft%29.txt");
+
+  // The parser's policy (src/schemas/uploads.ts): declared type, then size.
+  expect(await upload(12, 'text/html', 'x.html')).toMatchObject({ status: 400, body: { code: 'unsupported_file_type' } });
+  expect(await upload(UPLOAD_MAX_FILE_BYTES + 1, 'text/plain'))
+    .toMatchObject({ status: 400, body: { code: 'file_too_large' } });
+  // Past the whole-body cap, main.ts refuses on Content-Length alone.
+  expect((await upload(UPLOAD_MAX_BODY_BYTES, 'text/plain')).status).toBe(413);
+  // Not multipart: nothing to store.
+  expect(await page.evaluate(async () => (await fetch('/api/files', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+  })).status)).toBe(400);
+
+  // A body with no Content-Length (chunked) is refused off the upload
+  // route — the 10 KiB cap can't be checked up front. Browsers only send
+  // one for a streamed body, so this goes from Node with the session cookie.
+  const cookie = (await page.context().cookies()).find(c => c.name === 'webpi_session')!;
+  const chunked = await new Promise<number>((resolve, reject) => {
+    const req = http.request(`http://127.0.0.1:${new URL(page.url()).port}/api/new`, {
+      method: 'POST',
+      headers: { Cookie: `webpi_session=${cookie.value}`, 'Content-Type': 'application/json', 'Transfer-Encoding': 'chunked' },
+    }, res => { res.resume(); resolve(res.statusCode ?? 0); });
+    req.on('error', reject);
+    req.write('{"name":');
+    req.end('"itest-chunked"}');
+  });
+  expect(chunked).toBe(411);
 });
 
 test('attached session opens at the browser terminal\'s size, not 80x24', async ({ page }) => {

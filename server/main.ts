@@ -17,14 +17,16 @@ import { findSession } from '../src/lib/sessions';
 import { HiddenSessions } from '../src/lib/hidden-sessions';
 import { StateDb } from '../src/lib/db';
 import * as tmux from '../src/lib/tmux';
-import { ENV, RAW_ENV, APP_ROOT, PI_BIN, PI_AGENT_DIR, PI_SESSION_DIR } from '../src/lib/env';
+import { ENV, RAW_ENV, APP_ROOT, PI_BIN, PI_AGENT_DIR, PI_SESSION_DIR, readObjectStoreConfig } from '../src/lib/env';
 import * as jobs from '../src/lib/jobs';
 import { AutoUpdater } from '../src/lib/auto-update';
 import { createServices, type ServerConfig, type WebPiLocals } from '../src/lib/services';
+import { ObjectStore } from '../src/lib/storage';
 import type { ClientMsg, ServerMsg } from '../src/lib/types';
 import { loginBody } from '../src/schemas/api';
 import { parseClientMsg } from '../src/schemas/frames';
 import { PiSessionIdSchema, TmuxSessionNameSchema } from '../src/schemas/ids';
+import { UPLOAD_MAX_BODY_BYTES } from '../src/schemas/uploads';
 import type { SessionToken, TmuxSessionName } from '../src/types/branded';
 
 // URL base path ('/' or '/foo', no trailing slash). Must match the base
@@ -138,11 +140,17 @@ scheduler.start();
 // OFF nothing npm-shaped is ever scheduled).
 const autoUpdater = new AutoUpdater({ db: stateDb, appRoot: APP_ROOT });
 autoUpdater.start();
+// Object storage (src/lib/storage.ts): any S3-compatible server, or none —
+// uploads then answer 503. Nothing connects until the first upload.
+const objectStore = new ObjectStore(readObjectStoreConfig());
+console.log(objectStore.describe() === null
+  ? 'object storage: not configured (WEB_PI_S3_ENDPOINT unset) — uploads answer 503'
+  : `object storage: ${objectStore.describe()}`);
 // Everything stateful the Astro side (API routes, pages) may use, built
 // once here and passed to the Astro handler in locals — never imported
 // there (a Vite-bundled second copy would carry its own state; see
 // src/lib/services.ts).
-const services = createServices({ cfg: CFG, stateDb, auth, hiddenSessions, scheduler, autoUpdater, sessionEnv });
+const services = createServices({ cfg: CFG, stateDb, auth, hiddenSessions, scheduler, autoUpdater, objectStore, sessionEnv });
 // The scheduler's single shutdown hook. The SIGTERM/SIGINT handler is a
 // sibling task (task/session-lifecycle, merged separately); at merge time
 // it calls shutdownScheduler() — wired here so teardown has exactly one
@@ -267,6 +275,29 @@ function originOk(req: http.IncomingMessage): boolean {
   if (origin === undefined || origin === '') return true;
   const expected = expectedOrigin(req);
   return expected !== null && normalizeOrigin(origin) === expected;
+}
+
+// Request-body caps for everything Astro serves. The adapter's
+// bodySizeLimit (astro.config.mjs) is global, so it is set to the largest
+// body any route takes — an upload; every other route keeps the JSON
+// API's 10 KiB here, before Astro reads a byte. A body that declares no
+// length (chunked) is refused outside the upload route — browsers send a
+// Content-Length for every body this app's pages post — and on it, the
+// adapter's limit stops the stream mid-read.
+const API_BODY_MAX_BYTES = 10 * 1024;
+const UPLOAD_ROUTE = '/api/files'; // src/pages/api/files.ts
+
+/** 413 (declared length over the route's cap), 411 (no length, off the
+ *  upload route) or null (within the cap). */
+function bodyCapStatus(req: http.IncomingMessage, url: string): 411 | 413 | null {
+  if (req.method === 'GET' || req.method === 'HEAD') return null;
+  const upload = req.method === 'POST' && url === route(UPLOAD_ROUTE);
+  const declared = req.headers['content-length'];
+  if (declared === undefined) {
+    return req.headers['transfer-encoding'] !== undefined && !upload ? 411 : null;
+  }
+  // Node's parser has already rejected a malformed or repeated Content-Length.
+  return Number(declared) <= (upload ? UPLOAD_MAX_BODY_BYTES : API_BODY_MAX_BYTES) ? null : 413;
 }
 
 /** Is this path inside the app's base ('/foo' and '/foo/…', or anything for '/')? */
@@ -506,6 +537,9 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
   // Astro throws on an undecodable path (a bad %-escape such as
   // /api/jobs/%E0) — a client error, answered here.
   try { decodeURI(url); } catch { send(res, 400, 'bad request'); return; }
+  const capped = bodyCapStatus(req, url);
+  if (capped === 413) { send(res, 413, 'request body too large'); return; }
+  if (capped === 411) { send(res, 411, 'request body needs a Content-Length'); return; }
   renderAstro(req, res, { webpi: services, session: session.data.token });
 }
 

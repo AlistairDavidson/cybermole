@@ -10,6 +10,7 @@ import type { DatabaseUpdateFailure } from '../db';
 import type { DeleteJobFailure, ListJobsFailure, RunJobFailure, SaveJobFailure } from '../jobs';
 import type { ConsoleStateFailure, SettingsStateFailure } from '../services';
 import type { PiUpdateFailure, PiUpdateResult } from '../settings';
+import type { StoreUploadFailure } from '../storage';
 import type { TmuxSessionFailure } from '../tmux';
 import type { UpdateResult } from '../types';
 import type { FileUploadFailure, ParseFailure, ValidationFailure } from './parsing.service';
@@ -101,6 +102,20 @@ export function tmuxSessionFailureResponse(f: TmuxSessionFailure): Response {
       return jsonResponse({ error: f.errorMessage ?? 'workspace tmux server not running', code: f.errorCode }, 503);
     case 'tmux_error':
       return jsonResponse({ error: 'could not create session (name taken?)', code: f.errorCode }, 409);
+    default:
+      return f satisfies never;
+  }
+}
+
+/** POST /api/files failures: no storage configured is the operator's to
+ *  fix (503); a failed write is the storage server's (502 — it's the
+ *  upstream that failed, not this request). */
+export function storeUploadFailureResponse(f: StoreUploadFailure): Response {
+  switch (f.errorCode) {
+    case 'storage_not_configured':
+      return jsonResponse({ error: f.errorMessage ?? 'object storage is not configured', code: f.errorCode }, 503);
+    case 'storage_error':
+      return jsonResponse({ error: 'could not store the file', detail: f.errorMessage ?? null, code: f.errorCode }, 502);
     default:
       return f satisfies never;
   }

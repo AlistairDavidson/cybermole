@@ -6,6 +6,7 @@ import lit from '@awesome.me/astro-lit';
 // server's typed reads; see that file for why the server cannot import
 // 'astro:env/server' directly). Plain data in envField() output shape.
 import { envSchema } from './src/lib/env-schema';
+import { UPLOAD_MAX_BODY_BYTES } from './src/schemas/uploads';
 
 // SSR build: Astro renders pages AND the JSON API (src/pages/api) on
 // demand (middleware-mode handler); the compiled Node server (dist-server/)
@@ -42,10 +43,13 @@ const devProxy = {
 
 export default defineConfig({
   output: 'server',
-  // bodySizeLimit: the adapter's default is 1 GiB. The JSON API's bodies
-  // are tiny; 10 KiB matches the cap server/main.ts's readBody had (an
-  // oversized body aborts mid-stream and fails to parse — a 400).
-  adapter: node({ mode: 'middleware', bodySizeLimit: 10 * 1024 }),
+  // bodySizeLimit: the adapter's default is 1 GiB. The limit is global, so
+  // it is the largest body any route takes — an upload to POST /api/files
+  // (file + multipart envelope, src/schemas/uploads.ts). Every other route
+  // keeps the JSON API's 10 KiB: server/main.ts answers 413 (or 411 for a
+  // body with no Content-Length) before Astro reads a byte. Past this, a
+  // body aborts mid-stream and fails to parse — a 400.
+  adapter: node({ mode: 'middleware', bodySizeLimit: UPLOAD_MAX_BODY_BYTES }),
   // Astro's own origin check is OFF on purpose: server/main.ts already
   // rejects every cross-origin non-GET before a request reaches Astro
   // (originOk(), WEB_PI_TRUST_PROXY-aware). Astro's check derives the

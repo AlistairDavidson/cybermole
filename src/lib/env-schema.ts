@@ -49,4 +49,13 @@ export const envSchema = {
   WEB_PI_NEW_SESSION_CWD: { type: 'string', context: 'server', access: 'secret', optional: true },
   WEB_PI_COMMAND: { type: 'string', context: 'server', access: 'secret', optional: true },
   WEB_PI_TMUX_CONF: { type: 'string', context: 'server', access: 'secret', optional: true },
+  // Object storage (src/lib/storage.ts) — any S3-compatible server; the
+  // compose stack runs SeaweedFS. No endpoint = not configured (uploads
+  // answer 503); an endpoint needs both keys — env.ts checks at boot.
+  WEB_PI_S3_ENDPOINT: { type: 'string', context: 'server', access: 'secret', optional: true },
+  WEB_PI_S3_ACCESS_KEY: { type: 'string', context: 'server', access: 'secret', optional: true },
+  WEB_PI_S3_SECRET_KEY: { type: 'string', context: 'server', access: 'secret', optional: true },
+  WEB_PI_S3_BUCKET: { type: 'string', context: 'server', access: 'secret', default: 'webpi' },
+  // SigV4 signs with a region; self-hosted servers accept any, us-east-1 is the convention.
+  WEB_PI_S3_REGION: { type: 'string', context: 'server', access: 'secret', default: 'us-east-1' },
 } as const satisfies Record<string, ServerEnvField>;

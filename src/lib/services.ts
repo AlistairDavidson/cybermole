@@ -19,6 +19,7 @@ import { APP_ROOT } from './env';
 import type { HiddenSessions } from './hidden-sessions';
 import { checkCron, type Scheduler } from './jobs';
 import { listSessions } from './sessions';
+import type { ObjectStore } from './storage';
 import {
   PI_PACKAGE, appVersion, npmPath, piDeclared, piInstalled, runPiUpdate, type PiUpdateResult,
 } from './settings';
@@ -65,6 +66,8 @@ export interface WebPiServices {
   hiddenSessions: HiddenSessions;
   scheduler: Scheduler;
   autoUpdater: AutoUpdater;
+  /** Object storage (S3-compatible): POST /api/files stores uploads here. */
+  objectStore: ObjectStore;
   /** GET /api/state's body: pi's session store (title-cached scan) +
    *  the live tmux list + hidden flags. */
   consoleState(): Promise<ConsoleStateResult>;
@@ -96,14 +99,15 @@ export interface ServiceDeps {
   hiddenSessions: HiddenSessions;
   scheduler: Scheduler;
   autoUpdater: AutoUpdater;
+  objectStore: ObjectStore;
   /** env for processes spawned inside tmux sessions (pi) */
   sessionEnv: Record<string, string>;
 }
 
 export function createServices(deps: ServiceDeps): WebPiServices {
-  const { cfg, stateDb, auth, hiddenSessions, scheduler, autoUpdater, sessionEnv } = deps;
+  const { cfg, stateDb, auth, hiddenSessions, scheduler, autoUpdater, objectStore, sessionEnv } = deps;
   return {
-    cfg, auth, hiddenSessions, scheduler, autoUpdater,
+    cfg, auth, hiddenSessions, scheduler, autoUpdater, objectStore,
 
     async consoleState() {
       // Both scans are async (and the session scan title-cached), so the

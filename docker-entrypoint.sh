@@ -11,5 +11,15 @@
 # overrides this entrypoint entirely.
 set -e
 
+# Object storage keys (WEB_PI_S3_ACCESS_KEY / WEB_PI_S3_SECRET_KEY),
+# generated once by compose's seaweedfs-init onto a volume mounted :ro
+# here. Absent outside that stack (plain `docker run`): storage then
+# stays unconfigured unless the env provides it.
+if [ -r /run/web-pi-s3/credentials.env ]; then
+  set -a
+  . /run/web-pi-s3/credentials.env
+  set +a
+fi
+
 cd /opt/web-pi
 exec "$@"

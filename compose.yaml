@@ -14,6 +14,11 @@
 #     workspace-init (one-shot) — chowns/chmods the shared volumes: socket
 #                            dir 2770 setgid webpi, /workspace owned by
 #                            uid 2000 (same pattern as dev-init below).
+#     seaweedfs  object storage (S3 API, src/lib/storage.ts) — on the
+#                            internal `storage` network with webpi ONLY:
+#                            workspace (pi sessions) can't reach it.
+#     seaweedfs-init (one-shot) — generates the S3 credentials both sides
+#                            load, once, onto their own volume.
 #
 #   dev:   docker compose --profile dev up dev     → single-user dev servers
 #          with the repo bind-mounted (the split is a prod shape; dev
@@ -34,6 +39,24 @@
 
 name: web-pi
 
+# SeaweedFS `weed mini`: master + volume + filer + S3 in one process. Only
+# the S3 API is wanted — the rest of what mini starts by default (admin
+# UI, WebDAV, Iceberg/Lance catalogs) is off, and so is its phone-home
+# telemetry (default on). The bucket is created by the app on first use.
+# Pinned: mini's defaults "may evolve over releases".
+x-seaweedfs: &seaweedfs
+  image: chrislusf/seaweedfs:4.48
+  init: true
+  security_opt: ["no-new-privileges:true"]
+  command:
+    - mini
+    - -dir=/data
+    - -master.telemetry=false
+    - -admin.ui=false
+    - -webdav=false
+    - -s3.port.iceberg=0
+    - -s3.port.lance=0
+
 x-webpi-build: &webpi-build
   context: .
   target: prod # slim: no compiler toolchain (dev target has it)
@@ -46,6 +69,12 @@ services:
     depends_on:
       workspace-init:
         condition: service_completed_successfully
+      seaweedfs-init:
+        condition: service_completed_successfully
+      # Started, not healthy: storage connects lazily (first upload), and
+      # an upload while it is still booting is a retryable 502.
+      seaweedfs:
+        condition: service_started
     build: *webpi-build
     # web-pi:local is built on this box (below). To run a CI-built image
     # instead (release tags publish ghcr.io/<owner>/web-pi), set WEB_PI_IMAGE
@@ -87,8 +116,14 @@ services:
       # what the sidebar scans (web reads it via the shared group).
       WEB_PI_AGENT_DIR: /workspace/pi-agent
       WEB_PI_NEW_SESSION_CWD: /workspace
+      # Object storage. The keys aren't here: seaweedfs-init generates them
+      # into /run/web-pi-s3/credentials.env and docker-entrypoint.sh loads
+      # them (WEB_PI_S3_ACCESS_KEY / WEB_PI_S3_SECRET_KEY).
+      WEB_PI_S3_ENDPOINT: http://seaweedfs:8333
+    networks: [default, storage]
     volumes:
       - webpi-state:/state
+      - webpi-s3-credentials:/run/web-pi-s3:ro
       # Read access to pi's session store (sidebar/resume); web never
       # writes here — hidden flags live in its own db on /state. :ro makes
       # that a container-level fact, not just a convention (the session
@@ -137,6 +172,55 @@ services:
       - webpi-tmux:/run/web-pi
       - webpi-workspace:/workspace
 
+  # Object storage for the web side: only webpi shares its network (no
+  # published port). Its gRPC/filer/master ports are unauthenticated —
+  # the network is the boundary, and `internal` also leaves it no route
+  # out. Takes the generated keys as its admin identity
+  # (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY are mini's env names for
+  # it); anonymous S3 requests get 403.
+  seaweedfs:
+    <<: *seaweedfs
+    depends_on:
+      seaweedfs-init:
+        condition: service_completed_successfully
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        set -a && . /run/web-pi-s3/credentials.env && set +a &&
+        export AWS_ACCESS_KEY_ID="$$WEB_PI_S3_ACCESS_KEY" AWS_SECRET_ACCESS_KEY="$$WEB_PI_S3_SECRET_KEY" &&
+        exec /entrypoint.sh "$$@"
+      - sh
+    networks: [storage]
+    volumes:
+      - webpi-seaweedfs:/data
+      - webpi-s3-credentials:/run/web-pi-s3:ro
+    restart: unless-stopped
+
+  # One-shot: generates the S3 credentials on first `up` (kept thereafter —
+  # the store's data is only readable with them). One file, two readers:
+  # docker-entrypoint.sh (webpi, uid node — hence the owner) and the
+  # seaweedfs wrapper above (root before it drops to its own user).
+  seaweedfs-init:
+    build: *webpi-build
+    image: ${WEB_PI_IMAGE:-web-pi:local}
+    user: "0:0"
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        f=/run/web-pi-s3/credentials.env;
+        if [ ! -s "$$f" ]; then
+        umask 077 &&
+        printf 'WEB_PI_S3_ACCESS_KEY=webpi\nWEB_PI_S3_SECRET_KEY=%s\n'
+        "$$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")" > "$$f.tmp" &&
+        mv "$$f.tmp" "$$f";
+        fi &&
+        chown node:node "$$f" && chmod 0400 "$$f"
+    restart: "no"
+    volumes:
+      - webpi-s3-credentials:/run/web-pi-s3
+
   # One-shot: empty named volumes are created root-owned; the dev service
   # runs as ${UID:-1000} and must write node_modules. Runs on every `up` — a
   # no-op chown once ownership is right. (Entrypoint overridden: without the
@@ -158,11 +242,27 @@ services:
     volumes:
       - webpi-dev-node-modules:/app/node_modules
 
+  # Dev object storage: throwaway, fixed keys (the dev service and the
+  # host flow use the same pair), loopback-published so `npm run
+  # dev:server` on the host can reach it too — `docker compose --profile
+  # dev up -d dev-seaweedfs`, then the WEB_PI_S3_* values below with
+  # http://127.0.0.1:8333 (README "Developing").
+  dev-seaweedfs:
+    <<: *seaweedfs
+    profiles: ["dev"]
+    environment:
+      AWS_ACCESS_KEY_ID: webpi-dev
+      AWS_SECRET_ACCESS_KEY: webpi-dev-secret
+    ports:
+      - "127.0.0.1:8333:8333" # S3 API only
+
   dev:
     profiles: ["dev"]
     depends_on:
       dev-init:
         condition: service_completed_successfully
+      dev-seaweedfs:
+        condition: service_started
     build:
       context: .
       target: dev # runtime + build-essential/python3: the container npm-installs node-pty
@@ -201,6 +301,9 @@ services:
       WEB_PI_STATE_DIR: /tmp/web-pi-state
       # A non-1000 uid has no passwd entry → HOME=/ → npm's cache is unwritable there
       npm_config_cache: /tmp/.npm
+      WEB_PI_S3_ENDPOINT: http://dev-seaweedfs:8333
+      WEB_PI_S3_ACCESS_KEY: webpi-dev
+      WEB_PI_S3_SECRET_KEY: webpi-dev-secret
     healthcheck:
       disable: true # the prod image probes :3000; dev serves :4321/:3001
     volumes:
@@ -226,3 +329,16 @@ volumes:
     name: webpi-workspace
   webpi-dev-node-modules:
     name: webpi-dev-node-modules
+  # Object storage data, and the generated credentials that unlock it —
+  # back them up together.
+  webpi-seaweedfs:
+    name: webpi-seaweedfs
+  webpi-s3-credentials:
+    name: webpi-s3-credentials
+
+networks:
+  # webpi ↔ seaweedfs only. internal: no route out (and none in from
+  # outside the two containers' own stack).
+  storage:
+    name: webpi-storage
+    internal: true

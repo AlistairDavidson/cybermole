@@ -49,6 +49,11 @@ containers and two uids (server vs tmux/pi) — see
   (listen address, paths, versions) plus the pi update actions — a manual
   update-pi button and an opt-in daily auto-update that stays within the
   declared range.
+- **File uploads** — `POST /api/files` (multipart, field `file`) stores
+  the file in object storage and answers its key: any S3-compatible
+  server, SeaweedFS in the compose stack ([Object storage](#object-storage-seaweedfs)).
+  The building block for apps that take files; without storage
+  configured it answers 503 and nothing else changes.
 - **Single-user login** — username + password, salted scrypt hash in the
   sqlite state db (`webpi.db`), `HttpOnly`/`Secure`/`SameSite=Strict`
   session cookie. Sessions persist across server restarts (only token
@@ -114,6 +119,8 @@ Notes:
 - The dev profile builds the `dev` image target (`web-pi:local-dev`),
   which carries `build-essential`/`python3` for the in-container
   `node-pty` build; the prod image (`web-pi:local`) stays slim.
+- Uploads go to `dev-seaweedfs` (throwaway, fixed dev keys, S3 on
+  loopback `:8333`), started with `dev`.
 
 **On the host** (no docker): two processes — `astro dev` serves the pages
 (HMR); the JSON API routes (`src/pages/api`) need the services the Node
@@ -124,6 +131,15 @@ login/logout live in the Node server itself, so the Vite server proxies
 ```sh
 npm run dev:server   # API + WS half on :3001 (builds Astro + dist-server first)
 npm run dev          # astro dev on :4321, proxying to the dev API server
+```
+
+For uploads, run the dev profile's object store and point the API half
+at it (without it, `POST /api/files` answers 503):
+
+```sh
+docker compose --profile dev up -d dev-seaweedfs
+WEB_PI_S3_ENDPOINT=http://127.0.0.1:8333 WEB_PI_S3_ACCESS_KEY=webpi-dev \
+  WEB_PI_S3_SECRET_KEY=webpi-dev-secret npm run dev:server
 ```
 
 Everything works against the dev server as it does in production. Page
@@ -166,6 +182,10 @@ directly.
 | `WEB_PI_DB_FILE` | `<state dir>/webpi.db` | sqlite state db (0600): login credential, `sessions` overlay table (hidden flags), scheduled-job tables (`jobs`, `job_runs` — the in-process scheduler), `settings` kv (the pi auto-update toggle + outcomes). Fresh setup: `npm run set-password` creates it |
 | `WEB_PI_CLIENT_DIR` | `<app root>/dist/client` | Astro hashed assets |
 | `WEB_PI_ASTRO_ENTRY` | `<app root>/dist/server/entry.mjs` | Astro SSR handler |
+| `WEB_PI_S3_ENDPOINT` | *(unset: no storage)* | S3 API URL of the object store (`http://seaweedfs:8333` in compose). Unset, `POST /api/files` answers 503. Set, it needs both keys below — a half-set or non-http value stops the server at boot |
+| `WEB_PI_S3_ACCESS_KEY` / `WEB_PI_S3_SECRET_KEY` | *(unset)* | the store's credentials. In compose, generated once by `seaweedfs-init` and loaded by the entrypoint — not set in `compose.yaml` |
+| `WEB_PI_S3_BUCKET` | `webpi` | bucket for uploads (created on first use when missing) |
+| `WEB_PI_S3_REGION` | `us-east-1` | SigV4 signing region — self-hosted servers accept any |
 | `WEB_PI_DEV_API` | `http://127.0.0.1:3001` | dev only: where `astro dev` proxies `/api`, `/ws`, login/logout (the `npm run dev:server` process) |
 
 Run under a dedicated unprivileged user (the app spawns a terminal — treat
@@ -241,7 +261,7 @@ deploy.
 
 ```sh
 docker compose build        # subpath deploy: 'The base path' below first — WEB_PI_BASE=/webpi docker compose build
-docker compose up -d        # web + workspace + one-shot init; loopback :3000, TLS reverse proxy in front
+docker compose up -d        # web + workspace + seaweedfs + one-shot inits; loopback :3000, TLS reverse proxy in front
 docker compose exec webpi node dist-server/server/set-password.js   # once, on a fresh deploy
 ```
 
@@ -295,6 +315,36 @@ runs while the web server is up, exactly as before.
 The pre-split `webpi-app` volume (the entrypoint-synced `/app` the server
 served from) is obsolete — web serves from the image now — and is left in
 place, unused, on existing hosts.
+
+### Object storage (SeaweedFS)
+
+Uploads (`POST /api/files`) go to an S3 bucket through the AWS SDK
+(`src/lib/storage.ts`). Nothing in the app is specific to one server; the
+compose stack runs [SeaweedFS](https://github.com/seaweedfs/seaweedfs)
+(`weed mini`, pinned) — MinIO's community edition was archived in 2026
+and its images are gone. Two more services:
+
+- **seaweedfs** — S3 API on `seaweedfs:8333`, data on the `webpi-seaweedfs`
+  volume. It sits on the `storage` network (`internal`: no route out)
+  with **webpi only**: the workspace container, where pi sessions run,
+  cannot reach it, and it publishes no port. That network is the
+  boundary that matters — besides S3, `weed mini` runs filer/master/gRPC
+  ports with no auth of their own. Everything but the S3 API (admin UI,
+  WebDAV, Iceberg/Lance catalogs) is switched off, and so is its
+  telemetry, which is on by default.
+- **seaweedfs-init** (one-shot, root) — on the first `up`, generates the
+  S3 key pair into `credentials.env` on the `webpi-s3-credentials` volume
+  (mounted read-only into both). `docker-entrypoint.sh` loads it for the
+  server; the seaweedfs wrapper hands it to `weed` as its admin identity.
+  Later `up`s keep it. Back up `webpi-seaweedfs` and
+  `webpi-s3-credentials` together.
+
+The app creates the bucket (`WEB_PI_S3_BUCKET`) on first upload. To use
+another S3-compatible store (S3, R2, Garage, …) instead, point
+`WEB_PI_S3_ENDPOINT` and the two keys at it and drop the seaweedfs
+services. Uploads are capped at 10 MiB and a small set of inert types
+(`src/schemas/uploads.ts`); keys are `uploads/<uuid>`, stored with the
+client's file name as an `attachment` Content-Disposition.
 
 #### The same split on a plain host (two unix users)
 
@@ -625,7 +675,15 @@ edits and the future apply step builds from.
   loads from the Font Awesome CDN, so the strict CSP holds and no usage
   leaks to a third party.
 - Static assets are served from a fixed route table with traversal checks;
-  request bodies are size-capped.
+  request bodies are size-capped: 10 KiB everywhere except an upload to
+  `POST /api/files` (10 MiB + multipart envelope). `server/main.ts`
+  refuses an oversized `Content-Length` (413) — and a length-less
+  chunked body (411) off the upload route — before Astro reads a byte;
+  the adapter's `bodySizeLimit` (the upload cap) backstops a stream.
+- Object storage is reachable only from the web container (compose's
+  internal `storage` network), with generated credentials; uploads are
+  stored as `attachment`s and limited to types that are inert if ever
+  served back (no HTML, no SVG).
 - Past-session previews read only file heads (first user message, capped at
   64 KiB per file, 200 files).
 

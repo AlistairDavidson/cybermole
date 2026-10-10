@@ -14,6 +14,8 @@ export type TmuxSessionName = Brand<string, 'TmuxSessionName'>;
 export type JobName = Brand<string, 'JobName'>;
 /** A login session token (the webpi_session cookie value). */
 export type SessionToken = Brand<string, 'SessionToken'>;
+/** An object's key in the storage bucket (src/lib/storage.ts). */
+export type ObjectKey = Brand<string, 'ObjectKey'>;
 
 export function asPiSessionId(value: string): PiSessionId {
   return value as PiSessionId;
@@ -29,4 +31,8 @@ export function asJobName(value: string): JobName {
 
 export function asSessionToken(value: string): SessionToken {
   return value as SessionToken;
+}
+
+export function asObjectKey(value: string): ObjectKey {
+  return value as ObjectKey;
 }

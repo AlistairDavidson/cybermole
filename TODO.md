@@ -1,9 +1,4 @@
 ## Infrastructure
-kyseley - move sqlite code to that format
-
-minio npm, container - so web apps in future can handle file uploads
-  astro upload endpoint apps can use
-
 winston, winston-loki, loki container - observability.
   add logs to code
 

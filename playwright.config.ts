@@ -1,5 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
-import { TMUX_SOCKET, WORKSPACE } from './tests/env';
+import { S3_ACCESS_KEY, S3_BUCKET, S3_PORT, TMUX_SOCKET, WORKSPACE } from './tests/env';
 
 const PORT = 3470;
 
@@ -20,7 +20,14 @@ export default defineConfig({
   use: { baseURL: `http://127.0.0.1:${PORT}` },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   globalSetup: './tests/global-setup.ts',
-  webServer: {
+  webServer: [{
+    // In-memory S3 for POST /api/files (only what src/lib/storage.ts calls).
+    command: `node tests/fake-s3.mjs ${S3_PORT} ${S3_ACCESS_KEY}`,
+    url: `http://127.0.0.1:${S3_PORT}/__fake/health`,
+    reuseExistingServer: false,
+    stdout: 'ignore',
+    stderr: 'pipe',
+  }, {
     command: 'node dist-server/server/main.js',
     url: `http://127.0.0.1:${PORT}/login`,
     reuseExistingServer: false,
@@ -36,6 +43,10 @@ export default defineConfig({
       WEB_PI_NEW_SESSION_CWD: WORKSPACE,
       WEB_PI_TMUX_SOCKET: TMUX_SOCKET,
       WEB_PI_COMMAND: `${WORKSPACE}/cmd.sh`,
+      WEB_PI_S3_ENDPOINT: `http://127.0.0.1:${S3_PORT}`,
+      WEB_PI_S3_ACCESS_KEY: S3_ACCESS_KEY,
+      WEB_PI_S3_SECRET_KEY: 'itest-secret',
+      WEB_PI_S3_BUCKET: S3_BUCKET,
     },
-  },
+  }],
 });

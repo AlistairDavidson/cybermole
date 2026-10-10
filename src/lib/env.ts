@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { envSchema, type EnvValue, type ServerEnvField } from './env-schema';
+import type { ObjectStoreConfig } from './storage';
 
 
 export const APP_ROOT = path.join(__dirname, '..', '..', '..');
@@ -59,3 +60,30 @@ export const ENV = {
   WEB_PI_COMMAND: RAW_ENV.WEB_PI_COMMAND ?? (fs.existsSync(PI_BIN) ? PI_BIN : 'pi'),
   WEB_PI_TMUX_CONF: RAW_ENV.WEB_PI_TMUX_CONF ?? path.join(APP_ROOT, 'tmux.conf'),
 };
+
+/** Object storage (src/lib/storage.ts), or null when no endpoint is set —
+ *  the store then answers storage_not_configured. A half-configured or
+ *  malformed one throws, and server/main.ts calls this at boot, so it
+ *  stops the server like a non-integer number: an operator mistake, not
+ *  something to discover on first upload. A function, not a constant like
+ *  ENV, so other entry points never trip over it: `compose exec webpi …
+ *  set-password.js` skips the entrypoint that loads the generated keys.
+ *  Empty strings count as unset (compose's `VAR: ""`). */
+export function readObjectStoreConfig(): ObjectStoreConfig | null {
+  const set = (v: string | undefined): v is string => v !== undefined && v !== '';
+  const endpoint = RAW_ENV.WEB_PI_S3_ENDPOINT;
+  const accessKeyId = RAW_ENV.WEB_PI_S3_ACCESS_KEY;
+  const secretAccessKey = RAW_ENV.WEB_PI_S3_SECRET_KEY;
+  if (!set(endpoint) && !set(accessKeyId) && !set(secretAccessKey)) return null;
+  if (!set(endpoint) || !set(accessKeyId) || !set(secretAccessKey)) {
+    throw new Error('WEB_PI_S3_ENDPOINT, WEB_PI_S3_ACCESS_KEY and WEB_PI_S3_SECRET_KEY must be set together');
+  }
+  if (!URL.canParse(endpoint) || !/^https?:$/.test(new URL(endpoint).protocol)) {
+    throw new Error(`WEB_PI_S3_ENDPOINT=${JSON.stringify(endpoint)} is not an http(s) URL`);
+  }
+  // S3's bucket naming rules (path-style requests put it in the URL path).
+  if (!/^[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]$/.test(RAW_ENV.WEB_PI_S3_BUCKET)) {
+    throw new Error(`WEB_PI_S3_BUCKET=${JSON.stringify(RAW_ENV.WEB_PI_S3_BUCKET)} is not a valid bucket name`);
+  }
+  return { endpoint, accessKeyId, secretAccessKey, bucket: RAW_ENV.WEB_PI_S3_BUCKET, region: RAW_ENV.WEB_PI_S3_REGION };
+}

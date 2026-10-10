@@ -133,7 +133,11 @@ is a type error.
   - `src/middleware.ts` fails closed: `/api/*` and `/partials/*` answer
     503 when `locals.webpi` is missing (`astro dev`, or the Astro handler
     run on its own).
-  - The adapter's `bodySizeLimit` is set (its default is 1 GiB).
+  - The adapter's `bodySizeLimit` is set (its default is 1 GiB) — to the
+    upload cap, `UPLOAD_MAX_BODY_BYTES`, since it is global; every other
+    route keeps 10 KiB through `server/main.ts`'s per-route cap
+    (`bodyCapStatus`), which runs before Astro reads the body. A new
+    route that takes large bodies gets its own entry there.
   - Astro's `security.checkOrigin` is off because main.ts's trustProxy-aware
     `originOk()` is authoritative. Astro's own check derives the origin from
     the request URL, which is wrong behind a TLS proxy.
