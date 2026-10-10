@@ -24,6 +24,7 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { ENV, RAW_ENV } from './env';
+import { componentLogger } from './logger';
 import type { LiveSession } from './types';
 import type { ResultFailure, ResultSuccess } from '../types/result';
 import { asTmuxSessionName, type JobName, type PiSessionId, type TmuxSessionName } from '../types/branded';
@@ -36,8 +37,9 @@ export const SOCKET = ENV.WEB_PI_TMUX_SOCKET;
 // guarantees whichever call boots the server (first new-session) uses it.
 // Exported for the /settings dashboard (resolved path, shown only).
 export const CONF = ENV.WEB_PI_TMUX_CONF;
+const log = componentLogger('tmux');
 if (RAW_ENV.WEB_PI_TMUX_CONF && !fs.existsSync(CONF)) {
-  console.warn(`WEB_PI_TMUX_CONF=${CONF} does not exist — using tmux defaults`);
+  log.warn(`WEB_PI_TMUX_CONF=${CONF} does not exist — using tmux defaults`);
 }
 
 /** Session name a resumed pi session runs under: 'r-' + the FULL session id.
@@ -213,6 +215,7 @@ export async function newSession(name: TmuxSessionName, cwd: string, command: st
   const { error } = await tmux(SOCKET,
     ['new-session', '-d', '-s', name, '-c', cwd, ...envArgs(env), '--', ...command], env);
   if (error) return tmuxFailure(name, 'new-session', error);
+  log.info(`tmux session ${name} started`, { command: command.join(' ') });
   return { ok: true, resultType: 'tmux_session', data: { name } } satisfies TmuxSessionSuccess;
 }
 
@@ -227,6 +230,7 @@ export async function resumeSession(name: TmuxSessionName, cwd: string, command:
   const { error } = await tmux(SOCKET,
     ['new-session', '-d', '-s', name, '-c', cwd, ...envArgs(env), '--', ...command, '--session', sessionId], env);
   if (error) return tmuxFailure(name, 'new-session', error);
+  log.info(`tmux session ${name} started (resume of pi session ${sessionId})`);
   return ok;
 }
 

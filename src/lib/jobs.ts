@@ -18,6 +18,7 @@
 // shell. argv-array spawns only.
 import { CronExpressionParser } from 'cron-parser';
 import { databaseRead, databaseUpdate, qb, type JobRunOrigin, type StateDb } from './db';
+import { componentLogger } from './logger';
 import type { CalendarCheck, JobsState, ScheduledJob } from './types';
 import { hasSession, jobSessionName, liveSessionNames, newSession } from './tmux';
 import type { ResultFailure, ResultSuccess } from '../types/result';
@@ -141,6 +142,8 @@ const CATCHUP_LATENESS_MS = 2 * TICK_MS;
 
 export interface JobContext { cwd: string; env: Record<string, string> }
 
+const log = componentLogger('scheduler');
+
 interface JobRow { name: JobName; schedule: string; command: string; created_at: number }
 
 /** The in-process scheduler: owns the jobs tables in the state db, fires
@@ -206,7 +209,7 @@ export class Scheduler {
     if (this.ticking) return; // a slow tmux call must not stack ticks
     this.ticking = true;
     // A db failure ends the tick — the next one retries.
-    const failed = (errorMessage: string): void => console.error(`scheduler tick failed: ${errorMessage}`);
+    const failed = (errorMessage: string): void => { log.error(`scheduler tick failed: ${errorMessage}`); };
     try {
       const rows = this.rows();
       if (!rows.ok) { failed(rows.errorMessage); return; }
@@ -223,7 +226,7 @@ export class Scheduler {
         if (!next.ok) {
           if (!this.warned.has(row.name)) {
             this.warned.add(row.name);
-            console.warn(`job ${row.name}: stored schedule "${row.schedule}" does not parse — skipped until re-saved`);
+            log.warn(`job ${row.name}: stored schedule "${row.schedule}" does not parse — skipped until re-saved`);
           }
           continue;
         }
@@ -247,7 +250,7 @@ export class Scheduler {
       // Crash guard only (db and tmux failures come back as results): a
       // tick must never take the server (and, in the container, every
       // tmux session with it) down via an unhandled rejection.
-      console.error('scheduler tick failed:', (err as Error)?.message ?? err);
+      log.error(`scheduler tick failed: ${(err as Error)?.message ?? err}`);
     } finally {
       this.ticking = false;
     }
@@ -261,8 +264,9 @@ export class Scheduler {
     const recorded = this.recordRun(row.name, origin);
     if (!recorded.ok) return recorded;
     const session = jobSessionName(row.name);
+    log.info(`job ${row.name} fired (${origin}) — opening run session ${session}`);
     const opened = await newSession(session, this.ctx.cwd, ['/bin/sh', '-c', row.command], this.ctx.env);
-    if (!opened.ok) console.error(`job ${row.name}: could not open run session ${session} (${opened.errorMessage})`);
+    if (!opened.ok) log.error(`job ${row.name}: could not open run session ${session} (${opened.errorMessage})`);
     return opened;
   }
 

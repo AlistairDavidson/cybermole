@@ -14,8 +14,11 @@
 // installed means no update, and auto-update never downgrades into range.
 import { execFile } from 'node:child_process';
 import { databaseRead, databaseUpdate, type StateDb } from './db';
+import { componentLogger } from './logger';
 import type { AutoUpdateCheck, AutoUpdateResult } from './types';
 import { PI_PACKAGE, npmPath, piDeclared, piInstalled, runPiUpdate } from './settings';
+
+const log = componentLogger('update');
 
 // settings kv keys (db.ts settings table)
 const KEY_ENABLED = 'piAutoUpdate.enabled';
@@ -137,7 +140,7 @@ function readJsonSetting<T>(db: StateDb, key: string) {
 function writeJsonSetting(db: StateDb, key: string, value: unknown): void {
   const saved = databaseUpdate(`pi auto-update: could not persist ${key}`, () =>
     db.setSetting(key, JSON.stringify(value)));
-  if (!saved.ok) console.error(saved.errorMessage);
+  if (!saved.ok) log.error(saved.errorMessage ?? key);
 }
 
 /** Read the persisted toggle (database_read: value true/false). Default
@@ -212,7 +215,7 @@ export async function performAutoUpdateCheck(deps: CheckDeps): Promise<void> {
   // replaces exactly this runPiUpdate call — e.g. forward the spec to the
   // workspace container and relay its PiUpdateResult back. Not implemented:
   // single-process today; see also the sibling note in settings.ts.
-  console.log(`pi auto-update: ${latest} is newer than ${installed ?? 'nothing'} — installing within ${declared}`);
+  log.info(`pi auto-update: ${latest} is newer than ${installed ?? 'nothing'} — installing within ${declared}`);
   const r = await runPiUpdate(appRoot, false, spec);
   writeJsonSetting(db, KEY_LAST_UPDATE, {
     at: Date.now(),
@@ -301,7 +304,7 @@ export class AutoUpdater {
       if (!enabled.ok) {
         // Unreadable setting: neither ON nor OFF is known, and npm never
         // runs on a guess — look again after another delay.
-        console.error(`pi auto-update: ${enabled.errorMessage} — retrying`);
+        log.error(`pi auto-update: ${enabled.errorMessage} — retrying`);
         this.armProbe();
         return;
       }
@@ -318,7 +321,7 @@ export class AutoUpdater {
     if (this.checking) return;
     this.checking = true;
     try { await this.check(); }
-    catch (err) { console.error('pi auto-update check failed:', (err as Error)?.message ?? err); }
+    catch (err) { log.error(`pi auto-update check failed: ${(err as Error)?.message ?? err}`); }
     finally { this.checking = false; }
   }
 }

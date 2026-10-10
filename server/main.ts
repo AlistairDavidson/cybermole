@@ -18,6 +18,7 @@ import { HiddenSessions } from '../src/lib/hidden-sessions';
 import { StateDb } from '../src/lib/db';
 import * as tmux from '../src/lib/tmux';
 import { ENV, RAW_ENV, APP_ROOT, PI_BIN, PI_AGENT_DIR, PI_SESSION_DIR, readObjectStoreConfig } from '../src/lib/env';
+import { componentLogger, closeLogger } from '../src/lib/logger';
 import * as jobs from '../src/lib/jobs';
 import { AutoUpdater } from '../src/lib/auto-update';
 import { createServices, type ServerConfig, type WebPiLocals } from '../src/lib/services';
@@ -28,6 +29,16 @@ import { parseClientMsg } from '../src/schemas/frames';
 import { PiSessionIdSchema, TmuxSessionNameSchema } from '../src/schemas/ids';
 import { UPLOAD_MAX_BODY_BYTES } from '../src/schemas/uploads';
 import type { SessionToken, TmuxSessionName } from '../src/types/branded';
+
+// Operational logging (src/lib/logger.ts): console always; a winston-loki
+// push transport when WEB_PI_LOKI_URL is set. Component children give every
+// line its [component] console prefix / loki label. set-password.ts keeps
+// plain console.* — CLI output for a human at a terminal, no server.
+const bootLog = componentLogger('boot');
+const httpLog = componentLogger('http');
+const authLog = componentLogger('auth');
+const wsLog = componentLogger('ws');
+const shutdownLog = componentLogger('shutdown');
 
 // URL base path ('/' or '/foo', no trailing slash). Must match the base
 // the pages were built with (astro.config.mjs reads the same env at build).
@@ -49,7 +60,7 @@ const home = ENV.WEB_PI_HOME;
 // it would overwrite their config.
 const agentDir = ENV.WEB_PI_AGENT_DIR;
 if (PI_AGENT_DIR && !RAW_ENV.WEB_PI_AGENT_DIR) {
-  console.error(`PI_CODING_AGENT_DIR is set (${PI_AGENT_DIR}) — ignoring it; ` +
+  bootLog.warn(`PI_CODING_AGENT_DIR is set (${PI_AGENT_DIR}) — ignoring it; ` +
     `web-pi uses its own runtime agent dir (${agentDir}). Set WEB_PI_AGENT_DIR to move it.`);
 }
 const agentTemplate = path.join(APP_ROOT, 'pi');
@@ -92,7 +103,7 @@ function seedAgentDir(): void {
       fs.cpSync(src, dst);
     }
   } catch (err) {
-    console.warn(`could not seed pi agent dir (${CFG.agentDir}):`, (err as Error).message);
+    bootLog.warn(`could not seed pi agent dir (${CFG.agentDir}): ${(err as Error).message}`);
   }
 }
 // Privilege split (DESIGN_REVIEW §1.1): with an absolute-path
@@ -103,7 +114,7 @@ function seedAgentDir(): void {
 // 0644 files pi can't write next to its config. Single-user shapes
 // (relative socket name) keep seeding here.
 if (tmux.forksServer(tmux.SOCKET)) seedAgentDir();
-else console.log(`privilege split: tmux socket ${tmux.SOCKET} is an absolute path — ` +
+else bootLog.info(`privilege split: tmux socket ${tmux.SOCKET} is an absolute path — ` +
   `pi agent dir seeding and tmux server ownership live on the workspace side`);
 
 // Environment for processes spawned inside tmux sessions (pi). Delivered
@@ -143,7 +154,7 @@ autoUpdater.start();
 // Object storage (src/lib/storage.ts): any S3-compatible server, or none —
 // uploads then answer 503. Nothing connects until the first upload.
 const objectStore = new ObjectStore(readObjectStoreConfig());
-console.log(objectStore.describe() === null
+bootLog.info(objectStore.describe() === null
   ? 'object storage: not configured (WEB_PI_S3_ENDPOINT unset) — uploads answer 503'
   : `object storage: ${objectStore.describe()}`);
 // Everything stateful the Astro side (API routes, pages) may use, built
@@ -318,9 +329,8 @@ type AstroHandler = (req: http.IncomingMessage, res: http.ServerResponse,
 const astroReady: Promise<AstroHandler> =
   import(pathToFileURL(CFG.astroEntry).href)
     .then((m: { handler: AstroHandler }) => m.handler);
-astroReady.catch(err => console.error(
-  `astro SSR entry failed to load (${CFG.astroEntry}) — did 'npm run build' run?):`,
-  (err as Error)?.message ?? err));
+astroReady.catch(err => bootLog.error(
+  `astro SSR entry failed to load (${CFG.astroEntry}) — did 'npm run build' run?): ${(err as Error)?.message ?? err}`));
 
 /** Render through Astro. `locals` (the services + the request's session
  *  token) only on the authenticated path — src/middleware.ts fails closed
@@ -328,7 +338,7 @@ astroReady.catch(err => console.error(
 function renderAstro(req: http.IncomingMessage, res: http.ServerResponse, locals?: WebPiLocals): void {
   astroReady
     .then(handler => handler(req, res, () => send(res, 404, 'not found'), locals))
-    .catch(err => { console.error('astro handler error', err); send(res, 500, 'render failed'); });
+    .catch(err => { httpLog.error('astro handler error', { error: err }); send(res, 500, 'render failed'); });
 }
 
 // ---------- security headers (DESIGN_REVIEW §1.2) ----------
@@ -373,14 +383,36 @@ function hardenResponse(res: http.ServerResponse): void {
 }
 
 // ---------- HTTP ----------
+// One access-log line per request at the node-server level: method, path,
+// status, duration — emitted on 'finish', so a request is logged once,
+// after the response is out. WS upgrades bypass this (no response); the
+// ws connect/attach/close lines below cover them. The 15 s /api/state
+// poll every open tab runs, plus hashed-asset/PWA hits, log at debug —
+// silent on the console transport (level http) but pushed to loki, where
+// volume is cheap; everything else is an `http`-level line.
+const quietAccessPath = (p: string): boolean =>
+  p === route('/api/state') || p.startsWith(route('/_astro/')) || p === route('/sw.js')
+  || p === route('/manifest.webmanifest') || p.startsWith(route('/icons/'));
+
+function logAccess(req: http.IncomingMessage, res: http.ServerResponse): void {
+  const start = Date.now();
+  res.on('finish', () => {
+    const p = (req.url ?? '').split('?')[0] ?? '';
+    const line = `${req.method} ${p} ${res.statusCode} in ${Date.now() - start}ms`;
+    if (quietAccessPath(p)) httpLog.debug(line);
+    else httpLog.http(line);
+  });
+}
+
 // Last-resort guard: a synchronous throw in a route must cost one 500, not
 // the process (and, in the container, every tmux session with it). Inputs
 // are validated in the routes; this only catches what slips through.
 const server = http.createServer((req, res) => {
   hardenResponse(res);
+  logAccess(req, res);
   try { handle(req, res); }
   catch (err) {
-    console.error('request handler error', err);
+    httpLog.error('request handler error', { error: err });
     if (!res.headersSent) send(res, 500, 'internal error'); else res.destroy();
   }
 });
@@ -397,16 +429,23 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
   }
 
   if (req.method === 'POST' && url === route('/login')) {
-    if (!loginLimiter.allow(ipOf(req))) { send(res, 429, 'too many attempts'); return; }
+    const ip = ipOf(req);
+    if (!loginLimiter.allow(ip)) {
+      authLog.warn('login rate-limited (10 per 15 min per IP)', { ip });
+      send(res, 429, 'too many attempts');
+      return;
+    }
     readBody(req, (err, body) => {
       if (err) { send(res, 400, 'bad request'); return; }
       const parsed = loginBody.safeParse(body);
       if (!parsed.success) {
+        authLog.info('login failed: invalid credentials (malformed body)', { ip });
         send(res, 401, 'invalid credentials'); // nginx logs it; fail2ban watches
         return;
       }
       const { username, password } = parsed.data;
       if (loginVerifying >= MAX_LOGIN_VERIFY) {
+        authLog.warn('login deferred: scrypt queue full (503)', { ip });
         send(res, 503, 'busy, try again', { 'Retry-After': '1' });
         return;
       }
@@ -415,21 +454,32 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
         .then(verified => {
           if (!verified.ok) {
             switch (verified.errorCode) {
-              case 'invalid_credentials': send(res, 401, 'invalid credentials'); return;
+              case 'invalid_credentials':
+                authLog.info('login failed: invalid credentials', { username, ip });
+                send(res, 401, 'invalid credentials');
+                return;
               // Not a 401: fail2ban counts those, and a db hiccup is no
               // failed login. The login page reads 503 as "try again".
               case 'database_error':
-                console.error(verified.errorMessage);
+                authLog.error(`login verify db error: ${verified.errorMessage}`);
                 send(res, 503, 'busy, try again', { 'Retry-After': '1' });
                 return;
               default: verified satisfies never; return;
             }
           }
           const session = auth.newSession();
-          if (!session.ok) { console.error(session.errorMessage); send(res, 500, 'internal error'); return; }
+          if (!session.ok) {
+            authLog.error(`could not persist login session: ${session.errorMessage}`);
+            send(res, 500, 'internal error');
+            return;
+          }
+          authLog.info('login ok', { username, ip });
           send(res, 200, 'ok', { 'Set-Cookie': auth.cookieHeader(session.data.token, CFG.base) });
         })
-        .catch(e => { console.error('login verify failed', e); send(res, 500, 'internal error'); })
+        .catch(e => {
+          authLog.error('login verify failed', { error: e });
+          send(res, 500, 'internal error');
+        })
         .finally(() => { loginVerifying--; });
     });
     return;
@@ -444,10 +494,11 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     // A failed delete means the token is still valid server-side: say so
     // (the browser's cookie is cleared either way).
     if (!dropped.ok) {
-      console.error(dropped.errorMessage);
+      authLog.error(`logout failed: ${dropped.errorMessage}`);
       send(res, 500, 'could not end the session', { 'Set-Cookie': clearSessionCookie() });
       return;
     }
+    authLog.info('logout');
     send(res, 200, 'ok', { 'Set-Cookie': clearSessionCookie() });
     return;
   }
@@ -483,7 +534,7 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
       // session ended — no login page, no 401 (the console would bounce
       // to /login and a terminal would read it as signed out).
       case 'database_error':
-        console.error(session.errorMessage);
+        authLog.error(`session store unavailable: ${session.errorMessage}`);
         send(res, 503, 'session store unavailable, try again', { 'Retry-After': '5' });
         return;
       default: session satisfies never;
@@ -511,10 +562,11 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     const dropped = auth.dropAll();
     closeAllSockets({ type: 'signed-out' });
     if (!dropped.ok) {
-      console.error(dropped.errorMessage);
+      authLog.error(`log out everywhere failed: ${dropped.errorMessage}`);
       send(res, 500, 'could not end the sessions', { 'Set-Cookie': clearSessionCookie() });
       return;
     }
+    authLog.info('log out everywhere — every session revoked');
     send(res, 200, 'ok', { 'Set-Cookie': clearSessionCookie() });
     return;
   }
@@ -595,21 +647,36 @@ server.on('upgrade', (req, socket, head) => {
   const url = (req.url ?? '').split('?')[0]!;
   if (url !== route('/ws')) { socket.destroy(); return; }
   if (shuttingDown) { socket.destroy(); return; } // stopping: no new terminals
-  if (!wsLimiter.allow(ipOf(req))) { socket.destroy(); return; }
+  const ip = ipOf(req);
+  if (!wsLimiter.allow(ip)) {
+    wsLog.warn('ws upgrade rate-limited (30 per min per IP)', { ip });
+    socket.destroy();
+    return;
+  }
   // The terminal is browser-only: an upgrade must carry a matching Origin
   // (no curl/websocat clients, no cross-site WebSocket hijacking from a
   // sibling subdomain). Unlike plain HTTP there is no Origin-free path —
   // a missing header is destroyed, not waved through.
   const origin = req.headers.origin;
-  if (!origin || !originOk(req)) { socket.destroy(); return; }
+  if (!origin || !originOk(req)) {
+    wsLog.warn('ws upgrade rejected: missing or mismatched Origin', { ip });
+    socket.destroy();
+    return;
+  }
   const token = Auth.sessionToken(req.headers.cookie);
   const session = auth.valid(token);
   if (!session.ok) {
     let status: string;
     switch (session.errorCode) {
-      case 'no_session': status = '401 Unauthorized'; break;
+      case 'no_session':
+        wsLog.info('ws upgrade rejected: no valid session', { ip });
+        status = '401 Unauthorized';
+        break;
       // Fail closed without calling it signed out (same as HTTP's 503).
-      case 'database_error': console.error(session.errorMessage); status = '503 Service Unavailable'; break;
+      case 'database_error':
+        authLog.error(`session store unavailable: ${session.errorMessage}`);
+        status = '503 Service Unavailable';
+        break;
       default: return session satisfies never;
     }
     socket.write(`HTTP/1.1 ${status}\r\n${securityHeaderBlock()}\r\n`);
@@ -636,6 +703,7 @@ function wsSend(ws: WebSocket, msg: ServerMsg): void {
 const PING_INTERVAL_MS = 30_000;
 
 function attach(ws: WebSocket, token: SessionToken): void {
+  wsLog.debug('ws connected');
   trackSocket(token, ws);
   let p: Pty | null = null;
   // Attach in flight: the spawn is one async step deeper than it used to
@@ -723,7 +791,7 @@ function attach(ws: WebSocket, token: SessionToken): void {
   ws.on('message', raw => {
     const msg = parseClientMsg(Buffer.from(raw as Buffer).toString('utf8'));
     if (!msg) return; // malformed frames are dropped, never thrown on
-    onMessage(msg).catch(err => console.error('ws message handler error', err));
+    onMessage(msg).catch(err => wsLog.error('ws message handler error', { error: err }));
   });
 
   let alive = true;
@@ -744,7 +812,7 @@ function attach(ws: WebSocket, token: SessionToken): void {
         // Unreadable session store: can't tell, so don't sign the terminal
         // out over a db hiccup — its token was alive at the last sweep;
         // re-check next tick (the peer-liveness ping below still runs).
-        case 'database_error': console.error(live.errorMessage); break;
+        case 'database_error': authLog.error(`session store unavailable: ${live.errorMessage}`); break;
         default: live satisfies never;
       }
     }
@@ -761,12 +829,12 @@ function attach(ws: WebSocket, token: SessionToken): void {
 }
 
 server.listen(CFG.port, CFG.host, () => {
-  console.log(`web-pi listening on ${CFG.host}:${CFG.port} base ${CFG.base} ` +
+  bootLog.info(`web-pi listening on ${CFG.host}:${CFG.port} base ${CFG.base} ` +
     `(tmux socket ${tmux.SOCKET}, command "${CFG.command.join(' ')}", client ${CFG.clientDir}, sessions ${CFG.sessionsDir})`);
   // Best-effort vendored-pi version at boot — makes dependency drift visible.
   if (CFG.command[0] === PI_BIN) {
     execFile(PI_BIN, ['--version'], { timeout: 5000 }, (err, out) =>
-      console.log(err ? `pi: version check failed (${(err as Error).message})` : `pi ${String(out).trim()}`));
+      bootLog.info(err ? `pi: version check failed (${(err as Error).message})` : `pi ${String(out).trim()}`));
   }
 });
 
@@ -797,20 +865,24 @@ const shutdownSteps: Array<() => void | Promise<void>> = [
     const sweep = setInterval(() => server.closeIdleConnections(), 250);
     return whenClosed.finally(() => clearInterval(sweep));
   },
+  // 3. flush the logger: loki's last batch goes out (capped in closeLogger
+  // itself — the deadline backstop in shutdown() stays authoritative); the
+  // console transport needs no flush.
+  () => closeLogger(),
 ];
 
 function shutdown(signal: string): void {
   if (shuttingDown) process.exit(0); // a second signal skips the drain
   shuttingDown = true;
-  console.log(`${signal} received — shutting down`);
+  shutdownLog.info(`${signal} received — shutting down`);
   // A stuck socket must not hold the stop past the deadline.
   const deadline = setTimeout(() => {
-    console.error(`shutdown: drain unfinished after ${SHUTDOWN_DEADLINE_MS}ms — exiting`);
+    shutdownLog.error(`shutdown: drain unfinished after ${SHUTDOWN_DEADLINE_MS}ms — exiting`);
     process.exit(0);
   }, SHUTDOWN_DEADLINE_MS);
   (async () => {
     for (const step of shutdownSteps) {
-      try { await step(); } catch (err) { console.error('shutdown step failed:', err); }
+      try { await step(); } catch (err) { shutdownLog.error('shutdown step failed', { error: err }); }
     }
     clearTimeout(deadline);
     process.exit(0);

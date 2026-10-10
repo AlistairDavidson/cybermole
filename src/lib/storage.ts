@@ -13,8 +13,11 @@
 // (src/lib/services.ts) — Astro code never imports this module at runtime.
 import { randomUUID } from 'node:crypto';
 import { CreateBucketCommand, PutObjectCommand, S3Client, S3ServiceException } from '@aws-sdk/client-s3';
+import { componentLogger } from './logger';
 import { asObjectKey, type ObjectKey } from '../types/branded';
 import type { ResultFailure, ResultSuccess } from '../types/result';
+
+const log = componentLogger('storage');
 
 /** readObjectStoreConfig() (src/lib/env.ts) — the WEB_PI_S3_* variables. */
 export interface ObjectStoreConfig {
@@ -109,22 +112,28 @@ export class ObjectStore {
     try {
       await put();
     } catch (err) {
-      if (!isS3Error(err, 'NoSuchBucket')) return fail('storage_error', `could not store ${key}: ${describe(err)}`);
+      if (!isS3Error(err, 'NoSuchBucket')) {
+        log.warn(`upload of ${key} (${upload.name}, ${upload.body.byteLength} bytes) failed: ${describe(err)}`);
+        return fail('storage_error', `could not store ${key}: ${describe(err)}`);
+      }
       try {
         await client.send(new CreateBucketCommand({ Bucket: config.bucket }));
       } catch (createErr) {
         // Another request created it first — that's the goal either way.
         if (!isS3Error(createErr, 'BucketAlreadyOwnedByYou')) {
+          log.warn(`could not create bucket ${config.bucket}: ${describe(createErr)}`);
           return fail('storage_error', `could not create bucket ${config.bucket}: ${describe(createErr)}`);
         }
       }
       try {
         await put();
       } catch (retryErr) {
+        log.warn(`upload of ${key} (${upload.name}) failed after bucket creation: ${describe(retryErr)}`);
         return fail('storage_error', `could not store ${key}: ${describe(retryErr)}`);
       }
     }
 
+    log.info(`stored upload ${key} (${upload.name}, ${upload.body.byteLength} bytes)`);
     return {
       ok: true, resultType: 'store_upload',
       data: { key, name: upload.name, size: upload.body.byteLength, contentType: upload.contentType },
