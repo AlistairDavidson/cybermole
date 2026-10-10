@@ -303,11 +303,20 @@ equivalence above is the argument that this is acceptable to defer).
 Everything below is UNVERIFIED in the sandbox except where marked:
 statically verified there — compose.yaml parses (yaml lib), the
 Dockerfile is linted by eye against the pinned releases' docs/debs (the
-KasmVNC 1.5.0 deb's binary names `kasmvncserver`/`kasmvncpasswd` and its
-dependency list were read directly from the .deb), TS/Astro type-checks
-(`npm run check`), unit tests cover every `ZedOpenResult` error code
-against a stub launcher, and the e2e suite covers the unconfigured
-behavior (no buttons, `/api/state` `zed: null`, `/api/zed/open` → 503).
+KasmVNC 1.5.0 deb's binary names `kasmvncserver`/`kasmvncpasswd`, its
+dependency list and shipped files were read directly from the .deb;
+Zed v1.23.2's asset names from the release API), `npm run check` green,
+`npm run build` green, the full unit suite green (121/121 — incl. 6 new
+Zed tests covering every `ZedOpenResult` code against a stub launcher),
+and the e2e specs that don't render the app's wa-* pages green
+(`split.spec` — which exercises the changed `listSessions` against a
+real tmux server — `state-dir`, `restart`, `sessions-cache`). The rest
+of the e2e suite could NOT run in the sandbox: its chromium (vendored
+via LD_LIBRARY_PATH; no root for `playwright install-deps`) crashes the
+renderer on any page carrying Web Awesome's declarative-shadow-DOM
+templates — reproduced with plain `file://` HTML on the untouched
+login page, so environmental, not this branch. The new unconfigured-
+state e2e test lives in `tests/e2e.spec.ts` and must run on the host.
 
 1. **Build + boot**
    ```sh
