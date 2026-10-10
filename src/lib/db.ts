@@ -18,13 +18,23 @@
 //   the e2e webServer boots before global-setup resets its workspace, so
 //   an eager open would latch (and orphan) a db the reset then deletes.
 //
+// - Queries are typed with Kysely, used as a query BUILDER only: `qb`
+//   compiles against the StateSchema interfaces below and StateDb runs the
+//   SQL on its own synchronous connection (all/get/run). Kysely's own
+//   execute() is async — it would make every caller async for nothing.
+//
 // NB: node:sqlite still prints a one-line ExperimentalWarning when it
 // first loads (server boot, set-password, e2e output). Expected — see
 // AGENTS.md.
-import { DatabaseSync, type StatementSync } from 'node:sqlite';
+import { DatabaseSync, type SQLInputValue, type StatementSync } from 'node:sqlite';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import {
+  DummyDriver, Kysely, SqliteAdapter, SqliteIntrospector, SqliteQueryCompiler,
+  type Compilable, type DatabaseConnection,
+} from 'kysely';
 import type { ResultFailure, ResultSuccess } from '../types/result';
+import type { JobName, PiSessionId } from '../types/branded';
 
 /** The shared "generic update" result: a write that only reports how many
  *  rows it touched (setters, deletes, flag flips). */
@@ -126,6 +136,74 @@ const SCHEMA = `
   );
 `;
 
+// ---------- the schema, as Kysely sees it (keep in step with SCHEMA) ----------
+// Branded columns: the state db is a trusted source (src/types/branded.ts)
+// — ids are validated before they're written, so rows read back branded.
+
+/** How a job run was fired (job_runs.origin). */
+export type JobRunOrigin = 'schedule' | 'catchup' | 'manual';
+
+export interface CredentialTable {
+  id: 1;
+  username: string;
+  salt: string;
+  hash: string;
+  updated_at: number;
+}
+export interface SessionsTable {
+  session_id: PiSessionId;
+  hidden_at: number | null;
+}
+export interface JobsTable {
+  name: JobName;
+  schedule: string;
+  command: string;
+  created_at: number;
+}
+export interface JobRunsTable {
+  job: JobName;
+  fired_at: number;
+  origin: JobRunOrigin;
+}
+export interface SettingsTable {
+  key: string;
+  value: string;
+}
+export interface AuthSessionsTable {
+  token_hash: string;
+  created_at: number;
+  expires_at: number;
+  cookie_at: number;
+}
+export interface StateSchema {
+  credential: CredentialTable;
+  sessions: SessionsTable;
+  jobs: JobsTable;
+  job_runs: JobRunsTable;
+  settings: SettingsTable;
+  auth_sessions: AuthSessionsTable;
+}
+
+/** Kysely's DummyDriver answers every execute() with zero rows — a query
+ *  run through `qb` by mistake would silently read as "nothing there".
+ *  This one throws instead: queries only run via StateDb.all/get/run. */
+class CompileOnlyDriver extends DummyDriver {
+  override async acquireConnection(): Promise<DatabaseConnection> {
+    throw new Error('qb only compiles queries — run them with StateDb.all/get/run');
+  }
+}
+
+/** The typed query builder for the state db (compile-only; see the
+ *  module comment). Stateless — safe to share across StateDb instances. */
+export const qb = new Kysely<StateSchema>({
+  dialect: {
+    createAdapter: () => new SqliteAdapter(),
+    createDriver: () => new CompileOnlyDriver(),
+    createIntrospector: db => new SqliteIntrospector(db),
+    createQueryCompiler: () => new SqliteQueryCompiler(),
+  },
+});
+
 /** web-pi's state database: a lazily-opened node:sqlite connection (see
  *  module comment) plus cached prepared statements. */
 export class StateDb {
@@ -163,25 +241,50 @@ export class StateDb {
     }
   }
 
-  /** Prepared statement, compiled once per connection. Opens the db if needed. */
-  stmt(sql: string): StatementSync {
+  /** Prepared statement, compiled once per connection (keyed by SQL text:
+   *  a Kysely query compiles to the same text every call, values bound as
+   *  parameters). Opens the db if needed. */
+  private stmt<R>(query: Compilable<R>): { stmt: StatementSync; params: SQLInputValue[] } {
+    const { sql, parameters } = query.compile();
     let s = this.stmts.get(sql);
     if (!s) { s = this.db().prepare(sql); this.stmts.set(sql, s); }
-    return s;
+    // Kysely only passes on the values our schema types allow (strings,
+    // numbers, null) — all bindable as-is.
+    return { stmt: s, params: parameters as SQLInputValue[] };
+  }
+
+  // The typed execution half of `qb`. These throw on a sqlite error, like
+  // node:sqlite itself: callers wrap them in databaseRead()/databaseUpdate()
+  // — the boundary (docs/CODE_STYLE.md §2).
+
+  /** Every row a select returns, typed by the query. */
+  all<R>(query: Compilable<R>): R[] {
+    const { stmt, params } = this.stmt(query);
+    return stmt.all(...params) as R[];
+  }
+
+  /** The first row a select returns (undefined when there is none). */
+  get<R>(query: Compilable<R>): R | undefined {
+    const { stmt, params } = this.stmt(query);
+    return stmt.get(...params) as R | undefined;
+  }
+
+  /** Run a write (insert/update/delete); reports the rows it touched. */
+  run(query: Compilable<unknown>): { changes: number | bigint } {
+    const { stmt, params } = this.stmt(query);
+    return stmt.run(...params);
   }
 
   /** Read one app-settings value (settings kv table); null when unset. */
   getSetting(key: string): string | null {
-    const row = this.stmt('SELECT value FROM settings WHERE key = ?').get(key) as
-      { value: string } | undefined;
-    return row?.value ?? null;
+    return this.get(qb.selectFrom('settings').select('value').where('key', '=', key))?.value ?? null;
   }
 
   /** Write one app-settings value. Throws on db failure — callers wrap it
    *  in databaseUpdate() so failure reaches the user as a Result (the API
    *  500s instead of lying). */
   setSetting(key: string, value: string): { changes: number | bigint } {
-    return this.stmt('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value')
-      .run(key, value);
+    return this.run(qb.insertInto('settings').values({ key, value })
+      .onConflict(oc => oc.column('key').doUpdateSet(eb => ({ value: eb.ref('excluded.value') }))));
   }
 }

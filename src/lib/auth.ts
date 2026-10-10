@@ -10,7 +10,7 @@
 // closed on any db read error. Changing the password (setCredential)
 // revokes every session.
 import * as crypto from 'node:crypto';
-import { databaseRead, databaseUpdate, type DatabaseReadSuccess, type StateDb } from './db';
+import { databaseRead, databaseUpdate, qb, type DatabaseReadSuccess, type StateDb } from './db';
 import type { ResultFailure, ResultSuccess } from '../types/result';
 import { asSessionToken, type SessionToken } from '../types/branded';
 
@@ -106,8 +106,9 @@ export class Auth {
    *  fail closed without calling it a wrong password. */
   private readCred() {
     return databaseRead('could not read the credential', (): Cred | null => {
-      const row = this.state.stmt('SELECT username, salt, hash FROM credential WHERE id = 1')
-        .get() as Partial<Cred> | undefined;
+      const row = this.state.get(qb.selectFrom('credential').select(['username', 'salt', 'hash']).where('id', '=', 1));
+      // The columns are TEXT NOT NULL, but sqlite will still keep a blob
+      // in one (a hand-edited db): that reads as malformed, i.e. unset.
       if (!row || typeof row.username !== 'string' || typeof row.salt !== 'string'
         || typeof row.hash !== 'string') return null;
       return { username: row.username, salt: row.salt, hash: row.hash };
@@ -149,11 +150,14 @@ export class Auth {
     const token = asSessionToken(crypto.randomBytes(32).toString('hex'));
     const now = Date.now();
     const saved = databaseUpdate('could not start a session', () => {
-      this.state.stmt('DELETE FROM auth_sessions WHERE expires_at < ? OR created_at + ? <= ?')
-        .run(now, this.absoluteMs, now);
-      return this.state.stmt(`INSERT INTO auth_sessions (token_hash, created_at, expires_at, cookie_at)
-                              VALUES (?, ?, ?, ?)`)
-        .run(tokenHash(token), now, now + this.idleMs, now);
+      // dead() in SQL: idle-expired, or created_at + absoluteMs <= now.
+      this.state.run(qb.deleteFrom('auth_sessions').where(eb => eb.or([
+        eb('expires_at', '<', now),
+        eb('created_at', '<=', now - this.absoluteMs),
+      ])));
+      return this.state.run(qb.insertInto('auth_sessions').values({
+        token_hash: tokenHash(token), created_at: now, expires_at: now + this.idleMs, cookie_at: now,
+      }));
     });
     if (!saved.ok) {
       return {
@@ -168,8 +172,8 @@ export class Auth {
    *  sign people out over a db hiccup. */
   private row(token: SessionToken) {
     return databaseRead('could not read the session', () =>
-      (this.state.stmt('SELECT created_at, expires_at, cookie_at FROM auth_sessions WHERE token_hash = ?')
-        .get(tokenHash(token)) as SessionRow | undefined) ?? null);
+      this.state.get(qb.selectFrom('auth_sessions').select(['created_at', 'expires_at', 'cookie_at'])
+        .where('token_hash', '=', tokenHash(token))) ?? null);
   }
 
   /** Expired on either clock — idle, or past the absolute cap from login. */
@@ -192,7 +196,7 @@ export class Auth {
       // A failed renewal write only means the token keeps its previous
       // expiry (it was valid a moment ago); the next request retries.
       databaseUpdate('could not renew the session', () =>
-        this.state.stmt('UPDATE auth_sessions SET expires_at = ? WHERE token_hash = ?').run(exp, tokenHash(token)));
+        this.state.run(qb.updateTable('auth_sessions').set({ expires_at: exp }).where('token_hash', '=', tokenHash(token))));
     }
     return sessionFound(token);
   }
@@ -201,7 +205,7 @@ export class Auth {
    *  not claim the session ended. */
   drop(token: SessionToken | undefined) {
     return databaseUpdate('could not end the session', () =>
-      token ? this.state.stmt('DELETE FROM auth_sessions WHERE token_hash = ?').run(tokenHash(token)) : { changes: 0 });
+      token ? this.state.run(qb.deleteFrom('auth_sessions').where('token_hash', '=', tokenHash(token))) : { changes: 0 });
   }
 
   /** Validity peek WITHOUT renewal — for liveness sweeps on established
@@ -224,7 +228,7 @@ export class Auth {
    *  the server route, which owns the connection tracking). */
   dropAll() {
     return databaseUpdate('could not end the sessions', () =>
-      this.state.stmt('DELETE FROM auth_sessions').run());
+      this.state.run(qb.deleteFrom('auth_sessions')));
   }
 
   /** Set-Cookie re-arming the browser cookie's Max-Age, or null when not
@@ -255,7 +259,7 @@ export class Auth {
     // Re-arm only once the new cookie_at is recorded; a failed write sends
     // no header now and the next poll retries.
     const recorded = databaseUpdate('could not record the cookie refresh', () =>
-      this.state.stmt('UPDATE auth_sessions SET cookie_at = ? WHERE token_hash = ?').run(now, tokenHash(token)));
+      this.state.run(qb.updateTable('auth_sessions').set({ cookie_at: now }).where('token_hash', '=', tokenHash(token))));
     return recorded.ok ? this.cookieHeader(token, path) : null;
   }
 
@@ -327,13 +331,13 @@ export function setCredential(state: StateDb, username: string, password: string
     const db = state.db();
     db.exec('BEGIN IMMEDIATE');
     try {
-      const written = state.stmt(`INSERT INTO credential (id, username, salt, hash, updated_at)
-                                  VALUES (1, ?, ?, ?, ?)
-                                  ON CONFLICT (id) DO UPDATE SET
-                                    username = excluded.username, salt = excluded.salt,
-                                    hash = excluded.hash, updated_at = excluded.updated_at`)
-        .run(username, salt.toString('hex'), hash.toString('hex'), Date.now());
-      state.stmt('DELETE FROM auth_sessions').run();
+      const written = state.run(qb.insertInto('credential')
+        .values({ id: 1, username, salt: salt.toString('hex'), hash: hash.toString('hex'), updated_at: Date.now() })
+        .onConflict(oc => oc.column('id').doUpdateSet(eb => ({
+          username: eb.ref('excluded.username'), salt: eb.ref('excluded.salt'),
+          hash: eb.ref('excluded.hash'), updated_at: eb.ref('excluded.updated_at'),
+        }))));
+      state.run(qb.deleteFrom('auth_sessions'));
       db.exec('COMMIT');
       return written;
     } catch (err) {

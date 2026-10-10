@@ -17,11 +17,11 @@
 // passed as argv elements to execFile: never through a server-side
 // shell. argv-array spawns only.
 import { CronExpressionParser } from 'cron-parser';
-import { databaseRead, databaseUpdate, type StateDb } from './db';
+import { databaseRead, databaseUpdate, qb, type JobRunOrigin, type StateDb } from './db';
 import type { CalendarCheck, JobsState, ScheduledJob } from './types';
 import { hasSession, jobSessionName, liveSessionNames, newSession } from './tmux';
 import type { ResultFailure, ResultSuccess } from '../types/result';
-import { asJobName, type JobName, type TmuxSessionName } from '../types/branded';
+import type { JobName, TmuxSessionName } from '../types/branded';
 import { MAX_SCHEDULE, type SaveInput } from '../schemas/jobs';
 
 // ---------- results (HTTP statuses are mapped in the HTTP layer) ----------
@@ -174,35 +174,30 @@ export class Scheduler {
   // The db boundary: every sqlite call the scheduler makes goes through
   // these (or saveJob/deleteJob's own catch), so a lock timeout or a
   // deleted state db comes back as a database_error result, never a throw.
-  // Row reads: names come from our own db, validated on write (trusted).
+  // Rows come back typed (and names branded) by the StateSchema in db.ts.
   private rows() {
     return databaseRead('could not read jobs', (): JobRow[] =>
-      (this.db.stmt('SELECT name, schedule, command, created_at FROM jobs ORDER BY name')
-        .all() as unknown as Array<Omit<JobRow, 'name'> & { name: string }>)
-        .map(r => ({ ...r, name: asJobName(r.name) })));
+      this.db.all(qb.selectFrom('jobs').select(['name', 'schedule', 'command', 'created_at']).orderBy('name')));
   }
 
   private row(name: JobName) {
-    return databaseRead('could not read job', (): JobRow | undefined => {
-      const r = this.db.stmt('SELECT name, schedule, command, created_at FROM jobs WHERE name = ?')
-        .get(name) as unknown as (Omit<JobRow, 'name'> & { name: string }) | undefined;
-      return r && { ...r, name: asJobName(r.name) };
-    });
+    return databaseRead('could not read job', (): JobRow | undefined =>
+      this.db.get(qb.selectFrom('jobs').select(['name', 'schedule', 'command', 'created_at']).where('name', '=', name)));
   }
 
   private lastFired(name: JobName) {
+    // MAX over no rows is NULL — say so (Kysely types max() as the column's type).
     return databaseRead('could not read job runs', () =>
-      (this.db.stmt('SELECT MAX(fired_at) AS last FROM job_runs WHERE job = ?')
-        .get(name) as { last: number | null }).last);
+      this.db.get(qb.selectFrom('job_runs').select(eb => eb.fn.max<number | null>('fired_at').as('last'))
+        .where('job', '=', name))?.last ?? null);
   }
 
-  private recordRun(name: JobName, origin: 'schedule' | 'catchup' | 'manual') {
+  private recordRun(name: JobName, origin: JobRunOrigin) {
     return databaseUpdate('could not record the run', () => {
-      const inserted = this.db.stmt('INSERT INTO job_runs (job, fired_at, origin) VALUES (?, ?, ?)')
-        .run(name, Date.now(), origin);
-      this.db.stmt(`DELETE FROM job_runs WHERE job = ? AND fired_at NOT IN
-                    (SELECT fired_at FROM job_runs WHERE job = ? ORDER BY fired_at DESC LIMIT ?)`)
-        .run(name, name, RUN_HISTORY);
+      const inserted = this.db.run(qb.insertInto('job_runs').values({ job: name, fired_at: Date.now(), origin }));
+      this.db.run(qb.deleteFrom('job_runs').where('job', '=', name).where('fired_at', 'not in',
+        qb.selectFrom('job_runs').select('fired_at').where('job', '=', name)
+          .orderBy('fired_at', 'desc').limit(RUN_HISTORY)));
       return inserted;
     });
   }
@@ -262,7 +257,7 @@ export class Scheduler {
    *  recorded FIRST: even a failed spawn must count the fire as spent, or
    *  the next tick would retry it forever — so a fire that cannot be
    *  recorded is not spawned either. */
-  private async fire(row: JobRow, origin: 'schedule' | 'catchup' | 'manual') {
+  private async fire(row: JobRow, origin: JobRunOrigin) {
     const recorded = this.recordRun(row.name, origin);
     if (!recorded.ok) return recorded;
     const session = jobSessionName(row.name);
@@ -314,10 +309,10 @@ export class Scheduler {
     const check = checkCron(schedule);
     if (!check.valid) return fail('invalid_schedule', check.error ?? 'invalid schedule');
     try {
-      this.db.stmt(`INSERT INTO jobs (name, schedule, command, created_at) VALUES (?, ?, ?, ?)
-                    ON CONFLICT (name) DO UPDATE
-                    SET schedule = excluded.schedule, command = excluded.command`)
-        .run(name, schedule, command, Date.now());
+      this.db.run(qb.insertInto('jobs').values({ name, schedule, command, created_at: Date.now() })
+        .onConflict(oc => oc.column('name').doUpdateSet(eb => ({
+          schedule: eb.ref('excluded.schedule'), command: eb.ref('excluded.command'),
+        }))));
     } catch (err) {
       return fail('database_error', `could not save job: ${(err as Error).message}`);
     }
@@ -330,8 +325,8 @@ export class Scheduler {
   async deleteJob(name: JobName) {
     let changed = 0;
     try {
-      changed = Number(this.db.stmt('DELETE FROM jobs WHERE name = ?').run(name).changes);
-      this.db.stmt('DELETE FROM job_runs WHERE job = ?').run(name);
+      changed = Number(this.db.run(qb.deleteFrom('jobs').where('name', '=', name)).changes);
+      this.db.run(qb.deleteFrom('job_runs').where('job', '=', name));
     } catch (err) {
       return {
         ok: false, resultType: 'delete_job', data: { name }, errorCode: 'database_error',

@@ -371,7 +371,7 @@ test('reads: an unreadable db is database_error (never "off" / "never"); a corru
 test('AutoUpdater: an unreadable setting at the probe neither checks nor gives up — it re-probes', async t => {
   t.mock.timers.enable({ now: 0 });
   const db = new StateDb(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-au-')), 'webpi.db'));
-  db.stmt('DROP TABLE settings').run(); // every settings read now fails
+  db.db().prepare('DROP TABLE settings').run(); // every settings read now fails
   let checks = 0;
   const up = new AutoUpdater({
     db, appRoot: '/tmp', firstDelayMs: 1_000, intervalMs: 5_000,
@@ -386,7 +386,7 @@ test('AutoUpdater: an unreadable setting at the probe neither checks nor gives u
   assert.equal(logged.mock.callCount(), 2, 're-probed after another delay');
 
   // The db recovers, with the setting ON: the next probe runs the check.
-  db.stmt('CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)').run();
+  db.db().prepare('CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)').run();
   setAutoUpdateEnabled(db, true);
   t.mock.timers.tick(1_000);
   assert.equal(checks, 1);

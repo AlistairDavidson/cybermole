@@ -50,7 +50,7 @@ can emit, not every code the family allows.
 ## 2. Control flow: catch at the boundary, propagate above it
 
 - **Only the boundary layer catches.** That's the code that actually calls
-  sqlite (`StateDb.stmt`), `execFile`/tmux, npm, or the filesystem. It
+  sqlite (`StateDb.all`/`get`/`run`, typed with Kysely via `qb`), `execFile`/tmux, npm, or the filesystem. It
   turns the exception into a failure result and returns.
 - **Above the boundary**, propagate with `if (!result.ok) return result;`.
   When a parent needs its own family, build a new failure carrying the

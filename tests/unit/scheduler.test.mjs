@@ -107,7 +107,7 @@ test('runJob: database_error when the job cannot be read, or its fire cannot be 
   const db = new StateDb(path.join(fs.mkdtempSync(path.join(dir, 'db-')), 'webpi.db'));
   const s = new Scheduler(db, { cwd: dir, env: {} });
   await s.saveJob(GOOD);
-  db.stmt('DROP TABLE job_runs').run();
+  db.db().prepare('DROP TABLE job_runs').run();
   const unrecorded = await s.runJob('nightly');
   assert.equal(unrecorded.errorCode, 'database_error');
   assert.match(unrecorded.errorMessage, /^could not record the run: /);

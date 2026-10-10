@@ -7,8 +7,8 @@
 // never touched. Reads and writes answer Results (database_read /
 // database_update) so the API can 500 instead of lying. Ids arrive branded
 // (validated at the request boundary by PiSessionIdSchema).
-import { databaseRead, databaseUpdate, type StateDb } from './db';
-import { asPiSessionId, type PiSessionId } from '../types/branded';
+import { databaseRead, databaseUpdate, qb, type StateDb } from './db';
+import type { PiSessionId } from '../types/branded';
 
 const SAVE_FAILED = 'could not save hidden state';
 
@@ -20,22 +20,20 @@ export class HiddenSessions {
    *  from our own db, validated on write (trusted). */
   hiddenIds() {
     return databaseRead('could not read hidden state', () => new Set(
-      (this.state.stmt('SELECT session_id FROM sessions WHERE hidden_at IS NOT NULL')
-        .all() as Array<{ session_id: string }>)
-        .map(r => asPiSessionId(r.session_id))));
+      this.state.all(qb.selectFrom('sessions').select('session_id').where('hidden_at', 'is not', null))
+        .map(r => r.session_id)));
   }
   hide(id: PiSessionId) {
     return databaseUpdate(SAVE_FAILED, () =>
-      this.state.stmt(`INSERT INTO sessions (session_id, hidden_at) VALUES (?, ?)
-                       ON CONFLICT (session_id) DO UPDATE SET hidden_at = excluded.hidden_at`)
-        .run(id, Date.now()));
+      this.state.run(qb.insertInto('sessions').values({ session_id: id, hidden_at: Date.now() })
+        .onConflict(oc => oc.column('session_id').doUpdateSet(eb => ({ hidden_at: eb.ref('excluded.hidden_at') })))));
   }
   unhide(id: PiSessionId) {
     return databaseUpdate(SAVE_FAILED, () =>
-      this.state.stmt('UPDATE sessions SET hidden_at = NULL WHERE session_id = ?').run(id));
+      this.state.run(qb.updateTable('sessions').set({ hidden_at: null }).where('session_id', '=', id)));
   }
   unhideAll() {
     return databaseUpdate(SAVE_FAILED, () =>
-      this.state.stmt('UPDATE sessions SET hidden_at = NULL').run());
+      this.state.run(qb.updateTable('sessions').set({ hidden_at: null })));
   }
 }

@@ -74,7 +74,7 @@ test('valid() throttles renewal writes: the expiry only moves once it would move
   const db = freshDb();
   const auth = new Auth(db, { idleMs: 10_000, absoluteMs: 100_000, renewWriteMs: 1000 });
   const tok = login(auth);
-  const expiry = () => db.stmt('SELECT expires_at AS e FROM auth_sessions').get().e;
+  const expiry = () => db.db().prepare('SELECT expires_at AS e FROM auth_sessions').get().e;
   assert.equal(expiry(), 10_000);
   t.mock.timers.setTime(500);
   assert.equal(auth.valid(tok).ok, true);
@@ -112,7 +112,7 @@ test('newSession() purges sessions dead on either clock', t => {
   assert.equal(auth.valid(kept).ok, true);  // exp → 2000 (renewed under it)
   t.mock.timers.setTime(1501);           // `idle` is idle-expired; `kept` was
   const fresh = login(auth);             // renewed at 1000 → dead-purge keeps it
-  assert.equal(db.stmt('SELECT COUNT(*) AS n FROM auth_sessions').get().n, 2, 'the dead row was purged');
+  assert.equal(db.db().prepare('SELECT COUNT(*) AS n FROM auth_sessions').get().n, 2, 'the dead row was purged');
   assert.equal(auth.valid(idle).ok, false);
   assert.equal(auth.valid(kept).ok, true);
   assert.equal(auth.valid(fresh).ok, true);
@@ -179,7 +179,7 @@ test('tokens survive a restart: a new Auth on the same db accepts them; drops re
 test('the db holds sha256(token), never the token itself', () => {
   const db = freshDb();
   const tok = login(new Auth(db));
-  const rows = db.stmt('SELECT token_hash FROM auth_sessions').all();
+  const rows = db.db().prepare('SELECT token_hash FROM auth_sessions').all();
   assert.deepEqual(rows.map(r => r.token_hash), [crypto.createHash('sha256').update(tok).digest('hex')]);
   assert.equal(fs.readFileSync(db.file).includes(Buffer.from(tok)), false, 'the raw token is not in the file');
 });
@@ -242,7 +242,7 @@ test('setCredential rolls back: a failed session purge leaves the old credential
   const db = freshDb();
   const auth = new Auth(db);
   assert.equal(setCredential(db, 'u', 'password-one').ok, true);
-  db.stmt('DROP TABLE auth_sessions').run(); // the purge half now fails
+  db.db().prepare('DROP TABLE auth_sessions').run(); // the purge half now fails
   const saved = setCredential(db, 'u', 'password-two');
   assert.equal(saved.errorCode, 'database_error');
   assert.equal((await auth.verify('u', 'password-one')).ok, true, 'the credential write was rolled back');
