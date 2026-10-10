@@ -49,6 +49,16 @@ export const envSchema = {
   WEB_PI_NEW_SESSION_CWD: { type: 'string', context: 'server', access: 'secret', optional: true },
   WEB_PI_COMMAND: { type: 'string', context: 'server', access: 'secret', optional: true },
   WEB_PI_TMUX_CONF: { type: 'string', context: 'server', access: 'secret', optional: true },
+  // task/winston-loki: log aggregation — push URL of a Grafana Loki (the
+  // compose `observability` profile runs one; e.g. http://loki:3100).
+  // Unset = console-only logging, byte-for-byte today's behaviour (env.ts
+  // validates it at boot like the S3 vars — a set-but-malformed URL stops
+  // the server).
+  WEB_PI_LOKI_URL: { type: 'string', context: 'server', access: 'secret', optional: true },
+  // task/winston-loki: the static `job` label every pushed log line carries
+  // (identifies this deployment in Loki's stream selectors). Default in
+  // env.ts: 'webpi'.
+  WEB_PI_LOKI_JOB: { type: 'string', context: 'server', access: 'secret', optional: true },
   // Object storage (src/lib/storage.ts) — any S3-compatible server; the
   // compose stack runs SeaweedFS. No endpoint = not configured (uploads
   // answer 503); an endpoint needs both keys — env.ts checks at boot.
