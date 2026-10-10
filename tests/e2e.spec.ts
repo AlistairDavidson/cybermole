@@ -1342,6 +1342,25 @@ test('auto-update setting: default OFF, toggle persists across reload, status li
   db.close();
 });
 
+test('the Zed webapp stays absent when unconfigured (task/zed-webapp)', async ({ page }) => {
+  // This suite never sets the WEB_PI_ZED_* triple, so the sidebar must
+  // render no open-in-Zed affordances, /api/state reports zed: null, and
+  // POST /api/zed/open fails closed with 503 (the zed profile isn't
+  // deployed). The path-validation 400 runs before the config check —
+  // parsing is always first.
+  await login(page);
+  await expect(page.locator('session-sidebar [data-zed]')).toHaveCount(0);
+  expect((await api(page, 'GET', '/api/state')).json.zed).toBe(null);
+
+  const r = await api(page, 'POST', '/api/zed/open', { path: '/workspace/web-pi' });
+  expect(r.status).toBe(503);
+  expect(r.json.code).toBe('zed_not_configured');
+
+  const bad = await api(page, 'POST', '/api/zed/open', { path: 'workspace/web-pi' });
+  expect(bad.status).toBe(400);
+  expect(bad.json.code).toBe('validation_failure');
+});
+
 test('login rate limit kicks in (10 per 15 min per IP) and ignores a spoofed X-Forwarded-For', async ({ request }) => {
   // Runs last: earlier tests already spent part of the shared budget.
   // Every attempt claims a different client IP. The server runs with
