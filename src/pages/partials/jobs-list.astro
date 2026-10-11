@@ -13,6 +13,8 @@ const { webpi } = assertWebPiLocals(Astro.locals);
 const listed = await webpi.scheduler.listJobs();
 Astro.response.headers.set('Cache-Control', 'no-store');
 if (!listed.ok) {
+  // console.error on purpose, not src/lib/logger.ts: frontmatter is
+  // Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
   console.error(`jobs list partial: ${listed.errorMessage}`);
   Astro.response.status = 500;
 }

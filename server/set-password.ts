@@ -3,6 +3,9 @@
 // Interactive:
 //   npm run set-password   (or: node dist-server/server/set-password.js)
 // Piped:  printf 'user\npass\npass\n' | node dist-server/server/set-password.js
+// Logging: plain console.* on purpose (no src/lib/logger.ts) — this is a
+// one-shot CLI for a human at a terminal; wiring it to the winston logger
+// would timestamp/format an interactive prompt's own output.
 import * as readline from 'node:readline';
 import { setCredential } from '../src/lib/auth';
 import { StateDb } from '../src/lib/db';

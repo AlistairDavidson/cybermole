@@ -19,8 +19,11 @@ import {
   CreateBucketCommand, GetObjectCommand, HeadBucketCommand, HeadObjectCommand, S3Client, S3ServiceException,
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
+import { componentLogger } from './logger';
 import { asObjectKey, type ObjectKey } from '../types/branded';
 import type { ResultFailure, ResultSuccess } from '../types/result';
+
+const log = componentLogger('storage');
 
 /** readObjectStoreConfig() (src/lib/env.ts) — the WEB_PI_S3_* variables. */
 export interface ObjectStoreConfig {
@@ -225,9 +228,15 @@ export class ObjectStore {
       }).done();
     } catch (err) {
       if (isS3Error(err, 'NoSuchBucket')) this.bucketReady = false; // deleted under us: re-check next time
+      // task/winston-loki merge: upload failures logged — ${size} here is
+      // the byte count so far (streams count on the way through).
+      log.warn(`upload of ${key} (${upload.name}, ${size} bytes read) failed: ${describe(err)}`);
       return fail('storage_error', `could not store ${key}: ${describe(err)}`);
     }
 
+    // task/winston-loki merge: ${size} (not upload.body.byteLength) — a
+    // stream body has no byteLength; the Transform above counted it.
+    log.info(`stored upload ${key} (${upload.name}, ${size} bytes)`);
     return {
       ok: true, resultType: 'store_upload',
       data: { key, name: upload.name, size, contentType: upload.contentType },
@@ -255,6 +264,9 @@ export class ObjectStore {
     } catch (err) {
       // A HEAD has no error body: a missing key (or bucket) is just a 404.
       if (httpStatus(err) === 404) return fail('object_not_found', `no object ${key}`);
+      // task/winston-loki merge: failure-path coverage extended to the
+      // download ops (success-side download logging left for review).
+      log.warn(`stat of ${key} failed: ${describe(err)}`);
       return fail('storage_error', `could not read ${key}: ${describe(err)}`);
     }
   }
@@ -301,6 +313,7 @@ export class ObjectStore {
         const info = await this.statObject(key);
         return fail('range_not_satisfiable', `${bytes} is outside ${key}`, info.ok ? info.data.contentLength : null);
       }
+      log.warn(`download of ${key} failed: ${describe(err)}`);
       return fail('storage_error', `could not read ${key}: ${describe(err)}`);
     }
   }

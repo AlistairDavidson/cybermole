@@ -44,6 +44,8 @@
     "kysely": "^0.29.6",
     "node-pty": "^1.0.0",
     "validation-enhancer": "^1.0.6",
+    "winston": "^3.19.0",
+    "winston-loki": "^6.1.7",
     "ws": "^8.18.0",
     "zod": "^4.6.5"
   },

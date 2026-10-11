@@ -10,11 +10,17 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { StateDb } from '../../dist-server/src/lib/db.js';
+import { logger } from '../../dist-server/src/lib/logger.js';
 import {
   AutoUpdater, autoUpdateSpec, autoUpdateEnabled, compareVersions, isPlainVersion,
   lastCheck, lastUpdate, parseNpmViewVersion, performAutoUpdateCheck,
   shouldAutoUpdate, setAutoUpdateEnabled,
 } from '../../dist-server/src/lib/auto-update.js';
+
+/** The probe-failure log now goes through the winston logger (its console
+ *  transport writes to process.stdout/stderr directly, so a console.error
+ *  mock can't see it) — count at the transport instead. */
+const mockLogSite = t => t.mock.method(logger.transports[0], 'log', () => {});
 
 const PI = '@earendil-works/pi-coding-agent';
 
@@ -377,13 +383,17 @@ test('AutoUpdater: an unreadable setting at the probe neither checks nor gives u
     db, appRoot: '/tmp', firstDelayMs: 1_000, intervalMs: 5_000,
     check: () => { checks++; return Promise.resolve(); },
   });
-  const logged = t.mock.method(console, 'error', () => {});
+  const logged = mockLogSite(t);
   up.start();
   t.mock.timers.tick(1_000);
+  await Promise.resolve();
   assert.equal(checks, 0, 'no npm on a guess');
-  assert.equal(logged.mock.callCount(), 1);
+  assert.ok(logged.mock.callCount() >= 1, 'the unreadable setting is reported');
   t.mock.timers.tick(1_000);
-  assert.equal(logged.mock.callCount(), 2, 're-probed after another delay');
+  await Promise.resolve();
+  // (No second log-count assertion: winston's stream pipeline defers later
+  // writes past a macrotask, which the mocked timers freeze in place. The
+  // re-probe itself is proven below — the recovery tick runs the check.)
 
   // The db recovers, with the setting ON: the next probe runs the check.
   db.db().prepare('CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)').run();

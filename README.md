@@ -56,6 +56,10 @@ containers and two uids (server vs tmux/pi) — see
   server — SeaweedFS in the compose stack ([Object storage](#object-storage-seaweedfs)).
   The building block for apps that take files; without storage
   configured both answer 503 and nothing else changes.
+- **Observability** — all operational logging through one winston logger
+  (readable console always); an opt-in compose profile adds Loki + Grafana
+  so the same lines are queryable and kept for 14 days
+  ([Observability](#observability-logs--loki-dashboards--grafana)).
 - **Single-user login** — username + password, salted scrypt hash in the
   sqlite state db (`webpi.db`), `HttpOnly`/`Secure`/`SameSite=Strict`
   session cookie. Sessions persist across server restarts (only token
@@ -189,6 +193,8 @@ directly.
 | `WEB_PI_S3_BUCKET` | `webpi` | bucket for uploads (created on first use when missing) |
 | `WEB_PI_S3_REGION` | `us-east-1` | SigV4 signing region — self-hosted servers accept any |
 | `WEB_PI_DEV_API` | `http://127.0.0.1:3001` | dev only: where `astro dev` proxies `/api`, `/ws`, login/logout (the `npm run dev:server` process) |
+| `WEB_PI_LOKI_URL` | *(unset: console-only)* | push URL of a Grafana Loki for the server's operational logs (`http://loki:3100` when the compose `observability` profile runs). Unset — the default, and the dev profile and plain hosts — logging is console-only, identical to before observability existed. A set-but-malformed value stops the server at boot, like the S3 vars |
+| `WEB_PI_LOKI_JOB` | `webpi` | the `job` label every pushed log line carries — identifies this deployment in Loki's stream selectors. Letters, digits, `_`, `-`, max 64 chars |
 
 Run under a dedicated unprivileged user (the app spawns a terminal — treat
 it as a web shell by design). Don't run it as root, don't put a sudo-wielding
@@ -264,6 +270,7 @@ deploy.
 ```sh
 docker compose build        # subpath deploy: 'The base path' below first — WEB_PI_BASE=/webpi docker compose build
 docker compose up -d        # web + workspace + seaweedfs + one-shot inits; loopback :3000, TLS reverse proxy in front
+docker compose --profile observability up -d   # additionally: loki + grafana (Observability below) — set WEB_PI_LOKI_URL too
 docker compose exec webpi node dist-server/server/set-password.js   # once, on a fresh deploy
 ```
 
@@ -373,6 +380,90 @@ Two limits besides the app's own, for big files:
   replaced in `server/main.ts`: every request must still arrive within
   5 minutes, except a signed-in upload, which may take as long as it
   needs but is dropped after 2 minutes without a byte.
+
+### Observability (logs → Loki, dashboards → Grafana)
+
+The server's operational logging goes through a winston logger
+(`src/lib/logger.ts`) with **two transports**: a console transport,
+always — pretty, human-readable lines (`<iso-time> <level> [component]
+<message> {meta}`), because the boot log and `docker compose logs` are
+read by humans — and a `winston-loki` push transport **only** when
+`WEB_PI_LOKI_URL` is set. Unset (the default everywhere: plain host,
+npm install, the dev profile, a compose `up` without the profile), the
+logger is console-only and behaves exactly like the `console.*` calls it
+replaced: no network, no retries, no startup delay. Set but unreachable,
+Loki degrades silently — lines batch for 5 s, a failed batch is dropped
+(bounded memory), the transport retries on its built-in 60 s backoff and
+warns on the console at most once per 10 minutes; the server never
+crashes on it (unit-tested with a dead URL: no unhandled rejections).
+SIGTERM drains it: the shutdown sequence's last step flushes Loki's
+final batch, capped well inside the stop deadline.
+
+What is logged, and at which level (`winston`'s npm set):
+
+- `info` — lifecycle: the boot summary, tmux sessions started/resumed,
+  a terminal attached/detached, login/logout (`username` is logged — single-user
+  app; credentials, tokens and cookie values never are), scheduler job
+  fires and run finishes (observed at the scheduler's ~30 s tick — a
+  run's end is reported by the first tick after it; only one that ends
+  before any tick could see it, e.g. while the server is down, is only
+  counted as fired), pi updates (manual and auto), uploads stored.
+- `warn` — degraded operation: failed logins at the rate limit, the
+  scrypt 503, ws upgrade rejections, job schedules that no longer parse,
+  failed uploads.
+- `error` — db failures behind auth/session reads, scheduler tick
+  failures, spawn/crash guards, shutdown drain failures.
+- `http` — a one-line access log at the node-server level (`method path
+  status in Nms`).
+- `debug` — what would bury an open console: the 15 s `/api/state` poll
+  every open tab runs, WS connects (one line per socket open — every tab
+  load and reconnect, before any attach succeeds), and hashed-asset/PWA
+  hits. Console-silent (the console transport sits at `http`), pushed to
+  Loki (which sits at `debug`), where volume is cheap.
+
+In Loki, each line carries exactly three stream labels — `job`
+(`WEB_PI_LOKI_JOB`), `level`, `component` (`boot`, `http`, `auth`, `ws`,
+`tmux`, `scheduler`, `update`, `storage`, `shutdown`) — and everything
+else (paths, durations, session names) rides in the line's JSON, so
+labels stay low-cardinality. A few log sites deliberately stay on
+`console.*`, commented in place: `set-password` (a one-shot CLI prompting
+a human) and the Astro-bundled code — `zod.service.ts` and the `.astro`
+render guards (`settings.astro`, the `jobs-list` and `settings`
+partials) — where winston must stay out of the Vite bundle. Those
+guard lines reach the console only, never Loki.
+
+Bring the stack up (opt-in `observability` compose profile — a plain
+`up` starts none of it, and nothing breaks when Loki is absent):
+
+```sh
+WEB_PI_LOKI_URL=http://loki:3100 docker compose --profile observability up -d
+```
+
+That env var (via compose interpolation) is what points the webpi
+service at Loki over the compose network — `up -d` recreates webpi to
+pick it up. **Grafana** is loopback-published on `127.0.0.1:3300`
+(3000/3001/4321 are web-pi's own): browse to it, the Loki datasource is
+already provisioned (`deploy/grafana/provisioning/`), anonymous access
+is read-only (Viewer) — enough to query logs — and the `admin` account
+(its default password must be changed on first login) is for editing.
+Grafana keeps no state volume: dashboards worth keeping belong in
+`deploy/grafana/provisioning/dashboards/` as files. **Loki** publishes
+no port at all — only the webpi and grafana containers reach it — stores
+on the `webpi-loki` volume, keeps **14 days** (compactor retention),
+rejects oversized/too-old entries and overlong labels
+(`deploy/loki/config.yaml`), and phones nothing home. First queries:
+
+```
+{job="webpi"}                     # everything
+{job="webpi", component="http"}   # the access log
+{job="webpi"} |= "login failed"   # auth failures
+```
+
+A non-compose install points `WEB_PI_LOKI_URL` at any reachable Loki
+the same way. Killing Loki (`docker compose stop loki`) must change
+nothing about the server: one warn line per 10 min in its logs, requests
+and sessions unaffected; the access log and every event line return on
+its next `up`.
 
 #### The same split on a plain host (two unix users)
 
@@ -729,7 +820,9 @@ edits and the future apply step builds from.
   Astro wrapper (`ConsoleApp.astro`, `AgentTerminal.astro`)
 - `src/lib` — shared strict TS: auth (scrypt + persisted sessions + rate
   limiter), tmux helpers, pi session-store parser, scheduled jobs
-  (in-process scheduler), wire types, typed env schema + reads
+  (in-process scheduler), operational logging (`logger.ts`: winston —
+  console always, a Loki push transport when configured), wire types,
+  typed env schema + reads
   (`env-schema.ts` / `env.ts`, the `WEB_PI_*` contract); `services.ts`
   (the stateful services the server hands Astro in `locals`); `web/` —
   request parsing, Result→Response mapping, locals narrowing

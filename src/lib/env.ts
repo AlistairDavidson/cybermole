@@ -4,6 +4,15 @@ import * as path from 'node:path';
 import { envSchema, type EnvValue, type ServerEnvField } from './env-schema';
 import type { ObjectStoreConfig } from './storage';
 
+/** Loki push config (src/lib/logger.ts) — or null when no URL is set: the
+ *  logger then runs console-only, exactly as before this existed. */
+export interface LokiConfig {
+  /** base URL of the Loki push API, e.g. http://loki:3100 (no trailing slash) */
+  url: string;
+  /** the static `job` label every line carries (WEB_PI_LOKI_JOB, 'webpi') */
+  job: string;
+}
+
 
 export const APP_ROOT = path.join(__dirname, '..', '..', '..');
 export const PI_BIN = path.join(APP_ROOT, 'node_modules', '.bin', 'pi');
@@ -60,6 +69,31 @@ export const ENV = {
   WEB_PI_COMMAND: RAW_ENV.WEB_PI_COMMAND ?? (fs.existsSync(PI_BIN) ? PI_BIN : 'pi'),
   WEB_PI_TMUX_CONF: RAW_ENV.WEB_PI_TMUX_CONF ?? path.join(APP_ROOT, 'tmux.conf'),
 };
+
+/** Loki push config for the winston-loki transport (src/lib/logger.ts), or
+ *  null when WEB_PI_LOKI_URL is unset — console-only logging, identical to
+ *  before the observability work. Validated at boot like the S3 vars: a
+ *  half-set or non-http(s) value throws and stops the server. Empty strings
+ *  count as unset (compose's `VAR: ""`). */
+export function readLokiConfig(): LokiConfig | null {
+  const set = (v: string | undefined): v is string => v !== undefined && v !== '';
+  const url = RAW_ENV.WEB_PI_LOKI_URL;
+  const job = RAW_ENV.WEB_PI_LOKI_JOB;
+  if (!set(url) && !set(job)) return null;
+  if (!set(url)) throw new Error('WEB_PI_LOKI_JOB is set without WEB_PI_LOKI_URL');
+  if (!URL.canParse(url) || !/^https?:$/.test(new URL(url).protocol)) {
+    throw new Error(`WEB_PI_LOKI_URL=${JSON.stringify(url)} is not an http(s) URL`);
+  }
+  const label = job ?? 'webpi';
+  // A conservative label value: safe to interpolate into a LogQL stream
+  // selector ({job="webpi"}) without escaping games.
+  if (!/^[a-zA-Z0-9_][a-zA-Z0-9_\-]{0,63}$/.test(label)) {
+    throw new Error(`WEB_PI_LOKI_JOB=${JSON.stringify(label)} is not a valid job label ` +
+      '(letters, digits, "_" and "-", max 64 chars)');
+  }
+  // winston-loki appends /loki/api/v1/push — a trailing slash would double it.
+  return { url: url.replace(/\/+$/, ''), job: label };
+}
 
 /** Object storage (src/lib/storage.ts), or null when no endpoint is set —
  *  the store then answers storage_not_configured. A half-configured or

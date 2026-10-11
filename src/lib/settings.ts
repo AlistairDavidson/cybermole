@@ -9,7 +9,10 @@
 import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { componentLogger } from './logger';
 import type { ResultFailure, ResultSuccess } from '../types/result';
+
+const log = componentLogger('update');
 
 export const PI_PACKAGE = '@earendil-works/pi-coding-agent';
 
@@ -116,7 +119,7 @@ export async function runPiUpdate(appRoot: string, dryRun: boolean,
   // this npm install (node_modules with it) to the workspace side; the
   // delegate site is marked in src/lib/auto-update.ts, next to the
   // auto-update call into this function.
-  console.log(`pi update: running \`${command}\` in ${appRoot}`);
+  log.info(`pi update: running \`${command}\` in ${appRoot}`);
   const installed = await new Promise<{ err: (Error & { killed?: boolean; code?: unknown }) | null; out: string }>(
     resolve => execFile(npm, args, { cwd: appRoot, timeout: UPDATE_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 },
       (err, stdout, stderr) => resolve({ err, out: `${stdout}${stderr ? '\n' + stderr : ''}` })));
@@ -127,10 +130,10 @@ export async function runPiUpdate(appRoot: string, dryRun: boolean,
     const reason = installed.err.killed
       ? `timed out after ${Math.round(UPDATE_TIMEOUT_MS / 60000)} minutes`
       : `npm exited with code ${String(installed.err.code ?? '?')}`;
-    console.warn(`pi update failed: ${reason}`);
+    log.warn(`pi update failed: ${reason}`);
     return fail('npm_failed', reason, { after, output });
   }
-  console.log(`pi update: ${before ?? 'not installed'} → ${after ?? 'not installed'} ` +
+  log.info(`pi update: ${before ?? 'not installed'} → ${after ?? 'not installed'} ` +
     `(new sessions use it)`);
   return { ok: true, resultType: 'pi_update', data: data({ after, output }) } satisfies PiUpdateSuccess;
 }

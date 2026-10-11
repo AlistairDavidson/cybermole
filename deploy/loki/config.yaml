@@ -1,0 +1,71 @@
+# web-pi's Loki — compose `observability` profile, mounted read-only into
+# the loki container (-config.file). Single binary (target: all is the
+# default), no auth: it publishes no port and only webpi/grafana reach it
+# over the compose network. Storage is the filesystem on the webpi-loki
+# volume; the compactor enforces the 14-day retention. Based on the
+# upstream cmd/loki/loki-local-config.yaml of grafana/loki 3.7 (keys
+# checked against the configuration reference; validated statically by
+# tests/unit/observability.test.mjs — this sandbox has no docker daemon).
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+# tsdb index on the filesystem (the v13 default of the upstream config).
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+# Retention: the compactor deletes chunks older than retention_period
+# (must be a multiple of 24h). delete_request_store is required whenever
+# retention is enabled. Worker count trimmed from the upstream 150 — this
+# is a single-user box.
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  retention_delete_delay: 2h
+  retention_delete_worker_count: 8
+  delete_request_store: filesystem
+
+limits_config:
+  # Reject instead of store: entries too old or too large, label names or
+  # values too long, too many labels per series. web-pi's own lines are
+  # far under every cap (entries are one log line, labels are
+  # job/level/component) — the caps exist so a runaway caller can't bloat
+  # the index or stream.
+  reject_old_samples: true
+  reject_old_samples_max_age: 72h
+  max_line_size: 16384 # 16 KiB
+  max_label_name_length: 1024
+  max_label_value_length: 2048
+  max_label_names_per_series: 15
+  # Ingestion is a trickle (batched push every 5s); the defaults would do,
+  # stated for the same reason as the rest.
+  ingestion_rate_mb: 4
+  ingestion_burst_size_mb: 8
+  # 14 days, a multiple of 24h (the compactor enforces it).
+  retention_period: 336h
+
+# No phone-home (mirrors the stack's SeaweedFS stance: its telemetry is
+# off for the same reason).
+analytics:
+  reporting_enabled: false

@@ -18,6 +18,7 @@
 // shell. argv-array spawns only.
 import { CronExpressionParser } from 'cron-parser';
 import { databaseRead, databaseUpdate, qb, type JobRunOrigin, type StateDb } from './db';
+import { componentLogger } from './logger';
 import type { CalendarCheck, JobsState, ScheduledJob } from './types';
 import { hasSession, jobSessionName, liveSessionNames, newSession } from './tmux';
 import type { ResultFailure, ResultSuccess } from '../types/result';
@@ -141,6 +142,8 @@ const CATCHUP_LATENESS_MS = 2 * TICK_MS;
 
 export interface JobContext { cwd: string; env: Record<string, string> }
 
+const log = componentLogger('scheduler');
+
 interface JobRow { name: JobName; schedule: string; command: string; created_at: number }
 
 /** The in-process scheduler: owns the jobs tables in the state db, fires
@@ -151,6 +154,16 @@ export class Scheduler {
   /** Jobs whose stored schedule no longer parses (hand-edited db) —
    *  warned about once, then skipped silently until re-saved. */
   private warned = new Set<JobName>();
+  /** Run sessions armed as live, run session → the job whose run it is.
+   *  Armed when a run opens (fire below) and at the tick's skip point
+   *  (runs opened outside the tick: "run now", or alive at boot); a
+   *  session that leaves the live set at a later tick has finished —
+   *  completed, killed from Live, or restarted away on the workspace
+   *  side — and gets one info line. Armed at open, not at first sight:
+   *  a run's end is reported by the first tick after it, and only a run
+   *  that ends before any tick of this process could see it — while
+   *  the server is down — is only counted as fired. */
+  private running = new Map<TmuxSessionName, JobName>();
 
   constructor(private db: StateDb, private ctx: JobContext) {}
 
@@ -206,16 +219,26 @@ export class Scheduler {
     if (this.ticking) return; // a slow tmux call must not stack ticks
     this.ticking = true;
     // A db failure ends the tick — the next one retries.
-    const failed = (errorMessage: string): void => console.error(`scheduler tick failed: ${errorMessage}`);
+    const failed = (errorMessage: string): void => { log.error(`scheduler tick failed: ${errorMessage}`); };
     try {
       const rows = this.rows();
       if (!rows.ok) { failed(rows.errorMessage); return; }
       const live = await liveSessionNames();
+      // Run-finish observation (this.running): an armed run session that
+      // is no longer live has ended. Map deletion during iteration is
+      // safe; entries can only outlive their run by one tick.
+      for (const [session, name] of this.running) {
+        if (live.has(session)) continue;
+        this.running.delete(session);
+        log.info(`job ${name} run finished (run session ${session} gone)`);
+      }
       const now = Date.now();
       for (const row of rows.data.value) {
+        const session = jobSessionName(row.name);
         // Concurrency: a job whose previous run's tmux session is still
-        // alive is skipped — long-running agent jobs don't pile up.
-        if (live.has(jobSessionName(row.name))) continue;
+        // alive is skipped — long-running agent jobs don't pile up — and
+        // (re-)armed so its end is reported.
+        if (live.has(session)) { this.running.set(session, row.name); continue; }
         const last = this.lastFired(row.name);
         if (!last.ok) { failed(last.errorMessage); return; }
         const reference = last.data.value ?? row.created_at;
@@ -223,7 +246,7 @@ export class Scheduler {
         if (!next.ok) {
           if (!this.warned.has(row.name)) {
             this.warned.add(row.name);
-            console.warn(`job ${row.name}: stored schedule "${row.schedule}" does not parse — skipped until re-saved`);
+            log.warn(`job ${row.name}: stored schedule "${row.schedule}" does not parse — skipped until re-saved`);
           }
           continue;
         }
@@ -247,7 +270,7 @@ export class Scheduler {
       // Crash guard only (db and tmux failures come back as results): a
       // tick must never take the server (and, in the container, every
       // tmux session with it) down via an unhandled rejection.
-      console.error('scheduler tick failed:', (err as Error)?.message ?? err);
+      log.error(`scheduler tick failed: ${(err as Error)?.message ?? err}`);
     } finally {
       this.ticking = false;
     }
@@ -261,8 +284,10 @@ export class Scheduler {
     const recorded = this.recordRun(row.name, origin);
     if (!recorded.ok) return recorded;
     const session = jobSessionName(row.name);
+    log.info(`job ${row.name} fired (${origin}) — opening run session ${session}`);
     const opened = await newSession(session, this.ctx.cwd, ['/bin/sh', '-c', row.command], this.ctx.env);
-    if (!opened.ok) console.error(`job ${row.name}: could not open run session ${session} (${opened.errorMessage})`);
+    if (!opened.ok) log.error(`job ${row.name}: could not open run session ${session} (${opened.errorMessage})`);
+    else this.running.set(session, row.name); // armed — its end gets the finish line
     return opened;
   }
 

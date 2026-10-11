@@ -1,7 +1,4 @@
 ## Infrastructure
-winston, winston-loki, loki container - observability.
-  add logs to code
-
 preact signals - make this available for any frontend state needs apps might have in future
 
 ## Quality
