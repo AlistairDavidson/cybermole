@@ -246,8 +246,10 @@ services:
       - webpi-s3-credentials:/run/web-pi-s3
 
   # task/zed-webapp: Zed editor as a webapp — opt-in profile. Build + run
-  # with `docker compose --profile zed up -d zed` (the init service rides
-  # along). Zed renders headlessly (Mesa lavapipe, a CPU Vulkan driver)
+  # with `docker compose --profile zed up -d` (no service args — webpi must
+  # be recreated with WEB_PI_ZED_URL for the console affordances; `up -d
+  # zed` boots only the stream, leaving a running webpi's env untouched).
+  # Zed renders headlessly (Mesa lavapipe, a CPU Vulkan driver)
   # into KasmVNC's X server, which serves its own browser client on :6901.
   # The container runs as the workspace uid so it edits the shared
   # checkouts; it never touches the tmux socket or web state. See
@@ -270,7 +272,7 @@ services:
     # The browser client's login (basic auth at KasmVNC). Required: the
     # entrypoint refuses to start without it rather than stream to anyone
     # who can reach the proxy. Set it next to compose.yaml (a .env file) —
-    # `ZED_VNC_PASSWORD=... docker compose --profile zed up -d zed`.
+    # `ZED_VNC_PASSWORD=... docker compose --profile zed up -d`.
     # (Deliberately not ${ZED_VNC_PASSWORD:?…} here: compose interpolates
     # the whole file on every command, and an :? error would break plain
     # `docker compose up -d` for deployments that never opted in.)

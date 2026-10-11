@@ -12,7 +12,8 @@ is "make sure this folder is open in Zed", so Zed needs no supervisor:
 if it dies, the next open boots it again.
 
 Endpoints:
-  GET  /healthz  — 200 (compose healthcheck / curl smoke test)
+  GET  /healthz  — 200 (curl smoke test; reachable only inside the
+                   compose network — the launcher port is not published)
   POST /open     — Authorization: Bearer <WEB_PI_ZED_LAUNCH_TOKEN>,
                    body {"path": "/workspace/..."} → {"opened": true}
                    400 invalid path (not absolute / not inside-or-equal-to
@@ -41,9 +42,16 @@ ZED_ENV = {
 
 
 def fail(handler, status: int, error: str) -> None:
+    # Close the connection on any failure: the failure paths answer
+    # without reading the request body, and with keep-alive the leftover
+    # bytes would be parsed as the next request on the pooled connection
+    # (the web side's fetch pools — one bad token would poison the pool
+    # and fail the NEXT open with a bogus error). send_header("Connection",
+    # "close") also sets close_connection.
     body = json.dumps({"error": error}).encode()
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json")
+    handler.send_header("Connection", "close")
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
