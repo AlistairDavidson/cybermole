@@ -229,6 +229,52 @@ test('build: re-auth gates it, enforcement refuses the protected change, the mar
   expect(unconfirmed).toBe(400);
 });
 
+test('build through the dialog: the checkbox gate, re-auth toast, success closes + refreshes', async ({ page }) => {
+  await login(page);
+  await page.goto(`${BASE}/management`);
+  // The fetch-based build test above left CLEAN_SHA's pending marker; no
+  // builder runs in this suite, so it is dead weight that would trip the
+  // one-build-at-a-time guard — clear it (the history row stays).
+  fs.rmSync(path.join(RELEASES, 'pending'), { recursive: true, force: true });
+
+  // pick the clean commit, then the preview's build button opens the dialog
+  await page.click(`[data-pick="${CLEAN_SHA}"]`);
+  await expect(page.locator('#mgmt-preview')).toContainText('allowed');
+  await page.click(`#mgmt-preview [data-build="${CLEAN_SHA}"]`);
+  const dialogText = page.locator('wa-dialog#mgmt-dialog #mgmt-dialog-text');
+  // the dialog opens (an unupgraded wa-dialog would leave this invisible —
+  // the AGENTS.md SSR-≠-client lesson, caught only by a real browser)
+  await expect(dialogText).toBeVisible();
+  await expect(dialogText).toContainText(`build ${CLEAN_SHA.slice(0, 12)}`);
+
+  // valid credentials but the confirm checkbox unticked: refused by the
+  // element's own gate — nothing is posted
+  await page.fill('wa-input#mgmt-username input', USERNAME);
+  await page.fill('wa-input#mgmt-password input', 'nope');
+  await page.click('#mgmt-confirm-ok');
+  await expect(page.locator('#mgmt-confirm-error')).toContainText('tick the checkbox');
+  expect(fs.existsSync(path.join(RELEASES, 'pending'))).toBe(false);
+
+  // ticked + wrong password: 401 → the toast (an upgraded wa-toast), the
+  // dialog stays open, still nothing written
+  await page.click('wa-checkbox#mgmt-confirm-box');
+  await expect(page.locator('wa-checkbox#mgmt-confirm-box')).toBeChecked();
+  await page.click('#mgmt-confirm-ok');
+  await expect(page.locator('wa-toast')).toContainText('wrong username or password');
+  await expect(dialogText).toBeVisible();
+  expect(fs.existsSync(path.join(RELEASES, 'pending'))).toBe(false);
+
+  // right password: the dialog closes, the request lands on disk and the
+  // history table picks it up (the element refreshes from the partial)
+  await page.fill('wa-input#mgmt-password input', PASSWORD);
+  await page.click('#mgmt-confirm-ok');
+  await expect(dialogText).not.toBeVisible();
+  await expect(page.locator('#mgmt-releases')).toContainText(CLEAN_SHA.slice(0, 12));
+  expect(JSON.parse(fs.readFileSync(
+    path.join(RELEASES, 'pending', `${CLEAN_SHA}.json`), 'utf8'))).toMatchObject(
+    { sha: CLEAN_SHA, base: BASE_SHA });
+});
+
 test('activate without a built release is a 404; a foreign Origin POST never reaches it', async ({ page }) => {
   await login(page);
   await page.goto(`${BASE}/management`);
