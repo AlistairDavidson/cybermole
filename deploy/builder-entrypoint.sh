@@ -101,6 +101,11 @@ build_one() {
 
   # 2. the image's node_modules: same lockfile (protected ⇒ identical
   #    deps), node-pty prebuilt — no npm install, no scripts, no network.
+  #    A tree that TRACKS a node_modules dir (nothing stops an unprotected
+  #    tree from carrying one) is removed first: cp -a would nest the
+  #    image's copy inside it and the build would resolve the tree's own
+  #    deps — the "identical to the image's" premise must be deterministic.
+  rm -rf "$work/tree/node_modules"
   if ! cp -a "$IMAGE_ROOT/node_modules" "$work/tree/node_modules" >> "$logf" 2>&1; then
     finish "$sha" failed "could not copy the image node_modules"
     rm -rf "$work" "$logf" "$marker"; return 0
@@ -127,6 +132,14 @@ build_one() {
   rel="$work/release"
   mkdir -p "$rel"
   cp -a "$work/tree/dist" "$rel/dist"
+  # The image's node_modules as a SYMLINK at the release root: the SSR
+  # entry's bare package imports resolve by walking up from the entry
+  # file, and without this link they find no node_modules anywhere above
+  # a release dir — every activated release would fail to load (the web
+  # side's activate import-probe would then refuse it, but the release
+  # must actually work). Root-owned target: release code can consume the
+  # image's pinned deps but never modify them.
+  ln -s "$IMAGE_ROOT/node_modules" "$rel/node_modules"
   printf '{"sha":"%s","builtAt":%s,"builder":"web-pi dev image"}\n' \
     "$sha" "$(date +%s000)" > "$rel/manifest.json"
   rm -rf "$RELEASES/$sha"

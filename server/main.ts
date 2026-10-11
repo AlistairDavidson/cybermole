@@ -86,9 +86,16 @@ const SERVING = resolveServingDirs({
   imageAstroEntry: CFG.astroEntry,
   releasesDir: RELEASES_DIR,
 });
+const IMAGE_ASTRO_ENTRY = CFG.astroEntry; // the fallback below needs the pre-swap value
+const IMAGE_CLIENT_DIR = CFG.clientDir;
 CFG.clientDir = SERVING.dirs.clientDir;
 CFG.astroEntry = SERVING.dirs.astroEntry;
 if (SERVING.note !== 'serving the image copy') console.warn(`web-pi management: ${SERVING.note}`);
+// task/mgmt-page: what this process serves, LIVE — the boot snapshot, and
+// the import fallback below flips it to the image copy when a release's
+// SSR entry fails to load (the "serving now" card reports the truth).
+let servingNow: { kind: 'image' | 'release'; sha: string | null } =
+  { kind: SERVING.dirs.releaseDir === null ? 'image' : 'release', sha: SERVING.dirs.sha };
 
 // task/mgmt-page: the swap's restart. No docker socket exists anywhere in
 // webpi (it would be root on the host); instead the process exits through
@@ -188,8 +195,9 @@ console.log(objectStore.describe() === null
 // src/lib/services.ts).
 const services = createServices({ cfg: CFG, stateDb, auth, hiddenSessions, scheduler, autoUpdater, objectStore, sessionEnv,
   // task/mgmt-page: the swap service's restart trigger + the honest
-  // "serving now" boot snapshot (docs/management-page.md §3.2).
-  requestRestart, bootServing: { kind: SERVING.dirs.releaseDir === null ? 'image' : 'release', sha: SERVING.dirs.sha } });
+  // "serving now" LIVE snapshot (a getter: the import fallback above
+  // flips it; docs/management-page.md §3.2).
+  requestRestart, bootServing: () => servingNow });
 // The scheduler's single shutdown hook. The SIGTERM/SIGINT handler is a
 // sibling task (task/session-lifecycle, merged separately); at merge time
 // it calls shutdownScheduler() — wired here so teardown has exactly one
@@ -356,7 +364,25 @@ type AstroHandler = (req: http.IncomingMessage, res: http.ServerResponse,
 
 const astroReady: Promise<AstroHandler> =
   import(pathToFileURL(CFG.astroEntry).href)
-    .then((m: { handler: AstroHandler }) => m.handler);
+    .then((m: { handler: AstroHandler }) => m.handler)
+    // task/mgmt-page: a release's SSR entry that fails to LOAD (its own
+    // imports — the one failure class no layout check can see; activate
+    // probes for it, this is the belt-and-braces second line) must not
+    // take the app down: fall back to the IMAGE's entry + assets, loudly,
+    // and report the fallback (servingNow above feeds the page's
+    // "serving now" card — the now-working page can roll back). Only the
+    // image itself failing rethrows (the pre-existing behavior: every
+    // render 500s).
+    .catch(async (err: unknown): Promise<AstroHandler> => {
+      if (CFG.astroEntry === IMAGE_ASTRO_ENTRY) throw err;
+      console.error(
+        `web-pi management: the release's SSR entry (${CFG.astroEntry}) failed to load — falling back to the image copy, rollback from the management page:`,
+        (err as Error)?.message ?? err);
+      CFG.astroEntry = IMAGE_ASTRO_ENTRY;
+      CFG.clientDir = IMAGE_CLIENT_DIR;
+      servingNow = { kind: 'image', sha: null };
+      return (await import(pathToFileURL(IMAGE_ASTRO_ENTRY).href) as { handler: AstroHandler }).handler;
+    });
 astroReady.catch(err => console.error(
   `astro SSR entry failed to load (${CFG.astroEntry}) — did 'npm run build' run?):`,
   (err as Error)?.message ?? err));

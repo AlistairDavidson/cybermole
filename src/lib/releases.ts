@@ -23,9 +23,10 @@
 import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { databaseRead, databaseUpdate, qb, type ReleaseStatus, type StateDb } from './db';
 import { appVersion } from './settings';
-import type { VerifyLoginResult } from './auth';
+import { RateLimiter, type VerifyLoginResult } from './auth';
 import type {
   BuildStatus, ChangedPath, CheckoutInfo, CommitEntry, EnforcementVerdict, ImageVersion,
   ManagementState, ReleaseRecord,
@@ -242,6 +243,7 @@ export type EnforcementResult = EnforcementSuccess | EnforcementFailure;
 export type RequestBuildData = { sha: CommitSha; status: 'requested' };
 export type RequestBuildErrorCode =
   | 'invalid_credentials'  // the password re-confirmation failed (401)
+  | 'reauth_limited'       // too many password confirmations in the window (429)
   | 'enforcement_rejected' // the diff touches the protected set (422; the message names the offending paths)
   | 'releases_not_configured' // no WEB_PI_RELEASES_DIR volume (503)
   | 'build_active'         // another build is pending/running (409)
@@ -255,10 +257,11 @@ export type RequestBuildResult = RequestBuildSuccess | RequestBuildFailure;
 export type ActivateData = { target: 'image' | CommitSha; status: 'activating' };
 export type ActivateErrorCode =
   | 'invalid_credentials'
+  | 'reauth_limited'
   | 'enforcement_rejected'
   | 'releases_not_configured'
   | 'release_not_built'   // no built release for that sha (404)
-  | 'release_invalid'     // manifest mismatch / layout invalid (409)
+  | 'release_invalid'     // manifest mismatch / layout invalid / the entry will not load (409)
   | 'database_error'
   | EnforcementErrorCode;
 export type ActivateSuccess = ResultSuccess<'activate_release', ActivateData>;
@@ -488,24 +491,24 @@ export function markerPaths(releasesDir: string, sha: string): MarkerPaths {
  *  order flip alone would leave the stale answer winning the window
  *  between request and claim). Unreadable JSON in done/<sha>.json reads
  *  as failed — the page must never wait forever on a corrupt answer. */
-export function readBuildMarker(releasesDir: string, sha: string): { status: BuildStatus; log: string | null } {
+export function readBuildMarker(releasesDir: string, sha: string): { status: BuildStatus; log: string | null; builtAt: number | null } {
   const p = markerPaths(releasesDir, sha);
-  if (fs.existsSync(p.building)) return { status: 'building', log: null };
-  if (fs.existsSync(p.pending)) return { status: 'pending', log: null };
+  if (fs.existsSync(p.building)) return { status: 'building', log: null, builtAt: null };
+  if (fs.existsSync(p.pending)) return { status: 'pending', log: null, builtAt: null };
   if (fs.existsSync(p.done)) {
     let parsed: unknown;
     try {
       parsed = JSON.parse(fs.readFileSync(p.done, 'utf8'));
     } catch {
-      return { status: 'failed', log: 'the builder\'s done marker is not valid JSON' };
+      return { status: 'failed', log: 'the builder\'s done marker is not valid JSON', builtAt: null };
     }
     const marker = BuildDoneMarkerSchema.safeParse(parsed);
     if (!marker.success || marker.data.sha !== sha) {
-      return { status: 'failed', log: 'the builder\'s done marker does not match the schema' };
+      return { status: 'failed', log: 'the builder\'s done marker does not match the schema', builtAt: null };
     }
-    return { status: marker.data.status, log: marker.data.log };
+    return { status: marker.data.status, log: marker.data.log, builtAt: marker.data.builtAt };
   }
-  return { status: 'none', log: null };
+  return { status: 'none', log: null, builtAt: null };
 }
 
 /** Is any build in flight (one at a time — the builder works serially)? */
@@ -533,8 +536,13 @@ export function writeBuildRequest(releasesDir: string, sha: string, base: string
 
 /** A release dir's layout: what activate accepts and boot serves.
  *  manifest.sha must equal the target (the builder cannot mislabel a
- *  release as another sha) and dist/ must hold the Astro entry + client
- *  assets. Never throws: reasons come back as strings. */
+ *  release as another sha); dist/ must hold the Astro entry + client
+ *  assets; and a node_modules must sit at the release root (the builder
+ *  links the IMAGE's there) — the entry's bare package imports resolve
+ *  by walking up from the entry file, and without it the release loads
+ *  in no process, ever (the layout checks cannot see imports; the
+ *  activate-time probe below is the load check). Never throws: reasons
+ *  come back as strings. */
 export function validateReleaseDir(releaseDir: string, sha: string): { ok: true } | { ok: false; reason: string } {
   let parsed: unknown;
   try {
@@ -554,7 +562,39 @@ export function validateReleaseDir(releaseDir: string, sha: string): { ok: true 
   if (!fs.existsSync(client) || (fs.readdirSync(client)).length === 0) {
     return { ok: false, reason: `dist/client is missing or empty in ${releaseDir}` };
   }
+  if (!fs.existsSync(path.join(releaseDir, 'node_modules'))) {
+    return { ok: false, reason: `node_modules (the image's, linked) is missing in ${releaseDir} — the SSR entry's imports cannot resolve without it` };
+  }
   return { ok: true };
+}
+
+const ENTRY_PROBE_MS = 10_000;
+
+/** Import-probe a release's SSR entry: the layout checks above cannot see
+ *  the entry's OWN imports — a release that will not load must be caught
+ *  HERE, at the decision point, not after activate has pointed the next
+ *  boot at it and restarted into a dead app (main.ts's boot import of a
+ *  broken entry would leave every page answering 500, with no working
+ *  page to roll back from). A module that never finishes loading within
+ *  the bound is as unloadable as one that rejects. Executing the release's
+ *  module code here is the same in-process class as serving it
+ *  (docs/management-page.md §1.5 #6). Never throws. */
+export async function probeReleaseEntry(entry: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    await Promise.race([
+      import(pathToFileURL(entry).href) as Promise<unknown>,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`did not load within ${ENTRY_PROBE_MS / 1000}s`)), ENTRY_PROBE_MS);
+        timer.unref();
+      }),
+    ]);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: `the release's SSR entry failed to load (${(err as Error).message})` };
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+  }
 }
 
 // ---------- boot-time serve resolution (docs/management-page.md §3.2) ----------
@@ -612,6 +652,11 @@ function imageDirs(opts: { imageClientDir: string; imageAstroEntry: string }): S
 
 const HISTORY_CAP = 20;
 const LOG_CAP = 8 * 1024;
+/** Re-auth attempts per window (per process) — the login limiter's budget
+ *  (main.ts: 10 / 15 min), applied to the dangerous verbs' password
+ *  re-confirmation so a live cookie cannot hammer it (§1.6). */
+const REAUTH_MAX = 10;
+const REAUTH_WINDOW_MS = 15 * 60 * 1000;
 
 export interface ReleasesDeps {
   db: StateDb;
@@ -620,10 +665,11 @@ export interface ReleasesDeps {
   /** the releases volume (WEB_PI_RELEASES_DIR); null = swap half off */
   releasesDir: string | null;
   appRoot: string;
-  /** What THIS boot resolved to serve (server/main.ts's boot snapshot) —
-   *  the honest "serving now"; the pointer file may name a newer target
-   *  for the next boot. */
-  bootServing: { kind: 'image' | 'release'; sha: string | null };
+  /** What THIS process is serving (server/main.ts's live snapshot — a
+   *  GETTER, so a boot-time fallback to the image copy after a release's
+   *  entry failed to load is reported honestly): the "serving now" card;
+   *  the pointer file may name a newer target for the next boot. */
+  bootServing: () => { kind: 'image' | 'release'; sha: string | null };
   /** graceful-restart trigger (server/main.ts's shutdown path) */
   requestRestart: () => void;
   /** login re-verification for the dangerous verbs (auth.verify) */
@@ -636,9 +682,22 @@ interface ReleaseRow {
 }
 
 /** The management page's service. All state lives in the state db and on
- *  the releases volume; this class is stateless between calls. */
+ *  the releases volume — the one exception is the re-auth rate limiter
+ *  (in-process state, like the login limiter in main.ts). */
 export class Releases {
+  private readonly reauthLimiter = new RateLimiter(REAUTH_MAX, REAUTH_WINDOW_MS);
+
   constructor(private deps: ReleasesDeps) {}
+
+  /** The password re-confirmation gate for the dangerous verbs: the login
+   *  limiter covers POST /login only, and a live session cookie (the very
+   *  adversary the re-auth exists for — an XSS-exfiltrated cookie could
+   *  fetch with it, §1.6) must not turn the re-auth into an unthrottled
+   *  password oracle. Same budget shape as login (attempts, per-process):
+   *  past it the verbs answer reauth_limited without spending a scrypt. */
+  private reauthAllowed(): boolean {
+    return this.reauthLimiter.allow('management-reauth');
+  }
 
   /** History rows, newest first (a failure on a db read). */
   private dbRows(): ReleaseRow[] | ManagementStateFailure {
@@ -684,19 +743,21 @@ export class Releases {
     });
     // "serving now" is what the process resolved at boot (honest even
     // when a pointer write is waiting for the restart); `nextBoot` says
-    // so when the pointer has moved past it.
+    // so when the pointer has moved past it. The getter keeps it honest
+    // against a boot-time fallback to the image copy.
+    const boot = this.deps.bootServing();
     const serving: ManagementState['serving'] = {
-      kind: this.deps.bootServing.kind,
+      kind: boot.kind,
       image: image === null ? null
         : { appVersion: appVersion(this.deps.appRoot), git: image.git, builtAt: image.builtAt },
-      release: this.deps.bootServing.kind === 'release' && this.deps.bootServing.sha !== null
-        ? { sha: this.deps.bootServing.sha,
+      release: boot.kind === 'release' && boot.sha !== null
+        ? { sha: boot.sha,
             builtAt: this.deps.releasesDir === null ? null
-              : (readReleaseManifest(path.join(this.deps.releasesDir, this.deps.bootServing.sha))?.builtAt ?? null) }
+              : (readReleaseManifest(path.join(this.deps.releasesDir, boot.sha))?.builtAt ?? null) }
         : null,
     };
     const pointed = readPointer(this.deps.releasesDir);
-    const bootSha = this.deps.bootServing.sha;
+    const bootSha = boot.sha;
     const nextBoot: ManagementState['nextBoot'] =
       pointed !== null && pointed !== bootSha ? { kind: 'release', sha: pointed } : null;
     return {
@@ -757,6 +818,9 @@ export class Releases {
       data === undefined
         ? { ok: false, resultType: 'request_build', errorCode, errorMessage }
         : { ok: false, resultType: 'request_build', data, errorCode, errorMessage };
+    if (!this.reauthAllowed()) {
+      return fail('reauth_limited', 'too many password confirmations — wait and try again');
+    }
     const verified = await this.deps.verify(input.username, input.password);
     if (!verified.ok) {
       return fail('invalid_credentials',
@@ -807,6 +871,9 @@ export class Releases {
     const { target } = input;
     const fail = (errorCode: ActivateErrorCode, errorMessage: string): ActivateFailure =>
       ({ ok: false, resultType: 'activate_release', errorCode, errorMessage });
+    if (!this.reauthAllowed()) {
+      return fail('reauth_limited', 'too many password confirmations — wait and try again');
+    }
     const verified = await this.deps.verify(input.username, input.password);
     if (!verified.ok) {
       return fail('invalid_credentials',
@@ -840,6 +907,11 @@ export class Releases {
       }
       const valid = validateReleaseDir(path.join(this.deps.releasesDir, sha), sha);
       if (!valid.ok) return fail('release_invalid', valid.reason);
+      // Load check: the layout above cannot see the entry's OWN imports.
+      // Probing here (bounded) keeps the pointer off any release the next
+      // boot could not serve — the decision point, not the restart.
+      const probed = await probeReleaseEntry(path.join(this.deps.releasesDir, sha, 'dist', 'server', 'entry.mjs'));
+      if (!probed.ok) return fail('release_invalid', probed.reason);
     }
     // Pointer + history, then the restart. The pointer write is the
     // atomic commit point: a crash before it changes nothing; after it,
@@ -885,7 +957,8 @@ export class Releases {
     if (outcome === null || row.status === outcome) return;
     databaseUpdate('could not record the build outcome', () =>
       this.deps.db.run(qb.updateTable('releases')
-        .set({ status: outcome, built_at: Date.now(), log: (marker.log ?? '').slice(0, LOG_CAP) })
+        // built_at is the builder's own clock (the done marker), not sync time
+        .set({ status: outcome, built_at: marker.builtAt ?? Date.now(), log: (marker.log ?? '').slice(0, LOG_CAP) })
         .where('sha', '=', row.sha)));
   }
 }

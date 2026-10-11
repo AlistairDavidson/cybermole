@@ -180,6 +180,8 @@ export function managementFailureResponse(f: ManagementFailure): Response {
   switch (f.errorCode) {
     case 'invalid_credentials': // the password re-confirmation failed
       return body(401);
+    case 'reauth_limited':     // too many password confirmations in the window
+      return body(429);
     case 'checkout_missing':    // no checkout configured/present
       return body(404);
     case 'base_unknown':        // no trustworthy diff base — operator must rebuild the image

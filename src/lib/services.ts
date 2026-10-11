@@ -108,9 +108,11 @@ export interface ServiceDeps {
   sessionEnv: Record<string, string>;
   // task/mgmt-page: graceful-restart trigger for the swap step (the
   // server's own shutdown path — no docker socket anywhere), and the
-  // boot snapshot of what this process serves (the honest "serving now").
+  // LIVE snapshot of what this process serves (a GETTER: main.ts falls
+  // back to the image copy if a release's SSR entry fails to load at
+  // boot, and the "serving now" card must report the fallback).
   requestRestart: () => void;
-  bootServing: { kind: 'image' | 'release'; sha: string | null };
+  bootServing: () => { kind: 'image' | 'release'; sha: string | null };
 }
 
 export function createServices(deps: ServiceDeps): WebPiServices {
