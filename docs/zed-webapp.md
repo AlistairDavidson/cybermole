@@ -298,8 +298,10 @@ equivalence above is the argument that this is acceptable to defer).
   at boot with a deploy-the-profile error, the object-storage precedent
   applied to the operator's actual mistake.
 - The sidebar shows an "open in Zed" button on every past-session row
-  (its `cwd`) and every live-session row (tmux
-  `#{pane_current_path}`, now in `LiveSession.cwd`). The button is a
+  (its `cwd`) and every live-session row (tmux `#{pane_current_path}`
+  falling back to `#{pane_start_path}` — the session's active-pane cwd
+  when tmux can resolve the pane tty's foreground pgrp, else the `-c`
+  spawn dir, now in `LiveSession.cwd`). The button is a
   stateless `wa-button` re-created by the 15 s innerHTML poll — the
   sidebar's transient-state rules are untouched. Click = tab opens
   synchronously (keeps the popup inside the user gesture) + the launch
@@ -307,23 +309,60 @@ equivalence above is the argument that this is acceptable to defer).
 
 ## Host-side verification (the sandbox has no docker — run these)
 
-Everything below is UNVERIFIED in the sandbox except where marked:
-statically verified there — compose.yaml parses (yaml lib), the
-Dockerfile is linted by eye against the pinned releases' docs/debs (the
-KasmVNC 1.5.0 deb's binary names `kasmvncserver`/`kasmvncpasswd`, its
-dependency list and shipped files were read directly from the .deb;
-Zed v1.23.2's asset names from the release API), `npm run check` green,
-`npm run build` green, the full unit suite green (121/121 — incl. 6 new
-Zed tests covering every `ZedOpenResult` code against a stub launcher),
-and the e2e specs that don't render the app's wa-* pages green
-(`split.spec` — which exercises the changed `listSessions` against a
-real tmux server — `state-dir`, `restart`, `sessions-cache`). The rest
-of the e2e suite could NOT run in the sandbox: its chromium (vendored
-via LD_LIBRARY_PATH; no root for `playwright install-deps`) crashes the
-renderer on any page carrying Web Awesome's declarative-shadow-DOM
-templates — reproduced with plain `file://` HTML on the untouched
-login page, so environmental, not this branch. The new unconfigured-
-state e2e test lives in `tests/e2e.spec.ts` and must run on the host.
+Everything below is UNVERIFIED in the sandbox except where marked.
+Verified there (the second worker's sandbox — tmux and the release
+artifacts vendored from the pinned sources, no docker daemon, no root):
+
+- **Server code, live**: `npm run check` green; the full unit suite
+  126/126 with the prod image's tmux (bookworm 3.3a) vendored onto
+  PATH — incl. the 4 `readZedConfig` boot checks (the compose states:
+  unconfigured → off, unwired-with-lingering-token → off, triple →
+  config, URL without the pair → boot-stop) and a real-server
+  `listSessions` test (the -F format, the cwd fallback). Compose's
+  `${VAR:-default}` interpolation simulated for the four operator
+  scenarios and each shape fed to the compiled `readZedConfig`.
+- **The real launcher**: `zed/zed-launcher.py` (python3) served on
+  loopback and driven by the compiled `openInZed` — bearer-token happy
+  path (a fake `zed` recorded `setsid zed <realpath>` with
+  `DISPLAY=:1`, `WAYLAND_DISPLAY=`), 401 bad token → `launch_failed`,
+  outside-root and symlink-escaping-realpath paths → 400
+  `invalid_path`, 404s, `/healthz`.
+- **The real server, twice** (the e2e harness env, no Zed triple /
+  with the triple): the new e2e test's assertions at the HTTP level —
+  unauth 401, cross-origin 403, `/api/state` → `zed: null` /
+  `zed: {url}`, `POST /api/zed/open` → 503 `zed_not_configured`, the
+  relative path → 400 `validation_failure` with issues, text/plain →
+  415, a 12 KiB body → 413 (the route cap), 200 through a stub
+  launcher with the token verified.
+- **The pinned artifacts, downloaded**: KasmVNC 1.5.0 bookworm deb —
+  `kasmvncserver`/`kasmvncpasswd` binaries and
+  `/etc/kasmvnc/kasmvnc.yaml` present, the wrapper's `$HOME/.vnc`
+  xstartup and `$HOME/.kasmpasswd` conventions read from its perl;
+  the entrypoint's exact `kasmvncpasswd -u kasm_user -w` line RUN
+  with the deb's binary (a 0600 `~/.kasmpasswd` written). Zed v1.23.2
+  tarball — `zed.app/bin/zed` + `zed.app/libexec/zed-editor` layout,
+  and `zed --version` running and resolving `../libexec/zed-editor`.
+  All four release URLs (amd64/arm64 × KasmVNC/Zed) resolve.
+- **The sandbox could not**: run the browser e2e suite at all — no
+  chromium here (no root for `playwright install-deps`; ~24 missing
+  GUI libs; the first worker's vendored chromium, whose renderer
+  crashed on the wa-* DSD pages, is not in this sandbox) — the
+  browser-level assertions (sidebar render, the `login()` flow) are
+  host verification; the HTTP-level equivalents above were run
+  instead. `npm ci` fails in the sandbox (node-pty's tarball ships no
+  linux-x64 prebuild; the node-gyp build needs a C++ toolchain) — a
+  prebuilt tree was used. This sandbox's pty layer never sets a
+  foreground pgrp (`tcgetpgrp` → ENOTTY), so `#{pane_current_path}`
+  is empty here — a normal Linux kernel sets it on ctty acquisition
+  (`__proc_set_tty` → `tty->ctrl.pgrp`, verified in the kernel
+  source), so production resolves the current path; the
+  `pane_start_path` fallback covers the rest (verified live on the
+  vendored 3.3a).
+
+The unit suite without tmux on PATH runs 120/126 with 6 skips (the
+privilege-split functional block — environmental, by design); the
+new unconfigured-state e2e test lives in `tests/e2e.spec.ts` and must
+run on the host.
 
 1. **Build + boot**
    ```sh
@@ -348,6 +387,12 @@ state e2e test lives in `tests/e2e.spec.ts` and must run on the host.
    … llvmpipe …`); the session's cwd opens as a workspace. Click again
    for a second session: a second window, same instance. Kill Zed inside
    the stream (quit), click again: it re-boots with that folder.
+   A **live** session row's ⌷ button must carry the pane cwd too
+   (hover: "open <cwd> …") — `pane_current_path` resolving on a real
+   kernel; the spawn-dir fallback exists for pty layers that can't
+   (`docker compose exec workspace tmux -S /run/web-pi/tmux \
+   list-panes -a -F '#{session_name} #{pane_current_path}'` shows
+   what tmux sees).
 4. **Editing round-trip as uid 2000**: create a file via the Zed UI,
    confirm it appears under `/workspace/<checkout>` owned by uid 2000,
    and that a pi session in the workspace container sees it (and vice
@@ -383,9 +428,12 @@ state e2e test lives in `tests/e2e.spec.ts` and must run on the host.
   `// task/zed-webapp:` (task/winston-loki is expected to meet this file
   as well).
 - `src/lib/tmux.ts` — `listSessions` now uses an explicit `-F` format
+  (cwd = `#{pane_current_path}` with a `#{pane_start_path}` fallback)
   and `LiveSession` gained `cwd` (`src/lib/types.ts`): every consumer of
   the old default-format parsing is updated; check new siblings don't
   hand-parse `tmux list-sessions` output elsewhere.
+  `tests/unit/tmux.test.mjs` gained a tmux-gated `listSessions` test
+  (skipped without the binary).
 - The console UI deliberately stops at per-session buttons — the TODO's
   side-tab bar (pi / zed / terminal / preview) will subsume
   `ConsoleState.zed` and the `open-zed` event when it lands.

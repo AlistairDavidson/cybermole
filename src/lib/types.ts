@@ -22,8 +22,10 @@ export interface LiveSession {
   attached: boolean;
   /** tmux socket name owning the session */
   socket: string;
-  /** the session's active pane cwd (where a dive-in editor should open);
-   *  null when tmux reports none (e.g. the pane is dying) */
+  /** the session's active pane cwd (where a dive-in editor should open),
+   *  falling back to the pane's spawn dir when the pane tty's foreground
+   *  pgrp can't be resolved (src/lib/tmux.ts listSessions); null when
+   *  tmux reports none (e.g. the pane is dying) */
   cwd: string | null;
 }
 

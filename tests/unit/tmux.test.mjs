@@ -17,7 +17,8 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-tmux-test-'));
 process.env.WEB_PI_TMUX_SOCKET = path.join(dir, 'tmux');
 
 const { socketArgs, forksServer, isServerDown, SERVER_NOT_RUNNING_MSG, requireServer,
-        newSession, resumeSession, hasSession, liveSessionNames, jobSessionName, resumeSessionName } =
+        newSession, resumeSession, hasSession, liveSessionNames, jobSessionName, resumeSessionName,
+        listSessions } =
   await import('../../dist-server/src/lib/tmux.js');
 const { TmuxSessionNameSchema } = await import('../../dist-server/src/schemas/ids.js');
 
@@ -150,6 +151,32 @@ test('resume path: reuse when the session exists, guard when the server is down'
   assert.equal(refused.ok, false);
   assert.equal(refused.errorCode, 'server_not_running');
   assert.ok(refused.errorMessage.startsWith(SERVER_NOT_RUNNING_MSG), refused.errorMessage);
+});
+
+test('listSessions: explicit -F rows with the pane cwd (current, else the spawn dir)', { skip: !haveTmux }, async () => {
+  // The sidebar's "open in Zed" reads LiveSession.cwd: #{pane_current_path},
+  // falling back to #{pane_start_path} (tmux resolves current via the pane
+  // tty's foreground pgrp; a normal kernel sets it when the pane process
+  // takes the tty, some pty layers never do — the fallback then yields the
+  // `-c` spawn dir, which newSession sets to the session's cwd either way).
+  startServer();
+  try {
+    const workdir = path.join(dir, 'cwd-probe');
+    fs.mkdirSync(workdir, { recursive: true });
+    const created = await newSession('listprobe', workdir, ['/bin/sh', '-c', 'sleep 5'], {});
+    assert.equal(created.ok, true);
+    const live = await listSessions();
+    const row = live.find(s => s.name === 'listprobe');
+    assert.ok(row, `the session must be listed: ${JSON.stringify(live)}`);
+    assert.equal(row.socket, SOCKET);
+    assert.equal(row.windows, 1);
+    assert.equal(row.attached, false);
+    assert.equal(row.cwd, workdir); // current when resolvable, else the -c spawn dir
+    assert.match(row.created, /\d{4}/, 'the epoch is formatted in JS, not raw');
+    execFileSync('tmux', ['-S', SOCKET, 'kill-session', '-t', 'listprobe'], { stdio: 'ignore' });
+  } finally {
+    try { execFileSync('tmux', ['-S', SOCKET, 'kill-server'], { stdio: 'ignore' }); } catch { /* gone */ }
+  }
 });
 
 test('umask 0007 on the tmux server is inherited by what it spawns (group-readable session files)', { skip: !haveTmux }, async () => {
