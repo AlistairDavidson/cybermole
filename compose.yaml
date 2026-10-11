@@ -293,6 +293,13 @@ services:
     profiles: ["zed"]
     build:
       context: ./zed
+      # Same pins as the zed service above: both build the same tag, so an
+      # operator override must reach both builds — a default-pins zed-init
+      # image would otherwise sit under the overridden tag (or silently
+      # revert it on the next zed-init-only build).
+      args:
+        ZED_VERSION: ${ZED_VERSION:-v1.23.2}
+        KASMVNC_VERSION: ${KASMVNC_VERSION:-1.5.0}
     image: web-pi-zed:local
     user: "0:0"
     entrypoint:

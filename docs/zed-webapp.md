@@ -361,10 +361,11 @@ artifacts vendored from the pinned sources, no docker daemon, no root):
   `pane_start_path` fallback covers the rest (verified live on the
   vendored 3.3a).
 
-The unit suite without tmux on PATH runs 120/126 with 6 skips (the
-privilege-split functional block — environmental, by design); the
-new unconfigured-state e2e test lives in `tests/e2e.spec.ts` and must
-run on the host.
+The unit suite without tmux on PATH runs 119/126 with 7 skips (the
+6 privilege-split functional tests plus the new tmux-gated
+`listSessions` test — environmental, by design); the new
+unconfigured-state e2e test lives in `tests/e2e.spec.ts` and must run
+on the host.
 
 1. **Build + boot**
    ```sh
@@ -411,8 +412,12 @@ run on the host.
    upgrade).
 8. **Unconfigured and unwired stay clean**: on a host that never sets
    `WEB_PI_ZED_URL`, `docker compose up -d` boots exactly as before and
-   the sidebar has no Zed buttons (`grep -c data-zed` in the served page
-   HTML = 0) — even though the container sees a defaulted
+   the sidebar has no Zed buttons — signed in, after the sidebar's
+   first state poll, the browser DOM has none
+   (`document.querySelectorAll('[data-zed]').length === 0` in the
+   console; the served HTML itself never contains the rows — the
+   sidebar renders client-side — so grep the DOM, not the HTML) — even
+   though the container sees a defaulted
    `WEB_PI_ZED_LAUNCH_URL` (readZedConfig treats a URL-less env as off,
    unit-tested). Unset `WEB_PI_ZED_URL` (and
    `docker compose --profile zed down` if you want the stream gone) on

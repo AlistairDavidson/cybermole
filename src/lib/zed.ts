@@ -28,8 +28,8 @@ export type ZedOpenSuccess = ResultSuccess<'zed_open', ZedOpenData>;
 export type ZedOpenFailure = ResultFailure<'zed_open', ZedOpenData, ZedOpenErrorCode>;
 export type ZedOpenResult = ZedOpenSuccess | ZedOpenFailure;
 
-function fail(path: string, errorCode: ZedOpenErrorCode, errorMessage: string): ZedOpenFailure {
-  return { ok: false, resultType: 'zed_open', data: { path }, errorCode, errorMessage };
+function fail(path: string, errorCode: ZedOpenErrorCode, errorMessage: string) {
+  return { ok: false, resultType: 'zed_open', data: { path }, errorCode, errorMessage } satisfies ZedOpenFailure;
 }
 
 /** Open `path` as a workspace window in the Zed webapp. Validation here
