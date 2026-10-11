@@ -92,19 +92,29 @@ Both ends matter:
      session cannot write it.
   2. After an apply, the running release's sha is recorded by the server's
      own protected code in a **pointer file** (`<releases>/pointer/current`,
-     sha as its whole content) in a **web-only** subdir (0750 `node:node`)
-     of the releases volume — not the state db: it is resolved at main.ts
-     boot, before any db use, and the db's lazy open must stay lazy
-     (db.ts); not the group-writable volume root either (the builder
-     shares a group with web there — the pointer is the one thing ONLY
-     web may write, which is what makes it a trustworthy diff base). Also
-     unwritable by sessions.
+     sha as its whole content) on a **web-only volume of its own**
+     (0750 `node:node`) mounted at `/releases/pointer` INSIDE the shared
+     releases volume — not the state db: it is resolved at main.ts boot,
+     before any db use, and the db's lazy open must stay lazy (db.ts);
+     and not a plain subdir of the shared volume either: that volume's
+     root is group-writable (the builder moves release dirs into it),
+     and anything under a group-writable dir can be renamed away by the
+     group — a separate volume mount is unreachable in the builder's
+     mount namespace, so the pointer stays the one thing ONLY web may
+     write. Also unwritable by sessions.
   3. The base sha is resolved in the checkout with `git cat-file -e
-     <sha>^{commit}`. Git objects are content-addressed: if the sha
-     resolves, its tree is the tree that was built (short of a SHA-1
-     collision — see §1.5). If it does **not** resolve — history was
-     rewritten, or the checkout is a different repo — every apply is
-     refused (`base_not_in_checkout`). Fail closed.
+     <sha>^{commit}`, and everything git does runs with
+     `--no-replace-objects`: the checkout's owner can mint
+     `refs/replace/<sha> → <any object>` (§0 — rewritten refs are fair
+     game), and git honors them on EVERY object lookup unless told not
+     to — a replace of the base with the target would make the diff
+     empty, a replace of the target would judge, build and serve another
+     tree under a sha the enforcement approved. With replacement off,
+     git objects are content-addressed: if the sha resolves, its tree is
+     the tree that was built (short of a SHA-1 collision — §1.5). If it
+     does **not** resolve — history was rewritten, or the checkout is a
+     different repo — every apply is refused (`base_not_in_checkout`).
+     Fail closed.
   4. `version.json` missing or `git: "unknown"` (image built without the
      ARG) → `base_unknown`: applies and previews refuse until the operator
      rebuilds the image with the sha recorded. Enforcement without a
@@ -113,14 +123,26 @@ Both ends matter:
 
 ### 1.3 The diff mechanics (think like the attacker)
 
-- `git -c safe.directory='*' --no-pager diff --no-renames --name-status
-  -z <base> <target>`, run by the web container (uid node) against the
-  `:ro` workspace mount. `safe.directory='*'` per-invocation is required:
+- `git --no-replace-objects -c safe.directory='*' --no-pager diff
+  --no-renames --name-status -z <base> <target>`, run by the web
+  container (uid node) against the `:ro` workspace mount.
+  `--no-replace-objects` (flag + `GIT_NO_REPLACE_OBJECTS=1` in the child
+  env, and the same flag in the builder's git) is load-bearing: the
+  checkout's owner can mint `refs/replace/<sha> → <any object>`, and git
+  honors them on every lookup — the attacker tests pin both directions
+  (a replaced base must not empty the diff; a replaced target must not
+  swap the judged tree). Grafts (`.git/info/grafts`, parent faking)
+  cannot touch a tree-to-tree diff — pinned by a test so a git
+  regression shows up.
+  `safe.directory='*'` per-invocation is required:
   git refuses "dubious ownership" when the repo's owner (uid 2000) is not
   the caller — it must be a `-c` flag, never a config write (there is
   nowhere web may write, and a global config write would be state).
   Ambient config influence is blocked with
   `GIT_CONFIG_GLOBAL=/dev/null, GIT_CONFIG_NOSYSTEM=1` in the child env.
+  Output is capped at 16 MiB (`maxBuffer`): a bigger diff than that fails
+  closed as `git_error` (refuse, never apply blind) — honest diffs with
+  tens of thousands of changed paths still fit.
 - `--no-renames`: every rename/copy surfaces as delete+add of both ends,
   so "rename into a protected path" (add `deploy/foo`) and "rename a
   protected path away" (delete `compose.yaml`) are each caught by their
@@ -260,8 +282,10 @@ the sessions' uid is in neither group that writes it. The build executes
 attacker-chosen tree code (see §1.4) — it must never run as the gate uid,
 or with a docker socket, or as an id that can forge the protocol web
 trusts. The `releases` group IS the boundary: node + builder in, uid 2000
-out (compose's `releases-init` makes the protocol dirs 2770 `node:releases`
-and the pointer dir 0750 `node:node`).
+out (compose's `releases-init` makes the protocol volume's root + marker
+dirs 2770 `node:releases` — the builder writes markers and moves releases
+into that root — and the pointer lives on its own volume, mounted only
+in webpi, 0750 `node:node`).
 
 Builder recipe (scaffolded in `deploy/` + compose; the *contract* is
 implemented and unit-tested on the web side):
@@ -359,9 +383,10 @@ CREATE TABLE IF NOT EXISTS releases (
 );
 ```
 
-plus the web-only pointer file (§1.2/§3.2 — the releases volume, not the
-db). Old release dirs are never auto-deleted (rollback targets must
-stay); pruning is a future, explicitly-confirmable action.
+plus the web-only pointer file (§1.2/§3.2 — its own volume, not the db,
+not the shared protocol volume). Old release dirs are never auto-deleted
+(rollback targets must stay); pruning is a future,
+explicitly-confirmable action.
 
 ## 4. The page (`/management`)
 
@@ -448,8 +473,11 @@ On a host with a toolchain, chromium and tmux, the e2e half runs:
 management env — it runs after `e2e.spec.ts`, whose login-rate-limit test
 spends the shared webServer's whole per-IP budget, so it must not touch
 the shared instance's login) covers the page as a browser sees it: SSR,
-the partial-refresh verdict BEFORE any verb, the re-auth dialog path, the
-refusal statuses, the pending marker as the only effect, the origin gate.
+the partial-refresh verdict BEFORE any verb, the re-auth DIALOG path (the
+checkbox gate, the 401 toast on a wrong password, success closing the
+dialog + refreshing — the wa-* upgrade surface only a real browser
+catches), the refusal statuses, the pending marker as the only effect,
+the origin gate.
 
 **Scaffolded (needs a real docker host):** the builder sidecar
 (`deploy/builder-entrypoint.sh` + the compose `builder` service +

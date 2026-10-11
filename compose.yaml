@@ -154,9 +154,15 @@ services:
       - webpi-workspace:/workspace:ro
       - webpi-tmux:/run/web-pi
       # task/mgmt-page: releases web built + swapped (rw — web writes the
-      # pending markers and the web-only pointer/ dir; the builder writes
+      # pending markers and the web-only pointer volume; the builder writes
       # the releases themselves via the shared `releases` group).
       - webpi-releases:/releases
+      # The web-only pointer volume, mounted INSIDE the shared one: the
+      # builder shares the protocol volume's root (it must move releases
+      # into it) — a pointer DIR under that root would be renameable by
+      # the builder, so the pointer gets its own volume instead, which
+      # this container alone mounts (releases-init chowns it node:node).
+      - webpi-releases-pointer:/releases/pointer
     restart: unless-stopped
 
   # The working half of the split: same image, uid 2000, owns the tmux
@@ -199,18 +205,26 @@ services:
       - webpi-tmux:/run/web-pi
       - webpi-workspace:/workspace
 
-  # task/mgmt-page — the releases volume's layout (docs/management-page.md
-  # §2): group-shared protocol dirs (web + builder, NEVER the sessions'
-  # uid — the group is the boundary) and a web-ONLY pointer dir (what the
-  # next boot serves — the trusted diff base). Runs on every `up`.
+  # task/mgmt-page — the releases volumes' layout (docs/management-page.md
+  # §2). TWO volumes: the shared protocol volume (marker dirs + release
+  # dirs — group `releases` (web + builder), NEVER the sessions' uid; the
+  # group is the boundary) and the web-ONLY pointer volume mounted at
+  # /releases/pointer INSIDE it (what the next boot serves — the trusted
+  # diff base). The pointer cannot live on the shared volume: its root is
+  # group-writable (the builder moves release dirs into it), and anything
+  # under a group-writable dir can be renamed away by the group — a
+  # separate volume mount is unreachable in the builder's mount namespace
+  # (the same nested-mount pattern the dev profile uses for
+  # /app/node_modules). Runs on every `up`.
   releases-init:
     build: *webpi-build
     image: ${WEB_PI_IMAGE:-web-pi:local}
     user: "0:0"
-    entrypoint: ["sh", "-c", "mkdir -p /releases/pending /releases/building /releases/done /releases/pointer && chown -R node:releases /releases/pending /releases/building /releases/done && chmod 2770 /releases/pending /releases/building /releases/done && chown node:node /releases /releases/pointer && chmod 0750 /releases /releases/pointer"]
+    entrypoint: ["sh", "-c", "mkdir -p /releases/pending /releases/building /releases/done && chown node:releases /releases && chmod 2770 /releases && chown node:releases /releases/pending /releases/building /releases/done && chmod 2770 /releases/pending /releases/building /releases/done && chown node:node /releases/pointer && chmod 0750 /releases/pointer"]
     restart: "no"
     volumes:
       - webpi-releases:/releases
+      - webpi-releases-pointer:/releases/pointer
 
   # task/mgmt-page — the management page's build half: watches the pending
   # markers on the releases volume and builds content-addressed releases
@@ -246,7 +260,8 @@ services:
     network_mode: none # offline by design — nothing is fetched at build time
     volumes:
       - webpi-workspace:/workspace:ro # the checkout, read-only (never writes the sessions' tree)
-      - webpi-releases:/releases
+      - webpi-releases:/releases # markers + release dirs (never the pointer volume — that
+                                 # mount exists only in webpi, which is the pointer's boundary)
     restart: unless-stopped
 
   # Object storage for the web side: only webpi shares its network (no
@@ -409,11 +424,18 @@ volumes:
     name: webpi-tmux
   webpi-workspace:
     name: webpi-workspace
-  # task/mgmt-page: built releases + the marker protocol + the web-only
-  # pointer (docs/management-page.md §2–3). Group `releases` (web +
-  # builder) is the boundary — the sessions' uid is not in it.
+  # task/mgmt-page: built releases + the marker protocol (docs/
+  # management-page.md §2–3). Group `releases` (web + builder) is the
+  # boundary — the sessions' uid is not in it.
   webpi-releases:
     name: webpi-releases
+  # task/mgmt-page: the web-only pointer (what the next boot serves —
+  # the trusted diff base), its own volume so the builder (group-writer
+  # of the protocol volume's root) can never rename/replace it. Mounted
+  # only by webpi + releases-init, at /releases/pointer inside the
+  # shared volume's mount.
+  webpi-releases-pointer:
+    name: webpi-releases-pointer
   webpi-dev-node-modules:
     name: webpi-dev-node-modules
   # Object storage data, and the generated credentials that unlock it —
