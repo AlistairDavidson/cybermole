@@ -197,6 +197,16 @@ dir) and bounded honestly in §1.5.
    dangerous verb (below), but nothing stops the operator from following
    hostile instructions ("just run these commands in a session") — that
    is out of scope by definition; the terminal is the product.
+5. **`git archive` honors the target tree's `.gitattributes`**
+   (`export-ignore`, `export-subst`) — an unprotected tree can shape what
+   the builder materializes. Bounded: `export-ignore` can only DROP files
+   from the release (worst case a broken release the human catches and
+   rolls back — the gate, auth and state never ship from a release, §3.1),
+   and `export-subst` only interpolates commit metadata into file
+   contents the tree already authored. Neither grants a capability the
+   unprotected paths don't already carry; in-tree `.gitattributes` cannot
+   be switched off for `git archive`, so it is named here instead of
+   neutralized in the builder.
 
 ### 1.6 The verbs and their guards
 
@@ -276,7 +286,13 @@ implemented and unit-tested on the web side):
 The marker protocol (file names, JSON shapes, who writes what) is the
 implemented contract — `src/schemas/management.ts` (node-free) + read/
 write helpers in `src/lib/releases.ts`, unit-tested against a fake
-builder that plays the filesystem side of the protocol.
+builder that plays the filesystem side of the protocol. Ops note: a
+crashed builder can leave a claimed `building/<sha>.json` behind, and
+`anyBuildActive` then answers 409 `build_active` for every new build —
+the recovery is host-side: `docker compose exec webpi sh -c 'rm -f
+/releases/building/*.json'` (web owns the volume's protocol dirs too).
+A builder-side sweep is deliberately NOT the page's job: web never
+deletes protocol files it did not write itself.
 
 ## 3. The swap
 
