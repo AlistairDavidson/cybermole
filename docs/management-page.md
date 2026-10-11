@@ -91,8 +91,14 @@ Both ends matter:
      host: `GIT_SHA=$(git rev-parse HEAD) docker compose build`). A
      session cannot write it.
   2. After an apply, the running release's sha is recorded by the server's
-     own protected code in the state db (`settings` kv, `releases.current`)
-     on `/state` — also unwritable by sessions.
+     own protected code in a **pointer file** (`<releases>/pointer/current`,
+     sha as its whole content) in a **web-only** subdir (0750 `node:node`)
+     of the releases volume — not the state db: it is resolved at main.ts
+     boot, before any db use, and the db's lazy open must stay lazy
+     (db.ts); not the group-writable volume root either (the builder
+     shares a group with web there — the pointer is the one thing ONLY
+     web may write, which is what makes it a trustworthy diff base). Also
+     unwritable by sessions.
   3. The base sha is resolved in the checkout with `git cat-file -e
      <sha>^{commit}`. Git objects are content-addressed: if the sha
      resolves, its tree is the tree that was built (short of a SHA-1
@@ -230,11 +236,22 @@ Why not the alternatives:
   `docker restart` itself, see §3).
 
 Privilege shape of the chosen design: web (unmodifiable trigger) writes a
-request marker; the builder (uid 2000, same user as sessions — *it cannot
-gain anything the sessions don't already have*) does the work; the output
-lands on the releases volume which web validates and serves. The
-privilege model stays monotone: less-privileged triggers, work happens at
-workspace privilege, enforcement stays in unmodifiable code.
+request marker; a dedicated `builder` user (uid 2010, primary group
+`webpi` to READ the checkout, extra group `releases` (gid 2011, web +
+builder only) to write the volume) does the work; the output lands on
+the releases volume, which web validates and serves. Deliberately **not**
+uid 2000 (the sessions' uid): sessions would then be able to forge release
+dirs and done markers themselves — the thing `activate` validates and
+web serves. The monotone-core argument still holds: the build work happens
+in a container whose ONLY privilege over a session is writing the
+releases volume, everything it writes there is validated (manifest sha
+match + layout) and still gated by the enforcement re-run at activate, and
+the sessions' uid is in neither group that writes it. The build executes
+attacker-chosen tree code (see §1.4) — it must never run as the gate uid,
+or with a docker socket, or as an id that can forge the protocol web
+trusts. The `releases` group IS the boundary: node + builder in, uid 2000
+out (compose's `releases-init` makes the protocol dirs 2770 `node:releases`
+and the pointer dir 0750 `node:node`).
 
 Builder recipe (scaffolded in `deploy/` + compose; the *contract* is
 implemented and unit-tested on the web side):
@@ -251,9 +268,9 @@ implemented and unit-tested on the web side):
 4. `npm run build` with the image's toolchain (the `build` script is
    pinned by the protected `package.json`), `NODE_ENV=production`,
    offline. Output: `dist/` only (see §3.1).
-5. Write the release dir atomically: build into `.tmp-<sha>/`, then
+5. Write the release dir atomically: build into a scratch dir, then
    `rename` to `<sha>/` with `manifest.json`
-   `{sha, builtAt, builderImage}` + `dist/`; then `done/<sha>.json`
+   `{sha, builtAt, builder}` + `dist/`; then `done/<sha>.json`
    `{sha, status: "built"|"failed", log, builtAt}`.
 
 The marker protocol (file names, JSON shapes, who writes what) is the
@@ -289,13 +306,15 @@ a successful apply.
   volume. Unset → the page runs in read-only/dry-run mode (state,
   commits, preview verdicts; build/activate answer 503
   `releases_not_configured` with the compose snippet in the message).
-- At boot, `server/main.ts` resolves what to serve: read
-  `releases.current` from the state db → validate that release's dir
-  (`manifest.json` with matching sha, `dist/server/entry.mjs` exists,
-  `dist/client/` non-empty) → serve its entry/client; anything invalid
-  falls back to the image copy **with a loud boot log**. The running
-  process never changes its mind mid-flight — a release becomes served
-  only by a restart.
+- At boot, `server/main.ts` resolves what to serve: read the pointer file
+  (`<releases>/pointer/current`; absent → the image copy) → validate that
+  release's dir (`manifest.json` with matching sha,
+  `dist/server/entry.mjs` exists, `dist/client/` non-empty) → serve its
+  entry/client; anything invalid falls back to the image copy **with a
+  loud boot log**. The running process never changes its mind mid-flight
+  — a release becomes served only by a restart. The pointer is read
+  before any state-db use on purpose (the db opens lazily and stays that
+  way, db.ts).
 - The restart needs no docker socket: `activate` writes the pointer,
   answers the page, then the server exits through its **existing graceful
   shutdown path** (drain sockets, `process.exit(0)`) — docker's
@@ -324,9 +343,9 @@ CREATE TABLE IF NOT EXISTS releases (
 );
 ```
 
-plus the `releases.current` settings-kv pointer (see §1.2). Old release
-dirs are never auto-deleted (rollback targets must stay); pruning is a
-future, explicitly-confirmable action.
+plus the web-only pointer file (§1.2/§3.2 — the releases volume, not the
+db). Old release dirs are never auto-deleted (rollback targets must
+stay); pruning is a future, explicitly-confirmable action.
 
 ## 4. The page (`/management`)
 
@@ -394,10 +413,34 @@ migration + release rows; pointer write, release validation,
 `resolveServingDirs` boot resolution; re-auth + origin-gated API routes;
 the page and its dialogs.
 
+**Verified in a sandbox without a C++ toolchain** (node-pty can't build →
+the full server can't boot → `npm run test:e2e` can't run there):
+
+```sh
+npm run check                          # types + the .astro files
+npm run test:unit                      # tsc first; enforcement + marker + swap
+node tools/verify-management-ssr.mjs    # after `npm run build`: the page SSR,
+                                       # the partial, and every /api/management
+                                       # route + status mapping through the REAL
+                                       # Astro entry (dist/server/entry.mjs) with
+                                       # stubbed locals + a REAL Releases service
+                                       # over a REAL git fixture
+```
+
+On a host with a toolchain, chromium and tmux, the e2e half runs:
+`tests/management.spec.ts` (spawns its own server child on :3484 with the
+management env — it runs after `e2e.spec.ts`, whose login-rate-limit test
+spends the shared webServer's whole per-IP budget, so it must not touch
+the shared instance's login) covers the page as a browser sees it: SSR,
+the partial-refresh verdict BEFORE any verb, the re-auth dialog path, the
+refusal statuses, the pending marker as the only effect, the origin gate.
+
 **Scaffolded (needs a real docker host):** the builder sidecar
 (`deploy/builder-entrypoint.sh` + the compose `builder` service +
 releases-volume init) and an end-to-end apply/rollback with a real
-container restart.
+container restart (the swap itself — pointer write, validation, the
+graceful-exit restart — is unit-tested; only the builder's real build
+and the container's real restart need the host).
 
 Host verification steps (run from the original project on the host):
 
