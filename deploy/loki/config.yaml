@@ -4,8 +4,8 @@
 # over the compose network. Storage is the filesystem on the webpi-loki
 # volume; the compactor enforces the 14-day retention. Based on the
 # upstream cmd/loki/loki-local-config.yaml of grafana/loki 3.7 (keys
-# checked against the configuration reference; validated by
-# tools/check-observability.mjs).
+# checked against the configuration reference; validated statically by
+# tests/unit/observability.test.mjs — this sandbox has no docker daemon).
 auth_enabled: false
 
 server:
