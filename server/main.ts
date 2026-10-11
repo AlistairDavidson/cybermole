@@ -706,6 +706,12 @@ function attach(ws: WebSocket, token: SessionToken): void {
   wsLog.debug('ws connected');
   trackSocket(token, ws);
   let p: Pty | null = null;
+  // The tmux session this socket successfully attached to (null until
+  // then): the attached/detached lifecycle pair logs at info, while the
+  // socket opening itself stays at debug — a socket opens on every tab
+  // load and reconnect, and most of them do attach, but a failed one
+  // (no such session, the never-fork guard) shouldn't bury the console.
+  let attachedTo: TmuxSessionName | null = null;
   // Attach in flight: the spawn is one async step deeper than it used to
   // be (the never-fork guard runs before the pty spawn), so a second
   // {attach} frame in that window must not start a second spawn — `!p`
@@ -740,7 +746,9 @@ function attach(ws: WebSocket, token: SessionToken): void {
     x.onData(d => wsSend(ws, { type: 'output', data: d }));
     x.onExit(() => { wsSend(ws, { type: 'exit', target }); ws.close(); });
     p = x;
+    attachedTo = target;
     wsSend(ws, { type: 'attached', target, socket: tmux.SOCKET });
+    wsLog.info('terminal attached', { target });
   }
 
   async function onMessage(msg: ClientMsg): Promise<void> {
@@ -824,6 +832,9 @@ function attach(ws: WebSocket, token: SessionToken): void {
     untrackSocket(token, ws);
     clearInterval(keepalive);
     if (p) { try { p.kill(); } catch { /* already gone */ } }
+    // Covers both ways a terminal ends: the pty exiting (the 'exit' frame
+    // above) and the peer closing the tab.
+    if (attachedTo) wsLog.info('terminal detached', { target: attachedTo });
   });
   ws.on('error', () => { if (p) { try { p.kill(); } catch { /* noop */ } } });
 }
