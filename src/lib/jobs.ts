@@ -154,6 +154,14 @@ export class Scheduler {
   /** Jobs whose stored schedule no longer parses (hand-edited db) —
    *  warned about once, then skipped silently until re-saved. */
   private warned = new Set<JobName>();
+  /** Run sessions armed as live, run session → the job whose run it is.
+   *  Armed when a run opens (fire below) and at the tick's skip point
+   *  (runs opened outside the tick: "run now", or alive at boot); a
+   *  session that leaves the live set at a later tick has finished —
+   *  completed, killed from Live, or restarted away on the workspace
+   *  side — and gets one info line. Tick-granularity observation: a run
+   *  that opens and ends between two ticks is only counted as fired. */
+  private running = new Map<TmuxSessionName, JobName>();
 
   constructor(private db: StateDb, private ctx: JobContext) {}
 
@@ -214,11 +222,21 @@ export class Scheduler {
       const rows = this.rows();
       if (!rows.ok) { failed(rows.errorMessage); return; }
       const live = await liveSessionNames();
+      // Run-finish observation (this.running): an armed run session that
+      // is no longer live has ended. Map deletion during iteration is
+      // safe; entries can only outlive their run by one tick.
+      for (const [session, name] of this.running) {
+        if (live.has(session)) continue;
+        this.running.delete(session);
+        log.info(`job ${name} run finished (run session ${session} gone)`);
+      }
       const now = Date.now();
       for (const row of rows.data.value) {
+        const session = jobSessionName(row.name);
         // Concurrency: a job whose previous run's tmux session is still
-        // alive is skipped — long-running agent jobs don't pile up.
-        if (live.has(jobSessionName(row.name))) continue;
+        // alive is skipped — long-running agent jobs don't pile up — and
+        // (re-)armed so its end is reported.
+        if (live.has(session)) { this.running.set(session, row.name); continue; }
         const last = this.lastFired(row.name);
         if (!last.ok) { failed(last.errorMessage); return; }
         const reference = last.data.value ?? row.created_at;
@@ -267,6 +285,7 @@ export class Scheduler {
     log.info(`job ${row.name} fired (${origin}) — opening run session ${session}`);
     const opened = await newSession(session, this.ctx.cwd, ['/bin/sh', '-c', row.command], this.ctx.env);
     if (!opened.ok) log.error(`job ${row.name}: could not open run session ${session} (${opened.errorMessage})`);
+    else this.running.set(session, row.name); // armed — its end gets the finish line
     return opened;
   }
 
