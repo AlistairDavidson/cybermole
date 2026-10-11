@@ -255,6 +255,18 @@ check('POST activate without a built release: 404 release_not_built, no restart'
   assert.equal(restarts.length, 0);
 });
 
+// ---------- the refs/replace attack (the checkout's owner can mint
+// refs; git honors them on every lookup unless told not to) ----------
+
+git(['update-ref', `refs/replace/${EVIL_SHA}`, BASE_SHA]); // swap the judged tree
+git(['update-ref', `refs/replace/${BASE_SHA}`, EVIL_SHA]); // empty the diff
+const replaced = await call('GET', `/api/management/preview?sha=${EVIL_SHA}`);
+check('preview with replace refs on base AND target: still REFUSED, the real paths', () => {
+  assert.equal(replaced.status, 200);
+  assert.equal(replaced.json.allowed, false);
+  assert.deepEqual(replaced.json.protectedChanged, ['compose.yaml']);
+});
+
 // ---------- teardown ----------
 
 server.close();

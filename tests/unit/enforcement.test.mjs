@@ -272,6 +272,53 @@ test('target not found → refused', async () => {
   assert.equal(r.errorCode, 'target_not_found');
 });
 
+// ---------- refs/replace: the checkout's owner mints refs (§0 —
+// 'rewritten refs: all fair game'), and git honors them on EVERY object
+// lookup unless told not to. Without --no-replace-objects (the flag both
+// this module's git() and the builder carry) a replace of the base with
+// the target empties the diff; a replace of the target swaps the tree
+// that would be judged, built and served. ----------
+
+function evilTarget(f) {
+  fs.writeFileSync(path.join(f.root, 'compose.yaml'), 'evil\n');
+  return commit(f.run, f.root, 'evil');
+}
+
+test('attacker: refs/replace/<base> → <target> (the diff would be EMPTY) → the real diff is judged', async () => {
+  const f = fixtureRepo();
+  const evil = evilTarget(f);
+  execFileSync('git', ['update-ref', `refs/replace/${f.sha}`, evil], { cwd: f.root, stdio: 'ignore' });
+  const r = await enforceDiff(f.root, f.sha, evil);
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.equal(r.data.allowed, false, 'a replaced base must not empty the diff');
+  assert.ok(r.data.protectedChanged.includes('compose.yaml'), JSON.stringify(r.data.protectedChanged));
+});
+
+test('attacker: refs/replace/<target> → <clean> (the judged tree swapped) → the real target is judged', async () => {
+  const f = fixtureRepo();
+  fs.writeFileSync(path.join(f.root, 'README.md'), 'clean\n');
+  const clean = commit(f.run, f.root, 'clean');
+  const evil = evilTarget(f);
+  execFileSync('git', ['update-ref', `refs/replace/${evil}`, clean], { cwd: f.root, stdio: 'ignore' });
+  const r = await enforceDiff(f.root, f.sha, evil);
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.equal(r.data.allowed, false, 'a replaced target must not swap the judged tree');
+  assert.ok(r.data.protectedChanged.includes('compose.yaml'), JSON.stringify(r.data.protectedChanged));
+});
+
+test('attacker: .git/info/grafts (faked parents) cannot move the tree-to-tree diff', async () => {
+  // Grafts fake PARENTAGE; the diff compares trees directly — pinned
+  // here so a git regression that lets history shape the diff shows up.
+  const f = fixtureRepo();
+  const evil = evilTarget(f);
+  fs.mkdirSync(path.join(f.root, '.git', 'info'), { recursive: true });
+  fs.writeFileSync(path.join(f.root, '.git', 'info', 'grafts'), `${f.sha} ${'0'.repeat(40)}\n`);
+  const r = await enforceDiff(f.root, f.sha, evil);
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.equal(r.data.allowed, false);
+  assert.ok(r.data.protectedChanged.includes('compose.yaml'));
+});
+
 // ---------- the base chain ----------
 
 test('currentBaseSha: pointer file wins, else the image\'s baked sha, else null', () => {

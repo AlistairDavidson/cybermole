@@ -53,10 +53,14 @@ log() { echo "web-pi builder: $*"; }
 # git hardening: the checkout is owned by ANOTHER uid (safe.directory) and
 # its .git/config is attacker-writable (sessions own the checkout) — so
 # ambient config is disabled and hooks are pinned off; every call carries
-# its own -c flags. git archive reads the object db only — no hooks, no
-# working-tree filters, no network.
-GIT="git -c safe.directory=* -c core.hooksPath=/dev/null --no-pager"
-export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+# its own -c flags. --no-replace-objects is load-bearing for the
+# enforcement the marker claims to have passed: the checkout's owner can
+# mint refs/replace/<sha> → <any object>, and without this git would
+# archive a REPLACED tree under the sha the enforcement approved
+# (docs/management-page.md §1.2–1.3). git archive reads the object db only
+# — no hooks, no working-tree filters, no network.
+GIT="git --no-replace-objects -c safe.directory=* -c core.hooksPath=/dev/null --no-pager"
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_NO_REPLACE_OBJECTS=1
 
 # The log's tail as one JSON string (capped, quotes escaped).
 log_tail() { tail -c "$LOG_CAP" "$1" 2>/dev/null | tr -d '\r' | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' '; }

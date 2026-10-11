@@ -292,13 +292,24 @@ const GIT_TIMEOUT_MS = 15_000;
  *  mount and git refuses "dubious ownership" otherwise — and must be a
  *  `-c` flag (there is nowhere web may write config). Ambient config is
  *  neutralized in the child env so nothing in $HOME or /etc can steer
- *  git's behavior between calls. */
+ *  git's behavior between calls. `--no-replace-objects` (flag + env,
+ *  both) is load-bearing for the enforcement itself: the checkout's
+ *  owner can mint `refs/replace/<sha> → <any object>` (§0: rewritten
+ *  refs are fair game), and git honors them on EVERY object lookup
+ *  unless told not to — a replace of the base with the target would
+ *  make the diff empty, a replace of the target would archive/serve
+ *  another tree under a sha the enforcement approved (docs/
+ *  management-page.md §1.2–1.3; unit-tested from the attacker's side). */
 function git(checkout: string, args: string[]): Promise<{ error: Error | null; stdout: string; stderr: string }> {
   return new Promise(resolve => {
-    execFile('git', ['-c', 'safe.directory=*', '--no-pager', ...args], {
+    execFile('git', ['--no-replace-objects', '-c', 'safe.directory=*', '--no-pager', ...args], {
       cwd: checkout,
       timeout: GIT_TIMEOUT_MS,
-      env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+      maxBuffer: 16 * 1024 * 1024,
+      env: {
+        ...process.env,
+        GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_NO_REPLACE_OBJECTS: '1',
+      },
     }, (err, stdout, stderr) => resolve({
       error: err instanceof Error ? err : null,
       stdout: typeof stdout === 'string' ? stdout : '',
@@ -427,7 +438,9 @@ export function readPointer(releasesDir: string | null): string | null {
  *  failure; callers wrap it as database_error-shaped failures. */
 export function writePointer(releasesDir: string, sha: string | null): void {
   const file = pointerPath(releasesDir);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
+  // (mode 0750 applies only when the dir is created here — in compose
+  //  releases-init owns the pointer volume's mode)
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o750 });
   if (sha === null) {
     fs.rmSync(file, { force: true });
     return;
