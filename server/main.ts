@@ -72,7 +72,9 @@ const CFG: ServerConfig = {
 };
 
 // task/mgmt-page (docs/management-page.md §3.2): what THIS boot serves —
-// the release the trusted pointer file names (on the releases volume;
+// the release the serving pointer file names (on the releases volume;
+// serving/display state only, NEVER the enforcement's diff base — that is
+// always the image's baked version.json sha, docs §1.2/§1.5 #6; also
 // deliberately not the state db, which must keep opening lazily — db.ts),
 // when a valid one exists, else the image copy. Resolved once, before the
 // Astro entry import or any asset is served: the running process never

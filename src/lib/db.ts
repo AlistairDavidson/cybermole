@@ -5,9 +5,10 @@
 // sessions (`auth_sessions` — token hashes only, src/lib/auth.ts), a
 // `sessions` overlay table, the scheduled-jobs tables (`jobs` definitions,
 // `job_runs` bookkeeping — src/lib/jobs.ts), a small `settings` kv
-// (src/lib/auto-update.ts; the management page's release pointer lives
-// here too), and the management page's `releases` history
-// (src/lib/releases.ts). pi's own store (sessions/,
+// (src/lib/auto-update.ts), and the management page's `releases` history
+// (src/lib/releases.ts — the SERVING pointer is deliberately NOT db
+// state: it is a file on the releases volume, resolved at main.ts boot
+// before any db use; see releases.ts). pi's own store (sessions/,
 // provider creds under WEB_PI_AGENT_DIR) is not web-pi state and stays
 // untouched.
 //

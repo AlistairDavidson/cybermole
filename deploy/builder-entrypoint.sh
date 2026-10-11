@@ -62,8 +62,19 @@ log() { echo "web-pi builder: $*"; }
 GIT="git --no-replace-objects -c safe.directory=* -c core.hooksPath=/dev/null --no-pager"
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_NO_REPLACE_OBJECTS=1
 
-# The log's tail as one JSON string (capped, quotes escaped).
-log_tail() { tail -c "$LOG_CAP" "$1" 2>/dev/null | tr -d '\r' | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' '; }
+# The log's tail as one JSON string (capped, quotes escaped). Control
+# characters other than \n/\r are DELETED first: JSON.parse rejects raw
+# bytes < 0x20 in string literals, and build output plausibly carries tabs
+# (quoted source lines, tab-indented files) or ANSI escapes — without this
+# a SUCCESSFUL build could answer an invalid done marker, which web
+# reads as 'failed' (readBuildMarker: corrupt marker → failed).
+log_tail() {
+  tail -c "$LOG_CAP" "$1" 2>/dev/null \
+    | tr -d '\000-\011\013\014\016-\037\177' \
+    | tr -d '\r' \
+    | sed 's/\\/\\\\/g; s/"/\\"/g' \
+    | tr '\n' ' '
+}
 
 finish() {
   # $1 = sha, $2 = status (built|failed), $3 = log text (already escaped)
@@ -108,12 +119,17 @@ build_one() {
   fi
 
   # 4. lay out the release atomically (tmp dir + rename): web either sees
-  #    no release or a complete one, never a half-written one.
+  #    no release or a complete one, never a half-written one. A RE-build
+  #    (the page re-offers build for an already-built sha; requestBuild
+  #    re-upserts its row to 'requested') replaces the old dir first —
+  #    `mv` into an existing dir would NEST inside it, silently leaving
+  #    the stale release in place under a fresh 'built' marker.
   rel="$work/release"
   mkdir -p "$rel"
   cp -a "$work/tree/dist" "$rel/dist"
   printf '{"sha":"%s","builtAt":%s,"builder":"web-pi dev image"}\n' \
     "$sha" "$(date +%s000)" > "$rel/manifest.json"
+  rm -rf "$RELEASES/$sha"
   if ! mv "$rel" "$RELEASES/$sha"; then
     finish "$sha" failed "could not move the release into place"
     rm -rf "$work" "$logf" "$marker"; return 0

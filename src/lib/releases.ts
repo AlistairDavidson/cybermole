@@ -242,7 +242,7 @@ export type EnforcementResult = EnforcementSuccess | EnforcementFailure;
 export type RequestBuildData = { sha: CommitSha; status: 'requested' };
 export type RequestBuildErrorCode =
   | 'invalid_credentials'  // the password re-confirmation failed (401)
-  | 'enforcement_rejected' // the diff touches the protected set (422; data carries the verdict)
+  | 'enforcement_rejected' // the diff touches the protected set (422; the message names the offending paths)
   | 'releases_not_configured' // no WEB_PI_RELEASES_DIR volume (503)
   | 'build_active'         // another build is pending/running (409)
   | 'marker_error'         // the request marker could not be written (500)
