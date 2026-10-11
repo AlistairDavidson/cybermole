@@ -10,7 +10,6 @@ rollback AND applying changes in one place:
 - whole page, designed after the split lands (its "protected from modification" property is exactly what the split makes enforceable); handles picking a git commit, rebuilding, swapping, basic feedback
 
 ## Console features
-Zed editor as a webapp
 side-tab bar lets you open a given app
   pi
   zed
@@ -52,6 +51,8 @@ Write a refined agent workflow
 HIG skill
 
 ## Deferred, ignore
+when it stabilises, maybe build on pi-durable (is tmux still necessary with this?)
+
 xterm:
   unicode-graphemes - emoji/combining chars currently render wrong-width in agent output (6.0-only on npm, experimental)
   
@@ -60,7 +61,4 @@ xterm:
   
   search addon + ctrl+F bar (wa-input cluster in terminal toolbar, NOT the session sidebar - 15s innerHTML poll eats state) server backfill via `tmux capture-pane -S -5000 -p` written to WS on attach so resumed sessions have searchable scrollback
 
-serialize - "download transcript" / "copy output" button, zero server changes; maybe e2e assertions on terminal state
-
-
-when it stabilises, maybe build on pi-durable (is tmux still necessary with this?)
+  serialize - "download transcript" / "copy output" button, zero server changes; maybe e2e assertions on terminal state

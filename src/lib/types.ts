@@ -160,6 +160,108 @@ export interface UpdateResult {
   error?: string;
 }
 
+// ---- management page (/management ← /api/management; docs/management-page.md) ----
+
+/** The image identity baked at docker build (version.json at the app root). */
+export interface ImageVersion {
+  appVersion: string;
+  /** full git sha, or 'unknown' when the image was built without GIT_SHA */
+  git: string;
+  /** ISO build time, null when not recorded */
+  builtAt: string | null;
+}
+
+/** What the running process serves (the management page's headline). */
+export interface ServingInfo {
+  kind: 'image' | 'release';
+  /** image facts — always shown; the rollback target */
+  image: ImageVersion | null;
+  /** the served release, when kind === 'release' */
+  release: { sha: string; builtAt: number | null } | null;
+}
+
+/** Read-only facts about the workspace checkout (soft: git problems land
+ *  in `error`, the card shows them instead of guessing). */
+export interface CheckoutInfo {
+  path: string;
+  /** HEAD sha, null when unreadable */
+  head: string | null;
+  /** branch name, null on detached HEAD or unreadable */
+  branch: string | null;
+  /** changed + untracked file count (git status --porcelain), null when unknown */
+  dirty: number | null;
+  /** why the reads failed, null when fine */
+  error: string | null;
+}
+
+/** One commit of the checkout, for the picker. */
+export interface CommitEntry {
+  /** full 40-hex sha — the apply target */
+  sha: string;
+  short: string;
+  subject: string;
+  author: string;
+  /** ISO commit date */
+  date: string;
+}
+
+/** One changed path in the dry-run verdict. */
+export interface ChangedPath {
+  path: string;
+  status: 'A' | 'D' | 'M' | 'T';
+  protectedPath: boolean;
+}
+
+/** The enforcement verdict (docs/management-page.md §1): computed
+ *  server-side in protected code for the preview AND re-run before every
+ *  dangerous verb — the page's display is a courtesy, never the check. */
+export interface EnforcementVerdict {
+  base: string;
+  target: string;
+  allowed: boolean;
+  /** total judged changed paths (the carried list is capped for display) */
+  changedCount: number;
+  changed: ChangedPath[];
+  /** protected paths that changed (never capped) — the refusal reason */
+  protectedChanged: string[];
+  /** each protected hit → the matching entry's rationale (the page shows
+   *  it next to the path; an unparsable-path placeholder has none) */
+  protectedWhy: Record<string, string>;
+}
+
+/** Build lifecycle as the markers + db record it (pending → building →
+ *  built | failed). */
+export type BuildStatus = 'none' | 'pending' | 'building' | 'built' | 'failed';
+
+/** One release-history row (state db `releases` table). */
+export interface ReleaseRecord {
+  sha: string;
+  status: 'requested' | 'built' | 'failed' | 'applied';
+  requestedAt: number;
+  builtAt: number | null;
+  appliedAt: number | null;
+  /** capped builder output tail */
+  log: string | null;
+  /** live marker status for a 'requested' row (absent otherwise) */
+  live?: BuildStatus;
+}
+
+/** GET /api/management's body: everything the page renders. */
+export interface ManagementState {
+  me: 'ok';
+  /** what this process resolved to serve at boot */
+  serving: ServingInfo;
+  /** what the NEXT boot will serve, when the pointer has moved past the
+   *  boot snapshot (a written-but-not-yet-restarted activation) */
+  nextBoot: { kind: 'release'; sha: string } | null;
+  /** null when WEB_PI_MANAGEMENT_CHECKOUT is unset */
+  checkout: CheckoutInfo | null;
+  /** the releases volume mount; null = the swap half is off */
+  releasesDir: string | null;
+  /** newest first, capped */
+  releases: ReleaseRecord[];
+}
+
 // ---- WS wire protocol (JSON envelopes) ----
 // Client frames: schemas, parseClientMsg and the z.infer'd ClientMsg live
 // in src/schemas/frames.ts (node-free, described exactly once). ServerMsg

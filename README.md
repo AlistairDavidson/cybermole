@@ -549,7 +549,9 @@ Front it with TLS — [`deploy/`](deploy/) has:
   runs with `WEB_PI_TRUST_PROXY=1` (compose sets it; set it yourself for a
   host install behind nginx)
 - `fail2ban-filter-webpi.conf` + `fail2ban-jail.conf` — fail2ban watching
-  the nginx access log for failed logins (401/429 on the login POST)
+  the nginx access log for failed logins (401/429 on the login POST) and
+  failed /management password re-confirmations (401/429 on the management
+  build/activate POSTs)
 
 State is split by owner, like everything else in the two-container shape:
 `webpi.db` (login credential, hidden sessions, jobs) lives on the
@@ -628,8 +630,9 @@ a single definition point:
   (marked with a comment; `proxy_pass` forwards the client's path
   unchanged, so the one literal both selects and names the prefix).
 - **[`deploy/fail2ban-filter-webpi.conf`](deploy/fail2ban-filter-webpi.conf)**
-  — the POST path inside `failregex`, likewise the file's only
-  occurrence; the NOTE above it points here and at the nginx capture.
+  — the POST paths inside `failregex` (the login POST and the management
+  re-auth POSTs), likewise the file's only occurrences; the NOTE above it
+  points here and at the nginx capture.
 
 Change it at all three definition points, then rebuild the image (it's
 baked in — `docker compose build`), reload nginx, and restart fail2ban.

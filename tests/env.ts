@@ -13,6 +13,6 @@ export const UUIDV7_SIBLINGS = [
 ] as const;
 // Object storage for the run: tests/fake-s3.mjs, started by the
 // playwright.config webServer list ahead of the app.
-export const S3_PORT = 3490; // clear of the specs' own server ports (3470–3483)
+export const S3_PORT = 3490; // clear of the specs' own server ports (3470–3484)
 export const S3_BUCKET = 'webpi-itest';
 export const S3_ACCESS_KEY = 'itest-access';

@@ -16,6 +16,9 @@ export type JobName = Brand<string, 'JobName'>;
 export type SessionToken = Brand<string, 'SessionToken'>;
 /** An object's key in the storage bucket (src/lib/storage.ts). */
 export type ObjectKey = Brand<string, 'ObjectKey'>;
+/** A full (40-hex) git commit sha of the workspace checkout — the
+ *  management page's apply target (src/lib/releases.ts). */
+export type CommitSha = Brand<string, 'CommitSha'>;
 
 export function asPiSessionId(value: string): PiSessionId {
   return value as PiSessionId;
@@ -35,4 +38,8 @@ export function asSessionToken(value: string): SessionToken {
 
 export function asObjectKey(value: string): ObjectKey {
   return value as ObjectKey;
+}
+
+export function asCommitSha(value: string): CommitSha {
+  return value as CommitSha;
 }

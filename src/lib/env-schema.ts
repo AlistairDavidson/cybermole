@@ -59,6 +59,15 @@ export const envSchema = {
   // (identifies this deployment in Loki's stream selectors). Default in
   // env.ts: 'webpi'.
   WEB_PI_LOKI_JOB: { type: 'string', context: 'server', access: 'secret', optional: true },
+  // task/mgmt-page (docs/management-page.md §6): the releases volume —
+  // where the builder sidecar writes built releases and web reads them.
+  // Unset = the swap half of /management is off (build/activate answer
+  // 503); the page still shows state and dry-run enforcement verdicts.
+  WEB_PI_RELEASES_DIR: { type: 'string', context: 'server', access: 'secret', optional: true },
+  // task/mgmt-page: the workspace checkout /management reads commits from
+  // and applies (compose: /workspace/web-pi; the dev profile can point it
+  // at /app). Read-only on web's mount.
+  WEB_PI_MANAGEMENT_CHECKOUT: { type: 'string', context: 'server', access: 'secret', optional: true },
   // Object storage (src/lib/storage.ts) — any S3-compatible server; the
   // compose stack runs SeaweedFS. No endpoint = not configured (uploads
   // answer 503); an endpoint needs both keys — env.ts checks at boot.

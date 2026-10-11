@@ -1,0 +1,40 @@
+---
+import Base from '../layouts/Base.astro';
+import ManagementView from '../components/Management/ManagementView.astro';
+// The management page (docs/management-page.md): apply a commit of the
+// workspace checkout to what web serves, roll it back, and show the
+// enforcement verdict BEFORE any verb. Server-rendered first (docs/
+// CODE_STYLE.md §7); <management-app> (management-app.ts) wires the
+// actions and refreshes from /partials/management (the picked commit
+// rides along as ?sha= there — the initial render starts unpicked).
+// No locals (astro dev's own render) → placeholders + the element loads
+// the partial.
+const mgmt = Astro.locals.webpi?.management;
+const state = await mgmt?.state() ?? null;
+if (state && !state.ok) console.error(`management page: ${state.errorMessage}`);
+const commits = await mgmt?.commits() ?? null;
+---
+<Base title="web-pi — management">
+  <management-app>
+    <ManagementView
+      state={state?.ok ? state.data : null}
+      error={state && !state.ok ? state.errorMessage : null}
+      commits={commits?.ok ? commits.data.commits : null}
+      commitsError={commits && !commits.ok ? commits.errorMessage : null}
+    />
+  </management-app>
+</Base>
+
+<script>
+  // Support modules MUST precede the wa-* imports — if the SSR'd elements
+  // define before lit hydration support installs, they render twice
+  // (@awesome.me/astro-lit README). Not script-position-dependent.
+  import '@awesome.me/astro-lit/dsd-polyfill.js';
+  import '@awesome.me/astro-lit/hydration-support.js';
+  // Vendored glyph libraries must register before any wa-* component
+  // module defines — else upgraded icons fetch from the CDN first.
+  import '../icons';
+  // Client-side: defines the SSR'd wa-* components (upgrade + hydrate)
+  // and <management-app>.
+  import '../components/Management/management-app';
+</script>

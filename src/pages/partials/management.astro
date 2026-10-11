@@ -1,0 +1,33 @@
+---
+// GET /partials/management — the /management page as a fragment, for
+// <management-app> to refresh its data regions from. The picked commit
+// rides along as ?sha=, so the preview region (the dry-run enforcement
+// verdict) follows the selection. Behind the main.ts gate (signed out:
+// 401) and src/middleware.ts (no locals: 503). A management_state failure
+// answers 500 with no fragment — the element keeps what it shows (like
+// /partials/settings).
+import ManagementView from '../../components/Management/ManagementView.astro';
+import { CommitShaSchema } from '../../schemas/management';
+import { assertWebPiLocals } from '../../lib/web/locals';
+
+export const partial = true;
+
+const { webpi } = assertWebPiLocals(Astro.locals);
+const state = await webpi.management.state();
+Astro.response.headers.set('Cache-Control', 'no-store');
+if (!state.ok) {
+  console.error(`management partial: ${state.errorMessage}`);
+  Astro.response.status = 500;
+}
+const commits = state.ok ? await webpi.management.commits() : null;
+const picked = CommitShaSchema.safeParse(Astro.url.searchParams.get('sha'));
+const preview = picked.success ? await webpi.management.preview(picked.data) : null;
+---
+{state.ok && <ManagementView
+  state={state.data}
+  commits={commits?.ok ? commits.data.commits : null}
+  commitsError={commits && !commits.ok ? commits.errorMessage : null}
+  previewSha={picked.success ? picked.data : null}
+  preview={preview?.ok ? preview.data : null}
+  previewError={preview && !preview.ok ? preview.errorMessage : null}
+/>}
