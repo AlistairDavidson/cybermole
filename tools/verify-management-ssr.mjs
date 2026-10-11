@@ -74,7 +74,7 @@ const service = new Releases({
   checkout: CHECKOUT,
   releasesDir: RELEASES,
   appRoot: APP_ROOT,
-  bootServing: { kind: 'image', sha: null },
+  bootServing: () => ({ kind: 'image', sha: null }),
   requestRestart: () => restarts.push(Date.now()),
   verify: async (username, password) =>
     username === USERNAME && password === PASSWORD
@@ -265,6 +265,40 @@ check('preview with replace refs on base AND target: still REFUSED, the real pat
   assert.equal(replaced.status, 200);
   assert.equal(replaced.json.allowed, false);
   assert.deepEqual(replaced.json.protectedChanged, ['compose.yaml']);
+});
+
+// ---------- the full activate flow (the swap's happy path, marker-side) ----------
+
+// A built release (the builder's layout: manifest + dist + a node_modules
+// link at the release root; the entry is loadable, so the activate-time
+// import probe passes).
+const releaseDir = path.join(RELEASES, CLEAN_SHA);
+fs.mkdirSync(path.join(releaseDir, 'dist', 'server'), { recursive: true });
+fs.mkdirSync(path.join(releaseDir, 'dist', 'client', '_astro'), { recursive: true });
+fs.writeFileSync(path.join(releaseDir, 'dist', 'server', 'entry.mjs'), 'export const handler = 1;\n');
+fs.writeFileSync(path.join(releaseDir, 'dist', 'client', '_astro', 'x.js'), 'x');
+fs.mkdirSync(path.join(releaseDir, 'node_modules'), { recursive: true });
+fs.writeFileSync(path.join(releaseDir, 'manifest.json'),
+  JSON.stringify({ sha: CLEAN_SHA, builtAt: 1234, builder: 'tools' }));
+fs.rmSync(path.join(RELEASES, 'pending'), { recursive: true, force: true });
+fs.mkdirSync(path.join(RELEASES, 'done'), { recursive: true });
+fs.writeFileSync(path.join(RELEASES, 'done', `${CLEAN_SHA}.json`),
+  JSON.stringify({ sha: CLEAN_SHA, status: 'built', builtAt: 1234, log: 'ok' }));
+const activated = await call('POST', '/api/management/activate',
+  { target: CLEAN_SHA, confirm: true, username: USERNAME, password: PASSWORD });
+check('POST activate, built + loadable release: 202, pointer written, restart triggered', () => {
+  assert.equal(activated.status, 202);
+  assert.deepEqual(activated.json, { target: CLEAN_SHA, status: 'activating' });
+  assert.equal(restarts.length, 1, 'the restart trigger fired exactly once');
+  assert.equal(fs.readFileSync(path.join(RELEASES, 'pointer', 'current'), 'utf8'), CLEAN_SHA);
+});
+const afterActivate = await call('GET', '/api/management');
+check('state after activation: serving is the boot snapshot, nextBoot the pointer', () => {
+  assert.equal(afterActivate.json.serving.kind, 'image');
+  assert.deepEqual(afterActivate.json.nextBoot, { kind: 'release', sha: CLEAN_SHA });
+  const row = afterActivate.json.releases.find(r => r.sha === CLEAN_SHA);
+  assert.equal(row.status, 'applied');
+  assert.ok(row.appliedAt > 0);
 });
 
 // ---------- teardown ----------

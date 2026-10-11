@@ -278,21 +278,31 @@ dir) and bounded honestly in §1.5.
    attacker-chosen clean release is precisely the privilege they could
    have served themselves legitimately. The password re-confirmation is
    what keeps even a captured-password hostile element from activating
-   anything the enforcement refuses.
+   anything the enforcement refuses — and the re-auth is itself
+   rate-limited (§1.6) so a live cookie cannot grind the password either.
+   (An `activate` import-probes the release's entry first — executing the
+   release's module code a moment early, the same in-process class as
+   serving it.)
 
 ### 1.6 The verbs and their guards
 
 | Verb | Guards |
 | --- | --- |
 | GET state / commits / preview | session (main.ts gate) only — read-only, no secrets beyond paths and shas |
-| POST build | re-auth (`username`+`password`, verified via `auth.verify` — 401 on mismatch), enforcement re-run (422 `enforcement_rejected` with the offending paths), one build at a time (409), releases volume configured (503) |
-| POST activate | re-auth, enforcement re-run for a release target (base = the image's baked sha — always, §1.2), release must exist + manifest match + layout valid (404/409), then pointer write + recorded history + restart |
+| POST build | re-auth (`username`+`password`, verified via `auth.verify` — 401 on mismatch; `reauth_limited` 429 past 10 attempts / 15 min, per process, shared with activate), enforcement re-run (422 `enforcement_rejected` with the offending paths), one build at a time (409), releases volume configured (503) |
+| POST activate | re-auth, enforcement re-run for a release target (base = the image's baked sha — always, §1.2), release must exist + manifest match + layout valid + entry import-probed (404/409), then pointer write + recorded history + restart |
 
 Every POST is already origin-checked by `server/main.ts`'s gate (present
 but foreign `Origin` → 403 before Astro) and session-checked; the
 re-confirmation password is the second factor against a stolen-but-live
 cookie (an XSS elsewhere on the origin could fetch with the cookie, but
-does not know the password).
+does not know the password). The re-auth itself is rate-limited — the
+login limiter covers `POST /login` only, and an unthrottled re-auth would
+be exactly the password oracle the re-auth exists to stop: the verbs
+share one per-process limiter with the login budget (attempts, 10 / 15
+min — past it, `reauth_limited` 429 without spending a scrypt), and
+`deploy/fail2ban-filter-webpi.conf` watches the management re-auth
+401/429s too.
 
 ## 2. Where the build runs — the builder sidecar
 
@@ -345,8 +355,11 @@ implemented and unit-tested on the web side):
 2. Materialize the tree content-addressed: `git archive <sha> | tar -x`
    into a scratch dir (never build the working tree — the attacker can
    mutate it between check and build; the sha cannot be mutated).
-3. Reuse the image's own `/opt/web-pi/node_modules` (copy it into the
-   scratch tree). The lockfile is protected ⇒ the deps are identical to
+3. Reuse the image's own `/opt/web-pi/node_modules` (remove any
+   tree-tracked `node_modules` first, then copy the image's into the
+   scratch tree — the copy must not nest inside a tree-tracked one, or
+   the build would resolve the tree's own deps). The lockfile is
+   protected ⇒ the deps are identical to
    the image's; node-pty arrives prebuilt; **no network, no
    `npm install`, no lifecycle scripts from the tree run**.
 4. `npm run build` with the image's toolchain (the `build` script is
@@ -354,7 +367,13 @@ implemented and unit-tested on the web side):
    offline. Output: `dist/` only (see §3.1).
 5. Write the release dir atomically: build into a scratch dir, then
    `rename` to `<sha>/` with `manifest.json`
-   `{sha, builtAt, builder}` + `dist/`; then `done/<sha>.json`
+   `{sha, builtAt, builder}` + `dist/` + a `node_modules` SYMLINK to the
+   image's `/opt/web-pi/node_modules` at the release root — the SSR
+   entry's bare package imports resolve by walking up from the entry
+   file, and without the link they find no `node_modules` anywhere above
+   a release dir: no activated release would ever load (the target is
+   root-owned, so a release consumes the image's pinned deps but can
+   never modify them); then `done/<sha>.json`
    `{sha, status: "built"|"failed", log, builtAt}`.
 
 The marker protocol (file names, JSON shapes, who writes what) is the
@@ -387,7 +406,10 @@ deletes protocol files it did not write itself.
 ### 3.1 What a release contains — and why not `dist-server/`
 
 A release is `dist/` (Astro client assets + the SSR handler
-`dist/server/entry.mjs`) + `manifest.json`. **The release deliberately
+`dist/server/entry.mjs`) + `manifest.json` + a `node_modules` symlink to
+the image's pinned deps at the release root (§2 step 5 — without it the
+entry's bare imports resolve nowhere above the release dir). **The
+release deliberately
 does not replace `dist-server/`** — the running Node process keeps
 executing the image's root-owned `server/main.js`, the tsc-compiled
 `src/lib/*` (the domain services: auth, the state db, tmux, the
@@ -417,9 +439,15 @@ a successful apply.
 - At boot, `server/main.ts` resolves what to serve: read the pointer file
   (`<releases>/pointer/current`; absent → the image copy) → validate that
   release's dir (`manifest.json` with matching sha,
-  `dist/server/entry.mjs` exists, `dist/client/` non-empty) → serve its
-  entry/client; anything invalid falls back to the image copy **with a
-  loud boot log**. The running process never changes its mind mid-flight
+  `dist/server/entry.mjs` exists, `dist/client/` non-empty, the
+  `node_modules` link present) → serve its entry/client; anything invalid
+  falls back to the image copy **with a loud boot log**. And if the
+  release's entry fails to *load* at boot (its own imports — the one
+  failure class no layout check can see; `activate` import-probes for it
+  and `release_invalid`s it first, this is the belt-and-braces second
+  line), the process falls back to the image's entry + assets **loudly**
+  and the page reports the fallback — the now-working page can roll
+  back. The running process never changes its mind mid-flight otherwise
   — a release becomes served only by a restart. The pointer is read
   before any state-db use on purpose (the db opens lazily and stays that
   way, db.ts).
@@ -490,8 +518,8 @@ decides anything.
 | `GET /api/management` | `management_state` | everything the page renders; `database_error` only |
 | `GET /api/management/commits` | `list_commits` | recent commits of the checkout; `checkout_missing` (404), `git_error` (500) |
 | `GET /api/management/preview?sha=…` | `enforcement_preview` | verdict as data; `checkout_missing`, `base_unknown`/`base_not_in_checkout` (409), `target_not_found` (404), `git_error` |
-| `POST /api/management/build` | `request_build` | re-auth (`invalid_credentials` 401), enforcement (`enforcement_rejected` 422 + offending paths), `releases_not_configured` (503), `build_active` (409), preview's codes |
-| `POST /api/management/activate` | `activate_release` | `target: sha\|'image'`; re-auth, enforcement (sha targets), `release_not_built` (404), `release_invalid` (409), `releases_not_configured` (503), `database_error` |
+| `POST /api/management/build` | `request_build` | re-auth (`invalid_credentials` 401, `reauth_limited` 429 past the shared 10/15-min budget — §1.6), enforcement (`enforcement_rejected` 422 + offending paths), `releases_not_configured` (503), `build_active` (409), preview's codes |
+| `POST /api/management/activate` | `activate_release` | `target: sha\|'image'`; re-auth (incl. `reauth_limited`), enforcement (sha targets), `release_not_built` (404), `release_invalid` (409 — incl. an entry that will not load, probed), `releases_not_configured` (503), `database_error` |
 
 Request bodies are parsed with the shared node-free schemas in
 `src/schemas/management.ts` (`confirm` must be the literal `true` — the

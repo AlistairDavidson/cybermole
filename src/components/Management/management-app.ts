@@ -110,20 +110,29 @@ export class ManagementApp extends HTMLElement {
   }
 
   /** Re-render the data regions from the partial (the pick rides along as
-   *  ?sha= so the preview region follows the selection). A failed fetch
-   *  keeps what is shown. */
+   *  ?sha= so the preview region follows the selection). Serialized — a
+   *  poll fetch racing a pick fetch must not let the older answer's
+   * regions overwrite the newer one's. A failed fetch keeps what is
+   *  shown. */
+  private refreshInflight = false;
   private async refresh(sha: string | null = this.selected()): Promise<void> {
-    const q = sha ? `?sha=${encodeURIComponent(sha)}` : '';
-    const sent = await signedInFetch(`${BASE}/partials/management${q}`);
-    if (!sent.ok) return;
-    const r = sent.data.response;
-    if (!r.ok) return;
-    const fresh = parseServerHTML(await r.text());
-    const box = document.createElement('div');
-    for (const node of fresh) box.append(node);
-    box.querySelectorAll<HTMLElement>('[data-refresh][id]').forEach(region => {
-      this.querySelector(`#${CSS.escape(region.id)}`)?.replaceWith(document.importNode(region, true));
-    });
+    if (this.refreshInflight) return;
+    this.refreshInflight = true;
+    try {
+      const q = sha ? `?sha=${encodeURIComponent(sha)}` : '';
+      const sent = await signedInFetch(`${BASE}/partials/management${q}`);
+      if (!sent.ok) return;
+      const r = sent.data.response;
+      if (!r.ok) return;
+      const fresh = parseServerHTML(await r.text());
+      const box = document.createElement('div');
+      for (const node of fresh) box.append(node);
+      box.querySelectorAll<HTMLElement>('[data-refresh][id]').forEach(region => {
+        this.querySelector(`#${CSS.escape(region.id)}`)?.replaceWith(document.importNode(region, true));
+      });
+    } finally {
+      this.refreshInflight = false;
+    }
     this.localizeTimes();
     // The build-log <wa-details> sits AROUND its [data-refresh] <pre>, so
     // its hidden-ness is not part of any region — re-sync it from the
