@@ -5,8 +5,10 @@ side-tab bar where a session can be opened in pi / **zed** / terminal /
 app preview. This document covers only the Zed piece: can it work, what
 it takes to run it, how the stream reaches the browser, how the console
 opens a specific session cwd in it, and what a human must verify on the
-host (the agent sandbox has no docker daemon — everything container-side
-below is statically validated only).
+host (the agent sandboxes have no docker daemon, so the containers never
+boot there — the pinned artifacts themselves, though, were downloaded
+and exercised in the second sandbox; see Host-side verification for
+exactly what ran and what still needs a host).
 
 ## Verdict in one paragraph
 
