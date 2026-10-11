@@ -85,6 +85,16 @@ function fakeBuilder(releasesDir, sha, status, log = '') {
   if (status === 'built') makeRelease(releasesDir, sha);
 }
 
+/** The builder's claim half alone: rename to building/ AND delete the
+ *  previous build's done marker (the real builder-entrypoint.sh does
+ *  both — a re-build must not report the stale answer as live state). */
+function claimBuilder(releasesDir, sha) {
+  const p = markerPaths(releasesDir, sha);
+  fs.mkdirSync(path.dirname(p.building), { recursive: true });
+  fs.renameSync(p.pending, p.building);
+  fs.rmSync(p.done, { force: true });
+}
+
 /** A valid release dir for `sha`. */
 function makeRelease(releasesDir, sha, manifestSha = sha) {
   const p = markerPaths(releasesDir, sha);
@@ -150,6 +160,61 @@ test('marker protocol: a failed done marker carries the log; a corrupt one reads
   assert.equal(marker.log, 'boom');
   fs.writeFileSync(markerPaths(releasesDir, sha).done, '{not json');
   assert.equal(readBuildMarker(releasesDir, sha).status, 'failed');
+});
+
+test('a re-build over a recorded outcome: pending shadows the stale answer, the new answer lands', async () => {
+  const repo = gitRepo();
+  const { service, releasesDir } = harness({ baseSha: repo.base, checkout: repo.root });
+  const sha = repo.target;
+  await service.requestBuild({ sha, ...PW });
+  fakeBuilder(releasesDir, sha, 'failed', 'first log');
+  let row = (await service.state()).data.releases.find(r => r.sha === sha);
+  assert.equal(row.status, 'failed');
+  assert.equal(row.log, 'first log');
+
+  // the retry: re-request (the page re-offers build for any allowed pick)
+  assert.equal((await service.requestBuild({ sha, ...PW })).ok, true);
+  // the new request shadows the previous answer until the builder claims it
+  assert.equal(readBuildMarker(releasesDir, sha).status, 'pending');
+  // the claim deletes the stale answer (builder-entrypoint.sh)
+  claimBuilder(releasesDir, sha);
+  assert.equal(readBuildMarker(releasesDir, sha).status, 'building');
+  fakeBuilder(releasesDir, sha, 'built', 'second log');
+  row = (await service.state()).data.releases.find(r => r.sha === sha);
+  // a failed→built retry is not a dead end: the new outcome overwrites
+  assert.equal(row.status, 'built');
+  assert.equal(row.log, 'second log');
+});
+
+test('applied_at survives a re-build; a re-activation keeps the FIRST activation time', async () => {
+  const repo = gitRepo();
+  const { service, releasesDir, restarts } = harness({ baseSha: repo.base, checkout: repo.root });
+  const sha = repo.target;
+  await service.requestBuild({ sha, ...PW });
+  fakeBuilder(releasesDir, sha, 'built', 'ok');
+  assert.equal((await service.activate({ target: sha, ...PW })).ok, true);
+  let row = (await service.state()).data.releases.find(r => r.sha === sha);
+  assert.equal(row.status, 'applied');
+  const first = row.appliedAt;
+  assert.ok(first > 0);
+
+  // re-build the applied release: the lifecycle resets, the history stays
+  assert.equal((await service.requestBuild({ sha, ...PW })).ok, true);
+  row = (await service.state()).data.releases.find(r => r.sha === sha);
+  assert.equal(row.status, 'requested');
+  assert.equal(row.appliedAt, first);
+  claimBuilder(releasesDir, sha);
+  fakeBuilder(releasesDir, sha, 'built', 'again');
+  row = (await service.state()).data.releases.find(r => r.sha === sha);
+  assert.equal(row.status, 'built');
+  assert.equal(row.appliedAt, first);
+
+  // re-activation: applied_at keeps its FIRST value (coalesce), not the last
+  assert.equal((await service.activate({ target: sha, ...PW })).ok, true);
+  row = (await service.state()).data.releases.find(r => r.sha === sha);
+  assert.equal(row.status, 'applied');
+  assert.equal(row.appliedAt, first);
+  assert.equal(restarts.length, 2);
 });
 
 test('writeBuildRequest: the marker is schema-valid and atomic (tmp+rename)', () => {

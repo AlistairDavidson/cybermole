@@ -360,7 +360,21 @@ implemented and unit-tested on the web side):
 The marker protocol (file names, JSON shapes, who writes what) is the
 implemented contract — `src/schemas/management.ts` (node-free) + read/
 write helpers in `src/lib/releases.ts`, unit-tested against a fake
-builder that plays the filesystem side of the protocol. Ops note: a
+builder that plays the filesystem side of the protocol. **Re-builds**
+(the page re-offers build for any allowed pick; `requestBuild`
+re-upserts the row to `requested`) work end to end: the builder's CLAIM
+deletes the previous `done/<sha>.json`, `readBuildMarker` checks
+`building` → `pending` → `done` in protocol order (a fresh request
+shadows the previous answer while unclaimed), and the outcome sync
+overwrites a recorded differing outcome — so a failed→built retry is
+never a dead end and a re-build's outcome always lands. Known bounded
+window: re-building the sha that is CURRENTLY being served replaces
+its `dist/client` while the running process keeps the old SSR bundle
+in memory — the page degrades (un-upgraded controls) until the next
+activation restarts onto the (same-sha, rebuilt) release. Re-building
+the served sha is legitimate (e.g. against a newer image's deps), so it
+is documented rather than refused.
+Ops note: a
 crashed builder can leave a claimed `building/<sha>.json` behind, and
 `anyBuildActive` then answers 409 `build_active` for every new build —
 the recovery is host-side: `docker compose exec webpi sh -c 'rm -f
@@ -438,7 +452,10 @@ CREATE TABLE IF NOT EXISTS releases (
 ```
 
 plus the web-only pointer file (§1.2/§3.2 — its own volume, not the db,
-not the shared protocol volume). Old release dirs are never auto-deleted
+not the shared protocol volume). `applied_at` keeps its FIRST value
+across re-builds (the request upsert preserves it) and re-activations
+(coalesce) — it records when the sha first became the served release.
+Old release dirs are never auto-deleted
 (rollback targets must stay); pruning is a future,
 explicitly-confirmable action.
 

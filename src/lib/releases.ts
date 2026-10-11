@@ -480,10 +480,18 @@ export function markerPaths(releasesDir: string, sha: string): MarkerPaths {
 }
 
 /** The live build state for one sha, from the marker files (the builder's
- *  side of the protocol). Unreadable JSON in done/<sha>.json reads as
- *  failed — the page must never wait forever on a corrupt answer. */
+ *  side of the protocol). Checked in protocol order — building, then
+ *  pending, then done — so a RE-request (build the same sha again, which
+ *  the page re-offers and requestBuild re-upserts) reports the request
+ *  truthfully while it is unclaimed, not the previous build's stale
+ *  answer (which the builder deletes when it claims the request; the
+ *  order flip alone would leave the stale answer winning the window
+ *  between request and claim). Unreadable JSON in done/<sha>.json reads
+ *  as failed — the page must never wait forever on a corrupt answer. */
 export function readBuildMarker(releasesDir: string, sha: string): { status: BuildStatus; log: string | null } {
   const p = markerPaths(releasesDir, sha);
+  if (fs.existsSync(p.building)) return { status: 'building', log: null };
+  if (fs.existsSync(p.pending)) return { status: 'pending', log: null };
   if (fs.existsSync(p.done)) {
     let parsed: unknown;
     try {
@@ -497,8 +505,6 @@ export function readBuildMarker(releasesDir: string, sha: string): { status: Bui
     }
     return { status: marker.data.status, log: marker.data.log };
   }
-  if (fs.existsSync(p.building)) return { status: 'building', log: null };
-  if (fs.existsSync(p.pending)) return { status: 'pending', log: null };
   return { status: 'none', log: null };
 }
 
@@ -650,11 +656,16 @@ export class Releases {
     const fail = (errorMessage: string): ManagementStateFailure =>
       ({ ok: false, resultType: 'management_state', errorCode: 'database_error', errorMessage });
     // Pull the builder's answers for in-flight builds into the history
-    // rows first, so the recorded outcome outlives the marker files.
+    // rows first, so the recorded outcome outlives the marker files —
+    // including a RE-build's new answer over an already-recorded one
+    // (the row was reset to 'requested' by the re-request's upsert, or
+    // carries an outcome that differs from the live marker).
     const before = this.dbRows();
     if (Array.isArray(before)) {
       for (const row of before) {
-        if (row.status === 'requested') this.syncMarkerToDb(row.sha);
+        // 'applied' rows are never re-synced: "was served" is permanent
+        // history; only the re-request upsert legitimately resets it.
+        if (row.status !== 'applied') this.syncMarkerToDb(row);
       }
     }
     const rows = this.dbRows();
@@ -775,9 +786,12 @@ export class Releases {
     const saved = databaseUpdate('could not record the build request', () =>
       this.deps.db.run(qb.insertInto('releases')
         .values({ sha, status: 'requested', requested_at: Date.now(), built_at: null, applied_at: null, log: null })
+        // A re-build resets the build lifecycle (requested, no built/log)
+        // but PRESERVES applied_at: "it was the served release" is history
+        // that survives re-builds and re-activations alike (§3.3).
         .onConflict(oc => oc.column('sha').doUpdateSet(eb => ({
           status: eb.ref('excluded.status'), requested_at: eb.ref('excluded.requested_at'),
-          built_at: eb.ref('excluded.built_at'), applied_at: eb.ref('excluded.applied_at'), log: eb.ref('excluded.log'),
+          built_at: eb.ref('excluded.built_at'), log: eb.ref('excluded.log'),
         })))));
     if (!saved.ok) return fail('database_error', saved.errorMessage, { sha, status: 'requested' });
     console.log(`management: build requested for ${sha.slice(0, 12)}… (base ${verdict.data.base.slice(0, 12)}…)`);
@@ -843,7 +857,13 @@ export class Releases {
     }
     if (sha !== null) {
       const saved = databaseUpdate('could not record the activation', () =>
-        this.deps.db.run(qb.updateTable('releases').set({ status: 'applied', applied_at: Date.now() })
+        // applied_at keeps its FIRST value across re-activations (coalesce):
+        // "epoch ms it first became the served release" (§3.3), not the last.
+        this.deps.db.run(qb.updateTable('releases')
+          .set(eb => ({
+            status: 'applied' as ReleaseStatus,
+            applied_at: eb.fn.coalesce(eb.ref('applied_at'), eb.val(Date.now())),
+          }))
           .where('sha', '=', sha)));
       if (!saved.ok) return fail('database_error', saved.errorMessage);
     }
@@ -856,16 +876,17 @@ export class Releases {
   }
 
   /** The build outcome as recorded when the builder answers (synced in
-   *  by state(), so the history outlives the marker files). */
-  private syncMarkerToDb(sha: string): void {
+   *  by state(), so the history outlives the marker files — a RE-build's
+   *  differing answer overwrites the previous outcome). */
+  private syncMarkerToDb(row: ReleaseRow): void {
     if (this.deps.releasesDir === null) return;
-    const marker = readBuildMarker(this.deps.releasesDir, sha);
+    const marker = readBuildMarker(this.deps.releasesDir, row.sha);
     const outcome = marker.status === 'built' || marker.status === 'failed' ? marker.status : null;
-    if (outcome === null) return;
+    if (outcome === null || row.status === outcome) return;
     databaseUpdate('could not record the build outcome', () =>
       this.deps.db.run(qb.updateTable('releases')
         .set({ status: outcome, built_at: Date.now(), log: (marker.log ?? '').slice(0, LOG_CAP) })
-        .where('sha', '=', sha)));
+        .where('sha', '=', row.sha)));
   }
 }
 

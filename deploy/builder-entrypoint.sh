@@ -146,8 +146,13 @@ while true; do
   for request in "$RELEASES"/pending/*.json; do
     [ -f "$request" ] || continue
     # claim by rename — only one builder instance can win the move.
+    # The claim also DELETES the previous build's done marker: a re-build
+    # (web re-offers build for built shas) must not leave the stale answer
+    # behind, or web's readBuildMarker would report the OLD outcome while
+    # the new one is in flight.
     sha=${request##*/}; sha=${sha%.json}
     if mv "$request" "$RELEASES/building/$sha.json" 2>/dev/null; then
+      rm -f "$RELEASES/done/$sha.json"
       build_one "$RELEASES/building/$sha.json" || rm -f "$request"
     fi
   done
