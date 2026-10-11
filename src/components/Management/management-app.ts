@@ -115,8 +115,12 @@ export class ManagementApp extends HTMLElement {
    * regions overwrite the newer one's. A failed fetch keeps what is
    *  shown. */
   private refreshInflight = false;
+  /** A pick that landed while a refresh was in flight (re-issued after it
+   *  — a dropped pick would freeze the preview region until the next
+   *  click/poll, and picking is this page's primary interaction). */
+  private queuedPick: { sha: string | null } | null = null;
   private async refresh(sha: string | null = this.selected()): Promise<void> {
-    if (this.refreshInflight) return;
+    if (this.refreshInflight) { this.queuedPick = { sha }; return; }
     this.refreshInflight = true;
     try {
       const q = sha ? `?sha=${encodeURIComponent(sha)}` : '';
@@ -132,6 +136,11 @@ export class ManagementApp extends HTMLElement {
       });
     } finally {
       this.refreshInflight = false;
+    }
+    const queued = this.queuedPick;
+    if (queued !== null) {
+      this.queuedPick = null;
+      void this.refresh(queued.sha);
     }
     this.localizeTimes();
     // The build-log <wa-details> sits AROUND its [data-refresh] <pre>, so

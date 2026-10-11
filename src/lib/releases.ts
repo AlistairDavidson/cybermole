@@ -559,8 +559,16 @@ export function validateReleaseDir(releaseDir: string, sha: string): { ok: true 
     return { ok: false, reason: `dist/server/entry.mjs is missing in ${releaseDir}` };
   }
   const client = path.join(releaseDir, 'dist', 'client');
-  if (!fs.existsSync(client) || (fs.readdirSync(client)).length === 0) {
-    return { ok: false, reason: `dist/client is missing or empty in ${releaseDir}` };
+  // (the readdir can race a builder re-build of the same sha — a vanishing
+  // dir must stay a reason, never a throw, per this function's contract)
+  let clientEntries: string[];
+  try {
+    clientEntries = fs.readdirSync(client);
+  } catch {
+    return { ok: false, reason: `dist/client is missing or unreadable in ${releaseDir}` };
+  }
+  if (clientEntries.length === 0) {
+    return { ok: false, reason: `dist/client is empty in ${releaseDir}` };
   }
   if (!fs.existsSync(path.join(releaseDir, 'node_modules'))) {
     return { ok: false, reason: `node_modules (the image's, linked) is missing in ${releaseDir} — the SSR entry's imports cannot resolve without it` };
@@ -582,13 +590,18 @@ const ENTRY_PROBE_MS = 10_000;
 export async function probeReleaseEntry(entry: string): Promise<{ ok: true } | { ok: false; reason: string }> {
   let timer: ReturnType<typeof setTimeout> | null = null;
   try {
-    await Promise.race([
-      import(pathToFileURL(entry).href) as Promise<unknown>,
+    // Not just "loads": the entry must export the handler main.ts serves,
+    // or every render would 500 with no boot fallback ever seeing it.
+    const loaded = await Promise.race([
+      import(pathToFileURL(entry).href) as Promise<{ handler?: unknown }>,
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error(`did not load within ${ENTRY_PROBE_MS / 1000}s`)), ENTRY_PROBE_MS);
         timer.unref();
       }),
     ]);
+    if (typeof loaded.handler !== 'function') {
+      return { ok: false, reason: `the release's SSR entry exports no handler function` };
+    }
     return { ok: true };
   } catch (err) {
     return { ok: false, reason: `the release's SSR entry failed to load (${(err as Error).message})` };

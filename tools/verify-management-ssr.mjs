@@ -275,7 +275,7 @@ check('preview with replace refs on base AND target: still REFUSED, the real pat
 const releaseDir = path.join(RELEASES, CLEAN_SHA);
 fs.mkdirSync(path.join(releaseDir, 'dist', 'server'), { recursive: true });
 fs.mkdirSync(path.join(releaseDir, 'dist', 'client', '_astro'), { recursive: true });
-fs.writeFileSync(path.join(releaseDir, 'dist', 'server', 'entry.mjs'), 'export const handler = 1;\n');
+fs.writeFileSync(path.join(releaseDir, 'dist', 'server', 'entry.mjs'), 'export const handler = () => {};\n');
 fs.writeFileSync(path.join(releaseDir, 'dist', 'client', '_astro', 'x.js'), 'x');
 fs.mkdirSync(path.join(releaseDir, 'node_modules'), { recursive: true });
 fs.writeFileSync(path.join(releaseDir, 'manifest.json'),

@@ -100,7 +100,7 @@ function claimBuilder(releasesDir, sha) {
 /** A valid release dir for `sha` (the builder's layout: dist + manifest
  *  + a node_modules link at the root — a real dir stands in for the
  *  image-link; only its existence matters to the validator). */
-function makeRelease(releasesDir, sha, manifestSha = sha, entry = 'export const handler = 1;') {
+function makeRelease(releasesDir, sha, manifestSha = sha, entry = 'export const handler = () => {};') {
   const p = markerPaths(releasesDir, sha);
   fs.mkdirSync(path.join(p.releaseDir, 'dist', 'server'), { recursive: true });
   fs.mkdirSync(path.join(p.releaseDir, 'dist', 'client', '_astro'), { recursive: true });
@@ -418,10 +418,21 @@ test('activate: a release whose SSR entry will not LOAD is release_invalid (the 
   // entry imports a package that resolves nowhere — the layout checks
   // cannot see imports; the activate-time probe must refuse it
   makeRelease(releasesDir, repo.target, repo.target,
-    "import 'definitely-not-a-real-package-webpi';\nexport const handler = 1;\n");
+    "import 'definitely-not-a-real-package-webpi';\nexport const handler = () => {};\n");
   const r = await service.activate({ target: repo.target, ...PW });
   assert.equal(r.errorCode, 'release_invalid');
   assert.match(r.errorMessage, /failed to load/);
+});
+
+test('activate: an entry that loads but exports no handler is release_invalid (the probe checks the export)', async () => {
+  const repo = gitRepo();
+  const { service, releasesDir } = harness({ baseSha: repo.base, checkout: repo.root });
+  await service.requestBuild({ sha: repo.target, ...PW });
+  fakeBuilder(releasesDir, repo.target, 'built');
+  makeRelease(releasesDir, repo.target, repo.target, 'export const notHandler = 1;\n');
+  const r = await service.activate({ target: repo.target, ...PW });
+  assert.equal(r.errorCode, 'release_invalid');
+  assert.match(r.errorMessage, /no handler/);
 });
 
 test('activate: enforcement re-run catches a commit that was clean at build time… and one that never was', async () => {
