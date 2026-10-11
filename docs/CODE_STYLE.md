@@ -125,7 +125,9 @@ is a type error.
   `src/lib` is reached through `locals.webpi`. (Check:
   `grep -r auth_sessions dist/server` should find nothing.)
 - **Content types:** API bodies are parsed only as `application/json` or
-  form-urlencoded; anything else is 415.
+  form-urlencoded; anything else is 415. The exception is a file upload:
+  `multipart/form-data`, streamed through `streamFileUpload` (or, for a
+  small file next to other form logic, buffered by `parseFileUpload`).
 - **Security invariants.** Changing any of these is a security change:
   - `server/main.ts` runs the origin check and the session check *before*
     anything reaches Astro, and only passes `locals` on the authenticated
@@ -138,6 +140,10 @@ is a type error.
     route keeps 10 KiB through `server/main.ts`'s per-route cap
     (`bodyCapStatus`), which runs before Astro reads the body. A new
     route that takes large bodies gets its own entry there.
+  - Node's `requestTimeout` is off; `server/main.ts` enforces the same
+    5-minute whole-body deadline per request (`armBodyDeadline`), and
+    only the upload route swaps it for a stall timeout
+    (`guardUploadStall`).
   - Astro's `security.checkOrigin` is off because main.ts's trustProxy-aware
     `originOk()` is authoritative. Astro's own check derives the origin from
     the request URL, which is wrong behind a TLS proxy.

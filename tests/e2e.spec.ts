@@ -19,7 +19,7 @@ import { WebSocket as NodeWebSocket } from 'ws';
 import { setCredential } from '../src/lib/auth';
 import { StateDb } from '../src/lib/db';
 import { MARKER, PASSWORD, S3_BUCKET, S3_PORT, TMUX_SOCKET, USERNAME, UUIDV7_SIBLINGS, WORKSPACE } from './env';
-import { UPLOAD_MAX_BODY_BYTES, UPLOAD_MAX_FILE_BYTES } from '../src/schemas/uploads';
+import { UPLOAD_MAX_BODY_BYTES } from '../src/schemas/uploads';
 
 const FIXTURE_A = '11111111-1111-1111-1111-111111111111';
 const FIXTURE_B = '22222222-2222-2222-2222-222222222222';
@@ -129,6 +129,7 @@ test('unauthenticated / serves the login page with upgraded wa-* controls', asyn
 test('API routes stay guarded without a session', async ({ request }) => {
   expect((await request.get('/api/state')).status()).toBe(401);
   expect((await request.get('/api/jobs')).status()).toBe(401);
+  expect((await request.get('/api/files/uploads/00000000-0000-4000-8000-000000000000')).status()).toBe(401);
   // Unknown API paths are 401 too — never the login page.
   expect((await request.get('/api/nope')).status()).toBe(401);
   // Server-rendered partials are data routes too — never the login page
@@ -344,54 +345,137 @@ test('malformed requests and frames are rejected without taking the server down'
   expect(await status('GET', '/api/state')).toBe(200);
 });
 
-test('file upload: stored in object storage; type, size and length caps answer before storage', async ({ page }) => {
+test('files: upload streams into object storage; downloads come back as resumable attachments', async ({ page }) => {
   await login(page);
   type Upload = { status: number; body: { key?: string; name?: string; size?: number; contentType?: string; code?: string } };
   const upload = (size: number, type: string, name = 'notes.txt'): Promise<Upload> =>
     page.evaluate(async ([n, t, f]) => {
       const form = new FormData();
-      // Bytes of 'a' (0x61), so the stored body is checkable.
+      // Bytes of 'a' (0x61), so stored and downloaded bodies are checkable.
       form.append('file', new File([new Uint8Array(n!).fill(0x61)], f!, { type: t! }));
       const r = await fetch('/api/files', { method: 'POST', body: form });
       return { status: r.status, body: await r.json().catch(() => ({})) };
     }, [size, type, name] as const);
+  type Download = { status: number; headers: Record<string, string>; size: number; allA: boolean };
+  const download = (path: string): Promise<Download> =>
+    page.evaluate(async p => {
+      const r = await fetch(p);
+      const bytes = new Uint8Array(await r.arrayBuffer());
+      return {
+        status: r.status, headers: Object.fromEntries(r.headers.entries()),
+        size: bytes.length, allA: bytes.every(b => b === 0x61),
+      };
+    }, path);
 
   const ok = await upload(12, 'text/plain', 'q1 notes (draft).txt');
   expect(ok.status).toBe(201);
   expect(ok.body).toMatchObject({ name: 'q1 notes (draft).txt', size: 12, contentType: 'text/plain' });
   expect(ok.body.key).toMatch(/^uploads\/[0-9a-f-]{36}$/);
-  // It reached the S3 server (tests/fake-s3.mjs), body and headers intact.
+  // It reached the S3 server (tests/fake-s3.mjs), body and headers intact...
   const stored = await (await fetch(`http://127.0.0.1:${S3_PORT}/__fake/objects/${S3_BUCKET}/${ok.body.key}`)).json() as
     { body: string; contentType: string; contentDisposition: string };
   expect(Buffer.from(stored.body, 'base64').toString()).toBe('a'.repeat(12));
   expect(stored.contentType).toBe('text/plain');
   expect(stored.contentDisposition).toBe("attachment; filename*=UTF-8''q1%20notes%20%28draft%29.txt");
+  // ...and comes back from GET /api/files/<key> as a sandboxed attachment.
+  const back = await download(`/api/files/${ok.body.key}`);
+  expect(back).toMatchObject({ status: 200, size: 12, allA: true });
+  expect(back.headers).toMatchObject({
+    'content-type': 'text/plain',
+    'content-disposition': "attachment; filename*=UTF-8''q1%20notes%20%28draft%29.txt",
+    'content-security-policy': "sandbox; default-src 'none'",
+    'x-content-type-options': 'nosniff',
+    'cache-control': 'private, no-store',
+    'content-length': '12',
+    'accept-ranges': 'bytes',
+  });
 
-  // The parser's policy (src/schemas/uploads.ts): declared type, then size.
-  expect(await upload(12, 'text/html', 'x.html')).toMatchObject({ status: 400, body: { code: 'unsupported_file_type' } });
-  expect(await upload(UPLOAD_MAX_FILE_BYTES + 1, 'text/plain'))
-    .toMatchObject({ status: 400, body: { code: 'file_too_large' } });
-  // Past the whole-body cap, main.ts refuses on Content-Length alone.
-  expect((await upload(UPLOAD_MAX_BODY_BYTES, 'text/plain')).status).toBe(413);
-  // Not multipart: nothing to store.
+  // Past one 5 MiB part: a multipart upload, streamed both ways.
+  const big = await upload(12 * 1024 * 1024 + 7, 'image/png', 'big.png');
+  expect(big.status).toBe(201);
+  expect(big.body.size).toBe(12 * 1024 * 1024 + 7);
+  expect(await download(`/api/files/${big.body.key}`)).toMatchObject({ status: 200, size: 12 * 1024 * 1024 + 7, allA: true });
+
+  // Resumable, the way a download manager does it: HEAD for the ETag, a
+  // first part, then the rest from where it stopped with If-Range. A
+  // patterned file, so a wrong offset can't pass.
+  const resume = await page.evaluate(async () => {
+    const n = 6 * 1024 * 1024 + 5;
+    const pattern = new Uint8Array(n).map((_, i) => i % 251);
+    const form = new FormData();
+    form.append('file', new File([pattern], 'pattern.pdf', { type: 'application/pdf' }));
+    const { key } = await (await fetch('/api/files', { method: 'POST', body: form })).json() as { key: string };
+    const url = `/api/files/${key}`;
+    const head = await fetch(url, { method: 'HEAD' });
+    const etag = head.headers.get('etag')!;
+    const first = await fetch(url, { headers: { Range: 'bytes=0-999999' } });
+    const rest = await fetch(url, { headers: { Range: 'bytes=1000000-', 'If-Range': etag } });
+    const a = new Uint8Array(await first.arrayBuffer());
+    const b = new Uint8Array(await rest.arrayBuffer());
+    const joined = new Uint8Array(a.length + b.length);
+    joined.set(a);
+    joined.set(b, a.length);
+    const stale = await fetch(url, { headers: { Range: 'bytes=1000000-', 'If-Range': '"not-this-version"' } });
+    const pastEnd = await fetch(url, { headers: { Range: `bytes=${n}-` } });
+    const multi = await fetch(url, { headers: { Range: 'bytes=0-1,5-6' } });
+    return {
+      n,
+      head: { status: head.status, length: head.headers.get('content-length'), ranges: head.headers.get('accept-ranges'),
+        body: (await head.arrayBuffer()).byteLength },
+      first: { status: first.status, range: first.headers.get('content-range'), length: a.length },
+      rest: { status: rest.status, range: rest.headers.get('content-range'), length: b.length },
+      intact: joined.length === n && joined.every((v, i) => v === i % 251),
+      stale: { status: stale.status, length: (await stale.arrayBuffer()).byteLength },
+      pastEnd: { status: pastEnd.status, range: pastEnd.headers.get('content-range') },
+      multi: { status: multi.status, length: (await multi.arrayBuffer()).byteLength },
+    };
+  });
+  const n = resume.n;
+  expect(resume.head).toEqual({ status: 200, length: String(n), ranges: 'bytes', body: 0 });
+  expect(resume.first).toEqual({ status: 206, range: `bytes 0-999999/${n}`, length: 1_000_000 });
+  expect(resume.rest).toEqual({ status: 206, range: `bytes 1000000-${n - 1}/${n}`, length: n - 1_000_000 });
+  expect(resume.intact).toBe(true);
+  // A changed validator gets the whole file, not a part of another version.
+  expect(resume.stale).toEqual({ status: 200, length: n });
+  expect(resume.pastEnd).toEqual({ status: 416, range: `bytes */${n}` });
+  // More than one range: ignored, the whole file.
+  expect(resume.multi).toEqual({ status: 200, length: n });
+
+  // Keys: unknown is 404; anything that isn't uploads/<uuid> is 400 — the
+  // route serves nothing else from the bucket.
+  expect((await download('/api/files/uploads/00000000-0000-4000-8000-000000000000')).status).toBe(404);
+  expect((await download('/api/files/etc/passwd')).status).toBe(400);
+  expect((await download('/api/files/uploads/..%2F..%2Fsecret')).status).toBe(400);
+
+  // A rejected type answers before storage even on a big body — which the
+  // server drains rather than cutting, so the browser gets the answer, not
+  // a reset connection.
+  expect(await upload(20 * 1024 * 1024, 'text/html', 'x.html')).toMatchObject({ status: 400, body: { code: 'unsupported_file_type' } });
+  // Not multipart: 415.
   expect(await page.evaluate(async () => (await fetch('/api/files', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
-  })).status)).toBe(400);
+  })).status)).toBe(415);
 
-  // A body with no Content-Length (chunked) is refused off the upload
-  // route — the 10 KiB cap can't be checked up front. Browsers only send
-  // one for a streamed body, so this goes from Node with the session cookie.
+  // Raw requests from Node with the session cookie, for what a browser won't send.
   const cookie = (await page.context().cookies()).find(c => c.name === 'webpi_session')!;
-  const chunked = await new Promise<number>((resolve, reject) => {
-    const req = http.request(`http://127.0.0.1:${new URL(page.url()).port}/api/new`, {
-      method: 'POST',
-      headers: { Cookie: `webpi_session=${cookie.value}`, 'Content-Type': 'application/json', 'Transfer-Encoding': 'chunked' },
-    }, res => { res.resume(); resolve(res.statusCode ?? 0); });
-    req.on('error', reject);
-    req.write('{"name":');
-    req.end('"itest-chunked"}');
-  });
-  expect(chunked).toBe(411);
+  const port = new URL(page.url()).port;
+  const raw = (path: string, headers: Record<string, string>, body?: string[]): Promise<number> =>
+    new Promise((resolve, reject) => {
+      const req = http.request(`http://127.0.0.1:${port}${path}`, {
+        method: 'POST', headers: { Cookie: `webpi_session=${cookie.value}`, ...headers },
+      }, res => { res.resume(); resolve(res.statusCode ?? 0); req.destroy(); });
+      req.on('error', err => { if (!req.destroyed) reject(err); });
+      if (body) { for (const chunk of body) req.write(chunk); req.end(); } else req.flushHeaders();
+    });
+  // Over the whole-body cap (5 GiB + envelope): refused on Content-Length
+  // alone — nothing is sent, and nothing needs to be.
+  expect(await raw('/api/files', {
+    'Content-Type': 'multipart/form-data; boundary=x', 'Content-Length': String(UPLOAD_MAX_BODY_BYTES + 1),
+  })).toBe(413);
+  // A body with no Content-Length (chunked) is refused off the upload
+  // route — the 10 KiB cap can't be checked up front.
+  expect(await raw('/api/new', { 'Content-Type': 'application/json', 'Transfer-Encoding': 'chunked' },
+    ['{"name":', '"itest-chunked"}'])).toBe(411);
 });
 
 test('attached session opens at the browser terminal\'s size, not 80x24', async ({ page }) => {

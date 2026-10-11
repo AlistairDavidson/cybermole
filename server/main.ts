@@ -285,19 +285,61 @@ function originOk(req: http.IncomingMessage): boolean {
 // Content-Length for every body this app's pages post — and on it, the
 // adapter's limit stops the stream mid-read.
 const API_BODY_MAX_BYTES = 10 * 1024;
-const UPLOAD_ROUTE = '/api/files'; // src/pages/api/files.ts
+const UPLOAD_ROUTE = '/api/files'; // src/pages/api/files/index.ts
+
+const isUpload = (req: http.IncomingMessage, url: string): boolean =>
+  req.method === 'POST' && url === route(UPLOAD_ROUTE);
 
 /** 413 (declared length over the route's cap), 411 (no length, off the
  *  upload route) or null (within the cap). */
 function bodyCapStatus(req: http.IncomingMessage, url: string): 411 | 413 | null {
   if (req.method === 'GET' || req.method === 'HEAD') return null;
-  const upload = req.method === 'POST' && url === route(UPLOAD_ROUTE);
+  const upload = isUpload(req, url);
   const declared = req.headers['content-length'];
   if (declared === undefined) {
     return req.headers['transfer-encoding'] !== undefined && !upload ? 411 : null;
   }
   // Node's parser has already rejected a malformed or repeated Content-Length.
   return Number(declared) <= (upload ? UPLOAD_MAX_BODY_BYTES : API_BODY_MAX_BYTES) ? null : 413;
+}
+
+// Request-body deadlines. Node's own requestTimeout is one whole-request
+// cap for every route (300 s by default) — it would cut a multi-GB upload
+// off at five minutes — so it is off (by http.createServer below) and
+// replaced here. Every request must still arrive whole within
+// BODY_DEADLINE_MS, the same 300 s: a slow-drip body, signed in or not,
+// is cut off as before (counted until the body is in, not until the
+// response — a 401 sent early doesn't free a dripping socket). Only a
+// signed-in upload trades the deadline for a stall timeout: no bytes for
+// UPLOAD_STALL_MS and the connection goes.
+const BODY_DEADLINE_MS = 300_000;
+const UPLOAD_STALL_MS = 120_000;
+
+/** Arm the whole-request deadline; the returned function disarms it. */
+function armBodyDeadline(req: http.IncomingMessage): () => void {
+  const { socket } = req;
+  const timer = setTimeout(() => { if (!req.complete) socket.destroy(); }, BODY_DEADLINE_MS).unref();
+  // Listeners come off with the timer: a keep-alive socket serves many requests.
+  const disarm = (): void => { clearTimeout(timer); req.off('end', disarm); socket.off('close', disarm); };
+  req.once('end', disarm);
+  socket.once('close', disarm);
+  return disarm;
+}
+
+/** A signed-in upload: no total deadline, but the socket must keep
+ *  delivering bytes (bytesRead moving) until the body is in. Backpressure
+ *  from a stalled storage server also stops the bytes — that's a stall too. */
+function guardUploadStall(req: http.IncomingMessage): void {
+  const { socket } = req;
+  let seen = socket.bytesRead;
+  let quietSince = Date.now();
+  const stop = (): void => { clearInterval(check); socket.off('close', stop); };
+  const check = setInterval(() => {
+    if (req.complete) { stop(); return; }
+    if (socket.bytesRead !== seen) { seen = socket.bytesRead; quietSince = Date.now(); return; }
+    if (Date.now() - quietSince >= UPLOAD_STALL_MS) { stop(); socket.destroy(); }
+  }, 10_000).unref();
+  socket.once('close', stop);
 }
 
 /** Is this path inside the app's base ('/foo' and '/foo/…', or anything for '/')? */
@@ -384,9 +426,13 @@ const server = http.createServer((req, res) => {
     if (!res.headersSent) send(res, 500, 'internal error'); else res.destroy();
   }
 });
+// Off: armBodyDeadline()/guardUploadStall() replace it per request.
+// (headersTimeout — 60 s to send the headers — stays Node's.)
+server.requestTimeout = 0;
 
 function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
   const url = (req.url ?? '').split('?')[0]!;
+  const disarmBodyDeadline = armBodyDeadline(req);
 
   // Every non-GET must be same-origin when it claims any origin at all
   // (curl & co send no Origin header and pass). Checked before routing —
@@ -540,6 +586,7 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
   const capped = bodyCapStatus(req, url);
   if (capped === 413) { send(res, 413, 'request body too large'); return; }
   if (capped === 411) { send(res, 411, 'request body needs a Content-Length'); return; }
+  if (isUpload(req, url)) { disarmBodyDeadline(); guardUploadStall(req); }
   renderAstro(req, res, { webpi: services, session: session.data.token });
 }
 

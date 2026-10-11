@@ -17,8 +17,10 @@ test('failureResponse: parse, validation and upload codes', () => {
     [failure('parse_request', 'invalid_form_data'), 400],
     [failure('parse_request', 'invalid_json'), 400],
     [failure('parse_request', 'unsupported_content_type'), 415],
+    [failure('file_upload', 'unsupported_content_type'), 415],
+    [failure('file_upload', 'invalid_form_data'), 400],
     [failure('file_upload', 'no_file_provided'), 400],
-    [failure('file_upload', 'file_too_large', { errorMessage: 'too big' }), 400],
+    [failure('file_upload', 'file_too_large', { errorMessage: 'too big' }), 413],
     [failure('file_upload', 'unsupported_file_type', { errorMessage: 'nope' }), 400],
     [failure('validation', 'validation_failure', { issues: { name: 'required' } }), 400],
   ];

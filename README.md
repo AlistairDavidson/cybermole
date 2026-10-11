@@ -49,11 +49,13 @@ containers and two uids (server vs tmux/pi) — see
   (listen address, paths, versions) plus the pi update actions — a manual
   update-pi button and an opt-in daily auto-update that stays within the
   declared range.
-- **File uploads** — `POST /api/files` (multipart, field `file`) stores
-  the file in object storage and answers its key: any S3-compatible
-  server, SeaweedFS in the compose stack ([Object storage](#object-storage-seaweedfs)).
+- **File uploads** — `POST /api/files` (multipart, field `file`, up to
+  5 GiB) streams the file into object storage and answers its key;
+  `GET /api/files/<key>` streams it back as a resumable download (Range /
+  If-Range, HEAD). Any S3-compatible
+  server — SeaweedFS in the compose stack ([Object storage](#object-storage-seaweedfs)).
   The building block for apps that take files; without storage
-  configured it answers 503 and nothing else changes.
+  configured both answer 503 and nothing else changes.
 - **Single-user login** — username + password, salted scrypt hash in the
   sqlite state db (`webpi.db`), `HttpOnly`/`Secure`/`SameSite=Strict`
   session cookie. Sessions persist across server restarts (only token
@@ -342,9 +344,35 @@ and its images are gone. Two more services:
 The app creates the bucket (`WEB_PI_S3_BUCKET`) on first upload. To use
 another S3-compatible store (S3, R2, Garage, …) instead, point
 `WEB_PI_S3_ENDPOINT` and the two keys at it and drop the seaweedfs
-services. Uploads are capped at 10 MiB and a small set of inert types
-(`src/schemas/uploads.ts`); keys are `uploads/<uuid>`, stored with the
-client's file name as an `attachment` Content-Disposition.
+services.
+
+Uploads stream end to end: the multipart body is parsed as it arrives
+(`streamFileUpload`, busboy) and piped into an S3 multipart upload, so the
+server holds a few MiB per upload whatever the size (~65 MiB of buffers at
+peak, measured on 512 MiB–1 GiB files). The policy is
+`src/schemas/uploads.ts`: 5 GiB, and a small set of types that are inert
+if ever rendered. Keys are `uploads/<uuid>`, stored with the client's file
+name as an `attachment` Content-Disposition. Downloads
+(`GET /api/files/<key>`) stream back from the bucket and are always
+attachments, sandboxed by their own CSP; a stored type outside the
+allowlist is served as `application/octet-stream`. They resume: a single
+byte range (`Range`) is passed through to S3 — 206 with `Content-Range`,
+416 with the size past the end; multiple ranges are ignored (the whole
+file). `If-Range` is honoured (S3 has none, so storage compares it with
+the object's ETag / Last-Modified and sends the whole file if it changed),
+and `HEAD` answers the headers from S3's HeadObject without opening the
+body.
+
+Two limits besides the app's own, for big files:
+
+- **nginx** — `deploy/nginx-webpi.conf` allows the 5 GiB body
+  (`client_max_body_size`) and streams bodies through
+  (`proxy_request_buffering off`) instead of spooling each to disk first.
+  A proxy left at nginx's 1 MiB default refuses uploads with its own 413.
+- **Request deadlines** — Node's 5-minute whole-request timeout is
+  replaced in `server/main.ts`: every request must still arrive within
+  5 minutes, except a signed-in upload, which may take as long as it
+  needs but is dropped after 2 minutes without a byte.
 
 #### The same split on a plain host (two unix users)
 
@@ -676,10 +704,13 @@ edits and the future apply step builds from.
   leaks to a third party.
 - Static assets are served from a fixed route table with traversal checks;
   request bodies are size-capped: 10 KiB everywhere except an upload to
-  `POST /api/files` (10 MiB + multipart envelope). `server/main.ts`
+  `POST /api/files` (5 GiB + multipart envelope). `server/main.ts`
   refuses an oversized `Content-Length` (413) — and a length-less
   chunked body (411) off the upload route — before Astro reads a byte;
   the adapter's `bodySizeLimit` (the upload cap) backstops a stream.
+  Every body must arrive within 5 minutes (slow-drip bodies are cut off,
+  signed in or not, even after an early 401); only a signed-in upload
+  trades that for a 2-minute stall timeout.
 - Object storage is reachable only from the web container (compose's
   internal `storage` network), with generated credentials; uploads are
   stored as `attachment`s and limited to types that are inert if ever

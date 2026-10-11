@@ -10,9 +10,10 @@ import type { DatabaseUpdateFailure } from '../db';
 import type { DeleteJobFailure, ListJobsFailure, RunJobFailure, SaveJobFailure } from '../jobs';
 import type { ConsoleStateFailure, SettingsStateFailure } from '../services';
 import type { PiUpdateFailure, PiUpdateResult } from '../settings';
-import type { StoreUploadFailure } from '../storage';
+import type { FetchedObject, FetchObjectFailure, ObjectInfo, StatObjectFailure, StoreUploadFailure } from '../storage';
 import type { TmuxSessionFailure } from '../tmux';
 import type { UpdateResult } from '../types';
+import { UPLOAD_ALLOWED_MIME_TYPES } from '../../schemas/uploads';
 import type { FileUploadFailure, ParseFailure, ValidationFailure } from './parsing.service';
 
 export function jsonResponse(body: unknown, status: number, headers?: Record<string, string>): Response {
@@ -42,7 +43,7 @@ export function failureResponse<DataType extends object>(
     case 'no_file_provided':
       return jsonResponse({ error: result.errorMessage ?? 'No file provided', code: result.errorCode }, 400);
     case 'file_too_large':
-      return jsonResponse({ error: result.errorMessage ?? 'File too large', code: result.errorCode }, 400);
+      return jsonResponse({ error: result.errorMessage ?? 'File too large', code: result.errorCode }, 413);
     case 'unsupported_file_type':
       return jsonResponse({ error: result.errorMessage ?? 'Unsupported file type', code: result.errorCode }, 400);
     case 'validation_failure':
@@ -107,18 +108,70 @@ export function tmuxSessionFailureResponse(f: TmuxSessionFailure): Response {
   }
 }
 
-/** POST /api/files failures: no storage configured is the operator's to
- *  fix (503); a failed write is the storage server's (502 — it's the
- *  upstream that failed, not this request). */
-export function storeUploadFailureResponse(f: StoreUploadFailure): Response {
+/** /api/files failures (upload and download): no storage configured is
+ *  the operator's to fix (503); a failed read or write is the storage
+ *  server's (502 — it's the upstream that failed, not this request). */
+export function objectStoreFailureResponse(f: StoreUploadFailure | FetchObjectFailure | StatObjectFailure): Response {
   switch (f.errorCode) {
     case 'storage_not_configured':
       return jsonResponse({ error: f.errorMessage ?? 'object storage is not configured', code: f.errorCode }, 503);
-    case 'storage_error':
-      return jsonResponse({ error: 'could not store the file', detail: f.errorMessage ?? null, code: f.errorCode }, 502);
+    case 'object_not_found':
+      return jsonResponse({ error: 'no such file', code: f.errorCode }, 404);
+    case 'range_not_satisfiable': {
+      // RFC 9110 §15.5.17: say how big the file is, so a client can recover.
+      const size = f.data?.objectSize ?? null;
+      return jsonResponse({ error: 'range not satisfiable', code: f.errorCode }, 416, {
+        'Accept-Ranges': 'bytes', ...(size === null ? {} : { 'Content-Range': `bytes */${size}` }),
+      });
+    }
+    case 'storage_error': {
+      const error = f.resultType === 'store_upload' ? 'could not store the file' : 'could not read the file';
+      return jsonResponse({ error, detail: f.errorMessage ?? null, code: f.errorCode }, 502);
+    }
     default:
       return f satisfies never;
   }
+}
+
+/** A file key from the path that is not one POST /api/files mints. */
+export function invalidObjectKeyResponse(): Response {
+  return jsonResponse({ error: 'invalid file key', code: 'invalid_object_key' }, 400);
+}
+
+/** Headers for a download (GET) or its HEAD. User content on the app's
+ *  own origin, so it is never rendered here: always an attachment, a type
+ *  outside the upload allowlist becomes application/octet-stream, and its
+ *  own CSP (kept over the server's default — server/main.ts only fills in
+ *  absent headers) sandboxes it with nothing allowed should anything open
+ *  it anyway. Accept-Ranges: a broken download resumes (Range, If-Range). */
+function downloadHeaders(info: ObjectInfo): Record<string, string> {
+  const allowed: readonly string[] = UPLOAD_ALLOWED_MIME_TYPES;
+  const headers: Record<string, string> = {
+    'Content-Type': info.contentType !== null && allowed.includes(info.contentType)
+      ? info.contentType : 'application/octet-stream',
+    'Content-Disposition': info.contentDisposition?.startsWith('attachment') ? info.contentDisposition : 'attachment',
+    'Content-Security-Policy': "sandbox; default-src 'none'",
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'private, no-store',
+    'Accept-Ranges': 'bytes',
+  };
+  if (info.contentLength !== null) headers['Content-Length'] = String(info.contentLength);
+  if (info.etag !== null) headers['ETag'] = info.etag;
+  if (info.lastModified !== null) headers['Last-Modified'] = info.lastModified.toUTCString();
+  return headers;
+}
+
+/** GET /api/files/<key>: the stored bytes, streamed through — 206 with
+ *  Content-Range when a byte range was asked for and applied. */
+export function fileDownloadResponse(object: FetchedObject): Response {
+  const headers = downloadHeaders(object);
+  if (object.contentRange !== null) headers['Content-Range'] = object.contentRange;
+  return new Response(object.body, { status: object.contentRange === null ? 200 : 206, headers });
+}
+
+/** HEAD /api/files/<key>: the download's headers, no body. */
+export function fileHeadResponse(info: ObjectInfo): Response {
+  return new Response(null, { status: 200, headers: downloadHeaders(info) });
 }
 
 export function piUpdateStatus(f: PiUpdateFailure): number {

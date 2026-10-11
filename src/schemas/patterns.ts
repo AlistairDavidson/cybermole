@@ -15,6 +15,10 @@ export const SESSION_ID_RE = /^[0-9a-zA-Z\-]{1,64}$/;
  *  40-char cap rejected every run of a job named longer than 34. */
 export const TMUX_SESSION_NAME_RE = /^[a-zA-Z0-9_\-]{1,64}$/;
 
+/** Object keys POST /api/files mints (src/lib/storage.ts): uploads/<uuid v4>,
+ *  lowercase. The download route serves nothing else from the bucket. */
+export const OBJECT_KEY_RE = /^uploads\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 /** Longest job name — as typed (JobSaveSchema) and once normalized
  *  (JOB_NAME_RE). Normalizing never lengthens a name. */
 export const MAX_JOB_NAME = 40;
