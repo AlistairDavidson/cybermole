@@ -321,21 +321,22 @@ test('attacker: .git/info/grafts (faked parents) cannot move the tree-to-tree di
 
 // ---------- the base chain ----------
 
-test('currentBaseSha: pointer file wins, else the image\'s baked sha, else null', () => {
+test('currentBaseSha: ALWAYS the image\'s baked sha — the pointer never feeds the enforcement', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-base-'));
   fs.writeFileSync(path.join(dir, 'version.json'), JSON.stringify({ git: 'a'.repeat(40), builtAt: '2026-01-01T00:00:00Z' }));
-  assert.equal(currentBaseSha(dir, null), 'a'.repeat(40));
+  assert.equal(currentBaseSha(dir), 'a'.repeat(40));
+  // A pointer naming another sha (however it got there — an applied
+  // release's code runs in-process as this uid and could write it) must
+  // NOT re-root the verdicts: the image's root-owned sha is the base.
   const releases = path.join(dir, 'releases');
   writePointer(releases, 'b'.repeat(40));
-  assert.equal(currentBaseSha(dir, releases), 'b'.repeat(40));
+  assert.equal(currentBaseSha(dir), 'a'.repeat(40));
   writePointer(releases, null); // rolled back to image
-  assert.equal(currentBaseSha(dir, releases), 'a'.repeat(40));
-  // garbage pointer / unknown image sha / no version.json → null (refuse)
-  fs.writeFileSync(path.join(releases, 'pointer', 'current'), 'not-a-sha');
-  assert.equal(currentBaseSha(dir, releases), 'a'.repeat(40));
+  assert.equal(currentBaseSha(dir), 'a'.repeat(40));
+  // unknown image sha / no version.json → null (base_unknown: refuse)
   fs.writeFileSync(path.join(dir, 'version.json'), JSON.stringify({ git: 'unknown' }));
-  fs.rmSync(path.join(releases, 'pointer', 'current'));
-  assert.equal(currentBaseSha(dir, releases), null);
+  assert.equal(currentBaseSha(dir), null);
+  assert.equal(currentBaseSha(path.join(dir, 'nope')), null);
   assert.equal(readImageVersion(path.join(dir, 'nope')), null);
   assert.equal(readPointer(null), null);
 });

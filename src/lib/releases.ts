@@ -10,11 +10,13 @@
 //     else in PROTECTED_ENTRIES below are served from the image's
 //     ROOT-OWNED /opt/web-pi copy; a pi session (uid 2000, workspace
 //     container) can neither write them nor the state db on /state;
-//   - the enforcement base is a chain rooted in root-owned facts (the
-//     image's baked version.json, then pointer writes this code itself
-//     makes — see currentBaseSha) and is resolved in the checkout by
-//     git's content addressing; a rewritten history cannot forge the
-//     base, and a missing base REFUSES (fail closed) instead of guessing;
+//   - the enforcement base is ALWAYS the image's baked version.json
+//     (root-owned; see currentBaseSha — the serving pointer is display
+//     state, never a diff base: a release's bundle runs in-process as
+//     this uid and could write it) and is resolved in the checkout by
+//     git's content addressing with object replacement OFF; a rewritten
+//     history cannot forge the base, and a missing base REFUSES (fail
+//     closed) instead of guessing;
 //   - every dangerous verb re-runs the enforcement server-side; the
 //     page's display is a courtesy, never the check.
 // Residual risks (named, not hidden): docs/management-page.md §1.5.
@@ -450,13 +452,15 @@ export function writePointer(releasesDir: string, sha: string | null): void {
   fs.renameSync(tmp, file);
 }
 
-/** The base every diff is computed against: the pointer this code last
- *  wrote (trusted — the pointer dir is web-only writable), else the
- *  image's baked sha. Null when neither yields a full sha → callers
- *  answer base_unknown instead of diffing against a guess. */
-export function currentBaseSha(appRoot: string, releasesDir: string | null): CommitSha | null {
-  const pointed = readPointer(releasesDir);
-  if (pointed !== null) return pointed as CommitSha;
+/** The base every enforcement diff is computed against: ALWAYS the
+ *  image's baked sha (version.json at the app root — root-owned,
+ *  unforgeable). Deliberately NOT the pointer: a release's Astro bundle
+ *  runs in-process as this same uid, so applied code could write the
+ *  pointer and re-root every subsequent verdict; the pointer is
+ *  serving/display state only (docs/management-page.md §1.2, §1.5).
+ *  Null when the image records no full sha → callers answer base_unknown
+ *  instead of diffing against a guess. */
+export function currentBaseSha(appRoot: string): CommitSha | null {
   const image = readImageVersion(appRoot);
   return image && SHA_RE.test(image.git) ? (image.git as CommitSha) : null;
 }
@@ -513,7 +517,9 @@ export function writeBuildRequest(releasesDir: string, sha: string, base: string
   const body = JSON.stringify(
     BuildRequestMarkerSchema.parse({ sha, base, requestedAt: Date.now() }));
   fs.mkdirSync(path.dirname(p.pending), { recursive: true });
-  fs.writeFileSync(p.pending, body, { mode: 0o660 });
+  const tmp = `${p.pending}.tmp`;
+  fs.writeFileSync(tmp, body, { mode: 0o660 });
+  fs.renameSync(tmp, p.pending);
 }
 
 /** A release dir's layout: what activate accepts and boot serves.
@@ -718,7 +724,7 @@ export class Releases {
     if (!ready.ok) {
       return { ok: false, resultType: 'enforcement_preview', errorCode: ready.errorCode, errorMessage: ready.errorMessage };
     }
-    const base = currentBaseSha(this.deps.appRoot, this.deps.releasesDir);
+    const base = currentBaseSha(this.deps.appRoot);
     if (base === null) {
       return {
         ok: false, resultType: 'enforcement_preview', errorCode: 'base_unknown',

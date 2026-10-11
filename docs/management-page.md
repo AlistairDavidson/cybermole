@@ -65,14 +65,20 @@ Deliberately **not** protected (documented boundary):
 
 - Application code — pages, components, the rest of `src/lib`
   (`jobs.ts`, `sessions.ts`, `storage.ts`, …). Changing them is the point
-  of apply. Server-side lib changes are inert in a release (the running
-  process keeps executing the image's copies; see §3.1) and only take
-  effect at the next image deploy — by which time the human has rebuilt
-  from this tree deliberately.
+  of apply. Server-side lib changes are inert in a release for the
+tsc-compiled halves (the running process keeps executing the image's
+copies; see §3.1); the Astro-bundled halves (pages, routes,
+  `src/lib/web/*`, `src/schemas/*`) come from the release and run
+  in-process as the web uid — bounded by §1.5 #6, and they only take
+  effect as a served release. The image-deploy halves only take effect
+  at the next image build — by which time the human has rebuilt from
+  this tree deliberately.
 - `src/pages/management.astro` and `src/components/Management/` — the page
-  could *lie* ("this commit is clean ✓") but cannot bypass anything: every
-  dangerous verb re-runs the enforcement server-side in protected code.
-  A lying page is caught by the apply response itself.
+  could *lie* ("this commit is clean ✓") and its element code could
+  capture the password and drive the verbs itself, but cannot bypass
+  anything: every dangerous verb re-runs the enforcement in the
+  image-resident service, and the base is the root-owned image sha — a
+  refusal writes no marker, no pointer, no restart (§1.5 #6).
 - Look-alike paths (`deploy2/`, `Dockerfile.old`, `src/lib/release.ts`):
   not load-bearing; nothing reads them.
 
@@ -94,16 +100,28 @@ Both ends matter:
      own protected code in a **pointer file** (`<releases>/pointer/current`,
      sha as its whole content) on a **web-only volume of its own**
      (0750 `node:node`) mounted at `/releases/pointer` INSIDE the shared
-     releases volume — not the state db: it is resolved at main.ts boot,
-     before any db use, and the db's lazy open must stay lazy (db.ts);
-     and not a plain subdir of the shared volume either: that volume's
-     root is group-writable (the builder moves release dirs into it),
-     and anything under a group-writable dir can be renamed away by the
-     group — a separate volume mount is unreachable in the builder's
-     mount namespace, so the pointer stays the one thing ONLY web may
-     write. Also unwritable by sessions.
-  3. The base sha is resolved in the checkout with `git cat-file -e
-     <sha>^{commit}`, and everything git does runs with
+     releases volume. The pointer is **serving/display state only** —
+     what the next boot serves, what the page shows — and deliberately
+     NEVER a diff base (see 3). Not the state db: it is resolved at
+     main.ts boot, before any db use, and the db's lazy open must stay
+     lazy (db.ts); and not a plain subdir of the shared volume either:
+     that volume's root is group-writable (the builder moves release
+     dirs into it), and anything under a group-writable dir can be
+     renamed away by the group — a separate volume mount is unreachable
+     in the builder's mount namespace. Also unwritable by sessions.
+  3. **The enforcement base is ALWAYS the image's baked sha** — every
+     verdict diffs `image → target`, never `served → target`. The reason
+     is the residual in §1.5 #6: a release's Astro bundle (pages,
+     partials, API routes, `src/lib/web/*`, `src/schemas/*`) runs
+     IN-PROCESS as the web uid, so applied code could write the pointer
+     and re-root every subsequent verdict; the root-owned `version.json`
+     is the one fact nothing a release serves can write. (Consequence:
+     chained applies are judged against the image — the stronger
+     monotone form — and when the original project has changed protected
+     files since the image was built, every apply honestly refuses
+     until `GIT_SHA=… docker compose build`; that is the designed
+     pre-flight.) The base sha is resolved in the checkout with
+     `git cat-file -e <sha>^{commit}`, and everything git does runs with
      `--no-replace-objects`: the checkout's owner can mint
      `refs/replace/<sha> → <any object>` (§0 — rewritten refs are fair
      game), and git honors them on EVERY object lookup unless told not
@@ -180,11 +198,16 @@ look-alike paths, rewritten history.
 ### 1.4 What the enforcement promises — and what it cannot
 
 The check guarantees: *the tree at `target` differs from the tree at
-`base` only outside the protected set.* It runs in server-side code the
-sessions cannot modify (`src/lib/releases.ts` + routes under
-`src/pages/api/management/`, all protected paths themselves, served from
-the root-owned image copy), and every dangerous verb re-runs it
-server-side — the page's verdict display is a courtesy, not the check.
+`base` (the image's baked sha — §1.2) only outside the protected set.*
+It runs in server-side code the sessions cannot modify
+(`src/lib/releases.ts` is tsc-compiled image-resident; the routes under
+`src/pages/api/management/` are protected paths, so no release can change
+them), and every dangerous verb re-runs it in that image-resident service
+— the page's verdict display is a courtesy, not the check. What a hostile
+release CAN change around it (the release's own parsing/mapping layers,
+its element code — §1.5 #6) can lie about the verdict but cannot move the
+decision or the effect: the refusal still writes no marker, no pointer,
+no restart.
 
 It cannot promise "the built artifacts correspond to the source" by
 itself, because any real build executes parts of the tree as code. That
@@ -229,6 +252,33 @@ dir) and bounded honestly in §1.5.
    unprotected paths don't already carry; in-tree `.gitattributes` cannot
    be switched off for `git archive`, so it is named here instead of
    neutralized in the builder.
+6. **Applied code runs in-process as the web uid — by design.** A
+   release's `dist/` IS the apply surface: the Astro bundle (pages,
+   partials, API routes, `src/lib/web/*` parsing/mapping,
+   `src/schemas/*`, the client bundles) executes inside the webpi
+   process as uid `node` — the trusted half of the split. That uid can
+   write the pointer, the shared protocol volume's root and the state
+   db; the enforcement's base is therefore the root-owned image sha,
+   never the pointer (§1.2), and this is exactly what applying app
+   changes means — the same privilege the image's own app code has. What
+   it can NEVER change: the gate (`server/main.js`), `auth`, the domain
+   services (`src/lib/*` as tsc compiles them — including this
+   enforcement), `node_modules`, the image — all root-owned,
+   image-resident, outside the release (§3.1). What a hostile-but-clean
+   release can still do: LIE in the UI — its parsing/mapping layers
+   (`src/lib/web/*`, `src/schemas/*` — app code, deliberately unprotected
+   so ordinary feature work still applies) can show a fake verdict or
+   misreport a refusal as success, and its element code can capture the
+   password the human types and drive the verbs itself. None of that
+   moves the line: every dangerous verb's DECISION and EFFECT (re-auth
+   via the image-resident `auth.verify`, enforcement re-run, marker
+   write, pointer write, restart trigger) lives in image-resident code
+   — the lie buys confusion at most (no marker, no pointer write, no
+   restart; the history table and the boot state betray it), and an
+   attacker-chosen clean release is precisely the privilege they could
+   have served themselves legitimately. The password re-confirmation is
+   what keeps even a captured-password hostile element from activating
+   anything the enforcement refuses.
 
 ### 1.6 The verbs and their guards
 
@@ -236,7 +286,7 @@ dir) and bounded honestly in §1.5.
 | --- | --- |
 | GET state / commits / preview | session (main.ts gate) only — read-only, no secrets beyond paths and shas |
 | POST build | re-auth (`username`+`password`, verified via `auth.verify` — 401 on mismatch), enforcement re-run (422 `enforcement_rejected` with the offending paths), one build at a time (409), releases volume configured (503) |
-| POST activate | re-auth, enforcement re-run for a release target (base = the sha currently recorded as served), release must exist + manifest match + layout valid (404/409), then pointer write + recorded history + restart |
+| POST activate | re-auth, enforcement re-run for a release target (base = the image's baked sha — always, §1.2), release must exist + manifest match + layout valid (404/409), then pointer write + recorded history + restart |
 
 Every POST is already origin-checked by `server/main.ts`'s gate (present
 but foreign `Origin` → 403 before Astro) and session-checked; the
@@ -325,16 +375,20 @@ deletes protocol files it did not write itself.
 A release is `dist/` (Astro client assets + the SSR handler
 `dist/server/entry.mjs`) + `manifest.json`. **The release deliberately
 does not replace `dist-server/`** — the running Node process keeps
-executing the image's root-owned `server/main.js`, `src/lib/*`,
+executing the image's root-owned `server/main.js`, the tsc-compiled
+`src/lib/*` (the domain services: auth, the state db, tmux, the
+scheduler, the releases domain — the enforcement itself), and
 `node_modules`: the gate (origin check, session check, body caps,
-security headers), auth, tmux, the scheduler, and the enforcement itself
-all stay image-resident **by construction, not just by the diff check**.
-A release changes what the gate *serves* (pages, partials, API routes,
-client bundles), which is what "applying changes" means. Server-side
-changes in a release's commit are honest no-ops until the next image
-deploy (the page says so), and the diff check still refuses commits that
-touch the protected server files — because the human's next image build
-is from this tree.
+security headers), auth, tmux, the scheduler, and the enforcement all
+stay image-resident **by construction, not just by the diff check**.
+A release changes what the gate *serves* — and, honestly said, what runs
+in-process beside it: the Astro bundle (pages, partials, API routes,
+`src/lib/web/*`, `src/schemas/*`, client bundles) comes from the release
+and runs as the web uid — that is the apply surface, bounded by §1.5 #6.
+Server-side changes to the tsc-compiled halves in a release's commit are
+honest no-ops until the next image deploy (the page says so), and the
+diff check still refuses commits that touch the protected server files
+— because the human's next image build is from this tree.
 
 This is the strongest structural statement of the TODO's headline
 property: the gate *cannot* be swapped from inside the container, even by
