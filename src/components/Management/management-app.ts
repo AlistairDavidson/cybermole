@@ -125,6 +125,10 @@ export class ManagementApp extends HTMLElement {
       this.querySelector(`#${CSS.escape(region.id)}`)?.replaceWith(document.importNode(region, true));
     });
     this.localizeTimes();
+    // The build-log <wa-details> sits AROUND its [data-refresh] <pre>, so
+    // its hidden-ness is not part of any region — re-sync it from the
+    // fresh log text (the settings page's update-output pattern).
+    this.$('mgmt-build-log').classList.toggle('hidden', !this.$('mgmt-build-log-text').textContent);
     this.armPoll();
   }
 
