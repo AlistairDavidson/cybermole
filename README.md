@@ -374,9 +374,11 @@ final batch, capped well inside the stop deadline.
 What is logged, and at which level (`winston`'s npm set):
 
 - `info` — lifecycle: the boot summary, tmux sessions started/resumed,
-  a terminal attached, login/logout (`username` is logged — single-user
+  a terminal attached/detached, login/logout (`username` is logged — single-user
   app; credentials, tokens and cookie values never are), scheduler job
-  fires, pi updates (manual and auto), uploads stored.
+  fires and run finishes (observed at the scheduler's ~30 s tick — a run
+  that opens and ends between two ticks is only counted as fired), pi
+  updates (manual and auto), uploads stored.
 - `warn` — degraded operation: failed logins at the rate limit, the
   scrypt 503, ws upgrade rejections, job schedules that no longer parse,
   failed uploads.
@@ -385,18 +387,21 @@ What is logged, and at which level (`winston`'s npm set):
 - `http` — a one-line access log at the node-server level (`method path
   status in Nms`).
 - `debug` — what would bury an open console: the 15 s `/api/state` poll
-  every open tab runs, and hashed-asset/PWA hits. Console-silent (the
-  console transport sits at `http`), pushed to Loki (which sits at
-  `debug`), where volume is cheap.
+  every open tab runs, WS connects (one line per socket open — every tab
+  load and reconnect, before any attach succeeds), and hashed-asset/PWA
+  hits. Console-silent (the console transport sits at `http`), pushed to
+  Loki (which sits at `debug`), where volume is cheap.
 
 In Loki, each line carries exactly three stream labels — `job`
 (`WEB_PI_LOKI_JOB`), `level`, `component` (`boot`, `http`, `auth`, `ws`,
 `tmux`, `scheduler`, `update`, `storage`, `shutdown`) — and everything
 else (paths, durations, session names) rides in the line's JSON, so
-labels stay low-cardinality. Two log sites deliberately stay on
+labels stay low-cardinality. A few log sites deliberately stay on
 `console.*`, commented in place: `set-password` (a one-shot CLI prompting
-a human) and `zod.service.ts` (Astro-bundled module — winston stays out
-of the Vite bundle).
+a human) and the Astro-bundled code — `zod.service.ts` and the `.astro`
+render guards (`settings.astro`, the `jobs-list` and `settings`
+partials) — where winston must stay out of the Vite bundle. Those
+guard lines reach the console only, never Loki.
 
 Bring the stack up (opt-in `observability` compose profile — a plain
 `up` starts none of it, and nothing breaks when Loki is absent):

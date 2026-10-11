@@ -13,6 +13,8 @@ const { webpi } = assertWebPiLocals(Astro.locals);
 const settings = webpi.settingsState();
 Astro.response.headers.set('Cache-Control', 'no-store');
 if (!settings.ok) {
+  // console.error on purpose, not src/lib/logger.ts: frontmatter is
+  // Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
   console.error(`settings partial: ${settings.errorMessage}`);
   Astro.response.status = 500;
 }
