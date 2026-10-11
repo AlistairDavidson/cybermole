@@ -80,6 +80,18 @@ export class ConsoleApp extends HTMLElement {
       location.href = `${BASE}/jobs`;
     };
 
+    // "Open in Zed" (docs/zed-webapp.md): open the stream tab synchronously
+    // inside the click's task (an await first would eat the user activation
+    // and the popup blocker would eat the tab), then ask the server to make
+    // the folder appear in it — the launcher boots Zed if it isn't running.
+    this.addEventListener('open-zed', e => {
+      const { cwd } = (e as CustomEvent<{ cwd: string }>).detail;
+      const url = this.state?.zed?.url;
+      if (!url) return; // feature off — the sidebar never renders the button
+      window.open(url, '_blank', 'noopener');
+      void this.launchZed(cwd);
+    });
+
     // Sidebar hide/manage affordances → the dialogs owned here.
     this.addEventListener('hide-session', e => {
       const detail = (e as CustomEvent<{ id: string; title: string }>).detail;
@@ -166,6 +178,24 @@ export class ConsoleApp extends HTMLElement {
       await this.loadState();
       this.renderHiddenList();
     }
+  }
+
+  /** POST the folder-open; toasts on failure (the tab is already open —
+   *  a failure here means the folder didn't appear, not that the stream
+   *  is broken). */
+  private async launchZed(cwd: string): Promise<void> {
+    const sent = await signedInFetch(`${BASE}/api/zed/open`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: cwd }),
+    });
+    if (!sent.ok) { this.notAnswered(sent); return; }
+    const r = sent.data.response;
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ error: 'could not open in Zed' })) as { error?: string };
+      this.toast(err.error ?? 'could not open in Zed', { variant: 'danger', icon: 'triangle-exclamation', duration: 6000 });
+      return;
+    }
+    this.toast(`opening ${cwd} in Zed`, { variant: 'neutral', icon: 'code', duration: 3000 });
   }
 
   /** Body of the manage-hidden dialog: hidden sessions from the last

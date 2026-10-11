@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { envSchema, type EnvValue, type ServerEnvField } from './env-schema';
 import type { ObjectStoreConfig } from './storage';
+import type { ZedLaunchConfig } from './zed';
 
 /** Loki push config (src/lib/logger.ts) — or null when no URL is set: the
  *  logger then runs console-only, exactly as before this existed. */
@@ -120,4 +121,33 @@ export function readObjectStoreConfig(): ObjectStoreConfig | null {
     throw new Error(`WEB_PI_S3_BUCKET=${JSON.stringify(RAW_ENV.WEB_PI_S3_BUCKET)} is not a valid bucket name`);
   }
   return { endpoint, accessKeyId, secretAccessKey, bucket: RAW_ENV.WEB_PI_S3_BUCKET, region: RAW_ENV.WEB_PI_S3_REGION };
+}
+
+/** Zed webapp config (src/lib/zed.ts, docs/zed-webapp.md), or null when
+ *  WEB_PI_ZED_URL is unset — the single switch (the browser-facing stream
+ *  URL): the console then hides its Zed affordances. Not all-or-none like
+ *  object storage: the launcher pair is deployment plumbing that is present
+ *  without the operator opting in — compose always defaults
+ *  WEB_PI_ZED_LAUNCH_URL, and zed-init's token file (loaded by
+ *  docker-entrypoint.sh) outlives the profile being disabled — so a URL-less
+ *  deployment must boot cleanly, not crash on the leftovers. With the URL
+ *  set, the pair must be there too: a missing one stops the boot at startup,
+ *  like a half-configured object store. Empty strings count as unset
+ *  (compose's `VAR: ""`). */
+export function readZedConfig(): ZedLaunchConfig | null {
+  const set = (v: string | undefined): v is string => v !== undefined && v.trim() !== '';
+  const url = RAW_ENV.WEB_PI_ZED_URL;
+  const launchUrl = RAW_ENV.WEB_PI_ZED_LAUNCH_URL;
+  const token = RAW_ENV.WEB_PI_ZED_LAUNCH_TOKEN;
+  if (!set(url)) return null;
+  if (!set(launchUrl) || !set(token)) {
+    throw new Error(`WEB_PI_ZED_URL is set but ${!set(launchUrl) ? 'WEB_PI_ZED_LAUNCH_URL' : 'WEB_PI_ZED_LAUNCH_TOKEN'} is not — ` +
+      'set all three together (is the zed compose profile deployed?)');
+  }
+  for (const [name, value] of [['WEB_PI_ZED_URL', url], ['WEB_PI_ZED_LAUNCH_URL', launchUrl]] as const) {
+    if (!URL.canParse(value) || !/^https?:$/.test(new URL(value).protocol)) {
+      throw new Error(`${name}=${JSON.stringify(value)} is not an http(s) URL`);
+    }
+  }
+  return { url, launchUrl, token };
 }

@@ -120,6 +120,18 @@ session-sidebar {
 .nav li .hide-btn:hover, .nav li .hide-btn:focus-visible {
   color: var(--wa-color-danger-fill-normal);
 }
+/* "open in Zed" — same quiet shape, but a content action, not a
+   destructive one: accent on hover. Rendered only when ConsoleState.zed
+   is set (the webapp configured). */
+.nav li .zed-btn {
+  flex: none; align-self: center; color: var(--wa-color-text-quiet);
+}
+.nav li .zed-btn::part(button) {
+  min-width: var(--wa-space-l);
+}
+.nav li .zed-btn:hover, .nav li .zed-btn:focus-visible {
+  color: var(--wa-color-accent-fill-normal);
+}
 .nav li.empty {
   cursor: default; color: var(--wa-color-text-quiet);
   font-size: var(--wa-font-size-2xs);

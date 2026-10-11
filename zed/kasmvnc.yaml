@@ -1,0 +1,33 @@
+# zed/kasmvnc.yaml — server-level overrides; everything else keeps the
+# KasmVNC deb's defaults (/etc/kasmvnc/kasmvnc.yaml). See the KasmVNC
+# configuration reference for the full table.
+network:
+  # Browser-native client only (KasmVNC deliberately speaks no legacy
+  # RFB). One listener serves both the web client and the websocket.
+  protocol: http
+  websocket_port: 6901
+  interface: 0.0.0.0
+  ssl:
+    # TLS terminates at the reverse proxy (deploy/nginx-zed.conf); the
+    # port is published loopback-only in compose.yaml.
+    require_ssl: false
+
+desktop:
+  # Client resizes drive the X screen (dynamic resolution). Initial
+  # geometry only — replaced by the connecting client's viewport.
+  resolution:
+    width: 1920
+    height: 1080
+  allow_resize: true
+
+data_loss_prevention:
+  clipboard:
+    server_to_client:
+      enabled: true
+    client_to_server:
+      enabled: true
+
+command_line:
+  # No interactive first-run prompts: the entrypoint seeds the password
+  # file and xstartup before starting the server.
+  prompt: false

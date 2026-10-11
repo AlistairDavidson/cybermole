@@ -182,17 +182,39 @@ function tmuxFailure(name: TmuxSessionName, what: string, error: TmuxError) {
 }
 
 /** Live sessions on the app socket. Can't fail by design: no server yet
- *  (or any error) is simply no live sessions. */
+ *  (or any error) is simply no live sessions. Explicit -F format: the
+ *  default layout varies across tmux versions, and the cwd (resolved via
+ *  the session's active pane) is what the sidebar's "open in Zed" needs.
+ *  That field is #{pane_current_path} falling back to
+ *  #{pane_start_path}: current needs the pane tty's foreground pgrp
+ *  (tmux's osdep_get_cwd → tcgetpgrp → /proc/<pgrp>/cwd), which a normal
+ *  Linux kernel sets when the pane process acquires the tty as session
+ *  leader — but not every pty layer does (the agent sandbox's is one:
+ *  tcgetpgrp on the pane pty fails ENOTTY, verified against tmux 3.3a;
+ *  a foreground pager can lose it too). #{?pane_current_path,A,B} is
+ *  tmux's own name-condition conditional — verified on the prod image's
+ *  tmux (3.3a) — and the spawn cwd is what `new-session -c` started the
+ *  session in, i.e. exactly the session's working directory for pi and
+ *  job sessions. Separator notes: '|' not '\t' — the prod image's
+ *  bookworm apt tmux (3.3a) rewrites tab characters in list output to
+ *  underscores (observed: a real tab in the format comes out as '_'),
+ *  and '|' is stable either way; and #{session_created} is the raw epoch
+ *  — #{session_created_string} only exists from tmux 3.4 (empty on
+ *  3.3a), so the epoch is formatted in JS instead. A '|' in a session
+ *  name would make the row unparseable — same as the old default-format
+ *  regex, and names are [a-zA-Z0-9_-] by TMUX_SESSION_NAME_RE. */
 export async function listSessions(): Promise<LiveSession[]> {
-  const { error, stdout } = await tmux(SOCKET, ['list-sessions']);
+  const { error, stdout } = await tmux(SOCKET, ['list-sessions', '-F',
+    '#{session_name}|#{session_windows}|#{session_created}|#{?session_attached,attached,}|#{?pane_current_path,#{pane_current_path},#{pane_start_path}}']);
   if (error) return [];
   const out: LiveSession[] = [];
   for (const line of stdout.split('\n')) {
-    const m = line.match(/^([^:]+): (\d+) windows \(created ([^)]+)\)(.*)$/);
+    const m = line.match(/^([^|]+)\|(\d+)\|(\d+)\|(attached)?\|(.*)$/);
     if (m) {
       out.push({
-        name: asTmuxSessionName(m[1] ?? ''), windows: parseInt(m[2] ?? '1', 10), created: m[3] ?? '',
-        attached: (m[4] ?? '').includes('(attached)'), socket: SOCKET,
+        name: asTmuxSessionName(m[1] ?? ''), windows: parseInt(m[2] ?? '1', 10),
+        created: new Date(parseInt(m[3] ?? '0', 10) * 1000).toLocaleString(),
+        attached: m[4] === 'attached', cwd: m[5] || null, socket: SOCKET,
       });
     }
   }

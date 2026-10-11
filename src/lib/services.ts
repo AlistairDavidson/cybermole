@@ -24,6 +24,7 @@ import {
   PI_PACKAGE, appVersion, npmPath, piDeclared, piInstalled, runPiUpdate, type PiUpdateResult,
 } from './settings';
 import * as tmux from './tmux';
+import { openInZed, type ZedLaunchConfig, type ZedOpenResult } from './zed';
 import type { CalendarCheck, ConsoleState, SettingsState } from './types';
 import type { SessionToken, TmuxSessionName } from '../types/branded';
 import type { ResultFailure, ResultSuccess } from '../types/result';
@@ -58,6 +59,9 @@ export interface ServerConfig {
   /** whitespace-split session command line */
   command: string[];
   trustProxy: number;
+  /** Zed webapp wiring (docs/zed-webapp.md), or null when not configured
+   *  — the console then hides its Zed affordances. */
+  zed: ZedLaunchConfig | null;
 }
 
 export interface WebPiServices {
@@ -79,6 +83,9 @@ export interface WebPiServices {
   runPiUpdate(dryRun: boolean): Promise<PiUpdateResult>;
   /** Start a new interactive session running the configured command. */
   newSession(name: TmuxSessionName): Promise<tmux.TmuxSessionSuccess | tmux.TmuxSessionFailure>;
+  /** Open a directory in the Zed webapp (POST from the console's
+   *  "open in Zed" affordances; src/lib/zed.ts). */
+  openInZed(path: string): Promise<ZedOpenResult>;
   /** Validate a 5-field cron schedule (pure; here so routes never import jobs.ts). */
   checkCron(schedule: string): CalendarCheck;
 }
@@ -128,6 +135,7 @@ export function createServices(deps: ServiceDeps): WebPiServices {
           live,
           sessions: sessions.map(s => ({ ...s, hidden: hidden.data.value.has(s.id) })),
           hiddenCount: hidden.data.value.size,
+          zed: cfg.zed === null ? null : { url: cfg.zed.url },
         },
       } satisfies ConsoleStateSuccess;
     },
@@ -170,6 +178,7 @@ export function createServices(deps: ServiceDeps): WebPiServices {
 
     runPiUpdate: dryRun => runPiUpdate(APP_ROOT, dryRun),
     newSession: name => tmux.newSession(name, cfg.newSessionCwd, cfg.command, sessionEnv),
+    openInZed: path => openInZed(cfg.zed, path),
     checkCron: schedule => checkCron(schedule),
   };
 }
