@@ -209,9 +209,13 @@ services:
   # §2). TWO volumes: the shared protocol volume (marker dirs + release
   # dirs — group `releases` (web + builder), NEVER the sessions' uid; the
   # group is the boundary) and the web-ONLY pointer volume mounted at
-  # /releases/pointer INSIDE it (what the next boot serves — the trusted
-  # diff base). The pointer cannot live on the shared volume: its root is
-  # group-writable (the builder moves release dirs into it), and anything
+  # /releases/pointer INSIDE it (what the next boot serves — serving/
+  # display state only; NEVER the enforcement's diff base, which is
+  # always the image's root-owned version.json sha — applied code runs
+  # in-process as the web uid and could write the pointer, docs/
+  # management-page.md §1.2/§1.5 #6). The pointer cannot live on the
+  # shared volume: its root is group-writable (the builder moves release
+  # dirs into it), and anything
   # under a group-writable dir can be renamed away by the group — a
   # separate volume mount is unreachable in the builder's mount namespace
   # (the same nested-mount pattern the dev profile uses for
@@ -430,8 +434,9 @@ volumes:
   webpi-releases:
     name: webpi-releases
   # task/mgmt-page: the web-only pointer (what the next boot serves —
-  # the trusted diff base), its own volume so the builder (group-writer
-  # of the protocol volume's root) can never rename/replace it. Mounted
+  # serving/display state, never a diff base; see the comment above), its
+  # own volume so the builder (group-writer of the protocol volume's
+  # root) can never rename/replace it. Mounted
   # only by webpi + releases-init, at /releases/pointer inside the
   # shared volume's mount.
   webpi-releases-pointer:

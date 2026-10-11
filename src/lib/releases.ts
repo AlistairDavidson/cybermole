@@ -413,12 +413,15 @@ export async function enforceDiff(checkout: string, base: CommitSha, target: Com
 // ---------- the served-release pointer (docs/management-page.md §3.2) ----------
 
 /** The pointer file: <releases>/pointer/current, holding the sha the
- *  NEXT boot serves (absent → the image copy). Lives in a web-only
- *  subdir (0750 node:node) of the releases volume — not the db (whose
- *  lazy open must stay lazy, db.ts) and not the group-writable volume
- *  root (the builder shares a group with web, sessions share a uid with
- *  the builder — the pointer is the one thing ONLY web may write, which
- *  is what makes it a trustworthy diff base). */
+ *  NEXT boot serves (absent → the image copy). Lives on a web-only volume
+ *  (0750 node:node) — not the db (whose lazy open must stay lazy, db.ts)
+ *  and not a plain subdir of the shared protocol volume (its root is
+ *  group-writable — the builder moves releases into it — so only a
+ *  separate volume mount keeps the pointer the one thing ONLY web may
+ *  write). Serving/display state only, NEVER a diff base: applied code
+ *  runs in-process as this uid and could write it, which is why the
+ *  enforcement base is always the image's baked sha (currentBaseSha,
+ *  docs/management-page.md §1.2/§1.5 #6). */
 export function pointerPath(releasesDir: string): string {
   return path.join(releasesDir, 'pointer', 'current');
 }
@@ -804,9 +807,9 @@ export class Releases {
           'the releases volume is not mounted — add the WEB_PI_RELEASES_DIR wiring (docs/management-page.md §7)');
       }
       // Enforcement re-run: the verdict the page showed is a courtesy;
-      // this is the check. The base is the CURRENT pointer/image, so an
-      // activate chained after another activate re-judges against what is
-      // actually running.
+      // this is the check. The base is ALWAYS the image's baked sha
+      // (currentBaseSha) — an activate chained after another activate
+      // re-judges against the same root of trust, never the pointer.
       const verdict = await this.enforce(sha);
       if (!verdict.ok) return fail(verdict.errorCode, verdict.errorMessage ?? verdict.errorCode);
       if (!verdict.data.allowed) {
