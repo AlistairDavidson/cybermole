@@ -132,11 +132,13 @@ services:
       # them (WEB_PI_S3_ACCESS_KEY / WEB_PI_S3_SECRET_KEY).
       WEB_PI_S3_ENDPOINT: http://seaweedfs:8333
       # task/zed-webapp: Zed webapp (profile `zed`, docs/zed-webapp.md).
-      # All three set together or none (src/lib/env.ts readZedConfig fails
-      # the boot on a half-set): URL is what the BROWSER opens (the
-      # reverse-proxied stream), launcher URL is this container's route to
-      # the zed service, token is loaded by docker-entrypoint.sh from
-      # zed-init's generated file below.
+      # WEB_PI_ZED_URL is the single switch: unset means the feature is off
+      # no matter what else is present (src/lib/env.ts readZedConfig — the
+      # launch URL default below and zed-init's token file are deployment
+      # plumbing that must not crash an unconfigured webpi); set means the
+      # launcher pair must be there too (launch URL defaults here, token is
+      # loaded by docker-entrypoint.sh from zed-init's generated file
+      # below — a URL with no token fails the boot: deploy the profile).
       WEB_PI_ZED_URL: ${WEB_PI_ZED_URL:-}
       WEB_PI_ZED_LAUNCH_URL: ${WEB_PI_ZED_LAUNCH_URL:-http://zed:7999/open}
     networks: [default, storage]

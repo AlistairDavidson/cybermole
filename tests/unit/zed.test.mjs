@@ -4,6 +4,7 @@
 // statuses zedOpenFailureResponse maps them to.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as os from 'node:os';
@@ -113,4 +114,57 @@ test('invalid_path echoed back when the launcher rejects it (400)', async t => {
   const res = zedOpenFailureResponse(r);
   assert.equal(res.status, 400);
   assert.equal((await res.json()).code, 'invalid_path');
+});
+
+// ---------- WEB_PI_ZED_* boot checks (src/lib/env.ts) ----------
+
+/** readZedConfig() in a fresh process (RAW_ENV is read at module load), or its error. */
+function bootConfig(env) {
+  const clean = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('WEB_PI_ZED_')));
+  try {
+    const out = execFileSync(process.execPath, ['-e',
+      "process.stdout.write(JSON.stringify(require('./dist-server/src/lib/env.js').readZedConfig()))"],
+      { env: { ...clean, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+    return { config: JSON.parse(out.toString()) };
+  } catch (err) {
+    return { error: err.stderr.toString() };
+  }
+}
+
+test('env: no WEB_PI_ZED_URL is off, whatever plumbing is present (the compose states)', () => {
+  // plain `docker compose up -d`, the zed profile never deployed: URL
+  // empty, launch URL defaulted by compose, no token — must boot off.
+  assert.deepEqual(
+    bootConfig({ WEB_PI_ZED_URL: '', WEB_PI_ZED_LAUNCH_URL: 'http://zed:7999/open' }),
+    { config: null });
+  // the zed profile deployed once, then the console link removed: the
+  // launch pair lingers (compose default + zed-init's token file) — must
+  // still boot off, not crash on the leftovers.
+  assert.deepEqual(
+    bootConfig({ WEB_PI_ZED_LAUNCH_URL: 'http://zed:7999/open', WEB_PI_ZED_LAUNCH_TOKEN: 't' }),
+    { config: null });
+});
+
+test('env: URL + launcher pair configure the webapp', () => {
+  assert.deepEqual(bootConfig({
+    WEB_PI_ZED_URL: 'https://zed.example.com',
+    WEB_PI_ZED_LAUNCH_URL: 'http://zed:7999/open',
+    WEB_PI_ZED_LAUNCH_TOKEN: 't',
+  }), { config: { url: 'https://zed.example.com', launchUrl: 'http://zed:7999/open', token: 't' } });
+});
+
+test('env: a URL without the launcher pair stops the boot (zed profile not deployed?)', () => {
+  assert.match(bootConfig({ WEB_PI_ZED_URL: 'https://zed.example.com', WEB_PI_ZED_LAUNCH_URL: 'http://zed:7999/open' }).error,
+    /WEB_PI_ZED_URL is set but WEB_PI_ZED_LAUNCH_TOKEN is not/);
+  assert.match(bootConfig({ WEB_PI_ZED_URL: 'https://zed.example.com', WEB_PI_ZED_LAUNCH_TOKEN: 't' }).error,
+    /WEB_PI_ZED_URL is set but WEB_PI_ZED_LAUNCH_URL is not/);
+});
+
+test('env: non-http(s) URLs stop the boot', () => {
+  const pair = { WEB_PI_ZED_LAUNCH_URL: 'http://zed:7999/open', WEB_PI_ZED_LAUNCH_TOKEN: 't' };
+  assert.match(bootConfig({ ...pair, WEB_PI_ZED_URL: 'zed.example.com' }).error,
+    /WEB_PI_ZED_URL="zed.example.com" is not an http\(s\) URL/);
+  assert.match(
+    bootConfig({ ...pair, WEB_PI_ZED_URL: 'https://zed.example.com', WEB_PI_ZED_LAUNCH_URL: 'ftp://zed:7999' }).error,
+    /WEB_PI_ZED_LAUNCH_URL="ftp:\/\/zed:7999" is not an http\(s\) URL/);
 });

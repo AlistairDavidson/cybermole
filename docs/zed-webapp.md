@@ -285,11 +285,18 @@ equivalence above is the argument that this is acceptable to defer).
   or boots any of it, and the console renders no Zed affordances
   (`ConsoleState.zed: null`).
 - Config flows through the typed env system
-  (`src/lib/env-schema.ts` → `src/lib/env.ts#readZedConfig`): the three
-  variables are **all-or-none** (a half-set stops the server at boot,
-  like object storage). `WEB_PI_ZED_URL` is the browser-facing stream
-  URL and the single switch the client sees (via `/api/state` →
-  `ConsoleState.zed`); the launcher pair stays server-side.
+  (`src/lib/env-schema.ts` → `src/lib/env.ts#readZedConfig`):
+  `WEB_PI_ZED_URL` — the browser-facing stream URL — is **the single
+  switch** (via `/api/state` → `ConsoleState.zed`); the launcher pair
+  stays server-side. Unset (or empty) means off **no matter what else is
+  present**: compose always defaults `WEB_PI_ZED_LAUNCH_URL`, and
+  zed-init's token file outlives the profile being disabled, so an
+  all-or-none rule like object storage would crash every unconfigured
+  `docker compose up -d` (compose's `:-` default is always “set”) and
+  every webpi restart after the feature was unwired. With the URL set,
+  the launcher pair must be there too — a missing one stops the server
+  at boot with a deploy-the-profile error, the object-storage precedent
+  applied to the operator's actual mistake.
 - The sidebar shows an "open in Zed" button on every past-session row
   (its `cwd`) and every live-session row (tmux
   `#{pane_current_path}`, now in `LiveSession.cwd`). The button is a
@@ -355,10 +362,16 @@ state e2e test lives in `tests/e2e.spec.ts` and must run on the host.
    storage may not persist without a dbus secret service; the seeded
    settings disable auto-update (the image pins Zed — rebuild to
    upgrade).
-8. **Unconfigured stays clean**: on a host that never sets
+8. **Unconfigured and unwired stay clean**: on a host that never sets
    `WEB_PI_ZED_URL`, `docker compose up -d` boots exactly as before and
    the sidebar has no Zed buttons (`grep -c data-zed` in the served page
-   HTML = 0).
+   HTML = 0) — even though the container sees a defaulted
+   `WEB_PI_ZED_LAUNCH_URL` (readZedConfig treats a URL-less env as off,
+   unit-tested). Unset `WEB_PI_ZED_URL` (and
+   `docker compose --profile zed down` if you want the stream gone) on
+   a host that HAD it configured: webpi must still boot clean (the
+   zed-init token file lingers on its volume) and the console hides the
+   buttons again.
 
 ## Junctions for the merge
 
