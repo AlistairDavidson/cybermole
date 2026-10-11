@@ -186,6 +186,9 @@ directly.
 | `WEB_PI_S3_ACCESS_KEY` / `WEB_PI_S3_SECRET_KEY` | *(unset)* | the store's credentials. In compose, generated once by `seaweedfs-init` and loaded by the entrypoint — not set in `compose.yaml` |
 | `WEB_PI_S3_BUCKET` | `webpi` | bucket for uploads (created on first use when missing) |
 | `WEB_PI_S3_REGION` | `us-east-1` | SigV4 signing region — self-hosted servers accept any |
+| `WEB_PI_ZED_URL` | *(unset: Zed off)* | browser-facing URL of the [Zed webapp](docs/zed-webapp.md)'s stream (the reverse-proxied KasmVNC client) — the single switch: unset, the console hides its per-session "open in Zed" affordances; set, the launcher pair below must be there too (a half-set stops the server at boot) |
+| `WEB_PI_ZED_LAUNCH_URL` | *(unset)* | the launcher endpoint the server POSTs a folder-open to (`http://zed:7999/open` in compose); only meaningful with `WEB_PI_ZED_URL` set |
+| `WEB_PI_ZED_LAUNCH_TOKEN` | *(unset)* | the launcher's bearer token. In compose, generated once by `zed-init` and loaded by the entrypoint — not set in `compose.yaml` |
 | `WEB_PI_DEV_API` | `http://127.0.0.1:3001` | dev only: where `astro dev` proxies `/api`, `/ws`, login/logout (the `npm run dev:server` process) |
 
 Run under a dedicated unprivileged user (the app spawns a terminal — treat

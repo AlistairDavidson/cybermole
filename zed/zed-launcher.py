@@ -15,8 +15,9 @@ Endpoints:
   GET  /healthz  — 200 (compose healthcheck / curl smoke test)
   POST /open     — Authorization: Bearer <WEB_PI_ZED_LAUNCH_TOKEN>,
                    body {"path": "/workspace/..."} → {"opened": true}
-                   400 invalid path (not absolute / not under /workspace
-                   / not a directory), 401 bad token, 404 anything else.
+                   400 invalid path (not absolute / not inside-or-equal-to
+                   /workspace / not a directory), 401 bad token, 404
+                   anything else.
 """
 
 import hmac
@@ -89,12 +90,15 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         # Same rules the web server applies, checked again on the side
-        # that will spawn: absolute, a directory, inside /workspace.
-        # This is not the trust boundary (the caller already owns a
-        # shell as this user) — it keeps typos from opening /etc.
+        # that will spawn: absolute, a directory, inside-or-equal-to
+        # /workspace (the root itself is compose's default
+        # WEB_PI_NEW_SESSION_CWD — its session rows must open the
+        # workspace root, not be rejected). This is not the trust
+        # boundary (the caller already owns a shell as this user) — it
+        # keeps typos from opening /etc.
         real = os.path.realpath(path)
         root = os.path.realpath(WORKSPACE_ROOT)
-        if not os.path.isabs(path) or not real.startswith(root + os.sep) or not os.path.isdir(real):
+        if not os.path.isabs(path) or (real != root and not real.startswith(root + os.sep)) or not os.path.isdir(real):
             fail(self, 400, f"not a workspace directory: {path}")
             return
 

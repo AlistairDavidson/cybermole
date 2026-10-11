@@ -215,7 +215,9 @@ errors and an auth boundary in ~100 lines of stdlib.
 
 Validation layers, both sides: the web server checks the path is
 absolute + a directory it can `stat` (400 otherwise); the launcher
-re-checks absolute + `realpath` under `/workspace` + `isdir` (400). The
+re-checks absolute + `realpath` inside-or-equal-to `/workspace` (the
+root itself is compose's default session cwd — it must open, not be
+rejected) + `isdir` (400). The
 token is generated once by the `zed-init` one-shot (the seaweedfs-init
 pattern) onto a dedicated volume, read by webpi's `docker-entrypoint.sh`
 and the zed entrypoint — file mode 0440, owner `workspace` (2000), group
@@ -367,11 +369,13 @@ The unit suite without tmux on PATH runs 119/126 with 7 skips (the
 unconfigured-state e2e test lives in `tests/e2e.spec.ts` and must run
 on the host.
 
-1. **Build + boot**
+1. **Build + boot** (no service args — webpi must be recreated with
+   `WEB_PI_ZED_URL`, or its env keeps the old one and the console
+   affordances stay off; `up -d zed` alone would boot only the stream)
    ```sh
    ZED_VNC_PASSWORD='pick-a-stream-password' \
    WEB_PI_ZED_URL='https://zed.example.com/' \
-     docker compose --profile zed up -d zed
+     docker compose --profile zed up -d
    docker compose --profile zed logs zed      # expect: "streaming on :6901 … launcher on :7999"
    curl -fsS http://127.0.0.1:6901/ >/dev/null && echo web-client-up
    curl -fsS http://127.0.0.1:7999/healthz    # NO — launcher is not published;
