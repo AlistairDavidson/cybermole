@@ -54,7 +54,7 @@ const releases = state?.releases ?? [];
 const building = releases.some(r => r.live === 'pending' || r.live === 'building');
 const statusOf = (r: ReleaseRecord): string =>
   r.live === 'pending' || r.live === 'building' ? r.live : r.status;
-const lastFailed = releases.find(r => (r.live ?? r.status) === 'failed') ?? null;
+const lastBuild = releases.find(r => r.log) ?? null; // newest first (dbRows): the last build's log, success or failure
 ---
 
 <main class="mgmt-main wa-stack wa-gap-m">
@@ -186,7 +186,12 @@ const lastFailed = releases.find(r => (r.live ?? r.status) === 'failed') ?? null
                   </div>
                   {preview.protectedChanged.length > 0
                     ? <ul class="mgmt-protected" role="alert">
-                        {preview.protectedChanged.map(p => <li><code>{p}</code></li>)}
+                        {preview.protectedChanged.map(p => (
+                          <li>
+                            <code>{p}</code>
+                            {preview.protectedWhy[p] ? <span> — {preview.protectedWhy[p]}</span> : null}
+                          </li>
+                        ))}
                       </ul>
                     : null}
                   {preview.changed.length > 0
@@ -252,8 +257,8 @@ const lastFailed = releases.find(r => (r.live ?? r.status) === 'failed') ?? null
           </div>
         : null}
     </div>
-    <wa-details id="mgmt-build-log" summary="last build log" class={lastFailed?.log ? undefined : 'hidden'}>
-      <pre class="npm-output" id="mgmt-build-log-text" data-refresh>{lastFailed?.log ?? ''}</pre>
+    <wa-details id="mgmt-build-log" summary="last build log" class={lastBuild?.log ? undefined : 'hidden'}>
+      <pre class="npm-output" id="mgmt-build-log-text" data-refresh>{lastBuild?.log ?? ''}</pre>
     </wa-details>
   </wa-card>
 

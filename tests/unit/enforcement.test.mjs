@@ -12,7 +12,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 const {
-  PROTECTED_ENTRIES, normalizeGitPath, isProtectedPath, protectedHits,
+  PROTECTED_ENTRIES, normalizeGitPath, isProtectedPath, protectedHits, protectedEntryWhy,
   parseNameStatus, verdictFromRecords, enforceDiff, currentBaseSha,
   readImageVersion, readPointer, writePointer,
 } = await import('../../dist-server/src/lib/releases.js');
@@ -75,6 +75,18 @@ test('protectedHits: deduped, sorted, never capped', () => {
   assert.equal(protectedHits(many).length, 5000);
 });
 
+test('protectedEntryWhy: each hit carries the matching entry\'s rationale', () => {
+  // exact files and anything under a protected dir
+  assert.equal(protectedEntryWhy('compose.yaml'),
+    PROTECTED_ENTRIES.find(e => e.path === 'compose.yaml').why);
+  assert.equal(protectedEntryWhy('deploy/nginx2.conf'),
+    PROTECTED_ENTRIES.find(e => e.path === 'deploy').why);
+  // outside the set (incl. look-alikes and placeholder shapes) → null
+  for (const p of ['deploy2/x', 'Dockerfile.old', 'README.md', '<unparsable path: /etc>']) {
+    assert.equal(protectedEntryWhy(p), null, p);
+  }
+});
+
 test('parseNameStatus: -z records, including hostile path CONTENT', () => {
   const rec = (letter, p) => `${letter}\0${p}\0`;
   // A/D/M/T take one path; spaces, newlines, dashes and unicode are data
@@ -100,6 +112,24 @@ test('verdictFromRecords: an unparsable path can never be allowed', () => {
   const v = verdictFromRecords('b', 't', [{ letter: 'M', path: '/etc/passwd', oldPath: null }]);
   assert.equal(v.allowed, false);
   assert.ok(v.protectedChanged.some(p => p.includes('unparsable')), JSON.stringify(v.protectedChanged));
+  // the placeholder carries no rationale — the page renders it bare
+  assert.equal(Object.keys(v.protectedWhy).length, 0);
+});
+
+test('verdictFromRecords: every protected hit carries its rationale (the page shows it)', () => {
+  const v = verdictFromRecords('b', 't', [
+    { letter: 'M', path: 'compose.yaml', oldPath: null },
+    { letter: 'A', path: 'deploy/evil.conf', oldPath: null },
+    { letter: 'M', path: 'README.md', oldPath: null },
+  ]);
+  assert.equal(v.allowed, false);
+  assert.deepEqual(v.protectedChanged, ['compose.yaml', 'deploy/evil.conf']);
+  assert.deepEqual(v.protectedWhy, {
+    'compose.yaml': PROTECTED_ENTRIES.find(e => e.path === 'compose.yaml').why,
+    'deploy/evil.conf': PROTECTED_ENTRIES.find(e => e.path === 'deploy').why,
+  });
+  // an allowed verdict carries an empty (but present) map
+  assert.deepEqual(verdictFromRecords('b', 't', [{ letter: 'M', path: 'README.md', oldPath: null }]).protectedWhy, {});
 });
 
 // ---------- real git fixtures, attacked like the sessions' uid would ----------

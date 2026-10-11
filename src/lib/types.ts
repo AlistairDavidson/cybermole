@@ -216,6 +216,9 @@ export interface EnforcementVerdict {
   changed: ChangedPath[];
   /** protected paths that changed (never capped) — the refusal reason */
   protectedChanged: string[];
+  /** each protected hit → the matching entry's rationale (the page shows
+   *  it next to the path; an unparsable-path placeholder has none) */
+  protectedWhy: Record<string, string>;
 }
 
 /** Build lifecycle as the markers + db record it (pending → building →

@@ -83,16 +83,28 @@ export function normalizeGitPath(p: string): string | null {
   return out.length === 0 ? null : out.join('/');
 }
 
+/** The protected entry a (normalized) path matches, or null — the one
+ *  definition of "inside the protected set" both predicates below use. */
+function matchingProtectedEntry(normalized: string): ProtectedEntry | null {
+  for (const entry of PROTECTED_ENTRIES) {
+    if (normalized === entry.path || normalized.startsWith(entry.path + '/')) return entry;
+  }
+  return null;
+}
+
 /** Does this (normalized) path sit inside the protected set? Exact file
  *  match, or anything under a protected directory. Case-sensitive by
  *  design: the container fs is case-sensitive, git paths are exact, and
  *  `--no-renames` already surfaces a case-variant rename as delete+add
  *  on the protected path itself (docs/management-page.md §1.3). */
 export function isProtectedPath(normalized: string): boolean {
-  for (const entry of PROTECTED_ENTRIES) {
-    if (normalized === entry.path || normalized.startsWith(entry.path + '/')) return true;
-  }
-  return false;
+  return matchingProtectedEntry(normalized) !== null;
+}
+
+/** The rationale for a protected hit (the matching entry's why), or null
+ *  when the path is not in the set (an unparsable-path placeholder). */
+export function protectedEntryWhy(normalized: string): string | null {
+  return matchingProtectedEntry(normalized)?.why ?? null;
 }
 
 /** The protected-set hits among (normalized) paths, deduped and sorted —
@@ -177,12 +189,20 @@ export function verdictFromRecords(base: string, target: string, records: DiffRe
     judge(r.path, displayStatus(r.letter));
     if (r.oldPath !== null) judge(r.oldPath, 'D');
   }
+  const hits = [...protectedChanged].sort();
+  // (an unparsable-path placeholder matches no entry → no rationale)
+  const protectedWhy: Record<string, string> = {};
+  for (const p of hits) {
+    const why = protectedEntryWhy(p);
+    if (why !== null) protectedWhy[p] = why;
+  }
   return {
     base, target,
     allowed: protectedChanged.size === 0,
     changedCount: judged,
     changed,
-    protectedChanged: [...protectedChanged].sort(),
+    protectedChanged: hits,
+    protectedWhy,
   };
 }
 

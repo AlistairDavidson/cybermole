@@ -291,7 +291,7 @@ test('activate: image target with no releases volume is a no-op success (already
 
 test('activate: the happy path — pointer written, history recorded, restart triggered', async () => {
   const repo = gitRepo();
-  const { service, releasesDir, restarts, db } = harness({ baseSha: repo.base, checkout: repo.root });
+  const { service, releasesDir, restarts } = harness({ baseSha: repo.base, checkout: repo.root });
   assert.equal((await service.requestBuild({ sha: repo.target, ...PW })).ok, true);
   fakeBuilder(releasesDir, repo.target, 'built', 'ok');
   const r = await service.activate({ target: repo.target, ...PW });
