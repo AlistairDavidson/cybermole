@@ -179,8 +179,8 @@ const lastBuild = releases.find(r => r.status !== 'requested') ?? null; // newes
                   <div class="wa-split">
                     <span class={`mgmt-verdict ${preview.allowed ? 'ok' : 'blocked'}`}>
                       {preview.allowed
-                        ? <Fragment><wa-icon name="circle-check"></wa-icon> allowed — {preview.changedCount} path{preview.changedCount === 1 ? '' : 's'} change, none protected</Fragment>
-                        : <Fragment><wa-icon name="triangle-exclamation"></wa-icon> REFUSED — the protected set changes</Fragment>}
+                        ? <Fragment>allowed — {preview.changedCount} path{preview.changedCount === 1 ? '' : 's'} change, none protected</Fragment>
+                        : <Fragment>REFUSED — the protected set changes</Fragment>}
                     </span>
                     <span class="hint">diff <code>{preview.base.slice(0, 8)}…</code> → <code>{preview.target.slice(0, 8)}…</code></span>
                   </div>
