@@ -159,8 +159,10 @@ export class Scheduler {
    *  (runs opened outside the tick: "run now", or alive at boot); a
    *  session that leaves the live set at a later tick has finished —
    *  completed, killed from Live, or restarted away on the workspace
-   *  side — and gets one info line. Tick-granularity observation: a run
-   *  that opens and ends between two ticks is only counted as fired. */
+   *  side — and gets one info line. Armed at open, not at first sight:
+   *  a run's end is reported by the first tick after it, and only a run
+   *  that ends before any tick of this process could see it — while
+   *  the server is down — is only counted as fired. */
   private running = new Map<TmuxSessionName, JobName>();
 
   constructor(private db: StateDb, private ctx: JobContext) {}

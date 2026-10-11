@@ -376,9 +376,10 @@ What is logged, and at which level (`winston`'s npm set):
 - `info` — lifecycle: the boot summary, tmux sessions started/resumed,
   a terminal attached/detached, login/logout (`username` is logged — single-user
   app; credentials, tokens and cookie values never are), scheduler job
-  fires and run finishes (observed at the scheduler's ~30 s tick — a run
-  that opens and ends between two ticks is only counted as fired), pi
-  updates (manual and auto), uploads stored.
+  fires and run finishes (observed at the scheduler's ~30 s tick — a
+  run's end is reported by the first tick after it; only one that ends
+  before any tick could see it, e.g. while the server is down, is only
+  counted as fired), pi updates (manual and auto), uploads stored.
 - `warn` — degraded operation: failed logins at the rate limit, the
   scrypt 503, ws upgrade rejections, job schedules that no longer parse,
   failed uploads.
