@@ -1,9 +1,13 @@
 ---
 import Base from '../layouts/Base.astro';
 // Frontmatter imports SSR these components (astro-lit, declarative shadow
-// DOM). They do NOT register client-side — the <script> below re-imports
-// them so the browser upgrades + hydrates them (form submission, value,
-// password toggle all need the live elements).
+// DOM). They do NOT register client-side — the client script below
+// re-imports them so the browser upgrades + hydrates them (form submission,
+// value, password toggle all need the live elements).
+// (A literal script open-tag must never appear in a frontmatter comment:
+// vite's rolldown dep-scan strips only HTML comments from .astro sources,
+// then parses every script block it finds as JS — a tag here once made it
+// parse half the file as one broken module and killed `astro dev`.)
 import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/input/input.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';

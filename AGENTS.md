@@ -54,6 +54,13 @@ form controls lose form association (submit/Enter do nothing), `.value` is
 missing, toggles are dead. This broke the login page once — caught only by
 end-to-end testing.
 
+Never write a literal script open-tag in an `.astro` **JS comment** (e.g.
+"the `<script>` below re-imports them"): vite's rolldown dep-scan treats
+`.astro` as HTML-like, strips only HTML comments, then parses every script
+block it finds as JS — the tag in a frontmatter comment once made it parse
+half the file as one broken module and killed `astro dev` with a cryptic
+`PARSE_ERROR` at `virtual-module:…?id=0:1:7`.
+
 **Rule:** every SSR'd `wa-*` component must *also* be imported in a
 client-side `<script>` (see `src/pages/login.astro` for both halves, and
 `src/components/ConsoleApp/ConsoleApp.astro` + `console-app.ts` for the
