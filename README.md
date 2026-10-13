@@ -107,7 +107,9 @@ shadow volume so the container builds its own native deps (`node-pty`)
 without touching the host's. First boot npm-installs (a few minutes);
 later boots self-heal in seconds. Everything is real: `webpi.db` login,
 session listing, live attach — and pi sessions start in `/app` (the repo),
-self-modification included. Page edits hot-reload through the bind mount.
+self-modification included. Page edits hot-reload through the bind mount
+(the pages `astro dev` itself renders — the data pages live on the API
+half's `:3001`, the same split as the host flow below).
 Dev state (`webpi.db`, `pi-agent/`) lives in the container's `/tmp`
 (`WEB_PI_STATE_DIR: /tmp/web-pi-state`) — throwaway: recreate the dev
 service and you re-run set-password; production's `webpi-state` volume is
@@ -128,11 +130,12 @@ Notes:
 - Uploads go to `dev-seaweedfs` (throwaway, fixed dev keys, S3 on
   loopback `:8333`), started with `dev`.
 
-**On the host** (no docker): two processes — `astro dev` serves the pages
-(HMR); the JSON API routes (`src/pages/api`) need the services the Node
-server builds (they answer 503 without them), and the terminal WS and
-login/logout live in the Node server itself, so the Vite server proxies
-`/api`, `/ws`, and login/logout POSTs to it:
+**On the host** (no docker): two processes — `astro dev` serves the
+no-data pages (HMR — the data pages render only inside the Node server,
+see below), the JSON API routes (`src/pages/api`) need the services the
+Node server builds (they answer 503 without them), and the terminal WS
+and login/logout live in the Node server itself, so the Vite server
+proxies `/api`, `/ws`, and login/logout POSTs to it:
 
 ```sh
 npm run dev:server   # API + WS half on :3001 (builds Astro + dist-server first)
@@ -148,12 +151,17 @@ WEB_PI_S3_ENDPOINT=http://127.0.0.1:8333 WEB_PI_S3_ACCESS_KEY=webpi-dev \
   WEB_PI_S3_SECRET_KEY=webpi-dev-secret npm run dev:server
 ```
 
-Everything works against the dev server as it does in production. Page
-edits hot-reload; an API-route edit needs a `dev:server` restart (it
-serves the API from its own Astro build). The login rate limit is
-in-memory: restart `dev:server` to clear it while iterating on the login
-page. Override the proxy target with `WEB_PI_DEV_API`
-if you run the API half elsewhere.
+Browse by what you're working on. `astro dev` (`:4321`) hot-reloads the
+console shell and the login page — their markup and client code. The
+data pages (`/settings`, `/jobs`, `/management`) assert the services in
+locals and throw in `astro dev`'s own render, telling you to browse the
+dev server instead: `:3001` (`npm run dev:server`) renders them exactly
+as production does. That render comes from the `dev:server` process's
+own Astro build, so an edit to a data page's view, a partial, or an API
+route appears there only after a `dev:server` restart — as does clearing
+the in-memory login rate limit while iterating on the login page.
+Override the proxy target with `WEB_PI_DEV_API` if you run the API half
+elsewhere.
 
 ## Configuration (environment)
 

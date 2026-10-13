@@ -6,9 +6,10 @@
 // refreshes from. Regions marked data-refresh hold plain HTML only — no
 // wa-* elements — so the element can swap them by id without
 // re-hydrating components; the dialogs live outside those regions.
-// `state` is null when the request did not come through the web-pi
-// server (astro dev's own render): the regions then say "loading…" and
-// the element fetches the partial.
+// `state` is null only for a failed management_state read (the page and
+// the partial render inside the web-pi server or not at all): the
+// serving card then carries the reason, the other state regions say
+// so, and the element's poll keeps trying.
 import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
@@ -25,8 +26,8 @@ import type { CommitEntry, EnforcementVerdict, ManagementState, ReleaseRecord } 
 
 interface Props {
   state: ManagementState | null;
-  /** Why `state` is null when the server could not read it (a
-   *  management_state failure) — shown instead of "loading…". */
+  /** why `state` is null — a failed management_state read (the
+   *  serving card shows it; the other state regions point at it). */
   error?: string | null;
   commits: CommitEntry[] | null;
   /** why the commit list is unavailable (checkout missing / git error) */
@@ -79,7 +80,7 @@ const lastBuild = releases.find(r => r.status !== 'requested') ?? null; // newes
     </div>
     <div id="mgmt-serving" class="wa-stack wa-gap-2xs" data-refresh>
       {!serving
-        ? <span class="hint">{error === null ? 'loading…' : `could not load state: ${error}`}</span>
+        ? <span class="hint">could not load state: {error}</span>
         : <div class="wa-stack wa-gap-2xs">
             <div class="cfg-row wa-split">
               <span class="k">serving</span>
@@ -125,7 +126,7 @@ const lastBuild = releases.find(r => r.status !== 'requested') ?? null; // newes
       {checkout === null && state
         ? <span class="hint">WEB_PI_MANAGEMENT_CHECKOUT is not set — point it at the workspace checkout (compose: /workspace/web-pi).</span>
         : !state
-          ? <span class="hint">loading…</span>
+          ? <span class="hint">state unavailable — see above</span>
           : <div class="wa-stack wa-gap-2xs">
               <div class="cfg-row wa-split"><span class="k">path</span><span class="v">{checkout!.path}</span></div>
               {checkout!.error
@@ -147,30 +148,28 @@ const lastBuild = releases.find(r => r.status !== 'requested') ?? null; // newes
       <div id="mgmt-commits" class="wa-stack wa-gap-2xs" data-refresh>
         {commitsError
           ? <span class="hint">{commitsError}</span>
-          : !state
-            ? <span class="hint">loading…</span>
-            : commits === null || commits.length === 0
-              ? <span class="hint">no commits listed — the checkout is missing or empty (see above).</span>
-              : <ul class="mgmt-commits">
-                  {commits.map(c => (
-                    <li>
-                      <button
-                        type="button"
-                        class="mgmt-commit"
-                        data-pick={c.sha}
-                        data-selected={previewSha === c.sha ? 'true' : undefined}
-                      >
-                        <span class="t"><code>{c.short}</code> {c.subject}</span>
-                        <span class="d">{c.author} · {c.date}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>}
+          : !commits || commits.length === 0
+            ? <span class="hint">no commits listed — the checkout is missing or empty (see above).</span>
+            : <ul class="mgmt-commits">
+                {commits.map(c => (
+                  <li>
+                    <button
+                      type="button"
+                      class="mgmt-commit"
+                      data-pick={c.sha}
+                      data-selected={previewSha === c.sha ? 'true' : undefined}
+                    >
+                      <span class="t"><code>{c.short}</code> {c.subject}</span>
+                      <span class="d">{c.author} · {c.date}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>}
       </div>
 
       <div id="mgmt-preview" class="wa-stack wa-gap-2xs" data-refresh data-sha={previewSha ?? undefined}>
         {!state
-          ? <span class="hint">loading…</span>
+          ? <span class="hint">state unavailable — see above</span>
           : !previewSha
             ? <span class="hint">pick a commit to see what applying it would change.</span>
             : previewError
@@ -225,7 +224,7 @@ const lastBuild = releases.find(r => r.status !== 'requested') ?? null; // newes
     </div>
     <div id="mgmt-releases" class="wa-stack wa-gap-s" data-refresh>
       {!state
-        ? <span class="hint">loading…</span>
+        ? <span class="hint">state unavailable — see above</span>
         : releases.length === 0
           ? <span class="hint">nothing built yet.</span>
           : <table class="mgmt-table">

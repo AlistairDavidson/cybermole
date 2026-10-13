@@ -1,18 +1,22 @@
 ---
 import Base from '../layouts/Base.astro';
 import SettingsView from '../components/Settings/SettingsView.astro';
+import { assertWebPiLocals } from '../lib/web/locals';
 // Settings dashboard, server-rendered (docs/CODE_STYLE.md §7): the
 // effective config and pi status arrive as HTML from the services
 // server/main.ts passes in locals; <settings-app> (settings-app.ts) only
-// wires the actions. No locals (astro dev's own render) → the view renders
-// placeholders and the element loads /partials/settings. A settings_state
-// failure (db unreadable) renders its message, never "off" / "never".
-const settings = Astro.locals.webpi?.settingsState();
+// wires the actions. A page without the services is a broken invariant,
+// not a state to render around — assertWebPiLocals throws (in dev, browse
+// the `npm run dev:server` process: `astro dev`'s own render has none).
+// A settings_state failure (db unreadable) renders its message, never
+// "off" / "never".
+const { webpi } = assertWebPiLocals(Astro.locals);
+const settings = webpi.settingsState();
 // console.error on purpose, not src/lib/logger.ts: frontmatter is
 // Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
-if (settings && !settings.ok) console.error(`settings page: ${settings.errorMessage}`);
-const state = settings?.ok ? settings.data : null;
-const error = settings && !settings.ok ? settings.errorMessage : null;
+if (!settings.ok) console.error(`settings page: ${settings.errorMessage}`);
+const state = settings.ok ? settings.data : null;
+const error = settings.ok ? null : settings.errorMessage;
 ---
 <Base title="web-pi — settings">
   <settings-app>

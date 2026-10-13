@@ -68,9 +68,9 @@ export class JobsApp extends HTMLElement {
     void customElements.whenDefined('validation-enhancer-zod').then(() =>
       (this.querySelector('validation-enhancer-zod') as ValidationEnhancerZod).setZodSchema(JobSaveSchema));
 
-    // Server-rendered with the list already: refresh on the poll only.
-    // Rendered without it (astro dev's own render, a failed listing): now.
-    if ((this.querySelector('#jobs-list') as HTMLElement | null)?.dataset.loaded !== 'true') void this.load();
+    // The list is server-rendered; the 15 s poll keeps it fresh (and
+    // retries a failed listing — the partial answers 500 with no fragment
+    // then, so what is shown stays until a good one lands).
     this.pollTimer = setInterval(() => this.load(), 15000);
   }
 

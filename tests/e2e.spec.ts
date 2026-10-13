@@ -569,7 +569,6 @@ test('jobs: validate, save, run now, delete', async ({ page }) => {
   // itself, before any script runs) — and shows it.
   const html = await page.evaluate(async () => (await fetch('/jobs')).text());
   expect(html).toContain('itest-job');
-  expect(html).toContain('data-loaded="true"');
   await page.goto('/jobs');
   await expect(page.locator('jobs-app .job')).toHaveCount(1);
   await expect(page.locator('jobs-app .job-name')).toContainText('itest-job');
@@ -1377,7 +1376,6 @@ test('auto-update setting: default OFF, toggle persists across reload, status li
   const html = await page.evaluate(async () => (await fetch('/settings')).text());
   expect(html).toContain(`${WORKSPACE}/webpi.db`);
   expect(html).toContain('not checked yet');
-  expect(html).not.toContain('loading…');
   await page.goto('/settings');
 
   // The switch upgraded client-side (SSR ≠ client imports — AGENTS.md).

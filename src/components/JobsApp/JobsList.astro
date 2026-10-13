@@ -1,9 +1,9 @@
 ---
 // JobsList.astro — the scheduled-jobs list, server-rendered: by the /jobs
 // page and by the partial <jobs-app> refreshes from
-// (src/pages/partials/jobs-list.astro). `jobs` is null when the listing
-// isn't available (astro dev's own render, or a db error) — the element
-// then loads the partial.
+// (src/pages/partials/jobs-list.astro). `jobs` is null only for a failed
+// listing (the page and the partial render inside the web-pi server or
+// not at all) — the message below shows, and the 15 s poll retries it.
 import JobCard from './JobCard.astro';
 import type { ScheduledJob } from '../../lib/types';
 
@@ -12,9 +12,9 @@ interface Props {
 }
 const { jobs } = Astro.props;
 ---
-<div id="jobs-list" class="wa-stack wa-gap-s" data-loaded={jobs ? 'true' : 'false'}>
+<div id="jobs-list" class="wa-stack wa-gap-s">
   {jobs === null
-    ? <p class="jobs-empty">loading…</p>
+    ? <p class="jobs-empty">the list could not be read — the refresh keeps trying</p>
     : jobs.length === 0
       ? <p class="jobs-empty">no jobs yet — "new job" schedules a recurring command.</p>
       : jobs.map(job => <JobCard job={job} />)}
