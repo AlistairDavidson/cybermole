@@ -64,7 +64,7 @@ may not be applied when it changes:
 Deliberately **not** protected (documented boundary):
 
 - Application code — pages, components, the rest of `src/lib`
-  (`jobs.ts`, `sessions.ts`, `storage.ts`, …). Changing them is the point
+  (`jobs.ts`, `workspaces.ts`, `storage.ts`, …). Changing them is the point
   of apply. Server-side lib changes are inert in a release for the
 tsc-compiled halves (the running process keeps executing the image's
 copies; see §3.1); the Astro-bundled halves (pages, routes,
@@ -619,12 +619,13 @@ docker compose exec builder sh -c 'ls /releases/pending /releases/done'
 
 - `src/lib/env-schema.ts`, `src/lib/services.ts`, `server/main.ts`,
   `compose.yaml`: edits are surgical and marked `// task/mgmt-page:` —
-  the siblings (task/winston-loki, task/zed-webapp) add their own env
+  the siblings (task/winston-loki; the editor pass, task/ws-editor, which
+  replaced the earlier zed-webapp plan wholesale) add their own env
   keys/services; the blocks do not overlap textually.
-- `src/lib/db.ts` schema v5 is additive; winston-loki's logger touches
-  boot logging, not the schema.
+- `src/lib/db.ts` schema bumps are additive from this side; winston-loki's
+  logger touches boot logging, not the schema.
 - The builder service in compose is a separate top-level block; the
-  zed-webapp service is another — no shared lines.
+  editor pair (`editor` + `editor-init`) is another — no shared lines.
 
 ## 9. Follow-ups (out of scope, on purpose)
 

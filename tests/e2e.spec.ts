@@ -1362,10 +1362,19 @@ test('log out everywhere ends every signed-in session', async ({ page, browser }
 
   // Both tokens are rejected — the token this browser used and the second
   // context's independent one (in-page fetch: the cookie is Secure).
-  const state = (p: Page): Promise<number> =>
-    p.evaluate(async () => (await fetch('/api/state')).status);
-  expect(await state(page)).toBe(401);
-  expect(await state(page2)).toBe(401);
+  // page2 races its own signed-out navigation: an evaluate whose execution
+  // context dies mid-fetch reads -1 and is retried (expect.poll retries a
+  // bad value, not a thrown callback) — the answer is 401 either side.
+  const state = async (p: Page): Promise<number> => {
+    try {
+      return await p.evaluate(async () => (await fetch('/api/state')).status);
+    } catch (e) {
+      if (/destroyed/.test(String((e as Error).message))) return -1;
+      throw e;
+    }
+  };
+  await expect.poll(() => state(page)).toBe(401);
+  await expect.poll(() => state(page2)).toBe(401);
   await ctx2.close();
 
   sessionCookie = null; // both tokens are dead
