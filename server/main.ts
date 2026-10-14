@@ -210,6 +210,13 @@ bootLog.info(objectStore.describe() === null
 bootLog.info(CFG.editorUpstream === null
   ? 'editor: not configured (WEB_PI_EDITOR_UPSTREAM unset) — /editor answers 404'
   : `editor: proxying ${CFG.base === '/' ? '' : CFG.base}/editor/ → ${CFG.editorUpstream.origin}`);
+// task/ws-terminal (plan §4): a terminal tab's spawn/respawn — one
+// guarded new-session with the configured command + sessionEnv, shared
+// by the workspaces domain (through createServices) and the WS attach
+// path's respawn.
+const spawnTerminalSession = (name: TmuxSessionName, cwd: string) =>
+  tmux.newSession(name, cwd, CFG.command, sessionEnv);
+
 // Everything stateful the Astro side (API routes, pages) may use, built
 // once here and passed to the Astro handler in locals — never imported
 // there (a Vite-bundled second copy would carry its own state; see
@@ -218,9 +225,9 @@ const services = createServices({ cfg: CFG, stateDb, auth, hiddenSessions, sched
   // task/ws-schema: the apps/workspaces domains' best-effort terminal
   // session kill (deletes/closes — src/lib/tmux.ts killSession).
   killSession: tmux.killSession,
-  // task/ws-terminal (plan §4): a terminal tab's spawn — same guarded
-  // new-session the WS respawn path uses, with the configured command.
-  spawnSession: (name, cwd) => tmux.newSession(name, cwd, CFG.command, sessionEnv),
+  // task/ws-terminal (plan §4): the terminal spawn dep (see
+  // spawnTerminalSession above).
+  spawnSession: spawnTerminalSession,
   // task/mgmt-page: the swap service's restart trigger + the honest
   // "serving now" LIVE snapshot (a getter: the import fallback above
   // flips it; docs/management-page.md §3.2).
@@ -1105,7 +1112,7 @@ function attach(ws: WebSocket, token: SessionToken): void {
         }
         const name = tmux.terminalSessionName(id.data);
         if (!await tmux.hasSession(name)) {
-          const spawned = await tmux.newSession(name, found.data.cwd, CFG.command, sessionEnv);
+          const spawned = await spawnTerminalSession(name, found.data.cwd);
           if (!spawned.ok) {
             switch (spawned.errorCode) {
               // the never-fork guard — say it, don't bury it
