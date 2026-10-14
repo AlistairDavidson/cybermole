@@ -77,13 +77,10 @@ export const envSchema = {
   WEB_PI_S3_BUCKET: { type: 'string', context: 'server', access: 'secret', default: 'webpi' },
   // SigV4 signs with a region; self-hosted servers accept any, us-east-1 is the convention.
   WEB_PI_S3_REGION: { type: 'string', context: 'server', access: 'secret', default: 'us-east-1' },
-  // task/zed-webapp: the Zed webapp (docs/zed-webapp.md) — WEB_PI_ZED_URL
-  // (browser-facing, the reverse-proxied stream) is the single switch:
-  // unset means off (readZedConfig in env.ts ignores the launcher pair —
-  // deployment plumbing that is present without opting in); set means the
-  // launcher pair must be there too (compose generates the token via
-  // zed-init).
-  WEB_PI_ZED_URL: { type: 'string', context: 'server', access: 'secret', optional: true },
-  WEB_PI_ZED_LAUNCH_URL: { type: 'string', context: 'server', access: 'secret', optional: true },
-  WEB_PI_ZED_LAUNCH_TOKEN: { type: 'string', context: 'server', access: 'secret', optional: true },
+  // task/ws-editor (docs/editor-webapp.md): the VSCodium reh-web editor's
+  // upstream on the compose network (e.g. http://editor:3000). THE single
+  // switch — unset/empty = the editor is off: /editor/* answers 404 and the
+  // console hides its affordances. Validated at boot (env.ts
+  // readEditorUpstream) like the S3 vars: a malformed value stops the server.
+  WEB_PI_EDITOR_UPSTREAM: { type: 'string', context: 'server', access: 'secret', optional: true },
 } as const satisfies Record<string, ServerEnvField>;

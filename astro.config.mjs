@@ -36,6 +36,9 @@ const devProxy = {
   [`${base}api`]: { target: devApiTarget },
   // server-rendered fragments (src/pages/partials) need the services too
   [`${base}partials`]: { target: devApiTarget },
+  // task/ws-editor: the same-origin editor proxy lives in main.ts with the
+  // services — and its WebSockets dial `<base>/editor/…`, so ws:true
+  [`${base}editor`]: { target: devApiTarget, ws: true },
   [`${base}ws`]: { target: devApiTarget, ws: true },
   [`${base}login`]: { target: devApiTarget, bypass: pageMethodsOnly },
   [`${base}logout`]: { target: devApiTarget, bypass: pageMethodsOnly },

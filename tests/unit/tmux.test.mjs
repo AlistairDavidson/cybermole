@@ -154,7 +154,7 @@ test('resume path: reuse when the session exists, guard when the server is down'
 });
 
 test('listSessions: explicit -F rows with the pane cwd (current, else the spawn dir)', { skip: !haveTmux }, async () => {
-  // The sidebar's "open in Zed" reads LiveSession.cwd: #{pane_current_path},
+  // The sidebar's "open in editor" reads LiveSession.cwd: #{pane_current_path},
   // falling back to #{pane_start_path} (tmux resolves current via the pane
   // tty's foreground pgrp; a normal kernel sets it when the pane process
   // takes the tty, some pty layers never do — the fallback then yields the

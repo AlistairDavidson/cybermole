@@ -1,12 +1,12 @@
 // session-sidebar.ts — <session-sidebar>: live sessions + past pi sessions.
 // Emits: attach-live {name}, attach-resume {id}, new-session {name},
-// hide-session {id, title}, open-zed {cwd} (only rendered when the Zed
-// webapp is configured — ConsoleState.zed), manage-hidden (bubbles to
+// hide-session {id, title}, open-editor {cwd} (only rendered when the editor
+// webapp is configured — ConsoleState.editor), manage-hidden (bubbles to
 // <console-app>). The whole tree re-renders via innerHTML on the 15s state
 // poll: transient input state (new-name value/focus; search value/focus/
 // caret) is captured before the swap and re-applied after, and typing only
 // re-renders the session list — never a stateful wa-* component lives in
-// here (the Zed/hide buttons are stateless wa-buttons, re-created by the
+// here (the editor/hide buttons are stateless wa-buttons, re-created by the
 // poll like every other row content).
 import type { ActiveKey, ConsoleState, LiveSession, PastSession } from '../lib/types';
 import '@awesome.me/webawesome/dist/components/input/input.js';
@@ -120,11 +120,11 @@ export class SessionSidebar extends HTMLElement {
         }));
       };
     });
-    this.querySelectorAll<HTMLElement>('[data-zed]').forEach(el => {
+    this.querySelectorAll<HTMLElement>('[data-editor]').forEach(el => {
       el.onclick = e => {
         e.stopPropagation(); // the row itself attaches/resumes
-        if (el.dataset.zed) this.dispatchEvent(new CustomEvent('open-zed', {
-          detail: { cwd: el.dataset.zed }, bubbles: true, composed: true,
+        if (el.dataset.editor) this.dispatchEvent(new CustomEvent('open-editor', {
+          detail: { cwd: el.dataset.editor }, bubbles: true, composed: true,
         }));
       };
     });
@@ -163,15 +163,15 @@ export class SessionSidebar extends HTMLElement {
   private liveItem(s: LiveSession): string {
     const key: ActiveKey = `live:${s.name}`;
     const cls = key === this.activeKey ? ' class="active"' : '';
-    const zed = this.state?.zed && s.cwd
-      ? `<wa-button class="zed-btn" data-zed="${esc(s.cwd)}" size="xs" ` +
-        `appearance="plain" title="open ${esc(s.cwd)} in the Zed webapp">` +
-        `<wa-icon name="code" label="open in Zed"></wa-icon></wa-button>`
+    const editor = this.state?.editor && s.cwd
+      ? `<wa-button class="editor-btn" data-editor="${esc(s.cwd)}" size="xs" ` +
+        `appearance="plain" title="open ${esc(s.cwd)} in the editor">` +
+        `<wa-icon name="code" label="open in the editor"></wa-icon></wa-button>`
       : '';
     return `<li${cls} data-live="${esc(s.name)}" data-key="${esc(key)}" data-drawer="close" ` +
       `title="attach to live tmux session (${esc(s.socket)} socket)">` +
       `<span class="t"><wa-icon name="play"></wa-icon><span class="t-name">${esc(s.name)}</span></span>` +
-      `<span class="d">${s.windows} win · ${esc(s.created)}${s.attached ? ' · attached' : ''}</span>` + zed + `</li>`;
+      `<span class="d">${s.windows} win · ${esc(s.created)}${s.attached ? ' · attached' : ''}</span>` + editor + `</li>`;
   }
 
   private sessionList(list: PastSession[]): string {
@@ -195,10 +195,10 @@ export class SessionSidebar extends HTMLElement {
         `<span class="t"><span class="t-name">${esc(s.title)}</span></span>` +
         `<span class="d"><wa-relative-time date="${new Date(s.mtime).toISOString()}" format="narrow" sync></wa-relative-time></span>` +
         `</span>` +
-        (this.state?.zed
-          ? `<wa-button class="zed-btn" data-zed="${esc(s.cwd)}" size="xs" ` +
-            `appearance="plain" title="open ${esc(s.cwd)} in the Zed webapp">` +
-            `<wa-icon name="code" label="open in Zed"></wa-icon></wa-button>`
+        (this.state?.editor
+          ? `<wa-button class="editor-btn" data-editor="${esc(s.cwd)}" size="xs" ` +
+            `appearance="plain" title="open ${esc(s.cwd)} in the editor">` +
+            `<wa-icon name="code" label="open in the editor"></wa-icon></wa-button>`
           : '') +
         `<wa-button class="hide-btn" data-hide="${esc(s.id)}" size="xs" ` +
         `appearance="plain" title="hide from list (reversible)">` +

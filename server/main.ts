@@ -17,10 +17,14 @@ import { findSession } from '../src/lib/sessions';
 import { HiddenSessions } from '../src/lib/hidden-sessions';
 import { StateDb } from '../src/lib/db';
 import * as tmux from '../src/lib/tmux';
-import { ENV, RAW_ENV, APP_ROOT, PI_BIN, PI_AGENT_DIR, PI_SESSION_DIR, readObjectStoreConfig, readZedConfig, RELEASES_DIR } from '../src/lib/env';
+import { ENV, RAW_ENV, APP_ROOT, PI_BIN, PI_AGENT_DIR, PI_SESSION_DIR, readObjectStoreConfig, readEditorUpstream, RELEASES_DIR } from '../src/lib/env';
 import { componentLogger, closeLogger } from '../src/lib/logger';
 import * as jobs from '../src/lib/jobs';
 import { AutoUpdater } from '../src/lib/auto-update';
+import {
+  EDITOR_HOP_BY_HOP_HEADERS, EDITOR_MAX_BODY_BYTES, EditorTunnelTracker, editorBodyCapStatus,
+  editorSecurityHeaders, editorUpgradeHeaders, isEditorHttpPath, isEditorUpgradePath, type EditorUpstream,
+} from '../src/lib/editor';
 import { createServices, type ServerConfig, type WebPiLocals } from '../src/lib/services';
 import { resolveServingDirs } from '../src/lib/releases';
 import { ObjectStore } from '../src/lib/storage';
@@ -80,7 +84,7 @@ const CFG: ServerConfig = {
   // whitespace-split command line; resume appends --session <id> (pi-family CLI)
   command: ENV.WEB_PI_COMMAND.trim().split(/\s+/).filter(Boolean),
   trustProxy: Math.max(0, ENV.WEB_PI_TRUST_PROXY),
-  zed: readZedConfig(),
+  editorUpstream: readEditorUpstream(),
 };
 
 // task/mgmt-page (docs/management-page.md §3.2): what THIS boot serves —
@@ -201,6 +205,9 @@ const objectStore = new ObjectStore(readObjectStoreConfig());
 bootLog.info(objectStore.describe() === null
   ? 'object storage: not configured (WEB_PI_S3_ENDPOINT unset) — uploads answer 503'
   : `object storage: ${objectStore.describe()}`);
+bootLog.info(CFG.editorUpstream === null
+  ? 'editor: not configured (WEB_PI_EDITOR_UPSTREAM unset) — /editor answers 404'
+  : `editor: proxying ${CFG.base === '/' ? '' : CFG.base}/editor/ → ${CFG.editorUpstream.origin}`);
 // Everything stateful the Astro side (API routes, pages) may use, built
 // once here and passed to the Astro handler in locals — never imported
 // there (a Vite-bundled second copy would carry its own state; see
@@ -494,6 +501,122 @@ function hardenResponse(res: http.ServerResponse): void {
   res.end = ((...args: unknown[]) => { apply(); return end(...args); }) as typeof res.end;
 }
 
+// ---------- editor reverse proxy (task/ws-editor, docs/editor-webapp.md) ----------
+// Same-origin `${BASE}/editor/*` → WEB_PI_EDITOR_UPSTREAM (HTTP + WS),
+// behind the origin check and the session gate like every other
+// authenticated route — the console frames it in an iframe, so auth is
+// the existing session cookie and no cross-origin anything applies.
+// The decision surface (path matching, header set, body cap, tunnel
+// tracking, the upgrade header pair) lives in src/lib/editor.ts; this is
+// the transport.
+
+function proxyEditorRequest(req: http.IncomingMessage, res: http.ServerResponse, upstream: EditorUpstream): void {
+  // The original Host header is forwarded UNCHANGED: the editor embeds it
+  // in the workbench HTML as `remoteAuthority` (spike-verified), which is
+  // how the browser learns to dial its WebSocket back through this proxy.
+  const headers = { ...req.headers };
+  for (const hop of EDITOR_HOP_BY_HOP_HEADERS) delete headers[hop];
+  const target = new URL(req.url ?? '/', upstream.origin);
+  const proxied = http.request(target, { method: req.method, headers }, upstreamRes => {
+    const out: Record<string, string> = {};
+    for (const [name, value] of Object.entries(upstreamRes.headers)) {
+      if (Array.isArray(value)) out[name] = value.join(', ');
+      else if (value !== undefined) out[name] = value;
+    }
+    for (const hop of EDITOR_HOP_BY_HOP_HEADERS) delete out[hop];
+    // Editor HTML carries its own header set (framing + the VS Code web
+    // CSP, pinned by the spike): handler-set headers win — hardenResponse
+    // only fills absent ones. Assets keep the global set.
+    if ((out['content-type'] ?? '').startsWith('text/html')) {
+      for (const [name, value] of Object.entries(editorSecurityHeaders())) out[name] = value;
+    }
+    res.writeHead(upstreamRes.statusCode ?? 502, out);
+    // STREAMED, never buffered — the workbench bundles are tens of MB.
+    upstreamRes.pipe(res);
+  });
+  proxied.setTimeout(120_000, () => proxied.destroy(new Error('editor upstream idle')));
+  proxied.on('error', err => {
+    httpLog.error('editor proxy request failed', { error: err });
+    if (!res.headersSent) send(res, 502, 'editor unavailable');
+    else res.destroy();
+  });
+  req.pipe(proxied);
+}
+
+// Live editor tunnels per token: the integrated terminal makes the editor
+// another shell as uid 2000, so logout / "log out everywhere" / shutdown
+// must cut it within the same 30-s guarantee the terminals keep. Main.ts's
+// logout paths call closeToken/closeAll; each tunnel also runs its own
+// expiry sweep (below) — WS traffic never slides a token (auth.alive), so
+// an idle-expired or absolutely-capped one takes its shells with it.
+const editorTunnels = new EditorTunnelTracker();
+
+/** Raw WebSocket proxy: bytes through, no frame handling, no pty — never
+ *  the terminal wss/attach path. Gates (shuttingDown, Origin, session)
+ *  have already run when this is called. */
+function upgradeEditorSocket(req: http.IncomingMessage, socket: import('node:stream').Duplex,
+  head: Buffer, token: SessionToken): void {
+  const upstream = CFG.editorUpstream;
+  if (!upstream) { socket.destroy(); return; } // raced a reconfigure: fail closed
+  // editorUpgradeHeaders strips hop-by-hop AND re-adds the upgrade pair —
+  // without Connection: Upgrade / Upgrade: websocket the upstream sees a
+  // plain GET and never answers 101 (the header list alone would strip
+  // them; nginx's proxy_set_header does this same dance).
+  const headers = editorUpgradeHeaders(req.headers);
+  const target = new URL(req.url ?? '/', upstream.origin);
+  const proxied = http.request(target, { method: 'GET', headers });
+  proxied.setTimeout(30_000, () => proxied.destroy(new Error('editor upstream upgrade idle')));
+  proxied.on('error', err => {
+    wsLog.error('editor ws upgrade failed', { error: err });
+    socket.destroy();
+  });
+  // A plain (non-101) answer to an upgrade: forward the status, then end —
+  // the browser treats anything but 101 as a failed upgrade.
+  proxied.on('response', upstreamRes => {
+    socket.write(`HTTP/1.1 ${upstreamRes.statusCode ?? 502} ${upstreamRes.statusMessage ?? ''}\r
+` +
+      'Connection: close\r\n\r\n');
+    socket.destroy();
+  });
+  proxied.on('upgrade', (upstreamRes, upstreamSocket, upstreamHead) => {
+    // The upstream's handshake, verbatim (Sec-WebSocket-Accept et al).
+    socket.write('HTTP/1.1 101 Switching Protocols\r\n' +
+      Object.entries(upstreamRes.headers).map(([name, value]) =>
+        `${name}: ${Array.isArray(value) ? value.join(', ') : value}`).join('\r\n') + '\r\n\r\n');
+    const tunnel = {
+      close(): void {
+        socket.destroy();
+        upstreamSocket.destroy();
+      },
+    };
+    editorTunnels.track(token, tunnel);
+    // Token-expiry sweep, the terminal keepalive's analogue: WS traffic
+    // never renews a token, so an expired one ends its editor shells too.
+    const sweep = setInterval(() => {
+      const alive = auth.alive(token);
+      if (alive.ok) return;
+      if (alive.errorCode === 'no_session') editorTunnels.closeToken(token);
+      // database_error: re-check next tick — never sign a shell out over a
+      // db hiccup (the terminal keepalive takes the same stance).
+    }, PING_INTERVAL_MS).unref();
+    const done = (): void => {
+      clearInterval(sweep);
+      editorTunnels.untrack(token, tunnel);
+      tunnel.close(); // one side ended: end the other
+    };
+    socket.on('close', done);
+    upstreamSocket.on('close', done);
+    socket.on('error', done);
+    upstreamSocket.on('error', done);
+    if (head.length) upstreamSocket.write(head);
+    if (upstreamHead.length) socket.write(upstreamHead);
+    socket.pipe(upstreamSocket);
+    upstreamSocket.pipe(socket);
+    wsLog.debug('editor ws tunnel established');
+  });
+  proxied.end();
+}
+
 // ---------- HTTP ----------
 // One access-log line per request at the node-server level: method, path,
 // status, duration — emitted on 'finish', so a request is logged once,
@@ -504,7 +627,9 @@ function hardenResponse(res: http.ServerResponse): void {
 // volume is cheap; everything else is an `http`-level line.
 const quietAccessPath = (p: string): boolean =>
   p === route('/api/state') || p.startsWith(route('/_astro/')) || p === route('/sw.js')
-  || p === route('/manifest.webmanifest') || p.startsWith(route('/icons/'));
+  || p === route('/manifest.webmanifest') || p.startsWith(route('/icons/'))
+  // an IDE's worth of asset traffic at http level would bury the console
+  || p.startsWith(route('/editor/'));
 
 function logAccess(req: http.IncomingMessage, res: http.ServerResponse): void {
   const start = Date.now();
@@ -604,9 +729,13 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
   if (req.method === 'POST' && url === route('/logout')) {
     const token = Auth.sessionToken(req.headers.cookie);
     const dropped = auth.drop(token);
-    // Logout must end the terminals this token authenticated, not just
-    // future requests: they get 'signed-out' and don't reconnect.
-    if (token) closeTokenSockets(token, { type: 'signed-out' });
+    // Logout must end the terminals AND the editor shells this token
+    // authenticated, not just future requests: they get 'signed-out' and
+    // don't reconnect.
+    if (token) {
+      closeTokenSockets(token, { type: 'signed-out' });
+      editorTunnels.closeToken(token);
+    }
     // A failed delete means the token is still valid server-side: say so
     // (the browser's cookie is cleared either way).
     if (!dropped.ok) {
@@ -659,10 +788,12 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     // path, …) renders the login page in place — the address bar keeps
     // the URL, so signing in reloads straight into the page that was asked
     // for. No per-page allowlist to forget when a page is added. Data
-    // routes are never pages: the API and the server-rendered partials
-    // (fragments an element swaps in) answer 401 instead.
+    // routes are never pages: the API, the server-rendered partials
+    // (fragments an element swaps in) and the proxied editor answer 401
+    // instead.
     if (req.method === 'GET' && underBase(url)
-      && !url.startsWith(route('/api/')) && !url.startsWith(route('/partials/'))) {
+      && !url.startsWith(route('/api/')) && !url.startsWith(route('/partials/'))
+      && !isEditorHttpPath(CFG.base, url)) {
       req.url = route('/login');
       renderAstro(req, res);
       return;
@@ -677,6 +808,7 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
   if (req.method === 'POST' && url === route('/api/logout-all')) {
     const dropped = auth.dropAll();
     closeAllSockets({ type: 'signed-out' });
+    editorTunnels.closeAll();
     if (!dropped.ok) {
       authLog.error(`log out everywhere failed: ${dropped.errorMessage}`);
       send(res, 500, 'could not end the sessions', { 'Set-Cookie': clearSessionCookie() });
@@ -684,6 +816,21 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     }
     authLog.info('log out everywhere — every session revoked');
     send(res, 200, 'ok', { 'Set-Cookie': clearSessionCookie() });
+    return;
+  }
+
+  // task/ws-editor: the same-origin editor proxy — authenticated GET/HEAD
+  // streams straight through; editor bodies keep a large cap (sized to a
+  // big editor save), ACCEPT length-less (chunked) bodies, and trade the
+  // 5-minute whole-body deadline for the upload route's stall guard. The
+  // origin check already ran at the top of handle().
+  if (isEditorHttpPath(CFG.base, url)) {
+    if (!CFG.editorUpstream) { send(res, 404, 'not found'); return; }
+    const capped = editorBodyCapStatus(req);
+    if (capped === 413) { send(res, 413, 'request body too large'); return; }
+    disarmBodyDeadline();
+    guardUploadStall(req);
+    proxyEditorRequest(req, res, CFG.editorUpstream);
     return;
   }
 
@@ -762,6 +909,52 @@ let shuttingDown = false;
 
 server.on('upgrade', (req, socket, head) => {
   const url = (req.url ?? '').split('?')[0]!;
+  // task/ws-editor: the editor's WebSockets first — a PREFIX branch before
+  // the terminal's equality check: the browser dials
+  // `${BASE}/editor/stable-<commit>?reconnectionToken=…` (two per window,
+  // Management + ExtensionHost — spike-pinned). Same gates as the terminal
+  // except the ws rate limiter: VS Code opens several sockets per window,
+  // so 30/min/IP would throttle two tabs. The socket itself is a raw byte
+  // tunnel to the upstream — never the terminal's wss/attach path (no pty) —
+  // tracked per token so logout cuts editor shells too.
+  if (isEditorUpgradePath(CFG.base, url)) {
+    if (shuttingDown) { socket.destroy(); return; }
+    if (!CFG.editorUpstream) {
+      socket.write(`HTTP/1.1 404 Not Found\r\n${securityHeaderBlock()}\r\n`);
+      socket.destroy();
+      return;
+    }
+    // Browser-only, same as the terminal: an upgrade must carry a matching
+    // Origin (the console's iframe is same-origin and always sends one).
+    const ip = ipOf(req);
+    const origin = req.headers.origin;
+    if (!origin || !originOk(req)) {
+      wsLog.warn('editor ws upgrade rejected: missing or mismatched Origin', { ip });
+      socket.destroy();
+      return;
+    }
+    const token = Auth.sessionToken(req.headers.cookie);
+    const session = auth.valid(token);
+    if (!session.ok) {
+      let status: string;
+      switch (session.errorCode) {
+        case 'no_session':
+          wsLog.info('editor ws upgrade rejected: no valid session', { ip });
+          status = '401 Unauthorized';
+          break;
+        case 'database_error':
+          authLog.error(`session store unavailable: ${session.errorMessage}`);
+          status = '503 Service Unavailable';
+          break;
+        default: return session satisfies never;
+      }
+      socket.write(`HTTP/1.1 ${status}\r\n${securityHeaderBlock()}\r\n`);
+      socket.destroy();
+      return;
+    }
+    upgradeEditorSocket(req, socket, head, session.data.token);
+    return;
+  }
   if (url !== route('/ws')) { socket.destroy(); return; }
   if (shuttingDown) { socket.destroy(); return; } // stopping: no new terminals
   const ip = ipOf(req);
@@ -982,6 +1175,7 @@ const shutdownSteps: Array<() => void | Promise<void>> = [
   () => { autoUpdater.stop(); },                    // 0.5 stop the auto-update loop
   () => { server.close(); },                        // 1. stop listening
   () => { closeAllSockets({ type: 'restart' }); },  // 2. notify + close every client
+  () => { editorTunnels.closeAll(); },              // 2.5 editor tunnels: cut (the iframe reconnects)
   () => {
     // Re-armed on an interval, not one-shot: a terminal's close makes the
     // console page re-poll /api/state on its keep-alive socket — busy

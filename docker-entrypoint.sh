@@ -21,14 +21,5 @@ if [ -r /run/web-pi-s3/credentials.env ]; then
   set +a
 fi
 
-# task/zed-webapp: the Zed launcher token, generated once by compose's
-# zed-init (profile `zed`) onto its own volume mounted :ro here. Absent
-# when the profile isn't deployed: the Zed feature then stays off.
-if [ -r /run/web-pi-zed/zed.env ]; then
-  set -a
-  . /run/web-pi-zed/zed.env
-  set +a
-fi
-
 cd /opt/web-pi
 exec "$@"
