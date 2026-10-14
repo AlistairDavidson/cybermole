@@ -3,22 +3,32 @@ preact signals - make this available for any frontend state needs apps might hav
 
 ## Quality
 playwright fuzzer? fuzz based integration testing
+use linter
+prettier
 
 ## Console features
-side-tab bar lets you open a given app
-  pi
-  zed
-  terminal  
-  app preview
+switch zed for vscodium
 
-ability to end a live session
+app preview?
 
-Disassociate sessions from pi
-  a session is a collection of 
-  
-self-naming sessions
-generalise pi -> any agent
+self-naming workspaces
 
+ability to configure default agent
+
+collapsable app header in list
+
+## Jobs
+
+Jobs to app
+Design jobs page well
+  List of jobs
+  Agent console with AGENTS.md from this app that says how to manage jobs (can be opened)
+  Jobs MCP
+Job page
+  List of runs. Success indicator.
+  Agent console as above but told about this job (can be opened)
+Job run page
+  Logs
 
 ## Apps
 apps folder that contains git submodules
@@ -36,6 +46,19 @@ console sidebar for when in other apps (in which case maybe console isn't an app
 app management mcp
 how to build an app skills
 
+## App management
+
+All apps get an app management page that allows you to manage rollbacks, see logs
+console that knows to interrogate this page
+Migrations
+
+## Agentic shit
+Code style skill - typescript branded types etc
+Component skills
+Development / testing process
+commits
+How to scaffold an app eg write its AGENTS.md, always make an mcp with tools that match every user action
+
 ## Distribution
 installation instructions / script for agents / actual scripts
 
@@ -49,7 +72,7 @@ Write a refined agent workflow
 HIG skill
 
 ## Deferred, ignore
-when it stabilises, maybe build on pi-durable (is tmux still necessary with this?)
+postgres option
 
 xterm:
   unicode-graphemes - emoji/combining chars currently render wrong-width in agent output (6.0-only on npm, experimental)
