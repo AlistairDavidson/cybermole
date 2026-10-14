@@ -780,8 +780,12 @@ test('jobs: app tag chip, persisted run logs, run history + log view (task/ws-jo
   // wrapper tees output to a durable log under WEB_PI_JOB_LOG_DIR.
   await page.click('jobs-app wa-button[data-run="e2e-job"]');
   await expect(page.locator('jobs-app .job-view')).toHaveAttribute('href', /\?run=webpi-e2e-job$/);
-  await expect.poll(() => fs.readdirSync(`${WORKSPACE}/job-logs/e2e-job`).length, { timeout: 10_000 })
-    .toBeGreaterThanOrEqual(1);
+  // expect.poll retries a bad VALUE, not a thrown callback — ENOENT while
+  // the pane's mkdir -p lands must read as 0 so the window keeps polling.
+  const logDirEntries = () => {
+    try { return fs.readdirSync(`${WORKSPACE}/job-logs/e2e-job`).length; } catch { return 0; }
+  };
+  await expect.poll(logDirEntries, { timeout: 10_000 }).toBeGreaterThanOrEqual(1);
   // The live run's session really is up, and its runs row exists (no
   // exit/finish yet — the run is still going).
   const live = () => {
@@ -801,8 +805,11 @@ test('jobs: app tag chip, persisted run logs, run history + log view (task/ws-jo
 
   // The run ends (~8s) and the tick observes it (≤30s later): exit_code
   // + finished_at fill in, lastResult finally reports an outcome.
-  await expect.poll(async () => (await api(page, 'GET', '/api/jobs')).json.jobs[0].lastResult,
-    { timeout: 45_000 }).toBe('success');
+  const lastResult = async (name: string): Promise<string | null> => {
+    try { return (await api(page, 'GET', '/api/jobs')).json.jobs
+      .find((j: { name: string }) => j.name === name)?.lastResult ?? null; } catch { return null; }
+  };
+  await expect.poll(() => lastResult('e2e-job'), { timeout: 45_000 }).toBe('success');
   const after = await api(page, 'GET', '/api/jobs/e2e-job/runs');
   expect(after.json.runs[0]).toMatchObject({ exitCode: 0 });
   expect(typeof after.json.runs[0].finishedAt).toBe('number');
@@ -833,8 +840,7 @@ test('jobs: app tag chip, persisted run logs, run history + log view (task/ws-jo
   // A failed run reports failed (the exit file carries the real code).
   await api(page, 'POST', '/api/jobs', { name: 'e2e-fail', schedule: '0 0 31 12 *', command: 'echo bad; exit 7' });
   await api(page, 'POST', '/api/jobs/e2e-fail/run');
-  await expect.poll(async () => (await api(page, 'GET', '/api/jobs')).json.jobs.find((j: { name: string }) => j.name === 'e2e-fail').lastResult,
-    { timeout: 45_000 }).toBe('failed');
+  await expect.poll(() => lastResult('e2e-fail'), { timeout: 45_000 }).toBe('failed');
   await page.click('jobs-app wa-button[data-runs="e2e-fail"]');
   await expect(page.locator('#runs-dialog .run-exit.failed')).toHaveText('exit 7');
 
