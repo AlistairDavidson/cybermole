@@ -6,8 +6,6 @@
 declare const __brand: unique symbol;
 type Brand<T, B extends string> = T & { readonly [__brand]: B };
 
-/** pi session id (uuid in pi's session store): resume target, hidden-sessions key. */
-export type PiSessionId = Brand<string, 'PiSessionId'>;
 /** A tmux session name on the app's socket. */
 export type TmuxSessionName = Brand<string, 'TmuxSessionName'>;
 /** A scheduled job's (normalized) name. */
@@ -27,10 +25,6 @@ export type ObjectKey = Brand<string, 'ObjectKey'>;
 /** A full (40-hex) git commit sha of the workspace checkout — the
  *  management page's apply target (src/lib/releases.ts). */
 export type CommitSha = Brand<string, 'CommitSha'>;
-
-export function asPiSessionId(value: string): PiSessionId {
-  return value as PiSessionId;
-}
 
 export function asTmuxSessionName(value: string): TmuxSessionName {
   return value as TmuxSessionName;

@@ -39,7 +39,7 @@ import {
   type Compilable, type DatabaseConnection,
 } from 'kysely';
 import type { ResultFailure, ResultSuccess } from '../types/result';
-import type { AppId, AppSlug, JobName, PiSessionId, TerminalId, WorkspaceId } from '../types/branded';
+import type { AppId, AppSlug, JobName, TerminalId, WorkspaceId } from '../types/branded';
 
 /** The shared "generic update" result: a write that only reports how many
  *  rows it touched (setters, deletes, flag flips). */
@@ -98,13 +98,10 @@ const SCHEMA = `
     hash       TEXT    NOT NULL,   -- hex, scrypt
     updated_at INTEGER NOT NULL
   );
-  -- Overlay on pi's session store: the fs store stays the truth for a
-  -- session's existence; rows appear here only where web-pi has an
-  -- opinion to record (hidden today; app_id/display_name/pinned later).
-  CREATE TABLE IF NOT EXISTS sessions (
-    session_id TEXT    PRIMARY KEY,  -- pi's id
-    hidden_at  INTEGER                -- NULL = visible
-  );
+  -- The pi-session overlay table is GONE (workspaces-plan §11, dropped
+  -- together with the code that read it in task/ws-console): idempotent,
+  -- runs at every open — no version bookkeeping, user_version stays 6.
+  DROP TABLE IF EXISTS sessions;
   -- Apps / workspaces / terminals (docs/workspaces-plan.md §2, schema v6):
   -- apps 1—M workspaces 1—M terminals, console = the NULL app. ids are
   -- uuid v4 minted by the server; sort_order is explicit (steps of 10),
@@ -211,10 +208,6 @@ export interface CredentialTable {
   hash: string;
   updated_at: number;
 }
-export interface SessionsTable {
-  session_id: PiSessionId;
-  hidden_at: number | null;
-}
 export interface AppsTable {
   id: AppId;
   name: string;
@@ -288,7 +281,6 @@ export interface ReleasesTable {
 }
 export interface StateSchema {
   credential: CredentialTable;
-  sessions: SessionsTable;
   apps: AppsTable;
   workspaces: WorkspacesTable;
   terminals: TerminalsTable;
@@ -372,9 +364,10 @@ export class StateDb {
       // user_version: 1 = credential + sessions; 2 adds the job tables;
       // 3 adds the settings kv table; 4 adds auth_sessions; 5 adds the
       // releases table (management page); 6 adds apps/workspaces/terminals
-      // + the jobs/job_runs columns above (workspaces plan). Additive — the
-      // CREATE IF NOT EXISTS block + migrateToV6 bring any older db up to
-      // the current shape; nothing is dropped.
+      // + the jobs/job_runs columns above and drops the pi-session
+      // overlay (workspaces plan §2/§11 — the one destructive step,
+      // idempotent in SCHEMA itself). The CREATE IF NOT EXISTS block +
+      // migrateToV6 bring any older db up to the current shape.
       const v = db.prepare('PRAGMA user_version').get() as { user_version: number };
       if (v.user_version < 6) db.exec('PRAGMA user_version = 6');
       else if (v.user_version > 6) {

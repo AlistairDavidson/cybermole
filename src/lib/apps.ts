@@ -20,6 +20,7 @@ import type { DatabaseReadResult } from './db';
 import type { ResultFailure, ResultSuccess } from '../types/result';
 import type { AppId, AppSlug, TmuxSessionName } from '../types/branded';
 import { asAppId, asAppSlug } from '../types/branded';
+import type { AppState } from './types';
 import { APP_SLUG_RE, normalizeSlug } from '../schemas/patterns';
 
 const log = componentLogger('apps');
@@ -46,6 +47,13 @@ export type DeleteAppErrorCode = 'app_not_found' | 'database_error';
 export type DeleteAppSuccess = ResultSuccess<'delete_app', DeleteAppData>;
 export type DeleteAppFailure = ResultFailure<'delete_app', DeleteAppData, DeleteAppErrorCode>;
 export type DeleteAppResult = DeleteAppSuccess | DeleteAppFailure;
+
+/** GET /api/state's apps half (plan §5): every app, ordered. */
+export type AppListData = { apps: AppState[] };
+export type AppListErrorCode = 'database_error';
+export type AppListSuccess = ResultSuccess<'app_list', AppListData>;
+export type AppListFailure = ResultFailure<'app_list', AppListData, AppListErrorCode>;
+export type AppListResult = AppListSuccess | AppListFailure;
 
 // ---------- the domain ----------
 
@@ -163,5 +171,24 @@ export class Apps {
     for (const t of terminals.data.value) await this.deps.killSession(terminalSessionName(t.id));
     log.info(`app ${slug} deleted (${terminals.data.value.length} terminal sessions killed best-effort)`);
     return { ok: true, resultType: 'delete_app', data: { id: row.id } } satisfies DeleteAppSuccess;
+  }
+
+  /** Every app, sort_order asc (+ created_at tiebreak — order allocation
+   *  is in steps of 10, plan §2, but nothing rewrites gaps in v1). The
+   *  sidebar's grouping order. */
+  listApps(): AppListResult {
+    const rows = databaseRead('could not read apps', () =>
+      this.deps.db.all(qb.selectFrom('apps')
+        .select(['id', 'name', 'slug', 'sort_order', 'created_at'])
+        .orderBy('sort_order', 'asc').orderBy('created_at', 'asc')));
+    if (!rows.ok) {
+      return { ok: false, resultType: 'app_list', errorCode: 'database_error', errorMessage: rows.errorMessage } satisfies AppListFailure;
+    }
+    return {
+      ok: true, resultType: 'app_list',
+      data: {
+        apps: rows.data.value.map(a => ({ id: a.id, name: a.name, slug: a.slug, order: a.sort_order })),
+      },
+    } satisfies AppListSuccess;
   }
 }

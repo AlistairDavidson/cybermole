@@ -28,18 +28,10 @@ export const MAX_JOB_NAME = 40;
  *  nested) webpi-webpi-* run session. */
 export const JOB_NAME_RE = new RegExp(`^(?!webpi-)[a-z0-9][a-z0-9_\\-]{0,${MAX_JOB_NAME - 1}}$`);
 
-/** Normalize a user-supplied job name the way /api/new does for sessions. */
+/** Normalize a job-supplied name (the shared slug rules). */
 export function normalizeJobName(raw: string): string {
   return raw.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-')
     .replace(/^-+|-+$/g, '').slice(0, MAX_JOB_NAME);
-}
-
-/** Normalize a user-supplied new-session name (POST /api/new): the same
- *  slug rules, capped at 30 (the sidebar input's maxlength). '' means
- *  nothing usable was typed. */
-export function normalizeSessionName(raw: string): string {
-  return raw.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '').slice(0, 30);
 }
 
 /** Longest app slug — as normalized (APP_SLUG_RE); the cap on the typed

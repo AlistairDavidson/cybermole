@@ -4,14 +4,11 @@
 // too (docs/CODE_STYLE.md §5).
 import { z } from 'zod';
 import {
-  asAppId, asAppSlug, asJobName, asObjectKey, asPiSessionId, asTerminalId, asTmuxSessionName, asWorkspaceId,
+  asAppId, asAppSlug, asJobName, asObjectKey, asTerminalId, asTmuxSessionName, asWorkspaceId,
 } from '../types/branded';
 import {
-  APP_SLUG_RE, JOB_NAME_RE, OBJECT_KEY_RE, SESSION_ID_RE, TMUX_SESSION_NAME_RE, UUID_RE,
+  APP_SLUG_RE, JOB_NAME_RE, OBJECT_KEY_RE, TMUX_SESSION_NAME_RE, UUID_RE,
 } from './patterns';
-
-export const PiSessionIdSchema = z.string()
-  .regex(SESSION_ID_RE, 'invalid session id').transform(asPiSessionId);
 
 export const TmuxSessionNameSchema = z.string()
   .regex(TMUX_SESSION_NAME_RE, 'invalid session name').transform(asTmuxSessionName);

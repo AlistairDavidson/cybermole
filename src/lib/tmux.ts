@@ -11,23 +11,21 @@
 // cross-uid shape REQUIRES `-S <absolute path>`. In that mode this side
 // must NEVER be the one to fork the tmux server: new-session against a
 // down server forks one AS THE CLIENT'S UID (verified footgun), which
-// would silently undo the split — hence the guard in newSession/
-// resumeSession. See also docker-workspace-entrypoint.sh (server
+// would silently undo the split — hence the guard in newSession
+// (and every attach). See also docker-workspace-entrypoint.sh (server
 // lifecycle) and README "The privilege split".
 // Pattern note: a LONG-LIVED externally-supervised session should get
 // its OWN socket + supervisor — never share this one, or a crashing
 // supervised session would look "alive". Scheduled-job runs are the
 // sanctioned exception (src/lib/jobs.ts): the run is the session, it
-// dies with the command, and sharing this socket is precisely what makes
-// runs appear in the Live list next to interactive sessions.
+// dies with the command, and sharing this socket keeps runs addressable
+// like any interactive session.
 import { execFile } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { ENV, RAW_ENV } from './env';
 import { componentLogger } from './logger';
-import type { LiveSession } from './types';
 import type { ResultFailure, ResultSuccess } from '../types/result';
-import { asTmuxSessionName, type JobName, type PiSessionId, type TerminalId, type TmuxSessionName } from '../types/branded';
+import { asTmuxSessionName, type JobName, type TerminalId, type TmuxSessionName } from '../types/branded';
 import { TMUX_SESSION_NAME_RE } from '../schemas/patterns';
 
 export const SOCKET = ENV.WEB_PI_TMUX_SOCKET;
@@ -40,18 +38,6 @@ export const CONF = ENV.WEB_PI_TMUX_CONF;
 const log = componentLogger('tmux');
 if (RAW_ENV.WEB_PI_TMUX_CONF && !fs.existsSync(CONF)) {
   log.warn(`WEB_PI_TMUX_CONF=${CONF} does not exist — using tmux defaults`);
-}
-
-/** Session name a resumed pi session runs under: 'r-' + the FULL session id.
- *  pi ids are UUIDv7, so any prefix is just the creation timestamp's high
- *  bits — sessions started within about a minute of each other share their
- *  first 8 hex chars, and a truncated name attached the second one's resume
- *  to the first one's running pi. Ids too long (or not tmux-safe) for
- *  TMUX_SESSION_NAME_RE get a hash of the id instead. */
-export function resumeSessionName(id: PiSessionId): TmuxSessionName {
-  const name = `r-${id}`;
-  return asTmuxSessionName(TMUX_SESSION_NAME_RE.test(name)
-    ? name : `r-${createHash('sha256').update(id).digest('hex').slice(0, 32)}`);
 }
 
 /** Session name a scheduled job's run opens on this socket (src/lib/jobs.ts
@@ -102,7 +88,8 @@ export function forksServer(socket: string): boolean {
 }
 
 /** User-facing message when the guard refuses to fork: surfaced verbatim
- *  by /api/new (503) and the terminal WS error path. */
+ *  by the terminal family (the create route's 503) and the terminal WS
+ *  error path. */
 export const SERVER_NOT_RUNNING_MSG = 'workspace tmux server not running';
 
 type TmuxError = Error & { stderr?: string | Buffer };
@@ -205,44 +192,17 @@ function tmuxFailure(name: TmuxSessionName, what: string, error: TmuxError) {
   } satisfies TmuxSessionFailure;
 }
 
-/** Live sessions on the app socket. Can't fail by design: no server yet
- *  (or any error) is simply no live sessions. Explicit -F format: the
- *  default layout varies across tmux versions, and the cwd (resolved via
- *  the session's active pane) is what the sidebar's "open in editor" needs.
- *  That field is #{pane_current_path} falling back to
- *  #{pane_start_path}: current needs the pane tty's foreground pgrp
- *  (tmux's osdep_get_cwd → tcgetpgrp → /proc/<pgrp>/cwd), which a normal
- *  Linux kernel sets when the pane process acquires the tty as session
- *  leader — but not every pty layer does (the agent sandbox's is one:
- *  tcgetpgrp on the pane pty fails ENOTTY, verified against tmux 3.3a;
- *  a foreground pager can lose it too). #{?pane_current_path,A,B} is
- *  tmux's own name-condition conditional — verified on the prod image's
- *  tmux (3.3a) — and the spawn cwd is what `new-session -c` started the
- *  session in, i.e. exactly the session's working directory for pi and
- *  job sessions. Separator notes: '|' not '\t' — the prod image's
- *  bookworm apt tmux (3.3a) rewrites tab characters in list output to
- *  underscores (observed: a real tab in the format comes out as '_'),
- *  and '|' is stable either way; and #{session_created} is the raw epoch
- *  — #{session_created_string} only exists from tmux 3.4 (empty on
- *  3.3a), so the epoch is formatted in JS instead. A '|' in a session
- *  name would make the row unparseable — same as the old default-format
- *  regex, and names are [a-zA-Z0-9_-] by TMUX_SESSION_NAME_RE. */
-export async function listSessions(): Promise<LiveSession[]> {
-  const { error, stdout } = await tmux(SOCKET, ['list-sessions', '-F',
-    '#{session_name}|#{session_windows}|#{session_created}|#{?session_attached,attached,}|#{?pane_current_path,#{pane_current_path},#{pane_start_path}}']);
-  if (error) return [];
-  const out: LiveSession[] = [];
-  for (const line of stdout.split('\n')) {
-    const m = line.match(/^([^|]+)\|(\d+)\|(\d+)\|(attached)?\|(.*)$/);
-    if (m) {
-      out.push({
-        name: asTmuxSessionName(m[1] ?? ''), windows: parseInt(m[2] ?? '1', 10),
-        created: new Date(parseInt(m[3] ?? '0', 10) * 1000).toLocaleString(),
-        attached: m[4] === 'attached', cwd: m[5] || null, socket: SOCKET,
-      });
-    }
-  }
-  return out;
+/** Session names alive on the app socket, as a name set. Can't fail by
+ *  design: no server yet (or any error — the split's down server included)
+ *  is simply an empty set, i.e. "nothing is live". The name-set shape is
+ *  what remains after the pi-session UI died (plan §11): /api/state's
+ *  live diff (a terminal tab is live when `t-<uuid>` is in the set) and
+ *  the job state checks. Names are [a-zA-Z0-9_-] by TMUX_SESSION_NAME_RE,
+ *  one per line — no separator games needed. */
+export async function liveSessionNames(): Promise<Set<TmuxSessionName>> {
+  const { error, stdout } = await tmux(SOCKET, ['list-sessions', '-F', '#{session_name}']);
+  if (error) return new Set();
+  return new Set(stdout.split('\n').filter(Boolean).map(asTmuxSessionName));
 }
 
 /** Does the session exist? Can't fail by design: any tmux error reads as
@@ -262,8 +222,8 @@ export function newSessionArgs(
 }
 
 /** Start a session running the configured command (a terminal tab's
- *  spawn and respawn — plan §4; /api/new and job runs land here too).
- *  Never-fork guard first on absolute sockets (see requireServer). */
+ *  spawn and respawn, and a job run — plan §4/§9). Never-fork guard
+ *  first on absolute sockets (see requireServer). */
 export async function newSession(name: TmuxSessionName, cwd: string, command: string[],
   env: Record<string, string>) {
   const server = await requireServer();
@@ -272,24 +232,4 @@ export async function newSession(name: TmuxSessionName, cwd: string, command: st
   if (error) return tmuxFailure(name, 'new-session', error);
   log.info(`tmux session ${name} started`, { command: command.join(' ') });
   return { ok: true, resultType: 'tmux_session', data: { name } } satisfies TmuxSessionSuccess;
-}
-
-/** Start (or reuse) a resume session; the caller then attaches. The
- *  create branch carries the same never-fork guard as newSession. */
-export async function resumeSession(name: TmuxSessionName, cwd: string, command: string[],
-  sessionId: PiSessionId, env: Record<string, string>) {
-  const ok = { ok: true, resultType: 'tmux_session', data: { name } } satisfies TmuxSessionSuccess;
-  if (await hasSession(name)) return ok;
-  const server = await requireServer();
-  if (!server.ok) return sessionFailure(name, server);
-  const { error } = await tmux(SOCKET,
-    ['new-session', '-d', '-s', name, '-c', cwd, ...envArgs(env), '--', ...command, '--session', sessionId], env);
-  if (error) return tmuxFailure(name, 'new-session', error);
-  log.info(`tmux session ${name} started (resume of pi session ${sessionId})`);
-  return ok;
-}
-
-/** Sessions alive on the app socket, as a name set (job state checks). */
-export async function liveSessionNames(): Promise<Set<TmuxSessionName>> {
-  return new Set((await listSessions()).map(s => s.name));
 }

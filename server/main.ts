@@ -13,8 +13,6 @@ import { WebSocketServer, type WebSocket } from 'ws';
 // @ts-ignore — no bundled types for the native module
 import * as pty from 'node-pty';
 import { Auth, RateLimiter, type Auth as AuthType } from '../src/lib/auth';
-import { findSession } from '../src/lib/sessions';
-import { HiddenSessions } from '../src/lib/hidden-sessions';
 import { StateDb } from '../src/lib/db';
 import * as tmux from '../src/lib/tmux';
 import { ENV, RAW_ENV, APP_ROOT, PI_BIN, PI_AGENT_DIR, PI_SESSION_DIR, readObjectStoreConfig, readEditorUpstream, RELEASES_DIR } from '../src/lib/env';
@@ -31,7 +29,7 @@ import { ObjectStore } from '../src/lib/storage';
 import type { ClientMsg, ServerMsg } from '../src/lib/types';
 import { loginBody } from '../src/schemas/api';
 import { parseClientMsg } from '../src/schemas/frames';
-import { PiSessionIdSchema, TerminalIdSchema, TmuxSessionNameSchema } from '../src/schemas/ids';
+import { TerminalIdSchema, TmuxSessionNameSchema } from '../src/schemas/ids';
 import { UPLOAD_MAX_BODY_BYTES } from '../src/schemas/uploads';
 import type { SessionToken, TmuxSessionName } from '../src/types/branded';
 
@@ -79,11 +77,9 @@ const CFG: ServerConfig = {
   dbFile: ENV.WEB_PI_DB_FILE,
   clientDir: ENV.WEB_PI_CLIENT_DIR,
   astroEntry: ENV.WEB_PI_ASTRO_ENTRY,
-  sessionsDir: ENV.WEB_PI_SESSIONS_DIR,
   newSessionCwd: ENV.WEB_PI_NEW_SESSION_CWD,
   // whitespace-split command line a new terminal tab runs (plan §4;
-  // default a login shell — src/lib/env.ts); resume appends --session <id>
-  // (pi-family CLI) until branch 4 deletes that path
+  // default a login shell — src/lib/env.ts)
   command: ENV.WEB_PI_COMMAND.trim().split(/\s+/).filter(Boolean),
   trustProxy: Math.max(0, ENV.WEB_PI_TRUST_PROXY),
   editorUpstream: readEditorUpstream(),
@@ -182,12 +178,11 @@ if (PI_SESSION_DIR) {
 /** Route path under the configured base ('/login' → '/foo/login'). */
 const route = (p: string): string => (CFG.base === '/' ? p : CFG.base + p);
 
-// web-pi's own persisted state: one sqlite db (login credential,
-// hidden-session ids) at CFG.dbFile, opened lazily on first use
-// (src/lib/db.ts). pi's session store is untouched by all of this.
+// web-pi's own persisted state: one sqlite db (login credential, login
+// sessions, the apps/workspaces/terminals tree, jobs) at CFG.dbFile,
+// opened lazily on first use (src/lib/db.ts).
 const stateDb = new StateDb(CFG.dbFile);
 const auth: AuthType = new Auth(stateDb);
-const hiddenSessions = new HiddenSessions(stateDb);
 // In-process job scheduler (src/lib/jobs.ts): definitions + run
 // bookkeeping live in the state db; fires open tmux sessions on the app's
 // socket under the same job-session conventions as interactive sessions.
@@ -221,13 +216,15 @@ const spawnTerminalSession = (name: TmuxSessionName, cwd: string) =>
 // once here and passed to the Astro handler in locals — never imported
 // there (a Vite-bundled second copy would carry its own state; see
 // src/lib/services.ts).
-const services = createServices({ cfg: CFG, stateDb, auth, hiddenSessions, scheduler, autoUpdater, objectStore, sessionEnv,
+const services = createServices({ cfg: CFG, stateDb, auth, scheduler, autoUpdater, objectStore,
   // task/ws-schema: the apps/workspaces domains' best-effort terminal
   // session kill (deletes/closes — src/lib/tmux.ts killSession).
   killSession: tmux.killSession,
   // task/ws-terminal (plan §4): the terminal spawn dep (see
   // spawnTerminalSession above).
   spawnSession: spawnTerminalSession,
+  // task/ws-console (plan §5): /api/state's live diff source.
+  liveSessionNames: tmux.liveSessionNames,
   // task/mgmt-page: the swap service's restart trigger + the honest
   // "serving now" LIVE snapshot (a getter: the import fallback above
   // flips it; docs/management-page.md §3.2).
@@ -1015,8 +1012,8 @@ function wsSend(ws: WebSocket, msg: ServerMsg): void {
   if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
 }
 
-// parseClientMsg (the client-frame gate) lives in src/lib/types.ts with
-// the zod schemas ClientMsg is derived from.
+// parseClientMsg (the client-frame gate) lives in src/schemas/frames.ts;
+// ClientMsg (the union it yields) is re-exported by src/lib/types.ts.
 
 // Keepalive: a ping per connection this often. Idle-timeout proxies (ALB
 // defaults to 60s; nginx's proxy_read_timeout) count it as traffic, so a
@@ -1089,12 +1086,7 @@ function attach(ws: WebSocket, token: SessionToken): void {
         starting = false;
         wsSend(ws, { type: 'error', message });
       };
-      if (msg.mode === 'live') {
-        const target = TmuxSessionNameSchema.safeParse(msg.target);
-        if (!target.success) { failed('bad target'); return; }
-        if (!await tmux.hasSession(target.data)) { failed('no such live session'); return; }
-        await spawnTmux(target.data);
-      } else if (msg.mode === 'terminal') {
+      if (msg.mode === 'terminal') {
         // task/ws-terminal (plan §4/§7): the restart-survival path. The
         // id is the terminal ROW's uuid — the state db owns the identity,
         // the tmux session name is derived (t-<uuid>). tmux alive = the
@@ -1127,34 +1119,13 @@ function attach(ws: WebSocket, token: SessionToken): void {
         await spawnTmux(name);
       } else if (msg.mode === 'run') {
         // task/ws-terminal (plan §7): a live job run's tmux session
-        // (webpi-<name>) — replaces 'live' for the jobs view-run path.
-        // NEVER respawns: the run IS the session, it dies with the
-        // command, and a re-run is a new session (jobs.ts), not a
-        // respawn of a dead one.
+        // (webpi-<name>) — the jobs view-run path. NEVER respawns: the
+        // run IS the session, it dies with the command, and a re-run is a
+        // new session (jobs.ts), not a respawn of a dead one.
         const target = TmuxSessionNameSchema.safeParse(msg.target);
         if (!target.success) { failed('bad target'); return; }
         if (!await tmux.hasSession(target.data)) { failed('no such run session'); return; }
         await spawnTmux(target.data);
-      } else {
-        const id = PiSessionIdSchema.safeParse(msg.id);
-        const found = id.success ? findSession(CFG.sessionsDir, id.data) : null;
-        if (!found) { failed('no such session'); return; }
-        let cwd = CFG.newSessionCwd;
-        if (found.cwd) {
-          try { if (fs.statSync(found.cwd).isDirectory()) cwd = found.cwd; } catch { /* fallback */ }
-        }
-        const name = tmux.resumeSessionName(found.id);
-        const resumed = await tmux.resumeSession(name, cwd, CFG.command, found.id, sessionEnv);
-        if (!resumed.ok) {
-          switch (resumed.errorCode) {
-            // the never-fork guard — say it, don't bury it
-            case 'server_not_running': failed(tmux.SERVER_NOT_RUNNING_MSG); return;
-            case 'tmux_error': failed('could not start resume session'); return;
-            default: resumed satisfies never;
-          }
-          return;
-        }
-        await spawnTmux(name);
       }
     }
   }
@@ -1204,7 +1175,7 @@ function attach(ws: WebSocket, token: SessionToken): void {
 
 server.listen(CFG.port, CFG.host, () => {
   bootLog.info(`web-pi listening on ${CFG.host}:${CFG.port} base ${CFG.base} ` +
-    `(tmux socket ${tmux.SOCKET}, command "${CFG.command.join(' ')}", client ${CFG.clientDir}, sessions ${CFG.sessionsDir})`);
+    `(tmux socket ${tmux.SOCKET}, command "${CFG.command.join(' ')}", client ${CFG.clientDir})`);
   // Best-effort vendored-pi version at boot — makes dependency drift visible.
   if (CFG.command[0] === PI_BIN) {
     execFile(PI_BIN, ['--version'], { timeout: 5000 }, (err, out) =>

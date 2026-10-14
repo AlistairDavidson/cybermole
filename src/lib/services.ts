@@ -16,12 +16,10 @@ import type { AutoUpdater } from './auto-update';
 import { autoUpdateEnabled, lastCheck, lastUpdate } from './auto-update';
 import type { StateDb } from './db';
 import { APP_ROOT, MANAGEMENT_CHECKOUT, RELEASES_DIR } from './env';
-import type { HiddenSessions } from './hidden-sessions';
 import { checkCron, type Scheduler } from './jobs';
 import { Apps } from './apps';
 import { Workspaces } from './workspaces';
 import { Releases } from './releases';
-import { listSessions } from './sessions';
 import type { ObjectStore } from './storage';
 import {
   PI_PACKAGE, appVersion, npmPath, piDeclared, piInstalled, runPiUpdate, type PiUpdateResult,
@@ -33,8 +31,8 @@ import type { SessionToken, TmuxSessionName } from '../types/branded';
 import type { ResultFailure, ResultSuccess } from '../types/result';
 import type { TmuxSessionFailure, TmuxSessionSuccess } from './tmux';
 
-/** database_error: the hidden-session overlay or the credential row could
- *  not be read (the session scan and the tmux list can't fail by design). */
+/** database_error: a state read behind the console's poll (the apps /
+ *  workspace tree or the credential row) could not be served. */
 export type ConsoleStateErrorCode = 'database_error';
 export type ConsoleStateSuccess = ResultSuccess<'console_state', ConsoleState>;
 export type ConsoleStateFailure = ResultFailure<'console_state', ConsoleState, ConsoleStateErrorCode>;
@@ -58,7 +56,6 @@ export interface ServerConfig {
   dbFile: string;
   clientDir: string;
   astroEntry: string;
-  sessionsDir: string;
   newSessionCwd: string;
   /** whitespace-split session command line */
   command: string[];
@@ -72,7 +69,6 @@ export interface ServerConfig {
 export interface WebPiServices {
   cfg: ServerConfig;
   auth: Auth;
-  hiddenSessions: HiddenSessions;
   scheduler: Scheduler;
   autoUpdater: AutoUpdater;
   /** Object storage (S3-compatible): POST /api/files stores uploads here. */
@@ -87,8 +83,8 @@ export interface WebPiServices {
   apps: Apps;
   /** The workspace/terminal domain — workspaces.ts. */
   workspaces: Workspaces;
-  /** GET /api/state's body: pi's session store (title-cached scan) +
-   *  the live tmux list + hidden flags. */
+  /** GET /api/state's body: the workspace tree (apps + workspaces +
+   *  terminals with live flags — plan §5). */
   consoleState(): Promise<ConsoleStateResult>;
   /** GET /api/settings' body: paths and versions only — no credential
    *  or hash contents ever leave. */
@@ -96,8 +92,6 @@ export interface WebPiServices {
   /** The manual pi updater — shares runPiUpdate's busy guard with the
    *  auto-updater, which is why it lives here. */
   runPiUpdate(dryRun: boolean): Promise<PiUpdateResult>;
-  /** Start a new interactive session running the configured command. */
-  newSession(name: TmuxSessionName): Promise<tmux.TmuxSessionSuccess | tmux.TmuxSessionFailure>;
   /** Validate a 5-field cron schedule (pure; here so routes never import jobs.ts). */
   checkCron(schedule: string): CalendarCheck;
 }
@@ -115,13 +109,9 @@ export interface ServiceDeps {
   cfg: ServerConfig;
   stateDb: StateDb;
   auth: Auth;
-  hiddenSessions: HiddenSessions;
   scheduler: Scheduler;
   autoUpdater: AutoUpdater;
   objectStore: ObjectStore;
-  /** env for processes spawned inside tmux sessions (terminal tabs,
-   *  /api/new until branch 4 deletes it, job runs) */
-  sessionEnv: Record<string, string>;
   /** Best-effort tmux kill of one session (tmux.killSession) — the
    *  terminal/app/workspace deletes; injected so the domains stay
    * unit-testable without a tmux server. */
@@ -131,6 +121,9 @@ export interface ServiceDeps {
    *  workspaces domain for the same testability reason as killSession. */
   spawnSession: (name: TmuxSessionName, cwd: string) =>
     Promise<TmuxSessionSuccess | TmuxSessionFailure>;
+  /** Live tmux session names (tmux.liveSessionNames) — /api/state's live
+   *  diff, injected into the workspaces domain like its siblings. */
+  liveSessionNames: () => Promise<Set<TmuxSessionName>>;
   // task/mgmt-page: graceful-restart trigger for the swap step (the
   // server's own shutdown path — no docker socket anywhere), and the
   // LIVE snapshot of what this process serves (a GETTER: main.ts falls
@@ -141,7 +134,7 @@ export interface ServiceDeps {
 }
 
 export function createServices(deps: ServiceDeps): WebPiServices {
-  const { cfg, stateDb, auth, hiddenSessions, scheduler, autoUpdater, objectStore, sessionEnv, requestRestart } = deps;
+  const { cfg, stateDb, auth, scheduler, autoUpdater, objectStore, requestRestart } = deps;
   // task/mgmt-page: the management page's domain service. Its verify
   // callback is auth.verify (re-auth for the dangerous verbs); its
   // requestRestart is main.ts's own shutdown path.
@@ -162,33 +155,35 @@ export function createServices(deps: ServiceDeps): WebPiServices {
   const workspaces = new Workspaces({
     db: stateDb, username: () => auth.username(), killSession: deps.killSession,
     defaultCwd: cfg.newSessionCwd, spawnSession: deps.spawnSession,
+    liveSessionNames: deps.liveSessionNames,
   });
   return {
-    cfg, auth, hiddenSessions, scheduler, autoUpdater, objectStore, management, apps, workspaces,
+    cfg, auth, scheduler, autoUpdater, objectStore, management, apps, workspaces,
 
     async consoleState() {
-      // Both scans are async (and the session scan title-cached), so the
-      // 15 s poll every open tab makes never holds the event loop.
-      const sessions = await listSessions(cfg.sessionsDir);
-      const live = await tmux.listSessions();
+      // The workspace tree (plan §5): apps + workspaces + terminals, the
+      // live flags diffed against tmux's session-name set inside the
+      // workspaces domain. Grouping is client-side — the reads stay one
+      // query per table.
       const fail = (errorMessage: string) =>
         ({ ok: false, resultType: 'console_state', errorCode: 'database_error', errorMessage }) satisfies ConsoleStateFailure;
-      const hidden = hiddenSessions.hiddenIds();
-      if (!hidden.ok) return fail(hidden.errorMessage);
       const configured = auth.configured();
-      if (!configured.ok) return fail(configured.errorMessage);
+      if (!configured.ok) return fail(configured.errorMessage ?? 'could not read the credential');
+      const listed = apps.listApps();
+      if (!listed.ok) return fail(listed.errorMessage ?? 'could not read apps');
+      const tree = await workspaces.workspaceTree();
+      if (!tree.ok) return fail(tree.errorMessage ?? 'could not read workspaces');
       return {
         ok: true, resultType: 'console_state',
         data: {
           me: 'ok',
           configured: configured.data.value,
-          live,
-          sessions: sessions.map(s => ({ ...s, hidden: hidden.data.value.has(s.id) })),
-          hiddenCount: hidden.data.value.size,
           // task/ws-editor (docs/editor-webapp.md): the same-origin editor
-          // (WEB_PI_EDITOR_UPSTREAM set?) — the full shape switch, with the
-          // workspaces tree, is task/ws-console's (plan §5).
+          // (WEB_PI_EDITOR_UPSTREAM set?) — false hides the editor tab.
           editor: cfg.editorUpstream !== null,
+          defaultCwd: cfg.newSessionCwd,
+          apps: listed.data.apps,
+          workspaces: tree.data.workspaces,
         },
       } satisfies ConsoleStateSuccess;
     },
@@ -212,7 +207,6 @@ export function createServices(deps: ServiceDeps): WebPiServices {
         command: cfg.command.join(' '),
         newSessionCwd: cfg.newSessionCwd,
         agentDir: cfg.agentDir,
-        sessionsDir: cfg.sessionsDir,
         stateDb: cfg.dbFile,
         tmuxSocket: tmux.SOCKET,
         tmuxConf: fs.existsSync(tmux.CONF) ? tmux.CONF : null,
@@ -230,7 +224,6 @@ export function createServices(deps: ServiceDeps): WebPiServices {
     },
 
     runPiUpdate: dryRun => runPiUpdate(APP_ROOT, dryRun),
-    newSession: name => tmux.newSession(name, cfg.newSessionCwd, cfg.command, sessionEnv),
     checkCron: schedule => checkCron(schedule),
   };
 }

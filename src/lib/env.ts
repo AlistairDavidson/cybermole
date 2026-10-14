@@ -55,7 +55,7 @@ const home = RAW_ENV.WEB_PI_HOME ?? os.homedir();
 // the per-path WEB_PI_AGENT_DIR / WEB_PI_DB_FILE overrides still win.
 const stateDir = RAW_ENV.WEB_PI_STATE_DIR ?? path.join(home, '.local', 'state', 'web-pi');
 const agentDir = RAW_ENV.WEB_PI_AGENT_DIR ?? path.join(stateDir, 'pi-agent');
-// web-pi's own persisted state (sqlite: credential + hidden sessions).
+// web-pi's own persisted state (sqlite).
 const dbFile = RAW_ENV.WEB_PI_DB_FILE ?? path.join(stateDir, 'webpi.db');
 
 export const ENV = {
@@ -70,7 +70,6 @@ export const ENV = {
   WEB_PI_DB_FILE: dbFile,
   WEB_PI_CLIENT_DIR: RAW_ENV.WEB_PI_CLIENT_DIR ?? path.join(APP_ROOT, 'dist', 'client'),
   WEB_PI_ASTRO_ENTRY: RAW_ENV.WEB_PI_ASTRO_ENTRY ?? path.join(APP_ROOT, 'dist', 'server', 'entry.mjs'),
-  WEB_PI_SESSIONS_DIR: RAW_ENV.WEB_PI_SESSIONS_DIR ?? PI_SESSION_DIR ?? path.join(agentDir, 'sessions'),
   WEB_PI_NEW_SESSION_CWD: RAW_ENV.WEB_PI_NEW_SESSION_CWD ?? home,
   // The command a new terminal tab runs (plan §10): a login shell by
   // default — $SHELL -l when the env carries one, /bin/sh -l otherwise.

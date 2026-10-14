@@ -19,6 +19,7 @@ import { terminalSessionName } from './tmux';
 import type { ResultFailure, ResultSuccess } from '../types/result';
 import type { AppId, TerminalId, TmuxSessionName, WorkspaceId } from '../types/branded';
 import { asTerminalId, asWorkspaceId } from '../types/branded';
+import type { WorkspaceState } from './types';
 import type { TmuxSessionFailure, TmuxSessionSuccess } from './tmux';
 
 const log = componentLogger('workspaces');
@@ -80,6 +81,15 @@ export type TerminalForAttachSuccess = ResultSuccess<'terminal_for_attach', Term
 export type TerminalForAttachFailure = ResultFailure<'terminal_for_attach', TerminalForAttachData, TerminalForAttachErrorCode>;
 export type TerminalForAttachResult = TerminalForAttachSuccess | TerminalForAttachFailure;
 
+/** GET /api/state's workspace half (plan §5): every workspace row, flat,
+ *  each with its terminals and their live flags — the live diff against
+ *  tmux's session-name set (`t-<uuid>` present = live). */
+export type WorkspaceTreeData = { workspaces: WorkspaceState[] };
+export type WorkspaceTreeErrorCode = 'database_error';
+export type WorkspaceTreeSuccess = ResultSuccess<'workspace_tree', WorkspaceTreeData>;
+export type WorkspaceTreeFailure = ResultFailure<'workspace_tree', WorkspaceTreeData, WorkspaceTreeErrorCode>;
+export type WorkspaceTreeResult = WorkspaceTreeSuccess | WorkspaceTreeFailure;
+
 // ---------- helpers ----------
 
 /** The cwd check, same shape as zed.ts's: absolute + a directory the
@@ -114,6 +124,11 @@ export interface WorkspacesDeps {
   /** WEB_PI_NEW_SESSION_CWD — the default when POST /api/workspaces omits
    *  cwd (plan §6). */
   defaultCwd: string;
+  /** Live tmux session names (tmux.liveSessionNames) — the tree read's
+   *  live diff (`t-<uuid>` present = the tab is live, plan §5). Injected
+   *  so the domain stays unit-testable without a tmux server; it can't
+   *  fail (a down server reads as "nothing live"). */
+  liveSessionNames: () => Promise<Set<TmuxSessionName>>;
 }
 
 export class Workspaces {
@@ -331,5 +346,42 @@ export class Workspaces {
       ok: true, resultType: 'terminal_for_attach',
       data: { id: row.id, workspaceId: row.workspace_id, title: row.title, cwd: row.cwd },
     } satisfies TerminalForAttachSuccess;
+  }
+
+  /** GET /api/state's tree read + live diff (plan §5): every workspace
+   *  flat with appId (grouping is the client's), its terminals in order,
+   *  each live flag from one tmux name-set lookup. */
+  async workspaceTree(): Promise<WorkspaceTreeResult> {
+    const fail = (errorMessage: string) =>
+      ({ ok: false, resultType: 'workspace_tree', errorCode: 'database_error', errorMessage }) satisfies WorkspaceTreeFailure;
+    const workspaces = databaseRead('could not read workspaces', () =>
+      this.deps.db.all(qb.selectFrom('workspaces')
+        .select(['id', 'app_id', 'name', 'cwd', 'sort_order', 'created_at'])
+        .orderBy('sort_order', 'asc').orderBy('created_at', 'asc')));
+    if (!workspaces.ok) return fail(workspaces.errorMessage);
+    const terminals = databaseRead('could not read terminals', () =>
+      this.deps.db.all(qb.selectFrom('terminals')
+        .select(['id', 'workspace_id', 'title', 'sort_order', 'created_at'])
+        .orderBy('sort_order', 'asc').orderBy('created_at', 'asc')));
+    if (!terminals.ok) return fail(terminals.errorMessage);
+    const live = await this.deps.liveSessionNames();
+    const byWorkspace = new Map<WorkspaceId, WorkspaceState['terminals']>();
+    for (const row of workspaces.data.value) byWorkspace.set(row.id, []);
+    for (const t of terminals.data.value) {
+      const list = byWorkspace.get(t.workspace_id);
+      if (list) list.push({
+        id: t.id, title: t.title, order: t.sort_order,
+        live: live.has(terminalSessionName(t.id)),
+      });
+    }
+    return {
+      ok: true, resultType: 'workspace_tree',
+      data: {
+        workspaces: workspaces.data.value.map(w => ({
+          id: w.id, appId: w.app_id, name: w.name, cwd: w.cwd, order: w.sort_order,
+          terminals: byWorkspace.get(w.id) ?? [],
+        })),
+      },
+    } satisfies WorkspaceTreeSuccess;
   }
 }

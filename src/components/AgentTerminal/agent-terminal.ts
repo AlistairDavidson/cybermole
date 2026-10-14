@@ -1,5 +1,10 @@
 // agent-terminal.ts — <agent-terminal>: xterm.js over websocket to node-pty/tmux.
-// Light DOM (xterm injects its own styles; global CSS applies).
+// Light DOM (xterm injects its own styles; global CSS applies). One live
+// instance per terminal tab (plan §8): <terminal-tabs> keeps hidden tabs
+// connected (state and scrollback persist, matching how tmux detach works)
+// and calls activate() on show — the WebGL renderer loads on a tab's FIRST
+// activation only (browsers cap live WebGL contexts at ~8–16; a
+// never-activated tab must never hold one).
 // Connection life: attach() opens a socket for one target. If it drops
 // without the server ending the attach (proxy idle cut, server restart,
 // network blip), the status says so and the terminal reattaches with the
@@ -16,7 +21,7 @@ import '@xterm/xterm/css/xterm.css';
 import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import type { ActiveKey, ClientMsg, ServerMsg } from '../../lib/types';
-import type { PiSessionId, TerminalId, TmuxSessionName } from '../../types/branded';
+import type { TerminalId, TmuxSessionName } from '../../types/branded';
 import { BASE } from '../../base';
 
 /** Max UTF-16 units per input frame. JSON spends at most 6 bytes on one
@@ -41,6 +46,24 @@ function chunkInput(data: string): string[] {
   return out;
 }
 
+/** Every connected instance — the online/visibility reconnect wake-up is
+ *  shared (one window/document listener pair for the whole page, not one
+ *  per terminal tab: the singleton-era listeners would multiply with the
+ *  tab count; the manager fans the event out to whoever has a pending
+ *  backoff). */
+const instances = new Set<AgentTerminal>();
+let sharedWakeArmed = false;
+const wakePendingReconnects = (): void => {
+  if (document.visibilityState === 'hidden') return;
+  for (const t of instances) t.reconnectNow();
+};
+function armSharedWake(): void {
+  if (sharedWakeArmed) return;
+  sharedWakeArmed = true;
+  window.addEventListener('online', wakePendingReconnects);
+  document.addEventListener('visibilitychange', wakePendingReconnects);
+}
+
 export class AgentTerminal extends HTMLElement {
   static get observedAttributes(): string[] {
     return ['status'];
@@ -53,8 +76,8 @@ export class AgentTerminal extends HTMLElement {
   resizeObserver?: ResizeObserver;
   /** tmux session the server last attached us to — set on 'attached'. */
   private attachedTarget: TmuxSessionName | null = null;
-  /** The attach frame this element STARTED with (terminal id / run target
-   *  / live name / resume id — plan §7): a reconnect re-sends it, so the
+  /** The attach frame this element STARTED with (terminal id / run
+   *  target — plan §7): a reconnect re-sends it, so the
    *  attach keeps its mode — a terminal tab whose session died mid-drop
    *  gets the §4 respawn instead of 'no such live session', and a run
    *  attach never morphs into a respawn. Cleared when attach() starts a
@@ -62,8 +85,11 @@ export class AgentTerminal extends HTMLElement {
   private attachMsg: ClientMsg | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelay = RECONNECT_MIN_MS;
-  /** Back online / tab visible again: skip the rest of a pending backoff. */
-  private readonly reconnectNow = (): void => {
+  /** Back online / every tab visible again: skip the rest of a pending
+   *  backoff. Public for the shared manager above only (never
+   *  per-instance listeners — the singleton-era design multiplied them
+   *  with the tab count). */
+  readonly reconnectNow = (): void => {
     if (this.reconnectTimer === null || document.visibilityState === 'hidden') return;
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
@@ -71,8 +97,8 @@ export class AgentTerminal extends HTMLElement {
   };
 
   connectedCallback(): void {
-    window.addEventListener('online', this.reconnectNow);
-    document.addEventListener('visibilitychange', this.reconnectNow);
+    instances.add(this);
+    armSharedWake();
     if (this.terminal) {
       return;
     }
@@ -97,7 +123,7 @@ export class AgentTerminal extends HTMLElement {
     // copy-to-clipboard instead of navigate — can come later).
     this.terminal.loadAddon(new WebLinksAddon());
 
-    this.fitXtermAddon.fit();
+    this.fitNow();
 
     // A paste arrives as one onData call of any size — sent as consecutive
     // frames, which the server writes to the pty in order.
@@ -110,31 +136,17 @@ export class AgentTerminal extends HTMLElement {
     );
 
     this.resizeObserver = new ResizeObserver(
-      () => this.fitXtermAddon?.fit()
+      () => this.fitNow()
     );
     this.resizeObserver.observe(terminalContainer);
 
-    this.fitXtermAddon.fit();
-
-    // WebGL renderer — the big win for pi's full-screen TUI redraws.
-    // Lazy-imported so the chunk never blocks first paint. Disposing the
-    // addon (on context loss; or never loading it if WebGL is missing)
-    // leaves xterm on its built-in DOM renderer.
-    void import('@xterm/addon-webgl')
-      .then(({ WebglAddon }) => {
-        if (!this.terminal) return;
-        try {
-          const webgl = new WebglAddon();
-          webgl.onContextLoss(() => webgl.dispose());
-          this.terminal.loadAddon(webgl);
-        } catch { /* no WebGL: stay on the DOM renderer */ }
-      })
-      .catch(() => { /* chunk failed to load: stay on the DOM renderer */ });
+    this.fitNow();
+    // NB: the WebGL renderer is NOT loaded here — only on activate()
+    // (first time the tab is on screen; plan §8's context cap).
   }
 
   disconnectedCallback(): void {
-    window.removeEventListener('online', this.reconnectNow);
-    document.removeEventListener('visibilitychange', this.reconnectNow);
+    instances.delete(this);
     this.resizeObserver?.disconnect();
     this.resizeObserver = undefined;
   }
@@ -151,6 +163,18 @@ export class AgentTerminal extends HTMLElement {
     }
   }
 
+  /** fit() guarded against a hidden (display:none) box: a hidden tab's
+   *  ResizeObserver fires at 0×0, and fitting there would collapse the
+   *  terminal to nonsense dims — skip instead; the re-show's refit() is
+   *  the moment a hidden tab's size is settled. Returns whether a real
+   *  box was fitted. */
+  private fitNow(): boolean {
+    const box = this.querySelector('.terminal-container') as HTMLElement | null;
+    if (!box || box.clientWidth === 0 || box.clientHeight === 0) return false;
+    this.fitXtermAddon?.fit();
+    return true;
+  }
+
   private status(text: string, kind: 'busy' | 'ok' | 'err' | 'info' = 'busy'): void {
     const el = this.querySelector('.terminal-status');
     if (!el) return;
@@ -164,19 +188,18 @@ export class AgentTerminal extends HTMLElement {
     (el.lastElementChild as HTMLElement).textContent = text;
   }
 
-  attach(mode: 'live' | 'resume' | 'terminal' | 'run',
-    target: TmuxSessionName | PiSessionId | TerminalId, key: ActiveKey): void {
+  attach(mode: 'terminal' | 'run',
+    target: TerminalId | TmuxSessionName, key: ActiveKey): void {
     this.cancelReconnect();
     this.closeSocket();
     this.terminal?.reset();
     this.terminal?.focus();
     this.activeKey = key;
     this.attachedTarget = null;
-    // task/ws-terminal (plan §7): the workspace-model modes join live and
-    // resume — 'terminal' carries the tab's uuid (the server derives
-    // t-<uuid>, respawning if dead), 'run' a live job run's session name
-    // (never respawned). The old modes stay until branch 4's UI swap.
-    const msg: ClientMsg = mode === 'live' || mode === 'run'
+    // 'terminal' carries the tab's uuid (the server derives t-<uuid>,
+    // respawning if dead — plan §4); 'run' a live job run's session name
+    // (never respawned).
+    const msg: ClientMsg = mode === 'run'
       ? { type: 'attach', mode, target }
       : { type: 'attach', mode, id: target };
     this.attachMsg = msg;
@@ -240,8 +263,17 @@ export class AgentTerminal extends HTMLElement {
       }
       // The console re-polls state on every close — which also sends an
       // expired login back to the sign-in page instead of retrying forever.
-      this.dispatchEvent(new CustomEvent('terminal-closed', { detail: key }));
+      this.dispatchEvent(new CustomEvent('terminal-closed', { detail: key, bubbles: true, composed: true }));
     };
+  }
+
+  /** End this element's connection for good — a tab being torn down
+   *  (closed, or its workspace switched away), not a drop: no reconnect,
+   *  and the socket closes before the element leaves the DOM so a
+   *  discarded pane can never ride the keepalive forever. */
+  destroy(): void {
+    this.cancelReconnect();
+    this.closeSocket();
   }
 
   private closeSocket(): void {
@@ -264,18 +296,13 @@ export class AgentTerminal extends HTMLElement {
    *  and xterm keeps its scrollback (no reset). Mode-aware (plan §7): the
    *  re-send is the frame the attach STARTED with — a terminal tab gets
    *  the §4 respawn when its session died mid-drop, a run attach stays a
-   *  run. Resume is the one exception, unchanged from before the modes:
-   *  it reconnects LIVE to the session the resume opened — a resume is
-   *  never re-run, so a pi that exited in the meantime ends in
-   *  'no such live session', not a fresh pi. */
+   *  run. */
   private reconnect(): void {
     const target = this.attachedTarget;
     const key = this.activeKey;
     const msg = this.attachMsg;
     if (!target || !key || !msg) return;
-    this.connect(msg.type === 'attach' && msg.mode === 'resume'
-      ? { type: 'attach', mode: 'live', target }
-      : msg, target, key);
+    this.connect(msg, target, key);
   }
 
   private cancelReconnect(): void {
@@ -284,7 +311,39 @@ export class AgentTerminal extends HTMLElement {
     this.reconnectDelay = RECONNECT_MIN_MS;
   }
 
-  refit(): void { this.fitXtermAddon?.fit(); }
+  /** A tab's first activation / re-show (plan §8): refit to the now-real
+   *  box, re-send the size (the pty kept the pre-hide dims while the tab
+   *  was hidden — tmux only learns a new size through a client), focus,
+   *  and load the WebGL renderer on the FIRST activation only. */
+  activate(): void {
+    this.ensureWebgl();
+    this.fitNow();
+    this.sendSize();
+    this.terminal?.focus();
+  }
+
+  /** WebGL renderer — the big win for pi's full-screen TUI redraws, and
+   *  the resource browsers cap hardest (~8–16 live contexts: past that
+   *  the OLDEST context is lost and that terminal corrupts). Loaded
+   *  exactly once per instance, only once the tab has been on screen — a
+   *  never-activated tab never holds one. Disposing the addon (on context
+   *  loss; or never loading it if WebGL is missing) leaves xterm on its
+   *  built-in DOM renderer. */
+  private webglTried = false;
+  private ensureWebgl(): void {
+    if (this.webglTried) return;
+    this.webglTried = true;
+    void import('@xterm/addon-webgl')
+      .then(({ WebglAddon }) => {
+        if (!this.terminal) return;
+        try {
+          const webgl = new WebglAddon();
+          webgl.onContextLoss(() => webgl.dispose());
+          this.terminal.loadAddon(webgl);
+        } catch { /* no WebGL: stay on the DOM renderer */ }
+      })
+      .catch(() => { /* chunk failed to load: stay on the DOM renderer */ });
+  }
 }
 
 if (!customElements.get('agent-terminal')) customElements.define('agent-terminal', AgentTerminal);

@@ -16,7 +16,6 @@ import type { ActivateFailure, EnforcementFailure, ListCommitsFailure, Managemen
 import type { ConsoleStateFailure, SettingsStateFailure } from '../services';
 import type { PiUpdateFailure, PiUpdateResult } from '../settings';
 import type { FetchedObject, FetchObjectFailure, ObjectInfo, StatObjectFailure, StoreUploadFailure } from '../storage';
-import type { TmuxSessionFailure } from '../tmux';
 import type { UpdateResult } from '../types';
 import { UPLOAD_ALLOWED_MIME_TYPES } from '../../schemas/uploads';
 import type { FileUploadFailure, ParseFailure, ValidationFailure } from './parsing.service';
@@ -97,20 +96,6 @@ export function jobFailureResponse(f: JobFailure): Response {
 /** A job name from the path that is not a valid JobName. */
 export function invalidJobNameResponse(): Response {
   return jsonResponse({ error: 'invalid job name', detail: null, code: 'invalid_job_name' }, 400);
-}
-
-/** POST /api/new failures: the never-fork guard's refusal is a distinct,
- *  user-facing error (503 — retryable once the workspace side is back),
- *  unlike tmux's own failure, almost always a taken name (409). */
-export function tmuxSessionFailureResponse(f: TmuxSessionFailure): Response {
-  switch (f.errorCode) {
-    case 'server_not_running':
-      return jsonResponse({ error: f.errorMessage ?? 'workspace tmux server not running', code: f.errorCode }, 503);
-    case 'tmux_error':
-      return jsonResponse({ error: 'could not create session (name taken?)', code: f.errorCode }, 409);
-    default:
-      return f satisfies never;
-  }
 }
 
 // task/ws-schema (docs/workspaces-plan.md §6): the apps / workspaces /

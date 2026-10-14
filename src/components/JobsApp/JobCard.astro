@@ -31,7 +31,7 @@ const last = job.last
       {job.running && <wa-badge pill variant="brand">running</wa-badge>}
       {job.lastResult === 'failed' && <wa-badge pill variant="danger">last run failed</wa-badge>}
       {job.running && (
-        <a class="job-view" href={`${base}/?live=${encodeURIComponent(job.session)}`}>view run<wa-icon name="play"></wa-icon></a>
+        <a class="job-view" href={`${base}/?run=${encodeURIComponent(job.session)}`}>view run<wa-icon name="play"></wa-icon></a>
       )}
     </span>
   </div>

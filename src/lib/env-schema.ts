@@ -45,7 +45,6 @@ export const envSchema = {
   WEB_PI_DB_FILE: { type: 'string', context: 'server', access: 'secret', optional: true },
   WEB_PI_CLIENT_DIR: { type: 'string', context: 'server', access: 'secret', optional: true },
   WEB_PI_ASTRO_ENTRY: { type: 'string', context: 'server', access: 'secret', optional: true },
-  WEB_PI_SESSIONS_DIR: { type: 'string', context: 'server', access: 'secret', optional: true },
   WEB_PI_NEW_SESSION_CWD: { type: 'string', context: 'server', access: 'secret', optional: true },
   // The command a new terminal tab runs (workspaces-plan §10),
   // whitespace-split by main.ts. Dynamic default in env.ts: a login
