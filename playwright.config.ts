@@ -5,7 +5,7 @@ const PORT = 3470;
 
 export default defineConfig({
   testDir: './tests',
-  // Only the Playwright specs (e2e / state-dir / sessions-cache …): the
+  // Only the Playwright specs (e2e / state-dir / restart …): the
   // node:test units under tests/unit/ are `npm run test:unit` territory,
   // and Playwright's default pattern (*.@(spec|test).(c|m)…js) would import
   // them as specs and run their tests inline mid-suite.

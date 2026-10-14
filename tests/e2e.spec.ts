@@ -1,7 +1,7 @@
 // e2e.spec.ts — integration tests against the real built app:
 // Astro SSR pages, wa-* components upgraded client-side, auth, the
-// sidebar's pi-session fixtures, and the full terminal round trip
-// (xterm → WS → node-pty → tmux → back).
+// workspace/terminal fixture tree (tests/global-setup.ts), and the full
+// terminal round trip (xterm → WS → node-pty → tmux → back).
 // Runs serially (workers: 1) — see playwright.config.ts.
 import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -220,8 +220,9 @@ test('login lands on the console with the fixture workspace tree in the sidebar'
   await expect(page.locator('console-app wa-page')).toHaveCount(1);
 
   // The first workspace auto-selects (global-setup seeds three, ordered):
-  // the console group's "scratch", whose first tab is the LIVE 'build'
-  // fixture — so a terminal pane (and its xterm) is on screen at once.
+  // the console group's "scratch", whose untitled first tab is the LIVE
+  // fixture (a live auto-selection attaches without respawning) — so a
+  // terminal pane (and its xterm) is on screen at once.
   await expect(page.locator('agent-terminal:not(.hidden) .terminal-container .xterm')).toHaveCount(1);
 
   // The WebGL renderer is lazy-loaded on a tab's FIRST activation (plan
@@ -917,7 +918,11 @@ test('the workspace filter matches names, hides empty groups, and survives the p
   await expect(groups).toHaveCount(1);
   await expect(groups.first().locator('h2 .g-name')).toHaveText('console');
 
-  // A cwd match works too (the filter matches name or cwd).
+  // Name-only match (the plan's locked shape): a cwd fragment of a
+  // fixture workspace's directory matches nothing.
+  await search.fill('web-pi-itest');
+  await expect(rows).toHaveCount(0);
+  await expect(groups).toHaveCount(0);
   await search.fill('scratch');
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText('scratch');

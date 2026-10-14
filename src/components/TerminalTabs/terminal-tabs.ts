@@ -69,7 +69,7 @@ export class TerminalTabs extends HTMLElement {
     this.bar.innerHTML = '';
     if (!ws) {
       this.body.innerHTML = `
-        <div class="tabs-empty">
+        <div class="tabs-empty tabs-empty-nows">
           <wa-icon name="folder"></wa-icon>
           <p>no workspace selected</p>
           <wa-button size="s" class="empty-new-workspace">
@@ -167,10 +167,15 @@ export class TerminalTabs extends HTMLElement {
   /** The ?run=<name> deep link (a live job run — the jobs page's "view"):
    *  a transient pane above the workspace's tabs, never a tab (a run is
    *  not a workspace terminal). Clicking any tab (or the editor) hides
-   *  it; the instance stays connected for scrollback until the next run
-   *  or a workspace switch re-uses/tears it down. */
+   *  it — hideRun() destroys its instance (socket closed, reconnect
+   *  cancelled), so the next run shows a FRESH attach; there is nothing
+   *  to preserve: the run is the session, and it dies with the command. */
   showRun(target: TmuxSessionName): void {
     if (!this.body) return;
+    // like selectTerminal/selectEditor: never show the run pane next to
+    // an empty-state prompt (a workspace with no terminals, or none at all)
+    this.clearNoTerminals();
+    this.querySelector('.tabs-empty-nows')?.classList.add('hidden');
     if (!this.runPane) {
       const el = document.createElement('agent-terminal') as AgentTerminal & HTMLElement;
       el.innerHTML = '<div class="terminal-container"></div><div class="terminal-status"></div>';
@@ -189,6 +194,9 @@ export class TerminalTabs extends HTMLElement {
   private hideRun(): void {
     if (this.runPane) this.runPane.destroy();
     this.runHost?.classList.add('hidden');
+    // restore the no-workspace prompt a showRun hid (a workspace switch
+    // rebuilds it anyway — this covers the tab-click path)
+    this.querySelector('.tabs-empty-nows')?.classList.remove('hidden');
   }
 
   activeTerminalId(): TerminalId | null {

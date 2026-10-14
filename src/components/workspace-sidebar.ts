@@ -148,10 +148,11 @@ export class WorkspaceSidebar extends HTMLElement {
       `</span></li>`;
   }
 
+  /** The plan's locked filter shape (§1/§8): workspace NAME only — a cwd
+   *  match would light up every workspace sharing a root (/tmp/…). */
   private matchesSearch(w: WorkspaceState): boolean {
     const q = this.search.trim().toLowerCase();
-    if (!q) return true;
-    return w.name.toLowerCase().includes(q) || w.cwd.toLowerCase().includes(q);
+    return !q || w.name.toLowerCase().includes(q);
   }
 
   /** Re-render just the groups + rewire (keeps the search box's
