@@ -4,15 +4,21 @@
 // (src/pages/partials/jobs-list.astro). `jobs` is null only for a failed
 // listing (the page and the partial render inside the web-pi server or
 // not at all) — the message below shows, and the 15 s poll retries it.
+// `apps` rides along (plan §9: the dialog's tag picker is fed by the
+// same render — one read, no per-job fetches) as a data attribute on the
+// swapped-in root: <jobs-app> re-reads it when the dialog opens, so a
+// list refresh renews the picker without a second fetch.
 import JobCard from './JobCard.astro';
+import type { AppOption } from '../../lib/apps';
 import type { ScheduledJob } from '../../lib/types';
 
 interface Props {
   jobs: ScheduledJob[] | null;
+  apps: AppOption[];
 }
-const { jobs } = Astro.props;
+const { jobs, apps } = Astro.props;
 ---
-<div id="jobs-list" class="wa-stack wa-gap-s">
+<div id="jobs-list" class="wa-stack wa-gap-s" data-apps={JSON.stringify(apps)}>
   {jobs === null
     ? <p class="jobs-empty">the list could not be read — the refresh keeps trying</p>
     : jobs.length === 0

@@ -351,6 +351,53 @@ jobs-app { display: block; }
 .schedule-feedback.ok { color: var(--wa-color-success-on-quiet); }
 .schedule-feedback.err { color: var(--wa-color-danger-on-quiet); }
 
+/* task/ws-jobs (plan §9): the app-tag chip, run-history dialog and its
+   log tail. The rows are a grid so the columns line up without a table. */
+.job-app { font-weight: var(--wa-font-weight-normal); }
+.runs-empty {
+  color: var(--wa-color-text-quiet); margin: 0;
+  padding: var(--wa-space-s); text-align: center;
+}
+.run-row {
+  display: grid;
+  grid-template-columns: max-content max-content max-content max-content 1fr;
+  justify-content: start;
+  gap: var(--wa-space-s);
+  align-items: center;
+  padding-block: var(--wa-space-3xs);
+  border-block-end: var(--wa-border-width-s) solid var(--wa-color-surface-border);
+}
+.run-row:last-child { border-block-end: none; }
+.run-head {
+  color: var(--wa-color-text-quiet);
+  font-size: var(--wa-font-size-2xs);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.run-when { font-variant-numeric: tabular-nums; }
+.run-origin { color: var(--wa-color-text-quiet); }
+.run-exit.ok { color: var(--wa-color-success-on-quiet); }
+.run-exit.failed { color: var(--wa-color-danger-on-quiet); }
+.run-exit.unknown, .run-duration { color: var(--wa-color-text-quiet); }
+.run-log-cell { justify-self: end; }
+.run-log-box { min-width: 0; }
+.run-log-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--wa-space-2xs); color: var(--wa-color-text-quiet);
+  font-size: var(--wa-font-size-2xs);
+}
+.run-log {
+  margin: 0; max-height: 40vh; overflow: auto;
+  font-family: var(--wa-font-family-code);
+  font-size: var(--wa-font-size-2xs);
+  background: var(--wa-color-surface-lowered);
+  border: var(--wa-border-width-s) solid var(--wa-color-surface-border);
+  border-radius: var(--wa-border-radius-s);
+  padding: var(--wa-space-2xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* Field messages in a wa-input / wa-textarea hint slot (WaField): the
    hint text, then the validation message validation-enhancer writes
    into .field-error. */

@@ -43,6 +43,7 @@ export default defineConfig({
       WEB_PI_NEW_SESSION_CWD: WORKSPACE,
       WEB_PI_TMUX_SOCKET: TMUX_SOCKET,
       WEB_PI_COMMAND: `${WORKSPACE}/cmd.sh`,
+      WEB_PI_JOB_LOG_DIR: `${WORKSPACE}/job-logs`,
       WEB_PI_S3_ENDPOINT: `http://127.0.0.1:${S3_PORT}`,
       WEB_PI_S3_ACCESS_KEY: S3_ACCESS_KEY,
       WEB_PI_S3_SECRET_KEY: 'itest-secret',

@@ -47,6 +47,20 @@ export type DeleteAppSuccess = ResultSuccess<'delete_app', DeleteAppData>;
 export type DeleteAppFailure = ResultFailure<'delete_app', DeleteAppData, DeleteAppErrorCode>;
 export type DeleteAppResult = DeleteAppSuccess | DeleteAppFailure;
 
+/** task/ws-jobs (plan §9): the app picker's options — one read, the
+ *  display fields only (the jobs dialog tags with the id). */
+export interface AppOption {
+  id: AppId;
+  name: string;
+  slug: AppSlug;
+  order: number;
+}
+export type ListAppsData = { apps: AppOption[] };
+export type ListAppsErrorCode = 'database_error';
+export type ListAppsSuccess = ResultSuccess<'list_apps', ListAppsData>;
+export type ListAppsFailure = ResultFailure<'list_apps', ListAppsData, ListAppsErrorCode>;
+export type ListAppsResult = ListAppsSuccess | ListAppsFailure;
+
 // ---------- the domain ----------
 
 export interface AppsDeps {
@@ -163,5 +177,23 @@ export class Apps {
     for (const t of terminals.data.value) await this.deps.killSession(terminalSessionName(t.id));
     log.info(`app ${slug} deleted (${terminals.data.value.length} terminal sessions killed best-effort)`);
     return { ok: true, resultType: 'delete_app', data: { id: row.id } } satisfies DeleteAppSuccess;
+  }
+
+  /** All apps, ordered — the jobs dialog's tag picker (plan §9: the
+   *  page reads this once server-side; no per-job fetches anywhere). */
+  listApps(): ListAppsResult {
+    const read = databaseRead('could not read apps', (): Array<{
+      id: AppId; name: string; slug: AppSlug; sort_order: number;
+    }> => this.deps.db.all(qb.selectFrom('apps').select(['id', 'name', 'slug', 'sort_order'])
+      .orderBy('sort_order', 'asc').orderBy('name', 'asc')));
+    if (!read.ok) {
+      return {
+        ok: false, resultType: 'list_apps', errorCode: 'database_error', errorMessage: read.errorMessage,
+      } satisfies ListAppsFailure;
+    }
+    return {
+      ok: true, resultType: 'list_apps',
+      data: { apps: read.data.value.map(a => ({ id: a.id, name: a.name, slug: a.slug, order: a.sort_order })) },
+    } satisfies ListAppsSuccess;
   }
 }

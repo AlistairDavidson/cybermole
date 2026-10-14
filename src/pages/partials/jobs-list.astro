@@ -3,7 +3,8 @@
 // swaps it in on its 15 s refresh and after save / run / delete. Behind
 // the main.ts gate (signed out: 401) and src/middleware.ts (no locals:
 // 503). A failed listing answers 500 with no fragment — the element keeps
-// what it shows.
+// what it shows. The app options ride along in the fragment's root (the
+// tag picker re-reads them on open), so a refresh renews both.
 import JobsList from '../../components/JobsApp/JobsList.astro';
 import { assertWebPiLocals } from '../../lib/web/locals';
 
@@ -11,12 +12,14 @@ export const partial = true;
 
 const { webpi } = assertWebPiLocals(Astro.locals);
 const listed = await webpi.scheduler.listJobs();
+const appsListed = webpi.apps.listApps();
 Astro.response.headers.set('Cache-Control', 'no-store');
-if (!listed.ok) {
+if (!listed.ok || !appsListed.ok) {
   // console.error on purpose, not src/lib/logger.ts: frontmatter is
   // Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
-  console.error(`jobs list partial: ${listed.errorMessage}`);
+  if (!listed.ok) console.error(`jobs list partial: ${listed.errorMessage}`);
+  if (!appsListed.ok) console.error(`jobs list partial: ${appsListed.errorMessage}`);
   Astro.response.status = 500;
 }
 ---
-{listed.ok && <JobsList jobs={listed.data.jobs} />}
+{listed.ok && appsListed.ok && <JobsList jobs={listed.data.jobs} apps={appsListed.data.apps} />}

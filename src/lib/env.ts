@@ -72,6 +72,13 @@ export const ENV = {
   WEB_PI_ASTRO_ENTRY: RAW_ENV.WEB_PI_ASTRO_ENTRY ?? path.join(APP_ROOT, 'dist', 'server', 'entry.mjs'),
   WEB_PI_SESSIONS_DIR: RAW_ENV.WEB_PI_SESSIONS_DIR ?? PI_SESSION_DIR ?? path.join(agentDir, 'sessions'),
   WEB_PI_NEW_SESSION_CWD: RAW_ENV.WEB_PI_NEW_SESSION_CWD ?? home,
+  // task/ws-jobs (plan §9): job run logs live under the WORKSPACE volume
+  // — the wrapper runs as the workspace uid, where WEB_PI_STATE_DIR is
+  // not even mounted in the compose split. /workspace/.webpi/job-logs is
+  // pinned by the plan (workspace-init creates it); non-container shapes
+  // override it (a bare host run has no /workspace — runs then leave no
+  // logs and their results stay 'unknown', never a failure).
+  WEB_PI_JOB_LOG_DIR: RAW_ENV.WEB_PI_JOB_LOG_DIR ?? '/workspace/.webpi/job-logs',
   // The command a new terminal tab runs (plan §10): a login shell by
   // default — $SHELL -l when the env carries one, /bin/sh -l otherwise.
   // Whitespace-split by main.ts like any override; e2e's deterministic

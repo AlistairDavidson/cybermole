@@ -13,48 +13,75 @@ import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/badge/badge.js';
 import '@awesome.me/webawesome/dist/components/dialog/dialog.js';
 import '@awesome.me/webawesome/dist/components/input/input.js';
+import '@awesome.me/webawesome/dist/components/select/select.js';
+import '@awesome.me/webawesome/dist/components/option/option.js';
 import '@awesome.me/webawesome/dist/components/textarea/textarea.js';
 import '@awesome.me/webawesome/dist/components/toast/toast.js';
 // Registers <validation-enhancer-zod> (and the base <validation-enhancer>).
 import 'validation-enhancer/zod';
 import type { ValidationEnhancerZod } from 'validation-enhancer/zod';
 import { JobSaveSchema } from '../../schemas/jobs';
+import type { JobRunView } from '../../lib/jobs';
 
 type WaDialog = HTMLElement & { open: boolean };
-/** wa-input / wa-textarea surface used here. An empty wa-input's value is
- *  null, not ''. */
+/** wa-input / wa-textarea / wa-select surface used here. An empty
+ *  wa-input's value is null, not ''; an unselected wa-select's is ''. */
 type WaFormControl = HTMLElement & {
   value: string | null; disabled: boolean; setCustomValidity(message: string): void;
 };
+type WaSelect = HTMLElement & { value: string };
 type WaToast = HTMLElement & {
   create(message: string, options?: Record<string, unknown>): Promise<unknown>;
 };
 
-/** What the dialog edits — read off a card's edit button. */
-interface JobFields { name: string; schedule: string; command: string }
+/** What the dialog edits — read off a card's edit button (the app tag
+ *  as the tagged app's id, '' when the job is untagged). */
+interface JobFields { name: string; schedule: string; command: string; app: string }
+
+/** The picker's options, from the swapped-in list's data-apps (the same
+ *  server render that listed the jobs — refreshed by the 15 s poll). */
+interface AppChoice { id: string; name: string }
+
+/** One history row's display fields. */
+const fmtRunTime = (ms: number): string => {
+  const d = new Date(ms);
+  const p = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
+    `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+};
+
+/** A run's duration, finish-observed minus fired (tick granularity). */
+const fmtDuration = (from: number, to: number): string => {
+  const s = Math.max(0, (to - from) / 1000);
+  return s < 60 ? `${s.toFixed(1)}s` : `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, '0')}s`;
+};
 
 export class JobsApp extends HTMLElement {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private validateTimer: ReturnType<typeof setTimeout> | null = null;
-  private editing: string | null = null;
   private deleting: string | null = null;
+  /** The job whose history the runs dialog shows. */
+  private runsJob: string | null = null;
   private inflight = false;
 
   connectedCallback(): void {
     (this.querySelector('#jobs-new') as HTMLElement).onclick = () => this.openDialog(null);
     // Card actions, delegated: refreshed cards need no rewiring.
     this.addEventListener('click', e => {
-      const button = (e.target as HTMLElement).closest<HTMLElement>('[data-run], [data-edit], [data-del]');
+      const button = (e.target as HTMLElement).closest<HTMLElement>('[data-run], [data-edit], [data-del], [data-runs], [data-log]');
       if (!button) return;
-      const { run, edit, del, schedule, command } = button.dataset;
+      const { run, edit, del, runs, log, schedule, command, app } = button.dataset;
       if (run) void this.run(run);
-      else if (edit) this.openDialog({ name: edit, schedule: schedule ?? '', command: command ?? '' });
+      else if (edit) this.openDialog({ name: edit, schedule: schedule ?? '', command: command ?? '', app: app ?? '' });
       else if (del) this.confirmDelete(del);
+      else if (runs) void this.openRuns(runs);
+      else if (log) void this.showLog(log);
     });
     // The footer button lives outside the form (dialog footer slot):
     // submit the form so <validation-enhancer-zod> validates it first.
     (this.querySelector('#job-save') as HTMLElement).onclick = () => this.jobForm().requestSubmit();
     (this.querySelector('#job-delete-confirm') as HTMLElement).onclick = () => this.deleteJob();
+    (this.querySelector('#run-log-close') as HTMLElement).onclick = () => this.hideLog();
     (this.querySelector('#job-schedule') as WaFormControl)
       .addEventListener('input', () => this.queueValidate());
     // Valid submits only: the enhancer stops an invalid one from
@@ -154,7 +181,6 @@ export class JobsApp extends HTMLElement {
   }
 
   private openDialog(job: JobFields | null): void {
-    this.editing = job?.name ?? null;
     const dlg = this.querySelector('#job-dialog') as WaDialog;
     const name = this.querySelector('#job-name') as WaFormControl;
     const schedule = this.querySelector('#job-schedule') as WaFormControl;
@@ -164,11 +190,30 @@ export class JobsApp extends HTMLElement {
     name.disabled = job !== null; // the name is the job identity — no renames
     schedule.value = job?.schedule ?? '';
     command.value = job?.command ?? '';
+    this.setAppOptions(job?.app ?? '');
     this.clearFieldErrors();
     this.setFeedback(null);
     this.validate();
     dlg.open = true;
     (job ? schedule : name).focus();
+  }
+
+  /** (Re)populate the tag picker from the swapped-in list's data-apps and
+   *  select the tagged app — '' clears it. */
+  private setAppOptions(selected: string): void {
+    const select = this.querySelector('#job-app') as WaSelect | null;
+    if (!select) return;
+    let apps: AppChoice[] = [];
+    try { apps = JSON.parse(this.querySelector('#jobs-list')?.getAttribute('data-apps') ?? '[]') as AppChoice[]; }
+    catch { /* a bad payload must not break the dialog — the picker just offers nothing */ }
+    select.textContent = ''; // options are rebuilt, never appended to
+    for (const app of apps) {
+      const option = document.createElement('wa-option');
+      option.value = app.id;
+      option.textContent = app.name;
+      select.append(option);
+    }
+    select.value = apps.some(a => a.id === selected) ? selected : '';
   }
 
   private queueValidate(): void {
@@ -204,18 +249,21 @@ export class JobsApp extends HTMLElement {
   }
 
   /** Runs only for a submit the enhancer let through (the schema passed
-   *  client-side); the server re-validates with the same schema. */
+   *  client-side); the server re-validates with the same schema. The app
+   *  tag is not one of the enhancer's fields (an empty optional select
+   *  would trip the uuid pattern) — it rides along as null when unset. */
   private async save(): Promise<void> {
     if (this.inflight) return;
     const value = (name: string): string => this.field(name)?.value ?? '';
     const name = value('name');
     const schedule = value('schedule');
     const command = value('command');
+    const app = (this.querySelector('#job-app') as WaSelect | null)?.value ?? '';
     this.inflight = true;
     try {
       const sent = await signedInFetch(`${BASE}/api/jobs`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, schedule, command }),
+        body: JSON.stringify({ name, schedule, command, appId: app === '' ? null : app }),
       });
       if (!sent.ok) { this.notAnswered(sent, 'could not save job'); return; }
       const r = sent.data.response;
@@ -243,7 +291,7 @@ export class JobsApp extends HTMLElement {
     const r = sent.data.response;
     const body = await r.json().catch(() => ({})) as { session?: string; error?: string; detail?: string | null };
     if (r.ok) {
-      this.toast(`run started — see Live (session ${body.session ?? `webpi-${name}`})`, 'success', 'circle-check');
+      this.toast(`run started — view it from this card (session ${body.session ?? `webpi-${name}`})`, 'success', 'circle-check');
     } else if (r.status === 409) {
       this.toast(body.error ?? 'previous run still active', 'warning', 'triangle-exclamation');
     } else {
@@ -275,6 +323,84 @@ export class JobsApp extends HTMLElement {
       this.errorToast('could not delete job', body);
     }
     await this.load();
+  }
+
+  // ---- run history + log tail (plan §9) ----
+
+  /** Open the per-job run history: GET /api/jobs/:name/runs, rendered
+   *  into the dialog body (numbers + closed unions only — nothing
+   *  untrusted is templated). */
+  private async openRuns(name: string): Promise<void> {
+    this.runsJob = name;
+    this.hideLog();
+    const dlg = this.querySelector('#runs-dialog') as WaDialog;
+    const body = this.querySelector('#runs-body') as HTMLElement;
+    dlg.setAttribute('label', `run history — ${name}`);
+    body.innerHTML = '<p class="runs-empty">loading…</p>';
+    dlg.open = true;
+    const sent = await signedInFetch(`${BASE}/api/jobs/${encodeURIComponent(name)}/runs`);
+    if (!sent.ok) { this.notAnswered(sent, 'could not load run history'); return; }
+    const r = sent.data.response;
+    const payload = r.ok ? await r.json().catch(() => null) as { runs?: JobRunView[] } | null : null;
+    if (!payload) {
+      body.innerHTML = '<p class="runs-empty">the run history could not be read</p>';
+      return;
+    }
+    const runs = payload.runs ?? [];
+    if (runs.length === 0) {
+      body.innerHTML = '<p class="runs-empty">no runs recorded yet — "run now" fires one.</p>';
+      return;
+    }
+    const row = (u: JobRunView): string => {
+      const exit = u.exitCode === null
+        ? '<span class="run-exit unknown">—</span>'
+        : `<span class="run-exit ${u.exitCode === 0 ? 'ok' : 'failed'}">exit ${u.exitCode}</span>`;
+      const duration = u.finishedAt === null ? '<span class="run-duration">—</span>'
+        : `<span class="run-duration">${fmtDuration(u.firedAt, u.finishedAt)}</span>`;
+      return `<div class="run-row">` +
+        `<span class="run-when">${fmtRunTime(u.firedAt)}</span>` +
+        `<span class="run-origin">${u.origin}</span>` +
+        `${duration}${exit}` +
+        `<span class="run-log-cell">${u.hasLog
+          ? `<wa-button size="xs" appearance="plain" data-log="${u.firedAt}">log</wa-button>`
+          : ''}</span>` +
+        `</div>`;
+    };
+    body.innerHTML = '<div class="run-row run-head">' +
+      '<span class="run-when">fired</span><span class="run-origin">origin</span>' +
+      '<span class="run-duration">duration</span><span class="run-exit">exit</span>' +
+      '<span class="run-log-cell"></span></div>' + runs.map(row).join('');
+  }
+
+  /** Fetch and show one run's log tail (GET …/runs/:fired_at/log,
+   *  text/plain) under the history rows. */
+  private async showLog(firedAt: string): Promise<void> {
+    const name = this.runsJob;
+    if (!name) return;
+    const box = this.querySelector('#run-log-box') as HTMLElement;
+    const pre = this.querySelector('#run-log') as HTMLElement;
+    const title = this.querySelector('#run-log-title') as HTMLElement;
+    pre.textContent = 'loading…';
+    title.textContent = `log tail — run at ${fmtRunTime(Number(firedAt))}`;
+    box.classList.remove('hidden');
+    const sent = await signedInFetch(`${BASE}/api/jobs/${encodeURIComponent(name)}/runs/${encodeURIComponent(firedAt)}/log`);
+    if (!sent.ok) { this.notAnswered(sent, 'could not load the run log'); return; }
+    const r = sent.data.response;
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({})) as { error?: string; detail?: string | null };
+      this.errorToast('could not load the run log', body);
+      return;
+    }
+    const text = await r.text();
+    if (r.headers.get('X-Run-Log-Truncated') === '1') {
+      title.textContent += ' (larger than 1 MiB — showing the tail)';
+    }
+    pre.textContent = text === '' ? '(no output)' : text;
+    pre.scrollTop = 0;
+  }
+
+  private hideLog(): void {
+    (this.querySelector('#run-log-box') as HTMLElement).classList.add('hidden');
   }
 }
 

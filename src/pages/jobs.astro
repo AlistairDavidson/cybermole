@@ -12,10 +12,17 @@ import { assertWebPiLocals } from '../lib/web/locals';
 const { webpi } = assertWebPiLocals(Astro.locals);
 const listed = await webpi.scheduler.listJobs();
 const jobs = listed.ok ? listed.data.jobs : null;
+// The dialog's app-tag picker options (plan §9) — the same render that
+// lists the jobs, no second fetch. A failed read keeps the page alive:
+// the picker just offers no apps until a good render comes through the
+// partial refresh.
+const appsListed = webpi.apps.listApps();
+const apps = appsListed.ok ? appsListed.data.apps : [];
 // console.error on purpose, not src/lib/logger.ts: frontmatter is
 // Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
 if (!listed.ok) console.error(`jobs page: ${listed.errorMessage}`);
+if (!appsListed.ok) console.error(`jobs page: ${appsListed.errorMessage}`);
 ---
 <Base title="web-pi — jobs" header="jobs">
-  <JobsApp jobs={jobs} />
+  <JobsApp jobs={jobs} apps={apps} />
 </Base>

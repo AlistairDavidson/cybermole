@@ -1,7 +1,7 @@
 // Shared types across server + client (the WS wire protocol is
 // described exactly once, on both ends).
 
-import type { JobName, PiSessionId, TerminalId, TmuxSessionName } from '../types/branded';
+import type { AppId, JobName, PiSessionId, TerminalId, TmuxSessionName } from '../types/branded';
 
 export interface PastSession {
   /** pi session id (uuid) — resume target */
@@ -52,6 +52,11 @@ export interface ScheduledJob {
   schedule: string;
   /** shell command a run executes (inside tmux session webpi-<name>) */
   command: string;
+  /** the optional app tag — display grouping only, never ownership:
+ *  cwd/env stay global and runs stay webpi-<name> sessions (plan §9) */
+  appId: AppId | null;
+  /** the tagged app's display name (listJobs' LEFT JOIN; null when untagged) */
+  appName: string | null;
   /** schedule armed and parses (false only for a hand-edited db row) */
   active: boolean;
   /** the run's tmux session is alive (visible in Live) */

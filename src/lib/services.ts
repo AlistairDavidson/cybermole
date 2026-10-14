@@ -60,6 +60,9 @@ export interface ServerConfig {
   astroEntry: string;
   sessionsDir: string;
   newSessionCwd: string;
+  /** task/ws-jobs (plan §9): job runs' persisted-log root
+ *  (WEB_PI_JOB_LOG_DIR; /workspace/.webpi/job-logs by default). */
+  jobLogDir: string;
   /** whitespace-split session command line */
   command: string[];
   trustProxy: number;

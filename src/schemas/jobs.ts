@@ -31,11 +31,19 @@ export const JobSaveSchema = z.object({
     .min(1, 'command is required')
     .max(MAX_COMMAND, `command is too long (max ${MAX_COMMAND})`)
     .regex(SINGLE_LINE, 'command must be one line'),
-  // task/ws-jobs (plan §9): the optional app tag. Accepted here since
-  // schema v6 gave jobs its app_id column; the scheduler still ignores it
-  // on save until that branch wires the tag picker + list JOIN.
+  // task/ws-jobs (plan §9): the optional app tag — a display grouping
+  // only (jobs are never owned by an app); null clears the tag on edit.
   appId: AppIdSchema.nullable().optional(),
 });
+
+/** A :fired_at path param (GET /api/jobs/:name/runs/:fired_at/log): an
+ *  integer epoch-ms value — digits only, ≤15 digits (every such number
+ *  is a safe integer), never negative, never a float. Validated at the
+ *  request boundary like every other path param (docs/CODE_STYLE.md §4);
+ *  malformed → 400. */
+export const FiredAtSchema = z.string()
+  .regex(/^\d{1,15}$/, 'invalid fired_at (integer epoch ms)')
+  .transform(Number);
 
 /** A parsed save: name normalized + branded, schedule/command trimmed and
  *  shape-checked — saveJob's input. */

@@ -6,8 +6,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   appFailureResponse, consoleStateFailureResponse, databaseUpdateFailureResponse, failureResponse,
-  firstIssueText, invalidAppSlugResponse, invalidJobNameResponse, invalidTerminalIdResponse,
-  invalidWorkspaceIdResponse, jobFailureResponse, managementFailureResponse, piUpdateResponse,
+  firstIssueText, invalidAppSlugResponse, invalidFiredAtResponse, invalidJobNameResponse, invalidTerminalIdResponse,
+  invalidWorkspaceIdResponse, jobFailureResponse, managementFailureResponse, piUpdateResponse, runLogResponse,
   piUpdateStatus, settingsStateFailureResponse, terminalFailureResponse, tmuxSessionFailureResponse,
   workspaceFailureResponse,
 } from '../../dist-server/src/lib/web/responses.service.js';
@@ -33,7 +33,10 @@ test('jobFailureResponse: every jobs code → status, with the { error, detail }
   const session = 'webpi-nightly';
   const cases = [
     ['invalid_schedule', 400],
+    ['app_not_found', 404],
     ['job_not_found', 404], ['run_active', 409], ['tmux_error', 500], ['database_error', 500],
+    // task/ws-jobs (plan §9): the runs families ride the same mapper.
+    ['run_not_found', 404], ['log_missing', 404], ['read_error', 500],
   ];
   for (const [code, status] of cases) {
     const res = jobFailureResponse(failure('run_job', code, { errorMessage: `msg ${code}`, data: { name: 'nightly', session } }));
@@ -49,6 +52,20 @@ test('jobFailureResponse: every jobs code → status, with the { error, detail }
   const invalid = invalidJobNameResponse();
   assert.equal(invalid.status, 400);
   assert.deepEqual(await invalid.json(), { error: 'invalid job name', detail: null, code: 'invalid_job_name' });
+
+  // task/ws-jobs (plan §9): the :fired_at param guard and the log tail
+  // response — text/plain, no-store, truncation disclosed only when cut.
+  const badAt = invalidFiredAtResponse();
+  assert.equal(badAt.status, 400);
+  assert.deepEqual(await badAt.json(), { error: 'invalid fired_at (integer epoch ms)', detail: null, code: 'invalid_fired_at' });
+  const log = runLogResponse({ text: 'tail\n', truncated: false });
+  assert.equal(log.status, 200);
+  assert.equal(log.headers.get('content-type'), 'text/plain; charset=utf-8');
+  assert.equal(log.headers.get('cache-control'), 'no-store');
+  assert.equal(log.headers.get('x-run-log-truncated'), null);
+  assert.equal(await log.text(), 'tail\n');
+  const cut = runLogResponse({ text: 'x', truncated: true });
+  assert.equal(cut.headers.get('x-run-log-truncated'), '1');
 });
 
 test('tmuxSessionFailureResponse: the never-fork guard is 503 with its message; tmux failure is 409', async () => {
