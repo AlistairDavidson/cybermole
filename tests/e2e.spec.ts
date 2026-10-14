@@ -844,12 +844,13 @@ test('jobs: app tag chip, persisted run logs, run history + log view (task/ws-jo
   await page.click('jobs-app wa-button[data-runs="e2e-fail"]');
   await expect(page.locator('#runs-dialog .run-exit.failed')).toHaveText('exit 7');
 
-  // Cleanup: both jobs (and their run files) go; the live sessions die
-  // with the jobs' commands.
+  // Cleanup: both jobs (and their run files) go, and the app with them —
+  // the live sessions die with the jobs' commands.
   for (const name of ['e2e-job', 'e2e-fail']) {
     expect((await api(page, 'DELETE', `/api/jobs/${name}`)).status).toBe(200);
     fs.rmSync(`${WORKSPACE}/job-logs/${name}`, { recursive: true, force: true });
   }
+  expect((await api(page, 'DELETE', '/api/apps/e2e-jobs-app')).status).toBe(200);
 });
 
 test('hide: session leaves the sidebar, manage dialog restores it', async ({ page }) => {

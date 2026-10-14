@@ -287,6 +287,11 @@ test('readRunLog: every error code — job/run/log_missing/read_error', async ()
     fs.chmodSync(unreadable.log, 0o000);
     assert.equal(s.readRunLog('errs', unreadableAt).errorCode, 'read_error');
   }
+  // database_error: a db that cannot open fails the row read.
+  const broken = path.join(fs.mkdtempSync(path.join(dir, 'broken-')), 'x');
+  fs.writeFileSync(broken, '');
+  assert.equal(new Scheduler(new StateDb(path.join(broken, 'db')), { cwd: dir, env: {}, logDir: dir })
+    .readRunLog('errs', at).errorCode, 'database_error');
 });
 
 // ---------- the app tag ----------

@@ -222,3 +222,24 @@ test('delete_app: database_error on an unwritable db — and a failed kill never
   assert.equal(still.ok, true, still.errorMessage); // kill failure is logged, not surfaced
   assert.equal(appRow(db, 'doomed'), undefined);
 });
+
+// task/ws-jobs (plan §9): the app picker's read — list_apps.
+
+test('list_apps: all apps ordered by sort_order then name, database_error when the db cannot open', async () => {
+  const a = apps(freshDb());
+  const b = (await a.saveApp('Beta')).data;
+  const c = (await a.saveApp('Coda')).data;
+  const first = (await a.saveApp('Alpha')).data;
+  const listed = a.listApps();
+  assert.equal(listed.ok, true);
+  // save_app allocates order by insertion; the read is by (order, name).
+  assert.deepEqual(listed.data.apps.map(x => [x.id, x.name, x.slug, x.order]),
+    [[b.id, 'Beta', 'beta', 10], [c.id, 'Coda', 'coda', 20], [first.id, 'Alpha', 'alpha', 30]]);
+
+  const empty = apps(freshDb()).listApps();
+  assert.deepEqual(empty.data.apps, []);
+
+  const broken = apps(brokenDb()).listApps();
+  assert.equal(broken.ok, false);
+  assert.equal(broken.errorCode, 'database_error');
+});
