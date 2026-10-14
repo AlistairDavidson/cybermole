@@ -5,9 +5,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  consoleStateFailureResponse, databaseUpdateFailureResponse, failureResponse, firstIssueText,
-  invalidJobNameResponse, jobFailureResponse, managementFailureResponse, piUpdateResponse, piUpdateStatus,
-  settingsStateFailureResponse, tmuxSessionFailureResponse,
+  appFailureResponse, consoleStateFailureResponse, databaseUpdateFailureResponse, failureResponse,
+  firstIssueText, invalidAppSlugResponse, invalidJobNameResponse, invalidTerminalIdResponse,
+  invalidWorkspaceIdResponse, jobFailureResponse, managementFailureResponse, piUpdateResponse,
+  piUpdateStatus, settingsStateFailureResponse, terminalFailureResponse, tmuxSessionFailureResponse,
+  workspaceFailureResponse,
 } from '../../dist-server/src/lib/web/responses.service.js';
 
 const failure = (resultType, errorCode, extra = {}) => ({ ok: false, resultType, errorCode, ...extra });
@@ -132,4 +134,66 @@ test('managementFailureResponse: every code → status, with the { error, code }
     { errorMessage: 'refused: changes the protected set (compose.yaml, Dockerfile)' }));
   assert.equal(refused.status, 422);
   assert.match((await refused.json()).error, /compose\.yaml/);
+});
+
+// ---------- workspaces-plan §6: apps / workspaces / terminals (task/ws-schema) ----------
+
+test('appFailureResponse: every apps code → status, { error, code } body', async () => {
+  const cases = [
+    ['save_app', 'invalid_name', 400],
+    ['save_app', 'duplicate_slug', 409],
+    ['save_app', 'app_not_found', 404],
+    ['delete_app', 'app_not_found', 404],
+    ['delete_app', 'database_error', 500],
+  ];
+  for (const [resultType, code, status] of cases) {
+    const res = appFailureResponse(failure(resultType, code, { errorMessage: `msg ${code}` }));
+    assert.equal(res.status, status, code);
+    const body = await res.json();
+    assert.equal(body.code, code, code);
+    assert.equal(body.error, `msg ${code}`, code);
+  }
+  const slug = invalidAppSlugResponse();
+  assert.equal(slug.status, 400);
+  assert.deepEqual(await slug.json(), { error: 'invalid app slug', code: 'invalid_app_slug' });
+});
+
+test('workspaceFailureResponse: every workspaces code → status', async () => {
+  const cases = [
+    ['save_workspace', 'invalid_name', 400],
+    ['save_workspace', 'invalid_cwd', 400],
+    ['save_workspace', 'app_not_found', 404],
+    ['save_workspace', 'workspace_not_found', 404],
+    ['delete_workspace', 'workspace_not_found', 404],
+    ['delete_workspace', 'database_error', 500],
+  ];
+  for (const [resultType, code, status] of cases) {
+    const res = workspaceFailureResponse(failure(resultType, code));
+    assert.equal(res.status, status, code);
+    assert.equal((await res.json()).code, code, code);
+  }
+  const id = invalidWorkspaceIdResponse();
+  assert.equal(id.status, 400);
+  assert.deepEqual(await id.json(), { error: 'invalid workspace id', code: 'invalid_workspace_id' });
+});
+
+test('terminalFailureResponse: every terminals code → status (spawn codes mapped for task/ws-terminal)', async () => {
+  const cases = [
+    ['new_terminal', 'workspace_not_found', 404],
+    ['new_terminal', 'server_not_running', 503], // unreachable until the spawn lands — mapped now
+    ['new_terminal', 'tmux_error', 500],          // ditto
+    ['new_terminal', 'database_error', 500],
+    ['close_terminal', 'terminal_not_found', 404],
+    ['close_terminal', 'database_error', 500],
+    ['rename_terminal', 'terminal_not_found', 404],
+    ['rename_terminal', 'database_error', 500],
+  ];
+  for (const [resultType, code, status] of cases) {
+    const res = terminalFailureResponse(failure(resultType, code));
+    assert.equal(res.status, status, code);
+    assert.equal((await res.json()).code, code, code);
+  }
+  const id = invalidTerminalIdResponse();
+  assert.equal(id.status, 400);
+  assert.deepEqual(await id.json(), { error: 'invalid terminal id', code: 'invalid_terminal_id' });
 });

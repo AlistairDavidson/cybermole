@@ -41,3 +41,27 @@ export function normalizeSessionName(raw: string): string {
   return raw.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-')
     .replace(/^-+|-+$/g, '').slice(0, 30);
 }
+
+/** Longest app slug — as normalized (APP_SLUG_RE); the cap on the typed
+ *  name lives in the API body schemas. */
+export const MAX_APP_SLUG = 40;
+
+/** App slug charset: lowercase slug, no underscore (job/session names
+ *  allow `_`; app slugs are the stricter, URL-shaped subset). */
+export const APP_SLUG_RE = new RegExp(`^[a-z0-9][a-z0-9\\-]{0,${MAX_APP_SLUG - 1}}$`);
+
+/** Normalize a display name into an app slug (POST /api/apps): lowercase,
+ *  runs of anything that isn't [a-z0-9] — underscores included — collapse
+ *  to '-', leading/trailing '-' stripped, capped at MAX_APP_SLUG. '' means
+ *  nothing usable was typed. The output always satisfies APP_SLUG_RE or
+ *  is empty. */
+export function normalizeSlug(raw: string): string {
+  return raw.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '').slice(0, MAX_APP_SLUG);
+}
+
+/** Lowercase uuid v4 — the id shape apps/workspaces/terminals mint
+ *  (crypto.randomUUID), bare (no prefix), unlike OBJECT_KEY_RE's uploads/
+ *  form. Version and variant nibbles are pinned, so a uuid v7 (pi session
+ *  ids) can never pass as one of ours. */
+export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;

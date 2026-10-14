@@ -7,7 +7,11 @@
 // browser shows (console toasts, /jobs, /settings read it).
 // Type-only imports from the domain modules: safe for the Astro bundle.
 import type { DatabaseUpdateFailure } from '../db';
+import type { DeleteAppFailure, SaveAppFailure } from '../apps';
 import type { DeleteJobFailure, ListJobsFailure, RunJobFailure, SaveJobFailure } from '../jobs';
+import type {
+  CloseTerminalFailure, DeleteWorkspaceFailure, NewTerminalFailure, RenameTerminalFailure, SaveWorkspaceFailure,
+} from '../workspaces';
 import type { ActivateFailure, EnforcementFailure, ListCommitsFailure, ManagementStateFailure, RequestBuildFailure } from '../releases';
 import type { ConsoleStateFailure, SettingsStateFailure } from '../services';
 import type { PiUpdateFailure, PiUpdateResult } from '../settings';
@@ -108,6 +112,85 @@ export function tmuxSessionFailureResponse(f: TmuxSessionFailure): Response {
     default:
       return f satisfies never;
   }
+}
+
+// task/ws-schema (docs/workspaces-plan.md §6): the apps / workspaces /
+// terminals families → statuses. server_not_running and tmux_error on the
+// terminal family cannot fire until the spawn lands (task/ws-terminal)
+// but are mapped now — the union is closed.
+
+export type AppFailure = SaveAppFailure | DeleteAppFailure;
+
+/** Apps failures → status. duplicate_slug is the derived slug's collision
+ *  (409); a slug that no longer resolves is 404. */
+export function appFailureResponse(f: AppFailure): Response {
+  switch (f.errorCode) {
+    case 'invalid_name':
+      return jsonResponse({ error: f.errorMessage ?? 'invalid name', code: f.errorCode }, 400);
+    case 'duplicate_slug':
+      return jsonResponse({ error: f.errorMessage ?? 'an app with that slug already exists', code: f.errorCode }, 409);
+    case 'app_not_found':
+      return jsonResponse({ error: f.errorMessage ?? 'no such app', code: f.errorCode }, 404);
+    case 'database_error':
+      return jsonResponse({ error: f.errorMessage ?? 'database error', code: f.errorCode }, 500);
+    default:
+      return f satisfies never;
+  }
+}
+
+/** A slug from the path that is not an AppSlug. */
+export function invalidAppSlugResponse(): Response {
+  return jsonResponse({ error: 'invalid app slug', code: 'invalid_app_slug' }, 400);
+}
+
+export type WorkspaceFailure = SaveWorkspaceFailure | DeleteWorkspaceFailure;
+
+/** Workspace failures → status: a bad name/cwd is the caller's (400), a
+ *  missing parent app or workspace is 404. */
+export function workspaceFailureResponse(f: WorkspaceFailure): Response {
+  switch (f.errorCode) {
+    case 'invalid_name':
+      return jsonResponse({ error: f.errorMessage ?? 'invalid name', code: f.errorCode }, 400);
+    case 'invalid_cwd':
+      return jsonResponse({ error: f.errorMessage ?? 'invalid cwd', code: f.errorCode }, 400);
+    case 'app_not_found':
+    case 'workspace_not_found':
+      return jsonResponse({ error: f.errorMessage ?? 'no such workspace', code: f.errorCode }, 404);
+    case 'database_error':
+      return jsonResponse({ error: f.errorMessage ?? 'database error', code: f.errorCode }, 500);
+    default:
+      return f satisfies never;
+  }
+}
+
+/** A workspace id from the path that is not one of ours (uuid v4). */
+export function invalidWorkspaceIdResponse(): Response {
+  return jsonResponse({ error: 'invalid workspace id', code: 'invalid_workspace_id' }, 400);
+}
+
+export type TerminalFailure = NewTerminalFailure | CloseTerminalFailure | RenameTerminalFailure;
+
+/** Terminal failures → status. server_not_running mirrors POST /api/new's
+ *  503 (retryable once the workspace side is back). */
+export function terminalFailureResponse(f: TerminalFailure): Response {
+  switch (f.errorCode) {
+    case 'workspace_not_found':
+    case 'terminal_not_found':
+      return jsonResponse({ error: f.errorMessage ?? 'no such terminal', code: f.errorCode }, 404);
+    case 'server_not_running':
+      return jsonResponse({ error: f.errorMessage ?? 'workspace tmux server not running', code: f.errorCode }, 503);
+    case 'tmux_error':
+      return jsonResponse({ error: f.errorMessage ?? 'tmux error', code: f.errorCode }, 500);
+    case 'database_error':
+      return jsonResponse({ error: f.errorMessage ?? 'database error', code: f.errorCode }, 500);
+    default:
+      return f satisfies never;
+  }
+}
+
+/** A terminal id from the path that is not one of ours (uuid v4). */
+export function invalidTerminalIdResponse(): Response {
+  return jsonResponse({ error: 'invalid terminal id', code: 'invalid_terminal_id' }, 400);
 }
 
 /** /api/files failures (upload and download): no storage configured is

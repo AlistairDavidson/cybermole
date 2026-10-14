@@ -11,7 +11,7 @@
 // normalization that isn't part of a form (name slugification in
 // /api/new, resize clamps).
 import { z } from 'zod';
-import { PiSessionIdSchema } from './ids';
+import { AppIdSchema, PiSessionIdSchema } from './ids';
 
 /** POST /login — both fields must be strings; a parse failure answers 401
  *  upstream (like the old typeof check), because fail2ban counts 401/429
@@ -62,3 +62,48 @@ export const autoUpdateBody = z.object({ enabled: z.boolean({ error: 'enabled mu
  *  webapp (docs/zed-webapp.md). Absolute paths only: the server checks
  *  it is a directory it can see before forwarding to the launcher. */
 export const zedOpenBody = z.object({ path: z.string().regex(/^\//, 'path must be absolute') });
+
+// ---------- workspaces-plan §6: apps / workspaces / terminals bodies ----------
+// (docs/workspaces-plan.md, branch task/ws-schema.) The name checks are
+// split by family: save_app/save_workspace carry invalid_name as a DOMAIN
+// code (the domains trim and slugify — normalization is not validation),
+// so these schemas only type and cap the strings. The terminal families
+// have no invalid_* code, so terminal titles are validated HERE (a bad
+// title is a 400 before the domain is ever reached).
+
+/** POST /api/apps — any string; the domain slugs it (empty slug →
+ *  invalid_name). */
+export const appCreateBody = z.object({ name: z.string().max(80, 'name is too long (max 80)') });
+
+/** PATCH /api/apps/:slug — name only (the slug is stable once created, v1);
+ *  absent = a no-op that returns the row. */
+export const appPatchBody = z.object({ name: z.string().max(80, 'name is too long (max 80)').optional() });
+
+/** POST /api/workspaces — appId null (or absent) = the console group; cwd
+ *  optional, defaulting server-side to WEB_PI_NEW_SESSION_CWD (the domain
+ *  validates absolute + existing directory). */
+export const workspaceCreateBody = z.object({
+  appId: AppIdSchema.nullable().optional(),
+  name: z.string().max(120, 'name is too long (max 120)'),
+  cwd: z.string().max(4096, 'cwd is too long').optional(),
+});
+
+/** PATCH /api/workspaces/:id — either field alone; absent fields keep. */
+export const workspacePatchBody = z.object({
+  name: z.string().max(120, 'name is too long (max 120)').optional(),
+  cwd: z.string().max(4096, 'cwd is too long').optional(),
+});
+
+/** POST /api/workspaces/:id/terminals — a title for the new tab, or none
+ *  (the UI then labels it "term N"). */
+export const terminalCreateBody = z.object({
+  title: z.string().trim().min(1, 'title is required').max(120, 'title is too long (max 120)').optional(),
+});
+
+/** PATCH /api/terminals/:id — rename the tab: a non-empty string sets the
+ *  title, null clears it back to the "term N" label, absent is a no-op
+ *  that returns the row (the plan's {title?} — same convention as the
+ *  app/workspace patches; an empty string is a 400, not a clear). */
+export const terminalPatchBody = z.object({
+  title: z.string().trim().min(1, 'title is required').max(120, 'title is too long (max 120)').nullable().optional(),
+});

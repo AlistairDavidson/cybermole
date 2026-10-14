@@ -6,6 +6,7 @@
 // dialog's live feedback asks POST /api/jobs/validate).
 import { z } from 'zod';
 import { asJobName } from '../types/branded';
+import { AppIdSchema } from './ids';
 import { JOB_NAME_RE, MAX_JOB_NAME, normalizeJobName } from './patterns';
 
 export const MAX_SCHEDULE = 120;
@@ -30,6 +31,10 @@ export const JobSaveSchema = z.object({
     .min(1, 'command is required')
     .max(MAX_COMMAND, `command is too long (max ${MAX_COMMAND})`)
     .regex(SINGLE_LINE, 'command must be one line'),
+  // task/ws-jobs (plan §9): the optional app tag. Accepted here since
+  // schema v6 gave jobs its app_id column; the scheduler still ignores it
+  // on save until that branch wires the tag picker + list JOIN.
+  appId: AppIdSchema.nullable().optional(),
 });
 
 /** A parsed save: name normalized + branded, schedule/command trimmed and

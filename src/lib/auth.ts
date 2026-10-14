@@ -99,6 +99,19 @@ export class Auth {
     return { ok: true, resultType: 'database_read', data: { value: cred.data.value !== null } } satisfies DatabaseReadSuccess<boolean>;
   }
 
+  /** The credential row's username — created_by/updated_by for the
+   *  app/workspace/terminal rows (single-user login; value null when no
+   *  credential is set). Read per call, like readCred: a credential
+   *  written after boot is picked up with no restart. */
+  username() {
+    const cred = this.readCred();
+    if (!cred.ok) return cred;
+    return {
+      ok: true, resultType: 'database_read',
+      data: { value: cred.data.value?.username ?? null },
+    } satisfies DatabaseReadSuccess<string | null>;
+  }
+
   /** Current credential row (value null when unset or malformed). Read
    *  per attempt, exactly like the old cred file: a credential written
    *  after boot (set-password, test fixtures) is picked up with no

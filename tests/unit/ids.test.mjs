@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  JOB_NAME_RE, SESSION_ID_RE, TMUX_SESSION_NAME_RE, normalizeJobName,
+  JOB_NAME_RE, SESSION_ID_RE, TMUX_SESSION_NAME_RE, APP_SLUG_RE, OBJECT_KEY_RE, UUID_RE, normalizeJobName,
 } from '../../dist-server/src/schemas/patterns.js';
 import {
   JobNameSchema, PiSessionIdSchema, TmuxSessionNameSchema,
@@ -15,7 +15,7 @@ import {
 const ok = (schema, v) => schema.safeParse(v).success;
 
 test('every ID pattern compiles under the v flag (HTML pattern attributes)', () => {
-  for (const re of [JOB_NAME_RE, SESSION_ID_RE, TMUX_SESSION_NAME_RE]) {
+  for (const re of [JOB_NAME_RE, SESSION_ID_RE, TMUX_SESSION_NAME_RE, APP_SLUG_RE, OBJECT_KEY_RE, UUID_RE]) {
     assert.doesNotThrow(() => new RegExp(re.source, 'v'), re.source);
   }
 });

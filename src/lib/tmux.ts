@@ -27,7 +27,7 @@ import { ENV, RAW_ENV } from './env';
 import { componentLogger } from './logger';
 import type { LiveSession } from './types';
 import type { ResultFailure, ResultSuccess } from '../types/result';
-import { asTmuxSessionName, type JobName, type PiSessionId, type TmuxSessionName } from '../types/branded';
+import { asTmuxSessionName, type JobName, type PiSessionId, type TerminalId, type TmuxSessionName } from '../types/branded';
 import { TMUX_SESSION_NAME_RE } from '../schemas/patterns';
 
 export const SOCKET = ENV.WEB_PI_TMUX_SOCKET;
@@ -60,6 +60,33 @@ export function resumeSessionName(id: PiSessionId): TmuxSessionName {
  *  fits TMUX_SESSION_NAME_RE's 64 (unit-tested). */
 export function jobSessionName(job: JobName): TmuxSessionName {
   return asTmuxSessionName(`webpi-${job}`);
+}
+
+/** Session name a terminal tab runs under (docs/workspaces-plan.md §4):
+ *  't-' + the terminal row's uuid — DERIVED, never stored, so the db row
+ *  and the tmux session can never drift apart. Always a valid session
+ *  name: a uuid v4 is 36 chars, 't-' + 36 = 38 fits TMUX_SESSION_NAME_RE's
+ *  64. */
+// junction(task/ws-terminal): the spawn/attach paths that consume this
+// name land there (plan §4) — this branch only derives it for the
+// best-effort kills on delete.
+export function terminalSessionName(id: TerminalId): TmuxSessionName {
+  return asTmuxSessionName(`t-${id}`);
+}
+
+/** Best-effort kill of one session. Can't fail by design: the answer is
+ *  whether the session was killed (false = not running, or tmux itself
+ *  errored — the caller decides what that means; failures are logged at
+ *  debug here so a delete of never-spawned rows — branch task/ws-schema
+ *  creates rows without spawning — doesn't spam the console). */
+export async function killSession(name: TmuxSessionName): Promise<boolean> {
+  const { error } = await tmux(SOCKET, ['kill-session', '-t', name]);
+  if (error) {
+    log.debug(`kill-session ${name} failed: ${error.message}`);
+    return false;
+  }
+  log.info(`tmux session ${name} killed`);
+  return true;
 }
 
 /** tmux socket-selection args: `-S <path>` for an absolute path (the

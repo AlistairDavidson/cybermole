@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { compilesAsHtmlPattern, zodSchemaToHTMLAttributes } from '../../dist-server/src/lib/web/zod.service.js';
 import { JobSaveSchema } from '../../dist-server/src/schemas/jobs.js';
 import { loginForm } from '../../dist-server/src/schemas/api.js';
+import { UUID_RE } from '../../dist-server/src/schemas/patterns.js';
 import { JobNameSchema, PiSessionIdSchema, TmuxSessionNameSchema } from '../../dist-server/src/schemas/ids.js';
 
 const attrs = (shape) => zodSchemaToHTMLAttributes(z.object(shape));
@@ -55,6 +56,7 @@ test('the app’s form schemas: the attributes the forms render', () => {
     name: { required: true, maxlength: 40 }, // typed length only: the charset applies after normalizing
     schedule: { required: true, minlength: 1, maxlength: 120, pattern: '^[^\\r\\n]*$' },
     command: { required: true, minlength: 1, maxlength: 4000, pattern: '^[^\\r\\n]*$' },
+    appId: { pattern: UUID_RE.source }, // optional tag (task/ws-schema); not required, just shaped
   });
   assert.deepEqual(zodSchemaToHTMLAttributes(loginForm), {
     username: { required: true, minlength: 1 },

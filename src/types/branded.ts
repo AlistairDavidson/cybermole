@@ -14,6 +14,14 @@ export type TmuxSessionName = Brand<string, 'TmuxSessionName'>;
 export type JobName = Brand<string, 'JobName'>;
 /** A login session token (the webpi_session cookie value). */
 export type SessionToken = Brand<string, 'SessionToken'>;
+/** An app row's id (uuid v4) — the workspace-grouping container (src/lib/apps.ts). */
+export type AppId = Brand<string, 'AppId'>;
+/** An app's slug ([a-z0-9][a-z0-9-]{0,39}) — its stable URL identity. */
+export type AppSlug = Brand<string, 'AppSlug'>;
+/** A workspace row's id (uuid v4) — a cwd + terminal tabs (src/lib/workspaces.ts). */
+export type WorkspaceId = Brand<string, 'WorkspaceId'>;
+/** A terminal row's id (uuid v4) — one terminal tab = one tmux session. */
+export type TerminalId = Brand<string, 'TerminalId'>;
 /** An object's key in the storage bucket (src/lib/storage.ts). */
 export type ObjectKey = Brand<string, 'ObjectKey'>;
 /** A full (40-hex) git commit sha of the workspace checkout — the
@@ -34,6 +42,22 @@ export function asJobName(value: string): JobName {
 
 export function asSessionToken(value: string): SessionToken {
   return value as SessionToken;
+}
+
+export function asAppId(value: string): AppId {
+  return value as AppId;
+}
+
+export function asAppSlug(value: string): AppSlug {
+  return value as AppSlug;
+}
+
+export function asWorkspaceId(value: string): WorkspaceId {
+  return value as WorkspaceId;
+}
+
+export function asTerminalId(value: string): TerminalId {
+  return value as TerminalId;
 }
 
 export function asObjectKey(value: string): ObjectKey {

@@ -3,7 +3,9 @@
 // Everything the app itself writes lives in ENV.WEB_PI_DB_FILE (default
 // <state dir>/webpi.db): the login credential (single row), the login
 // sessions (`auth_sessions` — token hashes only, src/lib/auth.ts), a
-// `sessions` overlay table, the scheduled-jobs tables (`jobs` definitions,
+// `sessions` overlay table, the apps/workspaces/terminals tables
+// (docs/workspaces-plan.md §2 — src/lib/apps.ts, src/lib/workspaces.ts),
+// the scheduled-jobs tables (`jobs` definitions,
 // `job_runs` bookkeeping — src/lib/jobs.ts), a small `settings` kv
 // (src/lib/auto-update.ts), and the management page's `releases` history
 // (src/lib/releases.ts — the SERVING pointer is deliberately NOT db
@@ -37,7 +39,7 @@ import {
   type Compilable, type DatabaseConnection,
 } from 'kysely';
 import type { ResultFailure, ResultSuccess } from '../types/result';
-import type { JobName, PiSessionId } from '../types/branded';
+import type { AppId, AppSlug, JobName, PiSessionId, TerminalId, WorkspaceId } from '../types/branded';
 
 /** The shared "generic update" result: a write that only reports how many
  *  rows it touched (setters, deletes, flag flips). */
@@ -103,6 +105,46 @@ const SCHEMA = `
     session_id TEXT    PRIMARY KEY,  -- pi's id
     hidden_at  INTEGER                -- NULL = visible
   );
+  -- Apps / workspaces / terminals (docs/workspaces-plan.md §2, schema v6):
+  -- apps 1—M workspaces 1—M terminals, console = the NULL app. ids are
+  -- uuid v4 minted by the server; sort_order is explicit (steps of 10),
+  -- ordering never relies on the id; created_by/updated_by carry the
+  -- single credential row's username. Cascades do the structural deletes
+  -- (an app takes its workspaces and their terminals with it); jobs are
+  -- only ever TAGGED with an app (SET NULL below), never owned by one.
+  CREATE TABLE IF NOT EXISTS apps (
+    id         TEXT PRIMARY KEY,     -- uuid v4 (crypto.randomUUID) → AppId
+    name       TEXT NOT NULL,        -- display name, free text
+    slug       TEXT NOT NULL UNIQUE, -- APP_SLUG_RE (src/schemas/patterns.ts)
+    sort_order INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,     -- epoch ms
+    updated_at INTEGER NOT NULL,
+    created_by TEXT NOT NULL,        -- username; single-user login today
+    updated_by TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS workspaces (
+    id         TEXT PRIMARY KEY,     -- uuid v4 → WorkspaceId
+    app_id     TEXT REFERENCES apps(id) ON DELETE CASCADE,  -- NULL = console
+    name       TEXT NOT NULL,        -- free text, sidebar label
+    cwd        TEXT NOT NULL,        -- terminal spawn dir + editor folder
+    sort_order INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    created_by TEXT NOT NULL,
+    updated_by TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS workspaces_by_app ON workspaces (app_id, sort_order);
+  CREATE TABLE IF NOT EXISTS terminals (
+    id           TEXT PRIMARY KEY,   -- uuid v4 → TerminalId
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    title        TEXT,               -- NULL → UI labels "term N"
+    sort_order   INTEGER NOT NULL,   -- tab order; append = max+10
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL,
+    created_by   TEXT NOT NULL,
+    updated_by   TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS terminals_by_workspace ON terminals (workspace_id, sort_order);
   -- Scheduled-job definitions for the in-process scheduler
   -- (src/lib/jobs.ts). command is an arbitrary shell string BY DESIGN
   -- (typed by the authenticated user) — it only ever reaches tmux as
@@ -111,15 +153,19 @@ const SCHEMA = `
     name       TEXT    PRIMARY KEY,  -- JOB_NAME_RE (src/schemas/patterns.ts)
     schedule   TEXT    NOT NULL,     -- 5-field cron
     command    TEXT    NOT NULL,
-    created_at INTEGER NOT NULL      -- epoch ms; catch-up reference until the first fire
+    created_at INTEGER NOT NULL,     -- epoch ms; catch-up reference until the first fire
+    app_id     TEXT    REFERENCES apps(id) ON DELETE SET NULL  -- optional tag, never ownership (plan §9)
   );
   -- One row per fired run (scheduler tick, boot catch-up, or "run now").
   -- MAX(fired_at) per job is its last-fired: what boot catch-up compares
   -- against the schedule (systemd Persistent=true equivalent).
   CREATE TABLE IF NOT EXISTS job_runs (
-    job      TEXT    NOT NULL,
-    fired_at INTEGER NOT NULL,       -- epoch ms the run's tmux session opened
-    origin   TEXT    NOT NULL        -- 'schedule' | 'catchup' | 'manual'
+    job         TEXT    NOT NULL,
+    fired_at    INTEGER NOT NULL,       -- epoch ms the run's tmux session opened
+    origin      TEXT    NOT NULL,       -- 'schedule' | 'catchup' | 'manual'
+    log         TEXT,                   -- log file path, NULL pre-v6 runs (plan §9)
+    exit_code   INTEGER,                -- filled when the finish is observed
+    finished_at INTEGER                 -- ditto
   );
   CREATE INDEX IF NOT EXISTS job_runs_job ON job_runs (job, fired_at);
   -- Small app-settings kv (one row per key, JSON-encoded values). Keys
@@ -169,16 +215,56 @@ export interface SessionsTable {
   session_id: PiSessionId;
   hidden_at: number | null;
 }
+export interface AppsTable {
+  id: AppId;
+  name: string;
+  slug: AppSlug;
+  sort_order: number;
+  created_at: number;
+  updated_at: number;
+  created_by: string;
+  updated_by: string;
+}
+export interface WorkspacesTable {
+  id: WorkspaceId;
+  /** NULL = the console (not an app row — plan §1). */
+  app_id: AppId | null;
+  name: string;
+  cwd: string;
+  sort_order: number;
+  created_at: number;
+  updated_at: number;
+  created_by: string;
+  updated_by: string;
+}
+export interface TerminalsTable {
+  id: TerminalId;
+  workspace_id: WorkspaceId;
+  /** NULL → the UI labels the tab "term N". */
+  title: string | null;
+  sort_order: number;
+  created_at: number;
+  updated_at: number;
+  created_by: string;
+  updated_by: string;
+}
 export interface JobsTable {
   name: JobName;
   schedule: string;
   command: string;
   created_at: number;
+  /** Optional app tag — never ownership (plan §9). */
+  app_id: AppId | null;
 }
 export interface JobRunsTable {
   job: JobName;
   fired_at: number;
   origin: JobRunOrigin;
+  /** Log file path (NULL pre-v6 runs), exit + finish filled when the
+   *  finish is observed (plan §9). */
+  log: string | null;
+  exit_code: number | null;
+  finished_at: number | null;
 }
 export interface SettingsTable {
   key: string;
@@ -203,6 +289,9 @@ export interface ReleasesTable {
 export interface StateSchema {
   credential: CredentialTable;
   sessions: SessionsTable;
+  apps: AppsTable;
+  workspaces: WorkspacesTable;
+  terminals: TerminalsTable;
   jobs: JobsTable;
   job_runs: JobRunsTable;
   settings: SettingsTable;
@@ -230,6 +319,31 @@ export const qb = new Kysely<StateSchema>({
   },
 });
 
+/** Add a column to an existing table unless it is already there. ALTER
+ *  TABLE ADD COLUMN is NOT idempotent (a second run fails with `duplicate
+ *  column name`), so every v6 ALTER is guarded by a PRAGMA table_info
+ *  column check — NOT by the version number: a fresh db (user_version 0)
+ *  gets the new columns in SCHEMA's CREATE above and must then skip the
+ *  ALTER, while a pre-v6 db passes create-then-alter. Table/column names
+ *  are module constants, never user input. */
+function addColumnIfMissing(db: DatabaseSync, table: string, column: string, ddl: string): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (columns.some(c => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+}
+
+/** The v6 migration: jobs gains its optional app tag, job_runs the
+ *  persisted-run columns (docs/workspaces-plan.md §2). Additive only —
+ * the `sessions` table stays untouched in this branch (it dies, with its
+ * readers, in task/ws-console). Runs at every open; each ALTER is guarded
+ * by addColumnIfMissing, so a fresh db (columns already in CREATE) and a
+ * half-migrated db both pass. */
+function migrateToV6(db: DatabaseSync): void {
+  addColumnIfMissing(db, 'jobs', 'app_id', 'TEXT REFERENCES apps(id) ON DELETE SET NULL');
+  addColumnIfMissing(db, 'job_runs', 'log', 'TEXT');
+  addColumnIfMissing(db, 'job_runs', 'exit_code', 'INTEGER');
+  addColumnIfMissing(db, 'job_runs', 'finished_at', 'INTEGER');
+}
 /** web-pi's state database: a lazily-opened node:sqlite connection (see
  *  module comment) plus cached prepared statements. */
 export class StateDb {
@@ -248,15 +362,22 @@ export class StateDb {
       // set-password (its own process) may write while the server holds
       // the db open — let sqlite wait out the lock instead of failing.
       db.exec('PRAGMA busy_timeout = 3000');
+      // node:sqlite opens with foreign_keys ON by default, but the v6
+      // schema's whole delete story (apps → workspaces → terminals
+      // CASCADE, jobs.app_id SET NULL) rests on FKs — never on a Node
+      // default, so it is set explicitly (a no-op outside transactions).
+      db.exec('PRAGMA foreign_keys = 1');
       db.exec(SCHEMA);
+      migrateToV6(db);
       // user_version: 1 = credential + sessions; 2 adds the job tables;
       // 3 adds the settings kv table; 4 adds auth_sessions; 5 adds the
-      // releases table (management page). Additive — the CREATE IF NOT
-      // EXISTS block above brings any older db up to the current shape;
-      // nothing is dropped.
+      // releases table (management page); 6 adds apps/workspaces/terminals
+      // + the jobs/job_runs columns above (workspaces plan). Additive — the
+      // CREATE IF NOT EXISTS block + migrateToV6 bring any older db up to
+      // the current shape; nothing is dropped.
       const v = db.prepare('PRAGMA user_version').get() as { user_version: number };
-      if (v.user_version < 5) db.exec('PRAGMA user_version = 5');
-      else if (v.user_version > 5) {
+      if (v.user_version < 6) db.exec('PRAGMA user_version = 6');
+      else if (v.user_version > 6) {
         throw new Error(`state db ${this.file} is schema v${v.user_version} — newer than this build understands`);
       }
       if (fresh) fs.chmodSync(this.file, 0o600); // it holds the password hash
