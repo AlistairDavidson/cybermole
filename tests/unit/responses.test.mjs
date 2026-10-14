@@ -177,11 +177,11 @@ test('workspaceFailureResponse: every workspaces code → status', async () => {
   assert.deepEqual(await id.json(), { error: 'invalid workspace id', code: 'invalid_workspace_id' });
 });
 
-test('terminalFailureResponse: every terminals code → status (spawn codes mapped for task/ws-terminal)', async () => {
+test('terminalFailureResponse: every terminals code → status; a spawn failure carries its row', async () => {
   const cases = [
     ['new_terminal', 'workspace_not_found', 404],
-    ['new_terminal', 'server_not_running', 503], // unreachable until the spawn lands — mapped now
-    ['new_terminal', 'tmux_error', 500],          // ditto
+    ['new_terminal', 'server_not_running', 503], // the spawn's guard — reachable since task/ws-terminal
+    ['new_terminal', 'tmux_error', 500],
     ['new_terminal', 'database_error', 500],
     ['close_terminal', 'terminal_not_found', 404],
     ['close_terminal', 'database_error', 500],
@@ -191,7 +191,19 @@ test('terminalFailureResponse: every terminals code → status (spawn codes mapp
   for (const [resultType, code, status] of cases) {
     const res = terminalFailureResponse(failure(resultType, code));
     assert.equal(res.status, status, code);
-    assert.equal((await res.json()).code, code, code);
+    const body = await res.json();
+    assert.equal(body.code, code, code);
+    assert.equal(body.terminal, undefined, `${code}: no row on this failure`);
+  }
+  // The §4 contract: a spawn-failed create still returns its row (a dead
+  // tab, live:false) on the 503/500 body — the UI renders the tab and the
+  // first attach retries the spawn.
+  const row = { id: '123e4567-e89b-42d3-a456-426614174000', workspaceId: '99999999-9999-4999-8999-999999999999',
+    title: null, live: false };
+  for (const code of ['server_not_running', 'tmux_error']) {
+    const res = terminalFailureResponse(failure('new_terminal', code, { data: { ...row } }));
+    const body = await res.json();
+    assert.deepEqual(body.terminal, row, code);
   }
   const id = invalidTerminalIdResponse();
   assert.equal(id.status, 400);

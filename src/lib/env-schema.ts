@@ -47,6 +47,9 @@ export const envSchema = {
   WEB_PI_ASTRO_ENTRY: { type: 'string', context: 'server', access: 'secret', optional: true },
   WEB_PI_SESSIONS_DIR: { type: 'string', context: 'server', access: 'secret', optional: true },
   WEB_PI_NEW_SESSION_CWD: { type: 'string', context: 'server', access: 'secret', optional: true },
+  // The command a new terminal tab runs (workspaces-plan §10),
+  // whitespace-split by main.ts. Dynamic default in env.ts: a login
+  // shell — $SHELL -l, /bin/sh -l when SHELL is unset.
   WEB_PI_COMMAND: { type: 'string', context: 'server', access: 'secret', optional: true },
   WEB_PI_TMUX_CONF: { type: 'string', context: 'server', access: 'secret', optional: true },
   // task/winston-loki: log aggregation — push URL of a Grafana Loki (the

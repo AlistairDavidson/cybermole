@@ -31,7 +31,7 @@ import { ObjectStore } from '../src/lib/storage';
 import type { ClientMsg, ServerMsg } from '../src/lib/types';
 import { loginBody } from '../src/schemas/api';
 import { parseClientMsg } from '../src/schemas/frames';
-import { PiSessionIdSchema, TmuxSessionNameSchema } from '../src/schemas/ids';
+import { PiSessionIdSchema, TerminalIdSchema, TmuxSessionNameSchema } from '../src/schemas/ids';
 import { UPLOAD_MAX_BODY_BYTES } from '../src/schemas/uploads';
 import type { SessionToken, TmuxSessionName } from '../src/types/branded';
 
@@ -81,7 +81,9 @@ const CFG: ServerConfig = {
   astroEntry: ENV.WEB_PI_ASTRO_ENTRY,
   sessionsDir: ENV.WEB_PI_SESSIONS_DIR,
   newSessionCwd: ENV.WEB_PI_NEW_SESSION_CWD,
-  // whitespace-split command line; resume appends --session <id> (pi-family CLI)
+  // whitespace-split command line a new terminal tab runs (plan §4;
+  // default a login shell — src/lib/env.ts); resume appends --session <id>
+  // (pi-family CLI) until branch 4 deletes that path
   command: ENV.WEB_PI_COMMAND.trim().split(/\s+/).filter(Boolean),
   trustProxy: Math.max(0, ENV.WEB_PI_TRUST_PROXY),
   editorUpstream: readEditorUpstream(),
@@ -208,6 +210,13 @@ bootLog.info(objectStore.describe() === null
 bootLog.info(CFG.editorUpstream === null
   ? 'editor: not configured (WEB_PI_EDITOR_UPSTREAM unset) — /editor answers 404'
   : `editor: proxying ${CFG.base === '/' ? '' : CFG.base}/editor/ → ${CFG.editorUpstream.origin}`);
+// task/ws-terminal (plan §4): a terminal tab's spawn/respawn — one
+// guarded new-session with the configured command + sessionEnv, shared
+// by the workspaces domain (through createServices) and the WS attach
+// path's respawn.
+const spawnTerminalSession = (name: TmuxSessionName, cwd: string) =>
+  tmux.newSession(name, cwd, CFG.command, sessionEnv);
+
 // Everything stateful the Astro side (API routes, pages) may use, built
 // once here and passed to the Astro handler in locals — never imported
 // there (a Vite-bundled second copy would carry its own state; see
@@ -216,6 +225,9 @@ const services = createServices({ cfg: CFG, stateDb, auth, hiddenSessions, sched
   // task/ws-schema: the apps/workspaces domains' best-effort terminal
   // session kill (deletes/closes — src/lib/tmux.ts killSession).
   killSession: tmux.killSession,
+  // task/ws-terminal (plan §4): the terminal spawn dep (see
+  // spawnTerminalSession above).
+  spawnSession: spawnTerminalSession,
   // task/mgmt-page: the swap service's restart trigger + the honest
   // "serving now" LIVE snapshot (a getter: the import fallback above
   // flips it; docs/management-page.md §3.2).
@@ -1081,6 +1093,47 @@ function attach(ws: WebSocket, token: SessionToken): void {
         const target = TmuxSessionNameSchema.safeParse(msg.target);
         if (!target.success) { failed('bad target'); return; }
         if (!await tmux.hasSession(target.data)) { failed('no such live session'); return; }
+        await spawnTmux(target.data);
+      } else if (msg.mode === 'terminal') {
+        // task/ws-terminal (plan §4/§7): the restart-survival path. The
+        // id is the terminal ROW's uuid — the state db owns the identity,
+        // the tmux session name is derived (t-<uuid>). tmux alive = the
+        // content survives (web restart, the common case); tmux dead =
+        // the structure survives and this attach RESPAWNS a fresh
+        // command at the workspace cwd. The respawn rides the same
+        // guarded new-session the create route uses, so the never-fork
+        // guard covers it on absolute sockets.
+        const id = TerminalIdSchema.safeParse(msg.id);
+        if (!id.success) { failed('bad terminal id'); return; }
+        const found = await services.workspaces.terminalForAttach(id.data);
+        if (!found.ok) {
+          failed(found.errorCode === 'database_error' ? 'could not read the terminal' : 'no such terminal');
+          return;
+        }
+        const name = tmux.terminalSessionName(id.data);
+        if (!await tmux.hasSession(name)) {
+          const spawned = await spawnTerminalSession(name, found.data.cwd);
+          if (!spawned.ok) {
+            switch (spawned.errorCode) {
+              // the never-fork guard — say it, don't bury it
+              case 'server_not_running': failed(tmux.SERVER_NOT_RUNNING_MSG); return;
+              case 'tmux_error': failed('could not start terminal session'); return;
+              default: spawned satisfies never;
+            }
+            return;
+          }
+          wsLog.info(`terminal ${id.data} respawned (${name} at ${found.data.cwd})`);
+        }
+        await spawnTmux(name);
+      } else if (msg.mode === 'run') {
+        // task/ws-terminal (plan §7): a live job run's tmux session
+        // (webpi-<name>) — replaces 'live' for the jobs view-run path.
+        // NEVER respawns: the run IS the session, it dies with the
+        // command, and a re-run is a new session (jobs.ts), not a
+        // respawn of a dead one.
+        const target = TmuxSessionNameSchema.safeParse(msg.target);
+        if (!target.success) { failed('bad target'); return; }
+        if (!await tmux.hasSession(target.data)) { failed('no such run session'); return; }
         await spawnTmux(target.data);
       } else {
         const id = PiSessionIdSchema.safeParse(msg.id);

@@ -6,8 +6,8 @@
 // the sidebar only emits hide-session / manage-hidden and stays stateless.
 // Page navigation (and sign-out) lives in the global <app-header>.
 import type { ActiveKey, ConsoleState, PastSession } from '../../lib/types';
-import { asPiSessionId, asTmuxSessionName, type PiSessionId, type TmuxSessionName } from '../../types/branded';
-import { TMUX_SESSION_NAME_RE } from '../../schemas/patterns';
+import { asPiSessionId, asTerminalId, asTmuxSessionName, type PiSessionId, type TerminalId, type TmuxSessionName } from '../../types/branded';
+import { TMUX_SESSION_NAME_RE, UUID_RE } from '../../schemas/patterns';
 import { BASE } from '../../base';
 import { signedInFetch, type SignedInFetchFailure } from '../signed-in-fetch';
 import '@awesome.me/webawesome/dist/components/page/page.js';
@@ -32,9 +32,30 @@ export class ConsoleApp extends HTMLElement {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private activeKey: ActiveKey | null = null;
   /** Deep-link target (/?live=<session>) — attached on the first state
-   *  load that sees the session alive (e.g. "view run" from /jobs). */
+   *  load that sees the session alive (e.g. "view run" from /jobs).
+   * junction(task/ws-console): ?t=/?run= below replace ?live= when the
+   *  workspace sidebar lands (plan §7) — this one dies with the Live
+   *  list that feeds it. */
   private pendingLive: TmuxSessionName | null = (() => {
     const v = new URLSearchParams(location.search).get('live') ?? '';
+    return TMUX_SESSION_NAME_RE.test(v) ? asTmuxSessionName(v) : null;
+  })();
+  /** Deep-link target (/?t=<terminal uuid>) — attached on the first state
+   *  load. Nothing to wait for: the terminal attach mode respawns the
+   *  session on demand (plan §4), so a dead or never-spawned tab still
+   *  opens. A uuid that isn't ours degrades to the server's 'no such
+   *  terminal' error frame in the status line. */
+  private pendingTerminal: TerminalId | null = (() => {
+    const v = new URLSearchParams(location.search).get('t') ?? '';
+    return UUID_RE.test(v) ? asTerminalId(v) : null;
+  })();
+  /** Deep-link target (/?run=<session name> — a live job run, the jobs
+   *  page's "view" link). Same wait-for-live shape as ?live=: the run
+   * mode never respawns, so the attach only makes sense while the
+   * session is listed. A name that never appears stays pending,
+   * harmlessly. */
+  private pendingRun: TmuxSessionName | null = (() => {
+    const v = new URLSearchParams(location.search).get('run') ?? '';
     return TMUX_SESSION_NAME_RE.test(v) ? asTmuxSessionName(v) : null;
   })();
   private state: ConsoleState | null = null;
@@ -221,6 +242,35 @@ export class ConsoleApp extends HTMLElement {
         const term = this.querySelector('agent-terminal') as
           (import('../AgentTerminal/agent-terminal').AgentTerminal & HTMLElement) | null;
         term?.attach('live', target, this.activeKey);
+        (sidebar as import('../session-sidebar').SessionSidebar | null)
+          ?.render(st, this.activeKey);
+      }
+    }
+
+    // task/ws-terminal (plan §7): the workspace-model deep links — both
+    // attach through the same singleton <agent-terminal> until branch 4's
+    // terminal-tabs UI replaces it.
+    // junction(task/ws-console): terminal-tabs UI lands here (plan §8) —
+    // ?t= opens the tab in its workspace, ?run=/ ?live= are retargeted or
+    // deleted with the sidebar swap.
+    if (this.pendingTerminal) {
+      const id = this.pendingTerminal;
+      this.pendingTerminal = null;
+      this.activeKey = `terminal:${id}`;
+      const term = this.querySelector('agent-terminal') as
+        (import('../AgentTerminal/agent-terminal').AgentTerminal & HTMLElement) | null;
+      term?.attach('terminal', id, this.activeKey);
+      (sidebar as import('../session-sidebar').SessionSidebar | null)
+        ?.render(st, this.activeKey);
+    }
+    if (this.pendingRun) {
+      const target = this.pendingRun;
+      if (st.live.some(s => s.name === target)) {
+        this.pendingRun = null;
+        this.activeKey = `run:${target}`;
+        const term = this.querySelector('agent-terminal') as
+          (import('../AgentTerminal/agent-terminal').AgentTerminal & HTMLElement) | null;
+        term?.attach('run', target, this.activeKey);
         (sidebar as import('../session-sidebar').SessionSidebar | null)
           ?.render(st, this.activeKey);
       }

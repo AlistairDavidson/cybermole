@@ -3,9 +3,9 @@
 // it belongs to the console (app_id NULL — the console is NOT an app row)
 // or to exactly one app. Terminals live here: a terminal tab is
 // meaningless outside its workspace. One terminal tab = one tmux session
-// named 't-<uuid>' (derived, never stored — src/lib/tmux.ts), but the
-// state db owns the identity; in THIS branch (task/ws-schema) terminal
-// rows are inserted without spawning — the tmux wiring is task/ws-terminal.
+// named 't-<uuid>' (derived, never stored — src/lib/tmux.ts); the state db
+// owns the identity, and the row exists even when the tmux spawn fails
+// (plan §4: a dead tab — the first attach retries the spawn).
 //
 // Constructed once per process (services.ts, fed by server/main.ts) and
 // reached by routes through locals.webpi (docs/CODE_STYLE.md §6).
@@ -19,6 +19,7 @@ import { terminalSessionName } from './tmux';
 import type { ResultFailure, ResultSuccess } from '../types/result';
 import type { AppId, TerminalId, TmuxSessionName, WorkspaceId } from '../types/branded';
 import { asTerminalId, asWorkspaceId } from '../types/branded';
+import type { TmuxSessionFailure, TmuxSessionSuccess } from './tmux';
 
 const log = componentLogger('workspaces');
 
@@ -50,10 +51,10 @@ export type DeleteWorkspaceResult = DeleteWorkspaceSuccess | DeleteWorkspaceFail
 
 export type NewTerminalData = { id: TerminalId; workspaceId: WorkspaceId; title: string | null; live: boolean };
 /** workspace_not_found: no workspace to hold the tab. server_not_running /
- *  tmux_error: the spawn's never-fork guard / tmux failure — unreachable
- *  until the spawn lands (task/ws-terminal, plan §4) but part of the
- *  closed union now: the row exists even when the spawn fails, and
- *  tmux_error still reports. database_error: the insert failed. */
+ *  tmux_error: the spawn's never-fork guard / tmux failure — the row was
+ *  STILL created and rides along on the failure's data (live:false, plan
+ *  §4): the tab exists, the UI shows it dead, the first attach retries
+ *  the spawn. database_error: the insert failed (no row). */
 export type NewTerminalErrorCode = 'workspace_not_found' | 'server_not_running' | 'tmux_error' | 'database_error';
 export type NewTerminalSuccess = ResultSuccess<'new_terminal', NewTerminalData>;
 export type NewTerminalFailure = ResultFailure<'new_terminal', NewTerminalData, NewTerminalErrorCode>;
@@ -103,13 +104,16 @@ export interface WorkspacesDeps {
   username: () => DatabaseReadResult<string | null>;
   /** Best-effort tmux kill for a closed/deleted terminal's session. */
   killSession: (name: TmuxSessionName) => Promise<boolean>;
+  /** Start a terminal tab's tmux session (tmux.newSession wired in
+   *  services.ts with the configured command + sessionEnv). Injected so
+   *  the domain stays unit-testable without a tmux server; its failures
+   *  (server_not_running / tmux_error) map straight onto new_terminal's
+   *  family (plan §4). */
+  spawnSession: (name: TmuxSessionName, cwd: string) =>
+    Promise<TmuxSessionSuccess | TmuxSessionFailure>;
   /** WEB_PI_NEW_SESSION_CWD — the default when POST /api/workspaces omits
    *  cwd (plan §6). */
   defaultCwd: string;
-  /** env for processes spawned inside tmux sessions — unused until the
-   *  spawn lands (junction below), carried from ServiceDeps now so
-   *  task/ws-terminal wires it in one place. */
-  sessionEnv: Record<string, string>;
 }
 
 export class Workspaces {
@@ -230,12 +234,15 @@ export class Workspaces {
     return { ok: true, resultType: 'delete_workspace', data: { id } } satisfies DeleteWorkspaceSuccess;
   }
 
-  /** Open a new terminal tab: insert the row (sort_order = max+10), live
-   *  false — the tmux session is spawned by the ATTACH path, and until
-   *  task/ws-terminal lands there is no spawn at all. */
+  /** Open a new terminal tab (plan §4): insert the row (sort_order =
+   *  max+10), then best-effort-spawn its tmux session at the workspace
+   *  cwd. Rows never block on tmux: when the spawn fails the row still
+   *  exists — the failure carries it (live:false), the UI shows a dead
+   *  tab and the first attach retries the spawn. No eager spawns at
+   *  boot; closing kills the session best-effort, never failing on it. */
   async newTerminal(workspaceId: WorkspaceId, title: string | undefined): Promise<NewTerminalResult> {
-    const fail = (errorCode: NewTerminalErrorCode, errorMessage: string) =>
-      ({ ok: false, resultType: 'new_terminal', errorCode, errorMessage }) satisfies NewTerminalFailure;
+    const fail = (errorCode: NewTerminalErrorCode, errorMessage: string, data?: NewTerminalData) =>
+      ({ ok: false, resultType: 'new_terminal', errorCode, errorMessage, ...(data ? { data } : {}) }) satisfies NewTerminalFailure;
     const found = this.byId(workspaceId);
     if (!found.ok) return fail('database_error', found.errorMessage);
     const row = found.data.value;
@@ -254,16 +261,16 @@ export class Workspaces {
         created_at: now, updated_at: now, created_by: actor.username, updated_by: actor.username,
       })));
     if (!inserted.ok) return fail('database_error', inserted.errorMessage);
-    // junction(task/ws-terminal): best-effort tmux spawn lands here (plan
-    // §4) — `new-session -d -s t-<uuid> -c <workspace cwd>` with
-    // deps.sessionEnv and the configured command; the row exists even
-    // when the spawn fails (a dead tab), so live stays false on any
-    // spawn failure and this branch's insert-only shape is already that
-    // contract's degenerate case.
-    return {
-      ok: true, resultType: 'new_terminal',
-      data: { id, workspaceId, title: title ?? null, live: false },
-    } satisfies NewTerminalSuccess;
+    const data: NewTerminalData = { id, workspaceId, title: title ?? null, live: false };
+    const spawned = await this.deps.spawnSession(terminalSessionName(id), row.cwd);
+    if (!spawned.ok) {
+      // The row exists even when the spawn fails (plan §4) — report the
+      // code, carry the row: a dead tab, retried by the first attach.
+      log.warn(`terminal ${id} created but its tmux session did not start (${spawned.errorCode}: ${spawned.errorMessage})`);
+      return fail(spawned.errorCode, spawned.errorMessage ?? 'could not start the terminal session', data);
+    }
+    log.info(`terminal ${id} opened (${terminalSessionName(id)} at ${row.cwd})`);
+    return { ok: true, resultType: 'new_terminal', data: { ...data, live: true } } satisfies NewTerminalSuccess;
   }
 
   /** Close a terminal tab: delete the row, then best-effort-kill its

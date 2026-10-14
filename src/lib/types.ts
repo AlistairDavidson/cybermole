@@ -1,7 +1,7 @@
 // Shared types across server + client (the WS wire protocol is
 // described exactly once, on both ends).
 
-import type { JobName, PiSessionId, TmuxSessionName } from '../types/branded';
+import type { JobName, PiSessionId, TerminalId, TmuxSessionName } from '../types/branded';
 
 export interface PastSession {
   /** pi session id (uuid) — resume target */
@@ -283,5 +283,13 @@ export type ServerMsg =
   | { type: 'restart' };
 
 /** Which terminal target the console has selected: a live tmux session or
- *  a past pi session being resumed (sidebar highlight + reconnect key). */
-export type ActiveKey = `live:${TmuxSessionName}` | `resume:${PiSessionId}`;
+ *  a past pi session being resumed (sidebar highlight + reconnect key).
+ *  task/ws-terminal (plan §7): the union GROWS with the workspace-model
+ *  keys — a terminal tab (its row's uuid) and a job run (its live tmux
+ *  session name); the old live:/resume: variants stay until branch 4
+ *  (task/ws-console) deletes them with the UI that mints them. */
+export type ActiveKey =
+  | `live:${TmuxSessionName}`
+  | `resume:${PiSessionId}`
+  | `terminal:${TerminalId}`
+  | `run:${TmuxSessionName}`;

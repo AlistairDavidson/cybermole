@@ -2,8 +2,9 @@
 // Light DOM (xterm injects its own styles; global CSS applies).
 // Connection life: attach() opens a socket for one target. If it drops
 // without the server ending the attach (proxy idle cut, server restart,
-// network blip), the status says so and the terminal reattaches to the same
-// tmux session with backoff. The server's 'exit' / 'error' / 'signed-out'
+// network blip), the status says so and the terminal reattaches with the
+// SAME attach frame — mode included — with backoff. The server's
+// 'exit' / 'error' / 'signed-out'
 // end an attach for good — no reconnect, so two tabs bumping each other off
 // a session (`attach -d`) can't loop, and a logged-out token stays logged
 // out. 'restart' (server shutdown) is the exception that reconnects: tmux
@@ -15,7 +16,7 @@ import '@xterm/xterm/css/xterm.css';
 import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import type { ActiveKey, ClientMsg, ServerMsg } from '../../lib/types';
-import type { PiSessionId, TmuxSessionName } from '../../types/branded';
+import type { PiSessionId, TerminalId, TmuxSessionName } from '../../types/branded';
 import { BASE } from '../../base';
 
 /** Max UTF-16 units per input frame. JSON spends at most 6 bytes on one
@@ -50,10 +51,15 @@ export class AgentTerminal extends HTMLElement {
   websocket?: WebSocket;
   activeKey?: ActiveKey;
   resizeObserver?: ResizeObserver;
-  /** tmux session the server last attached us to — where a reconnect goes,
-   *  always in live mode: a resume is never re-run, so a pi that exited in
-   *  the meantime ends in 'no such live session', not a fresh pi. */
+  /** tmux session the server last attached us to — set on 'attached'. */
   private attachedTarget: TmuxSessionName | null = null;
+  /** The attach frame this element STARTED with (terminal id / run target
+   *  / live name / resume id — plan §7): a reconnect re-sends it, so the
+   *  attach keeps its mode — a terminal tab whose session died mid-drop
+   *  gets the §4 respawn instead of 'no such live session', and a run
+   *  attach never morphs into a respawn. Cleared when attach() starts a
+   *  new target. */
+  private attachMsg: ClientMsg | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelay = RECONNECT_MIN_MS;
   /** Back online / tab visible again: skip the rest of a pending backoff. */
@@ -158,16 +164,23 @@ export class AgentTerminal extends HTMLElement {
     (el.lastElementChild as HTMLElement).textContent = text;
   }
 
-  attach(mode: 'live' | 'resume', target: TmuxSessionName | PiSessionId, key: ActiveKey): void {
+  attach(mode: 'live' | 'resume' | 'terminal' | 'run',
+    target: TmuxSessionName | PiSessionId | TerminalId, key: ActiveKey): void {
     this.cancelReconnect();
     this.closeSocket();
     this.terminal?.reset();
     this.terminal?.focus();
     this.activeKey = key;
     this.attachedTarget = null;
-    this.connect(mode === 'live'
-      ? { type: 'attach', mode: 'live', target }
-      : { type: 'attach', mode: 'resume', id: target }, target, key);
+    // task/ws-terminal (plan §7): the workspace-model modes join live and
+    // resume — 'terminal' carries the tab's uuid (the server derives
+    // t-<uuid>, respawning if dead), 'run' a live job run's session name
+    // (never respawned). The old modes stay until branch 4's UI swap.
+    const msg: ClientMsg = mode === 'live' || mode === 'run'
+      ? { type: 'attach', mode, target }
+      : { type: 'attach', mode, id: target };
+    this.attachMsg = msg;
+    this.connect(msg, target, key);
   }
 
   /** Open a socket and send one attach. A close the server didn't announce
@@ -247,13 +260,22 @@ export class AgentTerminal extends HTMLElement {
     }, delay);
   }
 
-  /** Back to the session we were attached to; tmux redraws the screen and
-   *  xterm keeps its scrollback (no reset). */
+  /** Back to what this element last attached to; tmux redraws the screen
+   *  and xterm keeps its scrollback (no reset). Mode-aware (plan §7): the
+   *  re-send is the frame the attach STARTED with — a terminal tab gets
+   *  the §4 respawn when its session died mid-drop, a run attach stays a
+   *  run. Resume is the one exception, unchanged from before the modes:
+   *  it reconnects LIVE to the session the resume opened — a resume is
+   *  never re-run, so a pi that exited in the meantime ends in
+   *  'no such live session', not a fresh pi. */
   private reconnect(): void {
     const target = this.attachedTarget;
     const key = this.activeKey;
-    if (!target || !key) return;
-    this.connect({ type: 'attach', mode: 'live', target }, target, key);
+    const msg = this.attachMsg;
+    if (!target || !key || !msg) return;
+    this.connect(msg.type === 'attach' && msg.mode === 'resume'
+      ? { type: 'attach', mode: 'live', target }
+      : msg, target, key);
   }
 
   private cancelReconnect(): void {

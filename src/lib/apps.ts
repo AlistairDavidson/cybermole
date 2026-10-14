@@ -157,9 +157,9 @@ export class Apps {
     const deleted = databaseUpdate('could not delete the app', () =>
       this.deps.db.run(qb.deleteFrom('apps').where('id', '=', row.id)));
     if (!deleted.ok) return fail('database_error', deleted.errorMessage);
-    // junction(task/ws-terminal): until spawns land (plan §4) these kills
-    // are near-always no-ops (no session was ever opened); they stay
-    // best-effort and logged either way.
+    // These kills are best-effort and logged either way (plan §4): a
+    // terminal whose spawn failed (dead tab) or whose workspace side is
+    // down simply has no session to kill — the kill is then a no-op.
     for (const t of terminals.data.value) await this.deps.killSession(terminalSessionName(t.id));
     log.info(`app ${slug} deleted (${terminals.data.value.length} terminal sessions killed best-effort)`);
     return { ok: true, resultType: 'delete_app', data: { id: row.id } } satisfies DeleteAppSuccess;

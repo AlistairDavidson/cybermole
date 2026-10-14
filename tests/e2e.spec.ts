@@ -326,7 +326,9 @@ test('malformed requests and frames are rejected without taking the server down'
   // input each used to crash the server) — are dropped; the socket lives on.
   expect(await status('POST', '/api/new', '{"name":"itest-junk"}')).toBe(200);
   const junk = ['null', '[]', '"x"', 'not json', '{"type":"input"}', '{"type":"input","data":5}',
-    '{"type":"resize","cols":"wide"}', '{"type":"attach","mode":"live"}', '{"type":"attach","mode":"resume","id":7}'];
+    '{"type":"resize","cols":"wide"}', '{"type":"attach","mode":"live"}', '{"type":"attach","mode":"resume","id":7}',
+    // the task/ws-terminal modes reject the same way: missing id/target
+    '{"type":"attach","mode":"terminal"}', '{"type":"attach","mode":"run"}'];
   const stillOpen = await page.evaluate(async frames => {
     const ws = new WebSocket(`ws://${location.host}/ws`);
     await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
@@ -1440,6 +1442,38 @@ test('the editor stays absent when unconfigured (task/ws-editor)', async ({ page
   expect((await page.goto('/editor/stable-abc/out/vs/code/browser/workbench/workbench.js'))?.status()).toBe(404);
 
   expect((await request.get('/editor/')).status()).toBe(401);
+});
+
+test('deep link ?t=<uuid> attaches the terminal tab; an unknown uuid degrades to the error status (task/ws-terminal)', async ({ page }) => {
+  // Runs before the rate-limit test (last). The shared webServer spawns
+  // the suite's cmd.sh on the webpi-itest socket; the terminal-mode WS
+  // attach (plan §4/§7) is exercised through the real page wiring:
+  // console-app's pendingTerminal → agent-terminal attach('terminal').
+  await login(page);
+  const cwd = `${WORKSPACE}/t-deep-link`;
+  fs.mkdirSync(cwd, { recursive: true });
+  const wsMade = await api(page, 'POST', '/api/workspaces', { name: 'deep link', cwd });
+  expect(wsMade.status).toBe(200);
+  const made = await api(page, 'POST', `/api/workspaces/${wsMade.json.id}/terminals`, {});
+  expect(made.status).toBe(200);
+  expect(made.json.live).toBe(true);
+  const id = made.json.id as string;
+
+  // The deep link opens the tab's terminal directly (terminal tabs UI is
+  // branch 4's): attached to the derived t-<uuid> session, banner shown.
+  await page.goto(`/?t=${id}`);
+  await expect(page.locator('.terminal-status')).toContainText(`attached: t-${id}`);
+  await waitForTermText(page, MARKER);
+
+  // Graceful degradation: a well-formed uuid that is not ours is a dead
+  // end shown in the status line — the page stays up, nothing respawns.
+  await page.goto('/?t=99999999-9999-4999-8999-999999999999');
+  await expect(page.locator('.terminal-status')).toContainText('no such terminal');
+
+  // Cleanup: close the tab (row + best-effort session kill) and the
+  // workspace, so later state reads (and the Live list) are unchanged.
+  expect((await api(page, 'DELETE', `/api/terminals/${id}`)).status).toBe(200);
+  expect((await api(page, 'DELETE', `/api/workspaces/${wsMade.json.id}`)).status).toBe(200);
 });
 
 test('login rate limit kicks in (10 per 15 min per IP) and ignores a spoofed X-Forwarded-For', async ({ request }) => {

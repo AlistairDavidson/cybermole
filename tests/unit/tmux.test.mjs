@@ -17,8 +17,8 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-tmux-test-'));
 process.env.WEB_PI_TMUX_SOCKET = path.join(dir, 'tmux');
 
 const { socketArgs, forksServer, isServerDown, SERVER_NOT_RUNNING_MSG, requireServer,
-        newSession, resumeSession, hasSession, liveSessionNames, jobSessionName, resumeSessionName,
-        listSessions } =
+        newSession, newSessionArgs, resumeSession, hasSession, liveSessionNames, jobSessionName,
+        resumeSessionName, terminalSessionName, listSessions } =
   await import('../../dist-server/src/lib/tmux.js');
 const { TmuxSessionNameSchema } = await import('../../dist-server/src/schemas/ids.js');
 
@@ -74,6 +74,33 @@ test('resumeSessionName: r-<full id>, hashed only when the id would not fit', ()
   const hashed = resumeSessionName(long);
   assert.match(hashed, /^r-[0-9a-f]{32}$/);
   assert.equal(TmuxSessionNameSchema.safeParse(hashed).success, true);
+});
+
+// ---------- task/ws-terminal (plan §4): the terminal-tab session ----------
+
+test('terminalSessionName: t-<uuid> for every terminal row id — always a valid session name', () => {
+  for (const id of ['123e4567-e89b-42d3-a456-426614174000', '019f4706-0000-7000-8000-00000000abcd']) {
+    const name = terminalSessionName(id);
+    assert.equal(name, `t-${id}`);
+    assert.equal(name.length, 38, "'t-' + a 36-char uuid");
+    assert.equal(TmuxSessionNameSchema.safeParse(name).success, true, name);
+  }
+});
+
+test('newSessionArgs: detached, named, at the cwd, -e env pairs, command after -- (the spawn/respawn argv)', () => {
+  // The argv both the create route's spawn and the WS respawn build —
+  // pure here, no tmux needed: the shape is the contract (a missing '--'
+  // would let a command flag eat tmux's own; env must ride -e so the
+  // command's env never depends on when the server was started).
+  assert.deepEqual(
+    newSessionArgs('t-123e4567-e89b-42d3-a456-426614174000', '/workspace', ['/bin/sh', '-l'],
+      { HOME: '/home/u', PI_CODING_AGENT_DIR: '/state/pi-agent' }),
+    ['new-session', '-d', '-s', 't-123e4567-e89b-42d3-a456-426614174000', '-c', '/workspace',
+      '-e', 'HOME=/home/u', '-e', 'PI_CODING_AGENT_DIR=/state/pi-agent',
+      '--', '/bin/sh', '-l']);
+  // no env → no -e pairs; the command stays last, flags and all
+  assert.deepEqual(newSessionArgs('t-x', '/w', ['/bin/sh', '-c', 'echo hi'], {}),
+    ['new-session', '-d', '-s', 't-x', '-c', '/w', '--', '/bin/sh', '-c', 'echo hi']);
 });
 
 // ---------- functional (real tmux, absolute-path socket, split mode) ----------

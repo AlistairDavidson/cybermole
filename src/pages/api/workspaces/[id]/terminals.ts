@@ -1,6 +1,7 @@
 // /api/workspaces/:id/terminals — POST opens a terminal tab (§6): the
-// domain inserts the row (sort_order = max+10) and answers it with
-// live:false — the tmux spawn wiring is task/ws-terminal (plan §4).
+// domain inserts the row (sort_order = max+10) and best-effort-spawns
+// its tmux session (plan §4) — a failed spawn still returns the row
+// (live:false, a dead tab; the first attach retries the spawn).
 import type { APIRoute } from 'astro';
 import { assertWebPiLocals } from '../../../../lib/web/locals';
 import { parseAndValidateAPIRequest } from '../../../../lib/web/parsing.service';
