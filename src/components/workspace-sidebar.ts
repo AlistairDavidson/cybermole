@@ -12,7 +12,7 @@
 // component lives in here — the filter, badges and row buttons are
 // stateless, re-created by the poll like every other row.
 import type { AppState, ConsoleState, WorkspaceState } from '../lib/types';
-import type { AppId, AppSlug, WorkspaceId } from '../types/branded';
+import type { AppSlug, WorkspaceId } from '../types/branded';
 import '@awesome.me/webawesome/dist/components/input/input.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/badge/badge.js';

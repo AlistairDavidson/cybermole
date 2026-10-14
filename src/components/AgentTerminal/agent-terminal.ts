@@ -76,6 +76,13 @@ export class AgentTerminal extends HTMLElement {
   resizeObserver?: ResizeObserver;
   /** tmux session the server last attached us to — set on 'attached'. */
   private attachedTarget: TmuxSessionName | null = null;
+  /** Is the current attach OVER for good (never attached, or ended by
+   *  the server's 'exit'/'error'/'signed-out')? Read by <terminal-tabs>:
+   *  a tab whose pane has ended gets a FRESH attach on its next click —
+   *  the dead-tab story (plan §4: the row is the structure; the first
+   *  attach retries the spawn). A dropped-but-reconnecting attach is NOT
+   *  ended — the pane handles its own reconnection. */
+  ended = true;
   /** The attach frame this element STARTED with (terminal id / run
    *  target — plan §7): a reconnect re-sends it, so the
    *  attach keeps its mode — a terminal tab whose session died mid-drop
@@ -196,6 +203,7 @@ export class AgentTerminal extends HTMLElement {
     this.terminal?.focus();
     this.activeKey = key;
     this.attachedTarget = null;
+    this.ended = true;
     // 'terminal' carries the tab's uuid (the server derives t-<uuid>,
     // respawning if dead — plan §4); 'run' a live job run's session name
     // (never respawned).
@@ -220,6 +228,7 @@ export class AgentTerminal extends HTMLElement {
     let restarting = false; // the server announced a shutdown — DO reconnect
 
     websocket.onopen = () => {
+      this.ended = false;
       websocket.send(JSON.stringify(msg));
       this.sendSize();
     };
@@ -228,16 +237,18 @@ export class AgentTerminal extends HTMLElement {
       let m: ServerMsg; try { m = JSON.parse(ev.data as string) as ServerMsg; } catch { return; }
       if (m.type === 'output') this.terminal?.write(m.data);
       else if (m.type === 'attached') {
+        this.ended = false;
         this.attachedTarget = m.target;
         this.reconnectDelay = RECONNECT_MIN_MS;
         this.status(`attached: ${m.target} (${m.socket} socket)`, 'ok');
       }
-      else if (m.type === 'error') { ended = true; this.status(m.message, 'err'); this.terminal?.write(`\r\n\u001b[31m${m.message}\u001b[0m\r\n`); }
-      else if (m.type === 'exit') { ended = true; this.status(`detached: ${m.target}`, 'info'); }
+      else if (m.type === 'error') { ended = true; this.ended = true; this.status(m.message, 'err'); this.terminal?.write(`\r\n\u001b[31m${m.message}\u001b[0m\r\n`); }
+      else if (m.type === 'exit') { ended = true; this.ended = true; this.status(`detached: ${m.target}`, 'info'); }
       // The token this socket used was dropped (logout / log out
       // everywhere): final — like 'exit', never reconnected.
       else if (m.type === 'signed-out') {
         ended = true;
+        this.ended = true;
         this.status('signed out', 'info');
         this.terminal?.write('\r\nsigned out\r\n');
       }
@@ -259,7 +270,7 @@ export class AgentTerminal extends HTMLElement {
       if (this.activeKey !== key) return;
       if (!ended) {
         if (this.attachedTarget) this.scheduleReconnect(restarting ? 'server restarting' : 'disconnected');
-        else this.status(`could not connect: ${label}`, 'err');
+        else { this.ended = true; this.status(`could not connect: ${label}`, 'err'); }
       }
       // The console re-polls state on every close — which also sends an
       // expired login back to the sign-in page instead of retrying forever.

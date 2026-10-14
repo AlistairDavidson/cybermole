@@ -8,7 +8,7 @@ import {
   appFailureResponse, consoleStateFailureResponse, databaseUpdateFailureResponse, failureResponse,
   firstIssueText, invalidAppSlugResponse, invalidJobNameResponse, invalidTerminalIdResponse,
   invalidWorkspaceIdResponse, jobFailureResponse, managementFailureResponse, piUpdateResponse,
-  piUpdateStatus, settingsStateFailureResponse, terminalFailureResponse, tmuxSessionFailureResponse,
+  piUpdateStatus, settingsStateFailureResponse, terminalFailureResponse,
   workspaceFailureResponse,
 } from '../../dist-server/src/lib/web/responses.service.js';
 
@@ -49,16 +49,6 @@ test('jobFailureResponse: every jobs code → status, with the { error, detail }
   const invalid = invalidJobNameResponse();
   assert.equal(invalid.status, 400);
   assert.deepEqual(await invalid.json(), { error: 'invalid job name', detail: null, code: 'invalid_job_name' });
-});
-
-test('tmuxSessionFailureResponse: the never-fork guard is 503 with its message; tmux failure is 409', async () => {
-  const guard = tmuxSessionFailureResponse(failure('tmux_session', 'server_not_running',
-    { errorMessage: 'workspace tmux server not running on /x' }));
-  assert.equal(guard.status, 503);
-  assert.match((await guard.json()).error, /workspace tmux server not running/);
-  const taken = tmuxSessionFailureResponse(failure('tmux_session', 'tmux_error', { errorMessage: 'duplicate session' }));
-  assert.equal(taken.status, 409);
-  assert.equal((await taken.json()).error, 'could not create session (name taken?)');
 });
 
 test('piUpdateStatus / piUpdateResponse: busy is 409, the rest 500, success 200 with the UpdateResult body', async () => {

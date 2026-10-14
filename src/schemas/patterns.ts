@@ -7,9 +7,6 @@
 // where an unescaped `-` in a class is a syntax error and the browser
 // silently ignores the whole pattern.
 
-/** pi session ids (uuid); also caps junk written into the state db. */
-export const SESSION_ID_RE = /^[0-9a-zA-Z\-]{1,64}$/;
-
 /** tmux session names on the app socket. 64, not 40: a job run's session
  *  is `webpi-<job name>` and job names go up to 40 (JOB_NAME_RE), so a
  *  40-char cap rejected every run of a job named longer than 34. */

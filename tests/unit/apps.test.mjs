@@ -222,3 +222,28 @@ test('delete_app: database_error on an unwritable db — and a failed kill never
   assert.equal(still.ok, true, still.errorMessage); // kill failure is logged, not surfaced
   assert.equal(appRow(db, 'doomed'), undefined);
 });
+
+// ---------- listApps (GET /api/state's half — plan §5) ----------
+
+test('listApps: every app, sort_order asc (+ created_at tiebreak); database_error on a broken db', async () => {
+  const db = freshDb();
+  const a = apps(db);
+  await a.saveApp('beta app');
+  await a.saveApp('alpha app');
+  await a.saveApp('gamma');
+  const listed = a.listApps();
+  assert.equal(listed.ok, true, listed.errorMessage);
+  assert.equal(listed.resultType, 'app_list');
+  assert.deepEqual(listed.data.apps.map(x => [x.name, x.slug, x.order]), [
+    ['beta app', 'beta-app', 10],
+    ['alpha app', 'alpha-app', 20],
+    ['gamma', 'gamma', 30],
+  ]);
+  for (const app of listed.data.apps) assert.match(app.id, UUID_RE);
+  assert.equal(a.listApps().data.apps.length, 3); // stable across calls
+
+  const broken = apps(brokenDb());
+  const failed = broken.listApps();
+  assert.equal(failed.ok, false);
+  assert.equal(failed.errorCode, 'database_error');
+});

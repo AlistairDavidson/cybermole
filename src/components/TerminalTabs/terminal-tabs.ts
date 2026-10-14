@@ -128,12 +128,17 @@ export class TerminalTabs extends HTMLElement {
   // ---- tab selection ----
 
   /** Activate a terminal tab: creates the pane (and its WS attach) on
-   *  first activation, shows it, hides every other pane. */
+   *  first activation, shows it, hides every other pane. A pane whose
+   *  attach ENDED (the session died out-of-band — plan §4's dead tab) is
+   *  destroyed and re-created, so the click is a fresh attach and the
+   *  server respawns the session at the workspace cwd. */
   selectTerminal(id: TerminalId): void {
     if (!this.body || !this.ws || !this.ws.terminals.some(t => t.id === id)) return;
     this.hideRun();
     this.clearNoTerminals();
     this.active = id;
+    const dead = this.panes.get(id);
+    if (dead?.ended) this.destroyPane(id);
     const pane = this.ensurePane(id);
     for (const [pid, p] of this.panes) {
       (p as unknown as HTMLElement).classList.toggle('hidden', pid !== id);

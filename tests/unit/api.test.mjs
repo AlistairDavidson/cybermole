@@ -6,10 +6,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  loginBody, loginForm, newSessionBody, jobValidateBody,
-  hideBody, unhideBody, updatePiBody, autoUpdateBody,
+  loginBody, loginForm, jobValidateBody, updatePiBody, autoUpdateBody,
   appCreateBody, appPatchBody, workspaceCreateBody, workspacePatchBody,
-  terminalCreateBody, terminalPatchBody,
+  terminalCreateBody, terminalPatchBody, appForm, workspaceForm,
 } from '../../dist-server/src/schemas/api.js';
 import { JobSaveSchema } from '../../dist-server/src/schemas/jobs.js';
 import { parseZod } from '../../dist-server/src/lib/web/parsing.service.js';
@@ -29,8 +28,6 @@ const parse = (schema, v) => {
   return r.data;
 };
 
-const GOOD_ID = '019f4706-0000-7000-8000-000000000001';
-
 test('loginBody: string username + password, extra keys stripped', () => {
   assert.deepEqual(parse(loginBody, { username: 'u', password: 'p', junk: 1 }),
     { username: 'u', password: 'p' });
@@ -40,13 +37,6 @@ test('loginBody: string username + password, extra keys stripped', () => {
     { username: 5, password: 'p' }, { username: 'u', password: null }, null, []]) {
     assert.equal(ok(loginBody, bad), false, JSON.stringify(bad));
   }
-});
-
-test('newSessionBody: any string name — emptiness is the handler\'s call', () => {
-  assert.deepEqual(parse(newSessionBody, { name: '  My Session!' }), { name: '  My Session!' });
-  assert.deepEqual(parse(newSessionBody, { name: '' }), { name: '' });
-  assert.equal(ok(newSessionBody, {}), false);
-  assert.equal(ok(newSessionBody, { name: 5 }), false);
 });
 
 test('JobSaveSchema: normalizes the name, trims, and names each failing field', () => {
@@ -90,28 +80,6 @@ test('loginForm: stricter than loginBody — empty fields fail in the browser', 
   assert.equal(ok(loginBody, { username: '', password: '' }), true); // the server stays permissive
 });
 
-test('hideBody: id must match SESSION_ID_RE; the message names it', () => {
-  assert.deepEqual(parse(hideBody, { id: GOOD_ID }), { id: GOOD_ID });
-  for (const bad of [{}, { id: '' }, { id: 'has spaces' }, { id: 5 }, { id: 'x'.repeat(65) }]) {
-    assert.equal(ok(hideBody, bad), false, JSON.stringify(bad));
-  }
-  assert.equal(issueText(hideBody, { id: 'has spaces' }), 'id: invalid session id');
-});
-
-test('unhideBody: {all:true} or a valid {id}; all wins when both are present', () => {
-  assert.deepEqual(parse(unhideBody, { all: true }), { all: true });
-  assert.deepEqual(parse(unhideBody, { id: GOOD_ID }), { id: GOOD_ID });
-  // both present: all wins, id stripped — the old check's precedence
-  assert.deepEqual(parse(unhideBody, { all: true, id: 'garbage!' }), { all: true });
-  for (const bad of [{}, { all: 'yes' }, { all: 1 }, { all: false }, { id: 'garbage!' }, { id: 5 }, null]) {
-    assert.equal(ok(unhideBody, bad), false, JSON.stringify(bad));
-  }
-  // a bad id names the field; a shape matching neither branch gets the
-  // union's own message (zod's default would only be 'Invalid input')
-  assert.equal(issueText(unhideBody, { id: 'garbage!' }), 'id: invalid session id');
-  assert.match(issueText(unhideBody, {}), /invalid session id$/);
-});
-
 test('updatePiBody: dryRun defaults false; only booleans pass', () => {
   assert.deepEqual(parse(updatePiBody, {}), { dryRun: false });
   assert.deepEqual(parse(updatePiBody, { dryRun: true }), { dryRun: true });
@@ -131,7 +99,29 @@ test('autoUpdateBody: one boolean; anything else names the field', () => {
 });
 
 test('a failed body renders "field: message" (the 400 text)', () => {
-  assert.match(issueText(newSessionBody, { name: 5 }), /^name: /);
+  assert.match(issueText(appCreateBody, { name: 5 }), /^name: /);
+});
+
+// ---------- the console dialogs' forms (task/ws-console, plan §8) ----------
+
+test('appForm: a trimmed non-empty name, capped at 80; emptiness named', () => {
+  assert.deepEqual(parse(appForm, { name: '  My App! ' }), { name: 'My App!' });
+  assert.equal(issueText(appForm, { name: '   ' }), 'name: name is required');
+  assert.equal(issueText(appForm, { name: 'x'.repeat(81) }), 'name: name is too long (max 80)');
+  for (const bad of [{}, { name: 5 }, null]) {
+    assert.equal(ok(appForm, bad), false, JSON.stringify(bad));
+  }
+});
+
+test('workspaceForm: name + cwd both required (the dialog prefills cwd)', () => {
+  assert.deepEqual(parse(workspaceForm, { name: ' scratch ', cwd: ' /workspace ' }),
+    { name: 'scratch', cwd: '/workspace' });
+  assert.equal(issueText(workspaceForm, { name: '', cwd: '/w' }), 'name: name is required');
+  assert.equal(issueText(workspaceForm, { name: 'w', cwd: ' ' }), 'cwd: cwd is required');
+  assert.equal(issueText(workspaceForm, { name: 'w', cwd: 'x'.repeat(4097) }), 'cwd: cwd is too long');
+  for (const bad of [{}, { name: 'w' }, { cwd: '/w' }, { name: 5, cwd: '/w' }, null]) {
+    assert.equal(ok(workspaceForm, bad), false, JSON.stringify(bad));
+  }
 });
 
 // ---------- workspaces-plan §6 bodies (task/ws-schema) ----------
