@@ -170,16 +170,22 @@ export function invalidWorkspaceIdResponse(): Response {
 export type TerminalFailure = NewTerminalFailure | CloseTerminalFailure | RenameTerminalFailure;
 
 /** Terminal failures → status. server_not_running mirrors POST /api/new's
- *  503 (retryable once the workspace side is back). */
+ *  503 (retryable once the workspace side is back). A spawn-failed create
+ *  still carries its row (plan §4: live:false, a dead tab) — the body
+ *  includes it so the UI can show the tab. */
 export function terminalFailureResponse(f: TerminalFailure): Response {
+  // Only the new_terminal family ever sets data on a failure (the
+  // row-created-despite-spawn-failure contract); narrowing keeps the
+  // close/rename failures' bodies unchanged.
+  const terminal = f.resultType === 'new_terminal' && f.data ? { terminal: f.data } : {};
   switch (f.errorCode) {
     case 'workspace_not_found':
     case 'terminal_not_found':
       return jsonResponse({ error: f.errorMessage ?? 'no such terminal', code: f.errorCode }, 404);
     case 'server_not_running':
-      return jsonResponse({ error: f.errorMessage ?? 'workspace tmux server not running', code: f.errorCode }, 503);
+      return jsonResponse({ error: f.errorMessage ?? 'workspace tmux server not running', code: f.errorCode, ...terminal }, 503);
     case 'tmux_error':
-      return jsonResponse({ error: f.errorMessage ?? 'tmux error', code: f.errorCode }, 500);
+      return jsonResponse({ error: f.errorMessage ?? 'tmux error', code: f.errorCode, ...terminal }, 500);
     case 'database_error':
       return jsonResponse({ error: f.errorMessage ?? 'database error', code: f.errorCode }, 500);
     default:

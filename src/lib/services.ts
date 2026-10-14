@@ -31,6 +31,7 @@ import type { EditorUpstream } from './editor';
 import type { CalendarCheck, ConsoleState, SettingsState } from './types';
 import type { SessionToken, TmuxSessionName } from '../types/branded';
 import type { ResultFailure, ResultSuccess } from '../types/result';
+import type { TmuxSessionFailure, TmuxSessionSuccess } from './tmux';
 
 /** database_error: the hidden-session overlay or the credential row could
  *  not be read (the session scan and the tmux list can't fail by design). */
@@ -118,12 +119,18 @@ export interface ServiceDeps {
   scheduler: Scheduler;
   autoUpdater: AutoUpdater;
   objectStore: ObjectStore;
-  /** env for processes spawned inside tmux sessions (pi) */
+  /** env for processes spawned inside tmux sessions (terminal tabs,
+   *  /api/new until branch 4 deletes it, job runs) */
   sessionEnv: Record<string, string>;
   /** Best-effort tmux kill of one session (tmux.killSession) — the
    *  terminal/app/workspace deletes; injected so the domains stay
    * unit-testable without a tmux server. */
   killSession: (name: TmuxSessionName) => Promise<boolean>;
+  /** Start a terminal tab's tmux session (tmux.newSession with the
+   *  configured command + sessionEnv — plan §4); injected into the
+   *  workspaces domain for the same testability reason as killSession. */
+  spawnSession: (name: TmuxSessionName, cwd: string) =>
+    Promise<TmuxSessionSuccess | TmuxSessionFailure>;
   // task/mgmt-page: graceful-restart trigger for the swap step (the
   // server's own shutdown path — no docker socket anywhere), and the
   // LIVE snapshot of what this process serves (a GETTER: main.ts falls
@@ -154,7 +161,7 @@ export function createServices(deps: ServiceDeps): WebPiServices {
   const apps = new Apps({ db: stateDb, username: () => auth.username(), killSession: deps.killSession });
   const workspaces = new Workspaces({
     db: stateDb, username: () => auth.username(), killSession: deps.killSession,
-    defaultCwd: cfg.newSessionCwd, sessionEnv,
+    defaultCwd: cfg.newSessionCwd, spawnSession: deps.spawnSession,
   });
   return {
     cfg, auth, hiddenSessions, scheduler, autoUpdater, objectStore, management, apps, workspaces,
