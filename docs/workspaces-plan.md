@@ -1,10 +1,14 @@
 # The workspaces plan — sessions → apps/workspaces/terminals
 
-Status: plan, agreed in design discussion; reviewed twice (round 1:
-18 findings; round 2, on the editor swap: 15 — all incorporated). The
-editor is VSCodium's reh-web build, same-origin-proxied through web-pi.
-Supersedes the "Disassociate sessions from pi" / "Apps" sketches in
-TODO.md.
+Status: **shipped** — all six §13 branches landed on main, in build
+order: `task/ws-schema` (3de0fdb), `task/ws-terminal` (cce609e),
+`task/ws-editor` (c2d82cd), `task/ws-console` (7558909), `task/ws-jobs`
+(cec51ae), and `task/ws-docs` (this branch — the docs refresh that
+flipped this header; README/TODO/docs now describe the shipped
+system). The editor shipped as VSCodium's reh-web build,
+same-origin-proxied through web-pi. The "Disassociate sessions from
+pi" / "Apps" sketches it superseded are gone from TODO.md. The body
+below is the plan as agreed — the historical record, unchanged.
 
 ## 1. Concept model
 
