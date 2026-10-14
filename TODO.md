@@ -14,7 +14,16 @@ self-naming workspaces
 
 ability to configure default agent
 
-collapsable app header in list
+in navigation, apps should be collapsible
+
+maybe hideable nav on desktop
+
+global light/dark mode from browser, not hard coded
+vscodium follow global light/dark mode
+
+vscodium - default to trusted mode
+need git installed on the container (according to vscodium)
+astro extension, any other extensions appropriate to our stack
 
 ## Workspaces follow-ups (deferred with the plan — docs/workspaces-plan.md §14)
 
@@ -63,6 +72,9 @@ HIG skill
 
 ## Deferred, ignore
 postgres option
+
+ ```Warning: tmux extended-keys is off. Modified Enter keys may not work. Add `set -g
+ extended-keys on` to ~/.tmux.conf and restart tmux.```
 
 xterm:
   unicode-graphemes - emoji/combining chars currently render wrong-width in agent output (6.0-only on npm, experimental)

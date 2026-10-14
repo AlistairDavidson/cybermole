@@ -107,6 +107,12 @@ Each item below was observed, not inferred:
    on first open of a folder; the choice persists in user data (the
    persistent `webpi-editor-home` volume answers it once per folder).
    Worth knowing for host-side verification — it is not an error.
+   **[Superseded at merge: the shipped entrypoint passes
+   `--disable-workspace-trust` — the served workbench embeds
+   `enableWorkspaceTrust:false` and folders open trusted with no dialog.
+   The choice also turned out to persist browser-side (APPLICATION_SHARED
+   storage lives in the browser, not the home volume), so without the flag
+   it would have nagged once per folder per browser forever.]**
 8. **CSP held / blocked as designed.** With the shipped header set
    (`worker-src 'self' blob:`, `img-src 'self' data: blob:`, `frame-src
    'self'`, `connect-src 'self' ws: wss:`, inline script/style allowed):
@@ -168,8 +174,9 @@ same dance.
 1. `docker compose --profile editor up -d` with
    `WEB_PI_EDITOR_UPSTREAM=http://editor:3000` — `/editor/` serves the
    workbench through the console's origin; sign in, open a workspace
-   folder from the sidebar's ⌷ button, expect the trust dialog once,
-   then files.
+   folder from the sidebar's ⌷ button, expect files (no trust dialog —
+   `--disable-workspace-trust`; git present — SCM view live; the bundled
+   Astro/Playwright/YAML extensions listed under Installed).
 2. Open the **Extensions viewlet** and browse; watch the iframe console for
    a CSP violation naming `open-vsx.org` (see the pin above — flip the one
    constant if it appears).

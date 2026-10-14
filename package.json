@@ -7,10 +7,11 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "astro dev",
+    "dev": "docker compose --profile dev up --build dev",
+    "dev:set-password": "docker compose --profile dev exec dev npm run set-password",
     "dev:server": "node tools/dev-server-watch.mjs",
     "build": "astro build && tsc -p tsconfig.server.json",
-    "start": "node dist-server/server/main.js",
+    "start": "docker compose up -d --build",
     "set-password": "node dist-server/server/set-password.js",
     "check": "astro check && tsc -p tsconfig.server.json --noEmit",
     "test:e2e": "playwright test",

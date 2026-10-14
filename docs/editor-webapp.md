@@ -51,6 +51,7 @@ users), umask 0007. The entrypoint runs the tarball's own
 --host 0.0.0.0 --port 3000 \
 --server-base-path "${WEB_PI_BASE%/}/editor" \
 --without-connection-token \
+--disable-workspace-trust \
 --telemetry-level off
 ```
 
@@ -58,8 +59,30 @@ users), umask 0007. The entrypoint runs the tarball's own
   no launcher, no token file.
 - the base path interpolates from `WEB_PI_BASE` exactly like the webpi
   service's, so asset URLs line up with the proxy.
-- the first folder open shows VS Code's **workspace-trust dialog** once
-  (persists in user data — the home volume).
+- **workspace trust is off** (`--disable-workspace-trust` → the served
+  workbench embeds `enableWorkspaceTrust:false` → every folder opens
+  trusted, no dialog). The feature gates running tasks/builds from
+  checkouts you don't control — but this session-gated editor already IS
+  the same uid-2000 shell the terminal tab grants, so gating it on itself
+  buys nothing. (The dialog's choice also persists browser-side —
+  APPLICATION_SHARED storage lives in the browser, not the home volume —
+  so without the flag it would nag once per folder per browser forever.)
+
+The image also carries what the workbench needs to know the stack:
+
+- **git** (apt) — the built-in Git/SCM extension and the integrated
+  terminal shell out to it (VSCodium flags it missing otherwise).
+- **Bundled extensions**, pinned Open VSX `.vsix`s sha256-verified at
+  build into `/opt/editor-bundled-extensions` (the same supply-chain
+  discipline as the tarball): the official **Astro** extension (platform
+  `.vsix`, one sha256 per arch), **Playwright** (the repo's e2e toolchain),
+  and **Red Hat's YAML** (compose/deploy configs — VS Code bundles no YAML
+  of its own). The entrypoint installs them offline into the home volume
+  on first boot — a marker keyed on the `.vsix` hashes makes later boots a
+  no-op and re-runs exactly when the image's pins move — and a failure
+  degrades to an editor without the bundle, never a dead container. What
+  the user installs or removes from Open VSX afterwards is theirs: the
+  marker only ever (re)adds the bundled set.
 
 Server data (user-data, extensions, logs) lives under `$HOME`
 (`.vscodium-server`, `.local/state/VSCodium`) on the persistent
@@ -72,16 +95,15 @@ Open VSX is the default gallery (VSCodium build); its queries are the
 editor container's own server-side egress. Operators can repoint or empty
 it with `VSCODE_GALLERY_*` env vars if they want the marketplace fully off.
 
-## compose (`--profile editor`)
+## compose (part of the plain stack)
 
-```sh
-WEB_PI_EDITOR_UPSTREAM=http://editor:3000 docker compose --profile editor up -d
-```
-
-Set the var in `.env` next to compose.yaml so `up -d` recreates webpi with
-the proxy on; `up -d editor` alone boots the editor next to a running webpi
-whose env still has it off. Unset/empty = editor off everywhere: web-pi
-boots clean, `/editor/*` answers 404, the console hides its affordances.
+The editor container ships in the plain `docker compose up -d` / `npm
+start` stack, and webpi's `WEB_PI_EDITOR_UPSTREAM` defaults to
+`http://editor:3000` — the editor tab works out of the box. Opt out by
+setting the variable EMPTY in `.env` next to compose.yaml (the `-`
+interpolation form honors an explicit empty): editor off everywhere,
+web-pi boots clean, `/editor/*` answers 404, the console hides its
+affordances — the idle editor container is cheap to leave running.
 Nothing publishes a port: the compose network is the only door.
 
 ## The proxy (server/main.ts + src/lib/editor.ts)

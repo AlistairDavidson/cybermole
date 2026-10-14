@@ -49,8 +49,8 @@ containers and two uids (server vs tmux/terminals) — see
   Code in the browser with server-side files, served same-origin through
   web-pi's `/editor` proxy behind the session gate — every tab opens its
   workspace's cwd (`?folder=`), many folders at once
-  ([docs/editor-webapp.md](docs/editor-webapp.md)). Off unless the editor
-  profile + `WEB_PI_EDITOR_UPSTREAM` are deployed.
+  ([docs/editor-webapp.md](docs/editor-webapp.md)). Ships in the compose
+  stack (`WEB_PI_EDITOR_UPSTREAM` defaults on in compose; empty = off).
 - **Jobs** (`/jobs`) — scheduled commands ("cron") on the built-in
   scheduler: name + 5-field cron schedule + arbitrary shell command,
   optionally tagged with an app. Every run — scheduler-fired or "run now"
@@ -117,11 +117,15 @@ live job run (the jobs page's "view" button).
 
 ## Quick start
 
+Docker is the run shape — `npm start` and `npm run dev` drive the compose
+stack (on hosts without docker, see [Developing](#developing) for the
+bare `dev:server` path and [Deploying](#deploying) for the host install):
+
 ```sh
-npm install
-npm run build
-npm run set-password          # interactive; writes the credential into webpi.db (0600)
-npm start                     # serves on http://127.0.0.1:3000
+npm start                     # = docker compose up -d --build — web + workspace
+                              #   + editor + seaweedfs + one-shot inits,
+                              #   serving on http://127.0.0.1:3000
+docker compose exec webpi node dist-server/server/set-password.js   # once, fresh deploy
 ```
 
 Put it behind TLS (any reverse proxy) before exposing it anywhere — the
@@ -130,32 +134,46 @@ cookie is `Secure` and login POSTs shouldn't cross plain HTTP. See
 fail2ban jail for failed logins. One host only, whatever fronts it —
 sessions and rate limits are in-process state and the tmux server is
 host-local on the app's own socket, so there is no multi-instance/LB
-shape (see [Deploying](#deploying)). Container route:
-
-```sh
-docker compose up -d        # builds the image, serves on 127.0.0.1:3000
-```
+shape (see [Deploying](#deploying)).
 
 ## Developing
 
-**In the container** (same image as production):
+One command runs the whole app for development — every dev container,
+every parameter set (the app, the editor, object storage, the one-shot
+inits), logs streaming to your terminal:
 
 ```sh
-docker compose --profile dev up dev   # astro dev :4321 + API/WS :3001
+npm run dev    # = docker compose --profile dev up --build dev
+               #   → http://127.0.0.1:3001 — Ctrl-C stops the stack
 ```
 
-The repo is bind-mounted into the container at `/app`; `node_modules` is a
-shadow volume so the container builds its own native deps (`node-pty`)
-without touching the host's. First boot npm-installs (a few minutes);
-later boots self-heal in seconds. Everything is real: `webpi.db` login,
-the workspace tree, live attach — and the new-workspace dialog prefills
-`/app` (the repo, `WEB_PI_NEW_SESSION_CWD`), so terminals work in the
-checkout, self-modification included (the editor tab is off in the dev
-profile — no editor service there; point `WEB_PI_EDITOR_UPSTREAM` at a
-running one to turn it on). Page edits hot-reload through the bind mount
-(the pages `astro dev` itself renders; the data pages live on the API
-half's `:3001`, which `dev:server` rebuilds and restarts on change — the
-same split as the host flow below).
+On a fresh state db, set the throwaway login once (in a second terminal,
+while `npm run dev` is attached):
+
+```sh
+docker compose --profile dev exec dev npm run set-password
+```
+
+What that command brings up:
+
+- **dev** — the app, built from the same repo's `dev` image target, with
+  the checkout bind-mounted at `/app` (`node_modules` is a shadow volume
+  so the container builds its own native deps — first boot npm-installs
+  for a few minutes, later boots self-heal in seconds). One server:
+  `dev:server` builds, serves `:3001`, and rebuilds + restarts on change
+  — everything renders exactly as production does. Everything is real:
+  `webpi.db` login, the workspace tree, live attach — the new-workspace
+  dialog prefills `/app` (the repo, `WEB_PI_NEW_SESSION_CWD`), so
+  terminals work in the checkout, self-modification included.
+- **dev-editor** — the editor, ON by default: the same image as prod's
+  `editor` but as the *host* uid over the same `/app` bind, so the editor
+  tab opens the checkout dev workspaces live in and writes it as its
+  owner (prod's uid-2000 editor edits the `webpi-workspace` volume
+  instead — path + uid agreement is per shape). Boot dev without it by
+  setting `WEB_PI_EDITOR_UPSTREAM=` empty in `.env`.
+- **dev-seaweedfs** — uploads (throwaway, fixed dev keys, S3 on loopback
+  `:8333`), plus the one-shot `dev-init`/`dev-editor-init` chowns.
+
 Dev state (`webpi.db`, `pi-agent/`) lives in the container's `/tmp`
 (`WEB_PI_STATE_DIR: /tmp/web-pi-state`) — throwaway: recreate the dev
 service and you re-run set-password; production's `webpi-state` volume is
@@ -168,28 +186,23 @@ Notes:
   next to `compose.yaml`).
 - The repo bind uses the `:z` volume flag — required on SELinux-enforcing
   hosts (relabels the tree `container_file_t`), a no-op elsewhere.
-- Dev shares ports 3001/4321 with the host flow below — run one or the
-  other, not both.
+- Dev shares port 3001 with the host flow below — run one or the other,
+  not both.
 - The dev profile builds the `dev` image target (`web-pi:local-dev`),
   which carries `build-essential`/`python3` for the in-container
   `node-pty` build; the prod image (`web-pi:local`) stays slim.
-- Uploads go to `dev-seaweedfs` (throwaway, fixed dev keys, S3 on
-  loopback `:8333`), started with `dev`.
 
-**On the host** (no docker): two processes — `astro dev` serves the
-no-data pages (HMR — the data pages render only inside the Node server,
-see below), the JSON API routes (`src/pages/api`) need the services the
-Node server builds (they answer 503 without them), and the terminal WS
-and login/logout live in the Node server itself, so the Vite server
-proxies `/api`, `/partials`, `/editor`, `/ws`, and login/logout POSTs to it:
+The dev loop is `dev:server`'s watch: it rebuilds on changes to `src/`,
+`server/`, `public/`, the tsconfigs, `astro.config.mjs` and restarts —
+an edit appears on `:3001` as soon as the build finishes (reload the
+tab; open terminals drop with a restart). A failed build keeps the
+running server on the last good one, and the in-memory login rate limit
+clears on every restart, so neither ever bites while iterating.
 
-```sh
-npm run dev:server   # API + WS half on :3001 — build, boot, then rebuild+restart on change
-npm run dev          # astro dev on :4321, proxying to the dev API server
-```
-
-For uploads, run the dev profile's object store and point the API half
-at it (without it, `POST /api/files` answers 503):
+**On the host** (no docker): `npm run dev:server` alone serves the same
+`:3001` (build + boot + rebuild/restart on change) — you lose only the
+containers around it. Uploads need the dev object store (without it,
+`POST /api/files` answers 503):
 
 ```sh
 docker compose --profile dev up -d dev-seaweedfs
@@ -197,20 +210,25 @@ WEB_PI_S3_ENDPOINT=http://127.0.0.1:8333 WEB_PI_S3_ACCESS_KEY=webpi-dev \
   WEB_PI_S3_SECRET_KEY=webpi-dev-secret npm run dev:server
 ```
 
-Browse by what you're working on. `astro dev` (`:4321`) hot-reloads the
-console shell and the login page — their markup and client code. The
-data pages (`/settings`, `/jobs`, `/management`) assert the services in
-locals and throw in `astro dev`'s own render, telling you to browse the
-dev server instead: `:3001` (`npm run dev:server`) renders them exactly
-as production does. `dev:server` watches its build inputs (`src/`,
-`server/`, `public/`, the tsconfigs, `astro.config.mjs`) and rebuilds +
-restarts itself on change, so an edit to a data page's view, a partial,
-or an API route appears on `:3001` as soon as the build finishes —
-reload your `:3001` tabs after a restart (open terminals drop with
-it). A failed build keeps the running server on the last good one, and
-the in-memory login rate limit clears on every restart, so neither ever
-bites while iterating. Override the proxy target with `WEB_PI_DEV_API`
-if you run the API half elsewhere.
+The editor tab likewise needs an editor reachable from the host — run
+the image with a published port, the workspace tree bind-mounted **at
+the same path** (the tab opens the workspace cwd verbatim as the
+editor's `?folder=`, and the editor opens it in its own container), and
+a writable `$HOME`:
+
+```sh
+docker build -t web-pi-editor:local editor/
+mkdir -p /tmp/webpi-editor-home && chmod 777 /tmp/webpi-editor-home
+docker run -d --name webpi-editor-dev -p 127.0.0.1:13000:3000 \
+  -u 2000:2001 -e WEB_PI_BASE=/ \
+  -v "$PWD":$PWD -v /tmp/webpi-editor-home:/home/workspace \
+  web-pi-editor:local
+WEB_PI_EDITOR_UPSTREAM=http://127.0.0.1:13000 npm run dev:server
+```
+
+(`-v "$PWD":$PWD` — or whatever tree your workspaces' cwds live under:
+the editor container must see each cwd at its own path. The compose dev
+profile needs none of this — `dev-editor` is wired in by default.)
 
 ## Configuration (environment)
 
@@ -253,7 +271,7 @@ directly.
 | `WEB_PI_S3_ACCESS_KEY` / `WEB_PI_S3_SECRET_KEY` | *(unset)* | the store's credentials. In compose, generated once by `seaweedfs-init` and loaded by the entrypoint — not set in `compose.yaml` |
 | `WEB_PI_S3_BUCKET` | `webpi` | bucket for uploads (created on first use when missing) |
 | `WEB_PI_S3_REGION` | `us-east-1` | SigV4 signing region — self-hosted servers accept any |
-| `WEB_PI_EDITOR_UPSTREAM` | *(unset: editor off)* | the [VSCodium reh-web editor](docs/editor-webapp.md)'s upstream on the compose network (`http://editor:3000`, the opt-in `editor` profile) — the single switch: unset, `/editor/*` answers 404 and the console hides its editor tab; a malformed value stops the server at boot, like the S3 vars. Auth is the web session itself — no token, no launcher URL; folders are URL params |
+| `WEB_PI_EDITOR_UPSTREAM` | *(unset: editor off)* | the [VSCodium reh-web editor](docs/editor-webapp.md)'s upstream — the single switch: unset, `/editor/*` answers 404 and the console hides its editor tab; a malformed value stops the server at boot, like the S3 vars. Compose wires it by default (`http://editor:3000` — the editor container ships in the plain stack; set it empty in `.env` to switch the editor off). Auth is the web session itself — no token, no launcher URL; folders are URL params |
 | `WEB_PI_DEV_API` | `http://127.0.0.1:3001` | dev only: where `astro dev` proxies `/api`, `/partials`, `/editor`, `/ws`, login/logout (the `npm run dev:server` process) |
 | `WEB_PI_LOKI_URL` | *(unset: console-only)* | push URL of a Grafana Loki for the server's operational logs (`http://loki:3100` when the compose `observability` profile runs). Unset — the default, and the dev profile and plain hosts — logging is console-only, identical to before observability existed. A set-but-malformed value stops the server at boot, like the S3 vars |
 | `WEB_PI_LOKI_JOB` | `webpi` | the `job` label every pushed log line carries — identifies this deployment in Loki's stream selectors. Letters, digits, `_`, `-`, max 64 chars |
@@ -347,11 +365,15 @@ deploy.
 
 ```sh
 docker compose build        # subpath deploy: 'The base path' below first — WEB_PI_BASE=/webpi docker compose build
-docker compose up -d        # web + workspace + seaweedfs + one-shot inits; loopback :3000, TLS reverse proxy in front
+docker compose up -d        # web + workspace + editor + seaweedfs + one-shot inits; loopback :3000, TLS reverse proxy in front
 docker compose --profile observability up -d   # additionally: loki + grafana (Observability below) — set WEB_PI_LOKI_URL too
-docker compose --profile editor up -d        # additionally: the VSCodium editor (The editor below) — set WEB_PI_EDITOR_UPSTREAM too
 docker compose exec webpi node dist-server/server/set-password.js   # once, on a fresh deploy
 ```
+
+(`npm start` is the middle two lines in one.) The editor container is
+part of the plain stack and its proxy is wired on by default — set
+`WEB_PI_EDITOR_UPSTREAM` empty in `.env` if you'd rather run without it
+([The editor](#the-editor-vscodium-reh-web) below).
 
 ### The privilege split (two containers)
 
@@ -410,7 +432,7 @@ The pre-split `webpi-app` volume (the entrypoint-synced `/app` the server
 served from) is obsolete — web serves from the image now — and is left in
 place, unused, on existing hosts.
 
-### The editor (VSCodium reh-web — opt-in profile)
+### The editor (VSCodium reh-web)
 
 The Zed/KasmVNC webapp is gone (streaming a desktop GUI was the poor fit:
 separate basic auth, one instance, no per-folder URLs, a launcher
@@ -418,18 +440,12 @@ container — see [docs/editor-webapp.md](docs/editor-webapp.md) for the
 full story of what replaced it). The editor is VSCodium's **reh-web**
 build — self-hosted VS Code in the browser with server-side files —
 served through web-pi's own **same-origin `/editor` proxy** behind the
-session gate, never published directly:
-
-```sh
-WEB_PI_EDITOR_UPSTREAM=http://editor:3000 docker compose --profile editor up -d
-```
-
-Set `WEB_PI_EDITOR_UPSTREAM` next to `compose.yaml` (a `.env` file) so
-`up -d` recreates the webpi service too — `--profile editor` alone boots
-the editor next to a running webpi whose env still has it off. Unset,
-`/editor/*` answers 404 and the console hides its editor tab. Two more
-services from a thin in-repo image (`editor/`, the pinned reh-web
-tarball):
+session gate, never published directly. It ships in the plain compose
+stack: `up -d` starts it and wires the proxy on
+(`WEB_PI_EDITOR_UPSTREAM` defaults to `http://editor:3000`); set that
+variable empty in `.env` to run without it — `/editor/*` then answers
+404 and the console hides its editor tab. Two services from a thin
+in-repo image (`editor/`, the pinned reh-web tarball):
 
 - **editor** (uid 2000) — `codium-server` on the compose network (publishes
   nothing), `--server-base-path ${WEB_PI_BASE%/}/editor` so its asset URLs
@@ -566,7 +582,7 @@ WEB_PI_LOKI_URL=http://loki:3100 docker compose --profile observability up -d
 That env var (via compose interpolation) is what points the webpi
 service at Loki over the compose network — `up -d` recreates webpi to
 pick it up. **Grafana** is loopback-published on `127.0.0.1:3300`
-(3000/3001/4321 are web-pi's own): browse to it, the Loki datasource is
+(3000/3001 are web-pi's own): browse to it, the Loki datasource is
 already provisioned (`deploy/grafana/provisioning/`), anonymous access
 is read-only (Viewer) — enough to query logs — and the `admin` account
 (its default password must be changed on first login) is for editing.

@@ -24,9 +24,10 @@
 // they must stay in sync with it (package.json keeps its plain form —
 // e2e, prepack and production build in place, with nothing serving).
 //
-// The port is forced to 3001, as the old one-liner forced it: astro
-// dev's proxy targets it by default (WEB_PI_DEV_API retargets).
-// Everything else is inherited from this process's environment.
+// The port is forced to 3001, as the old one-liner forced it: the
+// compose dev service publishes it (and the historical astro-dev proxy
+// targeted it). Everything else is inherited from this process's
+// environment.
 //
 // fs.watch noise (inotify) is filtered — dotfiles, `#`-prefixed locks,
 // editor swap (vim's 4913, *.swp/*.swo, *~): opening a file in vim

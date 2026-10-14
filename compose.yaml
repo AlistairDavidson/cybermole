@@ -28,17 +28,6 @@
 #                            workspace (pi sessions) can't reach it.
 #     seaweedfs-init (one-shot) — generates the S3 credentials both sides
 #                            load, once, onto their own volume.
-#
-#   observability (opt-in):  docker compose --profile observability up -d
-#          → loki + grafana + a one-shot loki-init. Loki (log aggregation,
-#          winston-loki push API) publishes NO port — webpi reaches it as
-#          http://loki:3100 over the compose network (set WEB_PI_LOKI_URL
-#          when bringing the profile up). Grafana is loopback-published on
-#          :3300 with the datasource provisioned. Plain `up` and the dev
-#          profile start none of it — the server logs console-only when
-#          loki is absent, by design.
-#   editor profile (opt-in):  docker compose --profile editor up -d
-#
 #     editor     uid 2000 — the VSCodium reh-web editor (docs/
 #                            editor-webapp.md): self-hosted VS Code in the
 #                            browser with server-side files, served through
@@ -50,18 +39,31 @@
 #                            user-data/extensions; empty named volumes start
 #                            root-owned and uid 2000 must write $HOME).
 #
-#   Bring the profile up WITH the proxy on: set
-#   WEB_PI_EDITOR_UPSTREAM=http://editor:3000 next to compose.yaml (a .env
-#   file) so `up -d` recreates webpi too — `up -d editor` alone boots the
-#   editor next to a running webpi whose env still has it off.
+#   The editor ships in the plain stack (`npm start` / docker compose up -d):
+#   webpi's WEB_PI_EDITOR_UPSTREAM defaults to http://editor:3000 below. Opt
+#   out by setting it EMPTY in a .env next to compose.yaml — the console
+#   hides the editor tab and /editor answers 404 (the idle container is
+#   cheap to leave running).
 #
-#   dev:   docker compose --profile dev up dev     → single-user dev servers
-#          with the repo bind-mounted (the split is a prod shape; dev
-#          stays one container).
+#   observability (opt-in):  docker compose --profile observability up -d
+#          → loki + grafana + a one-shot loki-init. Loki (log aggregation,
+#          winston-loki push API) publishes NO port — webpi reaches it as
+#          http://loki:3100 over the compose network (set WEB_PI_LOKI_URL
+#          when bringing the profile up). Grafana is loopback-published on
+#          :3300 with the datasource provisioned. Plain `up` and the dev
+#          profile start none of it — the server logs console-only when
+#          loki is absent, by design.
 #
-# Name the `dev` service (as above): services without profiles (webpi,
-# workspace, workspace-init) start on every `up`, so a bare
-# `--profile dev up` would boot prod alongside.
+#   dev:   npm run dev   (= docker compose --profile dev up --build dev)
+#          → the single-user dev server on loopback :3001 (the repo
+#          bind-mounted; the split is a prod shape, dev stays one app
+#          container) + dev-editor (the same editor image as the HOST uid
+#          over the same bind, so the editor tab opens the checkout dev
+#          workspaces live in) + dev-seaweedfs, each with a one-shot init.
+#
+# Name the `dev` service: services without profiles (the prod stack above)
+# start on every `up`, so a bare `--profile dev up` would boot prod
+# alongside.
 #
 # pi is an npm dependency pinned by the lockfile, vendored in the image at
 # /opt/web-pi/node_modules — the workspace container runs it from there
@@ -172,11 +174,12 @@ services:
       # logging; the dev profile and plain hosts stay that way.
       WEB_PI_LOKI_URL: ${WEB_PI_LOKI_URL:-}
       # task/ws-editor (docs/editor-webapp.md): the editor webapp's
-      # upstream on the compose network — THE single switch. Unset/empty =
-      # editor off (/editor answers 404, console hides its affordances);
-      # set with the editor profile deployed = the same-origin proxy. No
-      # token or launch URL: auth is the web session, folders are URL params.
-      WEB_PI_EDITOR_UPSTREAM: ${WEB_PI_EDITOR_UPSTREAM:-}
+      # upstream on the compose network — THE single switch. The stack
+      # ships the editor container (header note), so the default wires the
+      # proxy on; set it EMPTY in .env to switch the editor off (the
+      # console hides its affordances, /editor answers 404). No token or
+      # launch URL: auth is the web session, folders are URL params.
+      WEB_PI_EDITOR_UPSTREAM: ${WEB_PI_EDITOR_UPSTREAM-http://editor:3000}
       # task/mgmt-page (docs/management-page.md): the release-swap half of
       # /management. The releases volume is shared with the `builder`
       # service below; the checkout is web's read-only view of the
@@ -409,7 +412,7 @@ services:
       - webpi-loki:/loki
 
   # task/winston-loki: log UI, opt-in via the `observability` profile.
-  # Loopback-published on :3300 (3000/3001/4321 are web-pi's). Auth:
+  # Loopback-published on :3300 (3000/3001 are web-pi's). Auth:
   # anonymous read-only browsing (it's loopback-only; no default-password
   # exposure), the admin account for edits — first login forces the
   # default-password change. No data volume: grafana state is disposable;
@@ -433,15 +436,14 @@ services:
       resources:
         limits: { memory: 512m, cpus: "0.5" }
     restart: unless-stopped
-  # task/ws-editor: the VSCodium reh-web editor — opt-in profile (docs/
-  # editor-webapp.md). The image (editor/) vendors the PINNED reh-web
-  # tarball and runs its server component as the workspace uid (2000) so
-  # it edits the shared checkouts; it never touches the tmux socket or web
-  # state, and it publishes NOTHING — web-pi's same-origin /editor proxy is
-  # the only door. Bring up with WEB_PI_EDITOR_UPSTREAM=http://editor:3000
-  # so webpi is recreated with the proxy on (see the header comment).
+  # task/ws-editor: the VSCodium reh-web editor — part of the plain
+  # stack (docs/editor-webapp.md; the header's opt-out note). The image
+  # (editor/) vendors the PINNED reh-web tarball and runs its server
+  # component as the workspace uid (2000) so it edits the shared
+  # checkouts; it never touches the tmux socket or web state, and it
+  # publishes NOTHING — web-pi's same-origin /editor proxy is the only
+  # door (webpi's WEB_PI_EDITOR_UPSTREAM default points here).
   editor:
-    profiles: ["editor"]
     depends_on:
       editor-init:
         condition: service_completed_successfully
@@ -467,9 +469,8 @@ services:
 
   # task/ws-editor: one-shot — empty named volumes start root-owned and
   # uid 2000 must write $HOME (.vscodium-server data/extensions, .local
-  # state). Runs on every `up` of the profile; a no-op chown once right.
+  # state). Runs on every `up`; a no-op chown once right.
   editor-init:
-    profiles: ["editor"]
     build:
       context: ./editor
       # Same pins as the editor service above: both build the same tag, so
@@ -520,12 +521,61 @@ services:
     ports:
       - "127.0.0.1:8333:8333" # S3 API only
 
+  # The editor for dev — the same image as prod's `editor`, but as the
+  # HOST uid over the SAME repo bind as `dev`: the editor tab opens the
+  # workspace cwd verbatim as its ?folder= (WEB_PI_NEW_SESSION_CWD=/app),
+  # and dev workspaces live in the bind, so the editor must see /app at
+  # /app AND write it as its owner (prod's uid-2000 editor edits the
+  # webpi-workspace volume instead — path + uid agreement is per shape).
+  # Like prod's: no published port — the dev container reaches it as
+  # http://dev-editor:3000 over the compose network (the env above).
+  dev-editor:
+    profiles: ["dev"]
+    depends_on:
+      dev-editor-init:
+        condition: service_completed_successfully
+    build:
+      context: ./editor
+      args: # same pins as editor/editor-init: one tag, one pin
+        VSCODIUM_VERSION: ${VSCODIUM_VERSION:-1.140.06880}
+    image: web-pi-editor:local
+    user: "${UID:-1000}:${GID:-1000}"
+    init: true # signal reaping: the server spawns ptyHost/fileWatcher children
+    security_opt: ["no-new-privileges:true"]
+    entrypoint: ["/usr/local/bin/docker-editor-entrypoint.sh"]
+    environment:
+      WEB_PI_BASE: ${WEB_PI_BASE:-/} # interpolates into --server-base-path
+    volumes:
+      - .:/app:z # the repo — the same bind, the same path, the same owner
+      - webpi-dev-editor-home:/home/workspace # VSCodium user-data/extensions
+    # no restart policy: dev is an interactive foreground thing
+
+  # One-shot, the dev-editor counterpart of editor-init/dev-init: empty
+  # named volumes start root-owned and the dev editor runs as ${UID:-1000},
+  # which must write $HOME. A no-op chown once ownership is right.
+  dev-editor-init:
+    profiles: ["dev"]
+    build:
+      context: ./editor
+      args: # same pins again — one tag, one pin (editor-init's note)
+        VSCODIUM_VERSION: ${VSCODIUM_VERSION:-1.140.06880}
+    image: web-pi-editor:local
+    user: "0:0"
+    entrypoint: ["sh", "-c", "chown -R ${UID:-1000}:${GID:-1000} /home/workspace"]
+    restart: "no"
+    volumes:
+      - webpi-dev-editor-home:/home/workspace
+
   dev:
     profiles: ["dev"]
     depends_on:
       dev-init:
         condition: service_completed_successfully
       dev-seaweedfs:
+        condition: service_started
+      # started, not healthy: dev-editor boots the workbench lazily on the
+      # tab's first open anyway; dev must not wait on its image build.
+      dev-editor:
         condition: service_started
     build:
       context: .
@@ -548,11 +598,12 @@ services:
     # container builds its own native deps (node-pty) without touching the
     # host's. npm install runs every boot — seconds when current, and it
     # self-heals (e.g. after a NODE_ENV change) unlike a marker-file check.
+    # Then ONE server: dev:server (build + serve :3001 + rebuild/restart on
+    # change) renders everything production does — no astro dev half.
     command:
-      ["sh", "-c", "npm install --no-audit --no-fund; npm run dev:server & exec npm run dev -- --host --force"]
+      ["sh", "-c", "npm install --no-audit --no-fund; exec npm run dev:server"]
     ports:
-      - "127.0.0.1:4321:4321" # astro dev (proxies /api,/ws,login to :3001 in-container)
-      - "127.0.0.1:3001:3001" # the API+WS half (npm run dev:server)
+      - "127.0.0.1:3001:3001" # the whole app: API+WS+SSR (npm run dev:server)
     environment:
       NODE_ENV: development # the image says production — npm would omit devDeps (tsc, @types/*)
       ASTRO_TELEMETRY_DISABLED: "1"
@@ -568,13 +619,18 @@ services:
       WEB_PI_S3_ENDPOINT: http://dev-seaweedfs:8333
       WEB_PI_S3_ACCESS_KEY: webpi-dev
       WEB_PI_S3_SECRET_KEY: webpi-dev-secret
+      # task/ws-editor: the dev-editor sibling below — the editor tab is
+      # ON in dev by default (the dev profile's whole point is running the
+      # whole app). Set WEB_PI_EDITOR_UPSTREAM empty in .env to boot dev
+      # without it (the `-` interpolation form keeps an explicit empty).
+      WEB_PI_EDITOR_UPSTREAM: ${WEB_PI_EDITOR_UPSTREAM-http://dev-editor:3000}
       # task/mgmt-page: dev's "workspace checkout" is the bind-mounted
       # repo itself (version.json won't exist — /management then runs in
       # its read-only/dry-run mode unless you write one by hand; the
       # releases half needs the volume wiring from the prod services).
       WEB_PI_MANAGEMENT_CHECKOUT: /app
     healthcheck:
-      disable: true # the prod image probes :3000; dev serves :4321/:3001
+      disable: true # the prod image probes :3000; dev serves :3001
     volumes:
       # :z relabels the tree container_file_t on SELinux-enforcing hosts
       # (no-op elsewhere) — without it container processes can't even stat
@@ -617,6 +673,10 @@ volumes:
     name: webpi-releases-pointer
   webpi-dev-node-modules:
     name: webpi-dev-node-modules
+  # task/ws-editor: the DEV editor's home (the host uid) — kept apart from
+  # prod's uid-2000 webpi-editor-home (dev-editor-init chowns it on up).
+  webpi-dev-editor-home:
+    name: webpi-dev-editor-home
   # Object storage data, and the generated credentials that unlock it —
   # back them up together.
   webpi-seaweedfs:
