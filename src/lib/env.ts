@@ -1,4 +1,3 @@
-import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { envSchema, type EnvValue, type ServerEnvField } from './env-schema';
@@ -73,7 +72,11 @@ export const ENV = {
   WEB_PI_ASTRO_ENTRY: RAW_ENV.WEB_PI_ASTRO_ENTRY ?? path.join(APP_ROOT, 'dist', 'server', 'entry.mjs'),
   WEB_PI_SESSIONS_DIR: RAW_ENV.WEB_PI_SESSIONS_DIR ?? PI_SESSION_DIR ?? path.join(agentDir, 'sessions'),
   WEB_PI_NEW_SESSION_CWD: RAW_ENV.WEB_PI_NEW_SESSION_CWD ?? home,
-  WEB_PI_COMMAND: RAW_ENV.WEB_PI_COMMAND ?? (fs.existsSync(PI_BIN) ? PI_BIN : 'pi'),
+  // The command a new terminal tab runs (plan §10): a login shell by
+  // default — $SHELL -l when the env carries one, /bin/sh -l otherwise.
+  // Whitespace-split by main.ts like any override; e2e's deterministic
+  // cmd.sh keeps working as an explicit WEB_PI_COMMAND.
+  WEB_PI_COMMAND: RAW_ENV.WEB_PI_COMMAND ?? `${process.env.SHELL ?? '/bin/sh'} -l`,
   WEB_PI_TMUX_CONF: RAW_ENV.WEB_PI_TMUX_CONF ?? path.join(APP_ROOT, 'tmux.conf'),
 };
 
