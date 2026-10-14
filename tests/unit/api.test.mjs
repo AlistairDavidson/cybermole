@@ -8,6 +8,8 @@ import assert from 'node:assert/strict';
 import {
   loginBody, loginForm, newSessionBody, jobValidateBody,
   hideBody, unhideBody, updatePiBody, autoUpdateBody,
+  appCreateBody, appPatchBody, workspaceCreateBody, workspacePatchBody,
+  terminalCreateBody, terminalPatchBody,
 } from '../../dist-server/src/schemas/api.js';
 import { JobSaveSchema } from '../../dist-server/src/schemas/jobs.js';
 import { parseZod } from '../../dist-server/src/lib/web/parsing.service.js';
@@ -130,4 +132,70 @@ test('autoUpdateBody: one boolean; anything else names the field', () => {
 
 test('a failed body renders "field: message" (the 400 text)', () => {
   assert.match(issueText(newSessionBody, { name: 5 }), /^name: /);
+});
+
+// ---------- workspaces-plan §6 bodies (task/ws-schema) ----------
+
+test('appCreateBody: any string name (the domain slugs it); over-long is a named 400', () => {
+  assert.deepEqual(parse(appCreateBody, { name: '  My App!' }), { name: '  My App!' });
+  assert.deepEqual(parse(appCreateBody, { name: '' }), { name: '' }); // emptiness is the domain's call
+  for (const bad of [{}, { name: 5 }, null, { name: null }]) {
+    assert.equal(ok(appCreateBody, bad), false, JSON.stringify(bad));
+  }
+  assert.equal(issueText(appCreateBody, { name: 'x'.repeat(81) }), 'name: name is too long (max 80)');
+});
+
+test('appPatchBody: name optional; absent means a no-op', () => {
+  assert.deepEqual(parse(appPatchBody, {}), {});
+  assert.deepEqual(parse(appPatchBody, { name: 'New' }), { name: 'New' });
+  assert.equal(ok(appPatchBody, { name: 5 }), false);
+  assert.equal(issueText(appPatchBody, { name: 'x'.repeat(81) }), 'name: name is too long (max 80)');
+});
+
+test('workspaceCreateBody: appId null/absent/uuid v4; name required; cwd optional', () => {
+  const ID = '123e4567-e89b-42d3-a456-426614174000';
+  assert.deepEqual(parse(workspaceCreateBody, { name: 'scratch' }), { name: 'scratch' });
+  assert.deepEqual(parse(workspaceCreateBody, { appId: null, name: 'x', cwd: '/tmp', junk: 1 }),
+    { appId: null, name: 'x', cwd: '/tmp' });
+  assert.deepEqual(parse(workspaceCreateBody, { appId: ID, name: 'x' }), { appId: ID, name: 'x' });
+  for (const bad of [
+    {}, { name: 5 }, { appId: 'nope', name: 'x' }, { appId: 7, name: 'x' },
+    { name: 'x', cwd: 5 }, { name: 'x', cwd: 'x'.repeat(4097) },
+  ]) {
+    assert.equal(ok(workspaceCreateBody, bad), false, JSON.stringify(bad));
+  }
+  assert.deepEqual(parse(workspaceCreateBody, { name: '' }), { name: '' }); // emptiness is the domain's call
+  assert.equal(issueText(workspaceCreateBody, { appId: 'nope', name: 'x' }), 'appId: invalid app id');
+});
+
+test('workspacePatchBody: either field alone, both optional', () => {
+  assert.deepEqual(parse(workspacePatchBody, {}), {});
+  assert.deepEqual(parse(workspacePatchBody, { name: 'n' }), { name: 'n' });
+  assert.deepEqual(parse(workspacePatchBody, { cwd: '/tmp' }), { cwd: '/tmp' });
+  assert.equal(ok(workspacePatchBody, { name: 5, cwd: '/tmp' }), false);
+});
+
+test('terminalCreateBody: optional non-empty title, capped at 120', () => {
+  assert.deepEqual(parse(terminalCreateBody, {}), {});
+  assert.deepEqual(parse(terminalCreateBody, { title: ' build ' }), { title: 'build' }); // trimmed
+  for (const bad of [{ title: '' }, { title: '   ' }, { title: 'x'.repeat(121) }, { title: 5 }]) {
+    assert.equal(ok(terminalCreateBody, bad), false, JSON.stringify(bad));
+  }
+  assert.equal(issueText(terminalCreateBody, { title: '' }), 'title: title is required');
+});
+
+test('terminalPatchBody: title is a non-empty string or null (null clears the tab title)', () => {
+  assert.deepEqual(parse(terminalPatchBody, { title: 'build' }), { title: 'build' });
+  assert.deepEqual(parse(terminalPatchBody, { title: null }), { title: null });
+  for (const bad of [{}, { title: '' }, { title: 'x'.repeat(121) }, { title: 5 }]) {
+    assert.equal(ok(terminalPatchBody, bad), false, JSON.stringify(bad));
+  }
+});
+
+test('JobSaveSchema now accepts an optional appId tag (stored by task/ws-jobs)', () => {
+  const ID = '123e4567-e89b-42d3-a456-426614174000';
+  assert.deepEqual(parse(JobSaveSchema, { name: 'n', schedule: 's', command: 'c' }).appId, undefined);
+  assert.deepEqual(parse(JobSaveSchema, { name: 'n', schedule: 's', command: 'c', appId: null }).appId, null);
+  assert.deepEqual(parse(JobSaveSchema, { name: 'n', schedule: 's', command: 'c', appId: ID }).appId, ID);
+  assert.equal(ok(JobSaveSchema, { name: 'n', schedule: 's', command: 'c', appId: 'nope' }), false);
 });

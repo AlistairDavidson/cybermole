@@ -115,10 +115,10 @@ const PW = { username: 'tester', password: 'pw' };
 
 // ---------- db migration ----------
 
-test('state db v5: the releases table exists and holds history', async () => {
+test('state db v6: the releases table exists and holds history', async () => {
   const repo = gitRepo();
   const { db, service, releasesDir } = harness({ baseSha: repo.base, checkout: repo.root });
-  assert.equal(db.db().prepare('PRAGMA user_version').get().user_version, 5);
+  assert.equal(db.db().prepare('PRAGMA user_version').get().user_version, 6);
   const built = await service.requestBuild({ sha: repo.target, ...PW });
   assert.equal(built.ok, true, JSON.stringify(built));
   fakeBuilder(releasesDir, repo.target, 'built', 'npm ok');

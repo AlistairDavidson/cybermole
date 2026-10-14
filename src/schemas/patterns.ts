@@ -48,7 +48,7 @@ export const MAX_APP_SLUG = 40;
 
 /** App slug charset: lowercase slug, no underscore (job/session names
  *  allow `_`; app slugs are the stricter, URL-shaped subset). */
-export const APP_SLUG_RE = new RegExp(`^[a-z0-9][a-z0-9\-]{0,${MAX_APP_SLUG - 1}}$`);
+export const APP_SLUG_RE = new RegExp(`^[a-z0-9][a-z0-9\\-]{0,${MAX_APP_SLUG - 1}}$`);
 
 /** Normalize a display name into an app slug (POST /api/apps): lowercase,
  *  runs of anything that isn't [a-z0-9] — underscores included — collapse
