@@ -332,10 +332,11 @@ test('console flow: create app → workspace (default cwd) → new terminal → 
   await expect(page.locator('.tabs-empty-terminals')).toBeVisible();
 
   // --- delete the workspace (its delete button → confirm) → row gone;
-  //     the selection falls back to the first remaining workspace
+  //     the selection falls back to the FIRST remaining workspace
   await page.locator('workspace-sidebar li[data-ws].active [data-del-ws]').click();
   await page.click('#confirm-delete-ok');
   await expect(page.locator('workspace-sidebar li[data-ws]').filter({ hasText: 'flow ws' })).toHaveCount(0);
+  await expect(page.locator('workspace-sidebar li[data-ws].active')).toContainText('scratch');
 
   // --- delete the app → the whole group goes; the fixture groups remain
   await page.locator('workspace-sidebar .ws-group[data-group="flow-app"] [data-del-app]').click();

@@ -219,9 +219,13 @@ export class ConsoleApp extends HTMLElement {
       // state — the deep link degrades, the page doesn't.
       this.toast('no such terminal', { variant: 'neutral', icon: 'circle-info', duration: 6000 });
     }
-    // Nothing selected (first load, or a missed deep link): land on the
-    // first workspace when one exists (the empty state's create prompt is
-    // for empty stores).
+    // A deleted-out-from-under selection clears FIRST — the auto-select
+    // below then lands on the first remaining workspace immediately, not
+    // on an empty state the next poll would un-explain.
+    if (this.selected !== null && !this.selectedWorkspace()) this.selected = null;
+    // Nothing selected (first load, a missed deep link, or a delete that
+    // took the selection): land on the first workspace when one exists
+    // (the empty state's create prompt is for empty stores).
     if (this.selected === null && st.workspaces.length > 0) {
       this.selected = st.workspaces[0]!.id;
     }
@@ -231,8 +235,6 @@ export class ConsoleApp extends HTMLElement {
       this.tabs()?.showRun(pendingRun);
       return;
     }
-    // A deleted-out-from-under selection falls back to the empty state.
-    if (this.selected !== null && !this.selectedWorkspace()) this.selected = null;
     this.applySelection();
   }
 
