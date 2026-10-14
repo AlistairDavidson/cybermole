@@ -158,10 +158,10 @@ test('terminal route spawns; WS terminal mode attaches, round-trips input, RESPA
     // Create the workspace + a terminal tab through the new routes.
     const wsMade = await api(server.cookie, 'POST', '/api/workspaces', { name: 'scratch', cwd: dir });
     expect(wsMade.status).toBe(200);
-    const termMade = await api(server.cookie, 'POST', `/api/workspaces/${wsMade.json.data.id}/terminals`, {});
+    const termMade = await api(server.cookie, 'POST', `/api/workspaces/${wsMade.json.id}/terminals`, {});
     expect(termMade.status).toBe(200);
-    expect(termMade.json.data.live).toBe(true);
-    const termId: string = termMade.json.data.id;
+    expect(termMade.json.live).toBe(true);
+    const termId: string = termMade.json.id;
     expect(termId).toMatch(UUID_RE);
 
     // The spawn really ran the configured command, on this socket.
@@ -228,7 +228,7 @@ test('split shape (absolute socket, no server): the create still returns its row
     // Workspace server down: the spawn's never-fork guard refuses — 503
     // with the row attached (plan §4: a dead tab, not a missing one) —
     // and no tmux server gets forked as the web uid.
-    const refused = await api(server.cookie, 'POST', `/api/workspaces/${wsMade.json.data.id}/terminals`, {});
+    const refused = await api(server.cookie, 'POST', `/api/workspaces/${wsMade.json.id}/terminals`, {});
     expect(refused.status).toBe(503);
     expect(refused.json.code).toBe('server_not_running');
     expect(refused.json.error).toContain('workspace tmux server not running');

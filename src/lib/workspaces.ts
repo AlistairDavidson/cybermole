@@ -239,7 +239,7 @@ export class Workspaces {
    *  cwd. Rows never block on tmux: when the spawn fails the row still
    *  exists — the failure carries it (live:false), the UI shows a dead
    *  tab and the first attach retries the spawn. No eager spawns at
-   *  boot, and closing never leaves an orphan session. */
+   *  boot; closing kills the session best-effort, never failing on it. */
   async newTerminal(workspaceId: WorkspaceId, title: string | undefined): Promise<NewTerminalResult> {
     const fail = (errorCode: NewTerminalErrorCode, errorMessage: string, data?: NewTerminalData) =>
       ({ ok: false, resultType: 'new_terminal', errorCode, errorMessage, ...(data ? { data } : {}) }) satisfies NewTerminalFailure;

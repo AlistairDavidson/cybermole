@@ -1454,10 +1454,10 @@ test('deep link ?t=<uuid> attaches the terminal tab; an unknown uuid degrades to
   fs.mkdirSync(cwd, { recursive: true });
   const wsMade = await api(page, 'POST', '/api/workspaces', { name: 'deep link', cwd });
   expect(wsMade.status).toBe(200);
-  const made = await api(page, 'POST', `/api/workspaces/${wsMade.json.data.id}/terminals`, {});
+  const made = await api(page, 'POST', `/api/workspaces/${wsMade.json.id}/terminals`, {});
   expect(made.status).toBe(200);
-  expect(made.json.data.live).toBe(true);
-  const id = made.json.data.id as string;
+  expect(made.json.live).toBe(true);
+  const id = made.json.id as string;
 
   // The deep link opens the tab's terminal directly (terminal tabs UI is
   // branch 4's): attached to the derived t-<uuid> session, banner shown.
@@ -1473,7 +1473,7 @@ test('deep link ?t=<uuid> attaches the terminal tab; an unknown uuid degrades to
   // Cleanup: close the tab (row + best-effort session kill) and the
   // workspace, so later state reads (and the Live list) are unchanged.
   expect((await api(page, 'DELETE', `/api/terminals/${id}`)).status).toBe(200);
-  expect((await api(page, 'DELETE', `/api/workspaces/${wsMade.json.data.id}`)).status).toBe(200);
+  expect((await api(page, 'DELETE', `/api/workspaces/${wsMade.json.id}`)).status).toBe(200);
 });
 
 test('login rate limit kicks in (10 per 15 min per IP) and ignores a spoofed X-Forwarded-For', async ({ request }) => {
