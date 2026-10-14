@@ -24,8 +24,9 @@ compiled `dist-server` — `npm run build` first (tsc-only is enough:
 `npm run test:e2e` — Playwright integration tests (chromium; browser must
 exist in ~/.cache/ms-playwright). Fully hermetic: the config boots
 `dist-server/server/main.js` against a `/tmp/web-pi-itest` workspace (own
-state db, fixture pi sessions, dedicated `webpi-itest` tmux socket, a
-deterministic `cmd.sh` session command). Tests must stay serial
+state db, fixture workspace tree (apps/workspaces/terminal rows, live tabs
+on a dedicated `webpi-itest` tmux socket), a deterministic `cmd.sh`
+terminal command). Tests must stay serial
 (workers: 1): they share the per-IP login rate-limit budget and the tmux
 socket, and the rate-limit test must run last. `login()` signs in through
 the form once and reuses that cookie, which keeps the suite inside the
@@ -116,7 +117,8 @@ upgrades in a real browser (headless Chromium via the playwright install in
   `src/styles/console.css` — extend those rather than adding hex/px literals.
 - `console.css` is unlayered on purpose (must win over @layer'd Web Awesome
   styles) and is the only sanctioned place for hex colors.
-- The session sidebar re-renders via `innerHTML` on a 15s poll — preserve
+- The workspace sidebar (`src/components/workspace-sidebar.ts`) re-renders via
+  `innerHTML` on a 15s poll — preserve
   transient state (e.g. input value/focus) in `render()`, and don't put
   stateful components (e.g. `wa-details`) in it.
 - `agent-terminal` sizes itself with a `ResizeObserver` on `.terminal-container`; new
