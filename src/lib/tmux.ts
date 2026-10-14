@@ -66,10 +66,7 @@ export function jobSessionName(job: JobName): TmuxSessionName {
  *  't-' + the terminal row's uuid — DERIVED, never stored, so the db row
  *  and the tmux session can never drift apart. Always a valid session
  *  name: a uuid v4 is 36 chars, 't-' + 36 = 38 fits TMUX_SESSION_NAME_RE's
- *  64. */
-// junction(task/ws-terminal): the spawn/attach paths that consume this
-// name land there (plan §4) — this branch only derives it for the
-// best-effort kills on delete.
+ *  64 (same trick as r-<uuid> above). */
 export function terminalSessionName(id: TerminalId): TmuxSessionName {
   return asTmuxSessionName(`t-${id}`);
 }
@@ -255,14 +252,23 @@ export async function hasSession(name: TmuxSessionName): Promise<boolean> {
   return !error;
 }
 
-/** Start a session running the configured command (default: vendored pi).
+/** The new-session argv (minus the socket/-f prefix `tmux()` adds):
+ *  detached, named, started at cwd, per-session -e env, then the command
+ *  after `--`. Pure so the spawn (new_terminal, plan §4) and the WS
+ *  respawn path build the identical argv — unit-tested without tmux. */
+export function newSessionArgs(
+  name: TmuxSessionName, cwd: string, command: string[], env: Record<string, string>): string[] {
+  return ['new-session', '-d', '-s', name, '-c', cwd, ...envArgs(env), '--', ...command];
+}
+
+/** Start a session running the configured command (a terminal tab's
+ *  spawn and respawn — plan §4; /api/new and job runs land here too).
  *  Never-fork guard first on absolute sockets (see requireServer). */
 export async function newSession(name: TmuxSessionName, cwd: string, command: string[],
   env: Record<string, string>) {
   const server = await requireServer();
   if (!server.ok) return sessionFailure(name, server);
-  const { error } = await tmux(SOCKET,
-    ['new-session', '-d', '-s', name, '-c', cwd, ...envArgs(env), '--', ...command], env);
+  const { error } = await tmux(SOCKET, newSessionArgs(name, cwd, command, env), env);
   if (error) return tmuxFailure(name, 'new-session', error);
   log.info(`tmux session ${name} started`, { command: command.join(' ') });
   return { ok: true, resultType: 'tmux_session', data: { name } } satisfies TmuxSessionSuccess;
