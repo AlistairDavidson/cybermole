@@ -836,6 +836,9 @@ test('jobs: app tag chip, persisted run logs, run history + log view (task/ws-jo
   expect(log.text).toContain('JOBS_RUN_MARKER');
   // The run's own log path answers 404 (a client never names a path).
   expect(await api(page, 'GET', '/api/jobs/e2e-job/runs/1/log')).toMatchObject({ status: 404 });
+  // The runs dialog is a MODAL (showModal + backdrop): close it before
+  // anything outside it is clicked, like the job dialog above.
+  await page.locator('#runs-dialog wa-button[data-dialog="close"]').click();
 
   // A failed run reports failed (the exit file carries the real code).
   await api(page, 'POST', '/api/jobs', { name: 'e2e-fail', schedule: '0 0 31 12 *', command: 'echo bad; exit 7' });
