@@ -7,7 +7,6 @@ use linter
 prettier
 
 ## Console features
-switch zed for vscodium
 
 app preview?
 
@@ -17,34 +16,26 @@ ability to configure default agent
 
 collapsable app header in list
 
+## Workspaces follow-ups (deferred with the plan — docs/workspaces-plan.md §14)
+
+terminal tab drag-reorder + workspace/app reorder UI (the sort_order columns exist)
+
+workspace templates (pre-seeded terminals); per-app cwd
+
+app icons
+
+editor extension/marketplace configuration beyond the VSCodium defaults (Open VSX, no telemetry)
+
+pi-session resume as a workspace action ("resume a past agent session into a new terminal tab")
+
+job log size caps / rotation; job exit-code notification hooks
+
 ## Jobs
 
-Jobs to app
-Design jobs page well
-  List of jobs
-  Agent console with AGENTS.md from this app that says how to manage jobs (can be opened)
-  Jobs MCP
+Agent console with AGENTS.md from this app that says how to manage jobs (can be opened)
+Jobs MCP
 Job page
-  List of runs. Success indicator.
   Agent console as above but told about this job (can be opened)
-Job run page
-  Logs
-
-## Apps
-apps folder that contains git submodules
-group sessions by app
-ignore pi sessions not related to this project or one of its apps
-console is an app
-scheduler is an app
-Top menu with all apps
-new app
-rename app
-set app icon
-delete app
-console sidebar for when in other apps (in which case maybe console isn't an app)
-
-app management mcp
-how to build an app skills
 
 ## App management
 
@@ -66,7 +57,6 @@ installation instructions / script for agents / actual scripts
 Pull my typescript and astro and zod stuff out to packages
 
 ## Human UX tasks
-make sidebar much nicer - rebuild step by step
 Skills and other methods to enforce my coding patterns
 Write a refined agent workflow
 HIG skill
@@ -80,6 +70,6 @@ xterm:
   font decision first, then: bundled mono webfont via web-fonts addon (needs xterm 6.1-beta) + ligatures if a ligature font
   skip: attach (our WS JSON protocol is richer: attach modes, resize, errors, status), canvas (deprecated, removed in xterm 6)
   
-  search addon + ctrl+F bar (wa-input cluster in terminal toolbar, NOT the session sidebar - 15s innerHTML poll eats state) server backfill via `tmux capture-pane -S -5000 -p` written to WS on attach so resumed sessions have searchable scrollback
+  search addon + ctrl+F bar (wa-input cluster in terminal toolbar, NOT the workspace sidebar - 15s innerHTML poll eats state) server backfill via `tmux capture-pane -S -5000 -p` written to WS on attach so attached terminals have searchable scrollback
 
   serialize - "download transcript" / "copy output" button, zero server changes; maybe e2e assertions on terminal state
