@@ -5,19 +5,24 @@ import "@awesome.me/webawesome/dist/components/card/card.js";
 import "@awesome.me/webawesome/dist/components/badge/badge.js";
 import "@awesome.me/webawesome/dist/components/dialog/dialog.js";
 import "@awesome.me/webawesome/dist/components/input/input.js";
+import "@awesome.me/webawesome/dist/components/select/select.js";
+import "@awesome.me/webawesome/dist/components/option/option.js";
 import "@awesome.me/webawesome/dist/components/textarea/textarea.js";
 import "@awesome.me/webawesome/dist/components/toast/toast.js";
 import JobsList from "./JobsList.astro";
 import WaField from "../form/WaField.astro";
 import { zodSchemaToHTMLAttributes } from "../../lib/web/zod.service";
 import { JobSaveSchema } from "../../schemas/jobs";
+import type { AppOption } from "../../lib/apps";
 import type { ScheduledJob } from "../../lib/types";
 
 interface Props {
   /** The listing, server-rendered; null when the read failed (the poll retries). */
   jobs: ScheduledJob[] | null;
+  /** The app-tag picker's options (plan §9), from the same render. */
+  apps: AppOption[];
 }
-const { jobs } = Astro.props;
+const { jobs, apps } = Astro.props;
 
 // Native constraints matching the schema the dialog validates with
 // (client: validation-enhancer-zod in jobs-app.ts; server: POST /api/jobs).
@@ -43,7 +48,7 @@ const validation = zodSchemaToHTMLAttributes(JobSaveSchema);
       <strong>Live</strong> list and is attachable, just like a session you
       started yourself.
     </p>
-    <JobsList jobs={jobs} />
+    <JobsList jobs={jobs} apps={apps} />
   </div>
 
   <wa-dialog id="job-dialog" label="new job" with-footer>
@@ -81,6 +86,18 @@ const validation = zodSchemaToHTMLAttributes(JobSaveSchema);
           rows="3"
           {...validation.command}
         />
+        <!-- task/ws-jobs (plan §9): the optional app tag. Deliberately NOT
+             a named form field: the enhancer validates name/schedule/command
+             against JobSaveSchema (an empty optional select would trip the
+             uuid pattern); jobs-app reads the value itself and the save
+             body re-validated server-side. Options are (re-)populated on
+             open from the swapped-in list's data-apps. -->
+        <wa-select
+          id="job-app"
+          label="app tag (optional — grouping only)"
+          placeholder="no app — global job"
+          with-clear
+        ></wa-select>
       </form>
     </validation-enhancer-zod>
     <wa-button slot="footer" appearance="plain" data-dialog="close">
@@ -98,6 +115,26 @@ const validation = zodSchemaToHTMLAttributes(JobSaveSchema);
     </wa-button>
     <wa-button slot="footer" id="job-delete-confirm" variant="danger">
       delete
+    </wa-button>
+  </wa-dialog>
+
+  <!-- task/ws-jobs (plan §9): per-job run history + log tail. A dialog,
+       not an inline expansion, on purpose: the list below is swapped by
+       the 15 s poll (the sidebar caveat, AGENTS.md) — an open history
+       would be wiped with it; dialogs live outside the swapped region. -->
+  <wa-dialog id="runs-dialog" label="run history" class="runs-dialog">
+    <div class="wa-stack wa-gap-s">
+      <div id="runs-body"></div>
+      <div id="run-log-box" class="run-log-box hidden">
+        <div class="run-log-head">
+          <span id="run-log-title"></span>
+          <wa-button size="xs" appearance="plain" id="run-log-close">hide log</wa-button>
+        </div>
+        <pre id="run-log" class="run-log"></pre>
+      </div>
+    </div>
+    <wa-button slot="footer" appearance="plain" data-dialog="close">
+      close
     </wa-button>
   </wa-dialog>
 

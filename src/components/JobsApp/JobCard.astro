@@ -25,13 +25,14 @@ const last = job.last
   <div class="job-head">
     <span class="job-name"><wa-icon name="clock"></wa-icon>{job.name}</span>
     <span class="wa-cluster wa-gap-3xs">
+      {job.appName && <wa-badge pill class="job-app">{job.appName}</wa-badge>}
       {job.active
         ? <wa-badge pill variant="success">scheduled</wa-badge>
         : <wa-badge pill>invalid schedule</wa-badge>}
       {job.running && <wa-badge pill variant="brand">running</wa-badge>}
       {job.lastResult === 'failed' && <wa-badge pill variant="danger">last run failed</wa-badge>}
       {job.running && (
-        <a class="job-view" href={`${base}/?live=${encodeURIComponent(job.session)}`}>view run<wa-icon name="play"></wa-icon></a>
+        <a class="job-view" href={`${base}/?run=${encodeURIComponent(job.session)}`}>view run<wa-icon name="play"></wa-icon></a>
       )}
     </span>
   </div>
@@ -45,8 +46,11 @@ const last = job.last
     <wa-button size="s" data-run={job.name}>
       <wa-icon slot="start" name="play"></wa-icon>run now
     </wa-button>
+    <wa-button size="s" appearance="plain" data-runs={job.name}>
+      <wa-icon slot="start" name="eye"></wa-icon>runs
+    </wa-button>
     <wa-button size="s" appearance="plain" data-edit={job.name}
-      data-schedule={job.schedule} data-command={job.command}>
+      data-schedule={job.schedule} data-command={job.command} data-app={job.appId ?? ''}>
       <wa-icon slot="start" name="pencil"></wa-icon>edit
     </wa-button>
     <wa-button size="s" appearance="plain" variant="danger" data-del={job.name}>
