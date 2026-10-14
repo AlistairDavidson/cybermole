@@ -13,7 +13,9 @@
 #                            admitted as a tmux client via server-access.
 #     workspace-init (one-shot) — chowns/chmods the shared volumes: socket
 #                            dir 2770 setgid webpi, /workspace owned by
-#                            uid 2000 (same pattern as dev-init below).
+#                            uid 2000 (same pattern as dev-init below),
+#                            and the job-run log dir laid out the same
+#                            way (plan §9; see the workspace-init service).
 #     builder   (task/mgmt-page) — release builds for /management: dev-
 #                            target image, uid 2010, offline; watches
 #                            marker files on the webpi-releases volume
@@ -195,6 +197,13 @@ services:
       # pending markers and the web-only pointer volume; the builder writes
       # the releases themselves via the shared `releases` group).
       - webpi-releases:/releases
+      # task/ws-jobs (plan §9): job run logs, rw — web reads the tails
+      # (GET /api/jobs/:name/runs/:fired_at/log) and unlinks pruned files.
+      # A separate volume at the plan-pinned path, not the workspace volume
+      # rw: /workspace above stays READ-ONLY (the container-level boundary
+      # the comment there describes), while both containers see the logs at
+      # the same path (path agreement, like the tmux socket split).
+      - webpi-job-logs:/workspace/.webpi/job-logs
       # The web-only pointer volume, mounted INSIDE the shared one: the
       # builder shares the protocol volume's root (it must move releases
       # into it) — a pointer DIR under that root would be renameable by
@@ -226,22 +235,30 @@ services:
     volumes:
       - webpi-tmux:/run/web-pi # the shared socket (0660 webpi after the entrypoint's chmod/chgrp)
       - webpi-workspace:/workspace # checkouts + pi-agent (umask 0007 keeps files group-shared)
+      # task/ws-jobs (plan §9): the run-log dir at the same path web sees
+      # it — the wrapper (uid 2000, umask 0007) writes the logs here.
+      - webpi-job-logs:/workspace/.webpi/job-logs
     restart: unless-stopped
 
   # One-shot: empty named volumes are created root-owned; the split needs
   # the socket dir 2770 setgid webpi (socket creation + group inheritance)
   # and /workspace owned by uid 2000. Runs on every `up` — a no-op chown
   # once ownership is right. (Entrypoint overridden: the web entrypoint
-  # must not run here.)
+  # must not run here.) It also lays out the job-run log dir (plan §9):
+  # /workspace/.webpi/job-logs is its own volume (see the webpi service —
+  # web mounts /workspace READ-ONLY, but must read AND prune run logs),
+  # owned workspace:webpi 2770 so the workspace uid's wrapper (umask 0007
+  # under it) writes group-shared logs the web uid can read + unlink.
   workspace-init:
     build: *webpi-build
     image: ${WEB_PI_IMAGE:-web-pi:local}
     user: "0:0"
-    entrypoint: ["sh", "-c", "chown workspace:webpi /run/web-pi /workspace && chmod 2770 /run/web-pi /workspace"]
+    entrypoint: ["sh", "-c", "chown workspace:webpi /run/web-pi /workspace && chmod 2770 /run/web-pi /workspace && mkdir -p /workspace/.webpi/job-logs && chown workspace:webpi /workspace/.webpi/job-logs && chmod 2770 /workspace/.webpi/job-logs"]
     restart: "no"
     volumes:
       - webpi-tmux:/run/web-pi
       - webpi-workspace:/workspace
+      - webpi-job-logs:/workspace/.webpi/job-logs
 
   # task/mgmt-page — the releases volumes' layout (docs/management-page.md
   # §2). TWO volumes: the shared protocol volume (marker dirs + release
@@ -579,6 +596,12 @@ volumes:
     name: webpi-tmux
   webpi-workspace:
     name: webpi-workspace
+  # task/ws-jobs (plan §9): job run logs. Mounted at /workspace/.webpi/
+  # job-logs in BOTH webpi (rw — read + prune) and workspace (rw — the
+  # run wrapper writes them), laid out by workspace-init; keeping it off
+  # the workspace volume preserves webpi's read-only /workspace mount.
+  webpi-job-logs:
+    name: webpi-job-logs
   # task/mgmt-page: built releases + the marker protocol (docs/
   # management-page.md §2–3). Group `releases` (web + builder) is the
   # boundary — the sessions' uid is not in it.
