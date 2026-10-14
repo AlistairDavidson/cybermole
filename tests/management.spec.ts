@@ -162,8 +162,8 @@ test('the page renders the server state: serving, checkout, commits', async ({ p
   await expect(page.locator('#mgmt-serving')).toContainText(BASE_SHA.slice(0, 12));
   await expect(page.locator('#mgmt-checkout')).toContainText('mgmt-checkout');
   await expect(page.locator('#mgmt-commits .mgmt-commit')).toHaveCount(3);
-  // wa-* upgraded (the back button is a real link, the card headers render)
-  await expect(page.locator('wa-button:has-text("settings")')).toBeVisible();
+  // wa-* upgraded (the header bar's settings link is a real link, the card headers render)
+  await expect(page.locator('app-header wa-button:has-text("settings")')).toBeVisible();
 });
 
 test('picking a commit fetches the server-rendered verdict BEFORE any verb', async ({ page }) => {

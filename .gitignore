@@ -11,3 +11,4 @@ playwright-report/
 # task/mgmt-page: the image's baked version (Dockerfile writes it into the
 # image; a local/e2e run may plant one in the repo root for testing).
 version.json
+.dist-watch/

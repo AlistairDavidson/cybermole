@@ -16,6 +16,6 @@ const jobs = listed.ok ? listed.data.jobs : null;
 // Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
 if (!listed.ok) console.error(`jobs page: ${listed.errorMessage}`);
 ---
-<Base title="web-pi — jobs">
+<Base title="web-pi — jobs" header="jobs">
   <JobsApp jobs={jobs} />
 </Base>

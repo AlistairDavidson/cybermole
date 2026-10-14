@@ -20,7 +20,7 @@ if (!state.ok) console.error(`management page: ${state.errorMessage}`);
 const commits = await webpi.management.commits();
 if (!commits.ok) console.error(`management page: ${commits.errorMessage}`);
 ---
-<Base title="web-pi — management">
+<Base title="web-pi — management" header="management">
   <management-app>
     <ManagementView
       state={state.ok ? state.data : null}

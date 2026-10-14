@@ -1,0 +1,80 @@
+---
+// AppHeader.astro — the global header bar every signed-in page wears
+// (rendered by Base.astro; login and the offline shell go without). The
+// section links are wa-buttons with href — real anchors, so they work
+// un-upgraded, in new tabs and without JS; the current section's link is
+// marked aria-current="page" (styled in console.css). The future "apps"
+// list slots in left of the right-aligned group, behind a separator,
+// when the page exists. app-header.ts (imported client-side below) wires
+// the one control that needs JavaScript: sign-out. Frontmatter imports
+// SSR the wa-* components in this markup (astro-lit, declarative shadow
+// DOM); they do NOT register in the browser — the script below
+// re-imports them there (AGENTS.md: SSR ≠ client).
+import '@awesome.me/webawesome/dist/components/button/button.js';
+import '@awesome.me/webawesome/dist/components/icon/icon.js';
+
+/** The bar's sections — `current` marks one link aria-current="page". */
+type Section = 'console' | 'jobs' | 'management' | 'settings';
+interface Props {
+  current: Section;
+}
+const { current } = Astro.props;
+
+// Matches the server's WEB_PI_BASE ('' for root, else '/foo').
+const base = (import.meta.env.BASE_URL ?? '/').replace(/\/+$/, '');
+
+const links: Array<{ section: Section; label: string; href: string; icon: string }> = [
+  { section: 'console', label: 'webpi', href: `${base}/`, icon: 'terminal' },
+  { section: 'jobs', label: 'jobs', href: `${base}/jobs`, icon: 'clock' },
+  { section: 'management', label: 'management', href: `${base}/management`, icon: 'arrows-rotate' },
+  { section: 'settings', label: 'settings', href: `${base}/settings`, icon: 'gear' },
+];
+// Left of the split: the console brand + jobs (the apps list joins them
+// later). Right: everything else + sign-out.
+const left = links.filter(l => l.section === 'console' || l.section === 'jobs');
+const right = links.filter(l => l.section !== 'console' && l.section !== 'jobs');
+---
+<app-header>
+  <nav class="wa-cluster wa-gap-2xs" aria-label="web-pi">
+    {left.map(l => (
+      <wa-button
+        class={l.section === 'console' ? 'app-nav-link app-brand' : 'app-nav-link'}
+        appearance="plain"
+        size="s"
+        href={l.href}
+        {...(l.section === current ? { 'aria-current': 'page' } : {})}
+      >
+        <wa-icon slot="start" name={l.icon}></wa-icon>
+        {l.label}
+      </wa-button>
+    ))}
+  </nav>
+  <div class="wa-cluster wa-gap-2xs">
+    {right.map(l => (
+      <wa-button
+        class="app-nav-link"
+        appearance="plain"
+        size="s"
+        href={l.href}
+        {...(l.section === current ? { 'aria-current': 'page' } : {})}
+      >
+        <wa-icon slot="start" name={l.icon}></wa-icon>
+        {l.label}
+      </wa-button>
+    ))}
+    <wa-button id="sign-out" appearance="plain" size="s">
+      <wa-icon slot="start" name="right-from-bracket"></wa-icon>
+      sign out
+    </wa-button>
+  </div>
+</app-header>
+
+<script>
+  // MUST come first, before any wa-* component import — see
+  // @awesome.me/astro-lit README: if these run after components define,
+  // SSR'd elements render twice (DSD copy + fresh Lit render).
+  import '@awesome.me/astro-lit/dsd-polyfill.js';
+  import '@awesome.me/astro-lit/hydration-support.js';
+  import '../../icons';
+  import './app-header';
+</script>

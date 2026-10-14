@@ -1,9 +1,10 @@
 // console-app.ts — <console-app>: orchestrates sidebar ↔ terminal on a
 // <wa-page> app shell (sidebar + free mobile drawer), state polling,
-// logout, hide/unhide dialogs, toasts. Shell markup is SSR'd by
+// hide/unhide dialogs, toasts. Shell markup is SSR'd by
 // ConsoleApp.astro; this module registers <console-app> client-side and
 // drives it. Dialogs live here (outside the sidebar's innerHTML poll):
 // the sidebar only emits hide-session / manage-hidden and stays stateless.
+// Page navigation (and sign-out) lives in the global <app-header>.
 import type { ActiveKey, ConsoleState, PastSession } from '../../lib/types';
 import { asPiSessionId, asTmuxSessionName, type PiSessionId, type TmuxSessionName } from '../../types/branded';
 import { TMUX_SESSION_NAME_RE } from '../../schemas/patterns';
@@ -76,9 +77,6 @@ export class ConsoleApp extends HTMLElement {
       term.attach('live', out.name, this.activeKey);
     });
     this.addEventListener('terminal-closed', () => this.loadState());
-    (this.querySelector('#nav-jobs') as HTMLElement).onclick = () => {
-      location.href = `${BASE}/jobs`;
-    };
 
     // "Open in Zed" (docs/zed-webapp.md): open the stream tab synchronously
     // inside the click's task (an await first would eat the user activation
@@ -106,11 +104,6 @@ export class ConsoleApp extends HTMLElement {
     });
     (this.querySelector('#confirm-hide-ok') as HTMLElement).onclick = () => void this.confirmHide();
     (this.querySelector('#unhide-all') as HTMLElement).onclick = () => void this.unhideAll();
-    (this.querySelector('#logout') as HTMLElement).onclick = async () => {
-      const sent = await signedInFetch(`${BASE}/logout`, { method: 'POST' });
-      if (!sent.ok) { this.notAnswered(sent); return; }
-      location.href = `${BASE}/login`;
-    };
 
     this.loadState();
     this.pollTimer = setInterval(() => this.loadState(), 15000);

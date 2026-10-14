@@ -41,9 +41,6 @@ export class JobsApp extends HTMLElement {
   private inflight = false;
 
   connectedCallback(): void {
-    (this.querySelector('#jobs-console') as HTMLElement).onclick = () => {
-      location.href = `${BASE}/`;
-    };
     (this.querySelector('#jobs-new') as HTMLElement).onclick = () => this.openDialog(null);
     // Card actions, delegated: refreshed cards need no rewiring.
     this.addEventListener('click', e => {

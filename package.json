@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "astro dev",
-    "dev:server": "astro build && tsc -p tsconfig.server.json && WEB_PI_PORT=3001 node dist-server/server/main.js",
+    "dev:server": "node tools/dev-server-watch.mjs",
     "build": "astro build && tsc -p tsconfig.server.json",
     "start": "node dist-server/server/main.js",
     "set-password": "node dist-server/server/set-password.js",

@@ -108,8 +108,9 @@ without touching the host's. First boot npm-installs (a few minutes);
 later boots self-heal in seconds. Everything is real: `webpi.db` login,
 session listing, live attach — and pi sessions start in `/app` (the repo),
 self-modification included. Page edits hot-reload through the bind mount
-(the pages `astro dev` itself renders — the data pages live on the API
-half's `:3001`, the same split as the host flow below).
+(the pages `astro dev` itself renders; the data pages live on the API
+half's `:3001`, which `dev:server` rebuilds and restarts on change — the
+same split as the host flow below).
 Dev state (`webpi.db`, `pi-agent/`) lives in the container's `/tmp`
 (`WEB_PI_STATE_DIR: /tmp/web-pi-state`) — throwaway: recreate the dev
 service and you re-run set-password; production's `webpi-state` volume is
@@ -138,7 +139,7 @@ and login/logout live in the Node server itself, so the Vite server
 proxies `/api`, `/ws`, and login/logout POSTs to it:
 
 ```sh
-npm run dev:server   # API + WS half on :3001 (builds Astro + dist-server first)
+npm run dev:server   # API + WS half on :3001 — build, boot, then rebuild+restart on change
 npm run dev          # astro dev on :4321, proxying to the dev API server
 ```
 
@@ -156,12 +157,15 @@ console shell and the login page — their markup and client code. The
 data pages (`/settings`, `/jobs`, `/management`) assert the services in
 locals and throw in `astro dev`'s own render, telling you to browse the
 dev server instead: `:3001` (`npm run dev:server`) renders them exactly
-as production does. That render comes from the `dev:server` process's
-own Astro build, so an edit to a data page's view, a partial, or an API
-route appears there only after a `dev:server` restart — as does clearing
-the in-memory login rate limit while iterating on the login page.
-Override the proxy target with `WEB_PI_DEV_API` if you run the API half
-elsewhere.
+as production does. `dev:server` watches its build inputs (`src/`,
+`server/`, `public/`, the tsconfigs, `astro.config.mjs`) and rebuilds +
+restarts itself on change, so an edit to a data page's view, a partial,
+or an API route appears on `:3001` as soon as the build finishes —
+reload your `:3001` tabs after a restart (open terminals drop with
+it). A failed build keeps the running server on the last good one, and
+the in-memory login rate limit clears on every restart, so neither ever
+bites while iterating. Override the proxy target with `WEB_PI_DEV_API`
+if you run the API half elsewhere.
 
 ## Configuration (environment)
 

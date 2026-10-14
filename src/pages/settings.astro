@@ -18,7 +18,7 @@ if (!settings.ok) console.error(`settings page: ${settings.errorMessage}`);
 const state = settings.ok ? settings.data : null;
 const error = settings.ok ? null : settings.errorMessage;
 ---
-<Base title="web-pi — settings">
+<Base title="web-pi — settings" header="settings">
   <settings-app>
     <SettingsView state={state} error={error} />
   </settings-app>

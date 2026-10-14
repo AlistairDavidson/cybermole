@@ -22,8 +22,8 @@ const base = process.env.WEB_PI_BASE ?? '/';
 // Dev (`astro dev`) only: the JSON API needs the services server/main.ts
 // builds (src/middleware.ts answers 503 without them), and the terminal WS
 // and login/logout live in the Node server itself — so `npm run dev:server`
-// runs that half on :3001 (rebuilding its Astro entry first; API-route
-// edits need a dev:server restart) and Vite forwards to it. GET/HEAD /login and /logout stay on the dev server (they are the
+// runs that half on :3001 (builds, boots, then rebuilds and restarts itself
+// on source change — tools/dev-server-watch.mjs) and Vite forwards to it. GET/HEAD /login and /logout stay on the dev server (they are the
 // real Astro pages) — `bypass` returning the URL hands those back to the
 // dev server instead of proxying (vite: string → serve locally).
 // NOTE: `server.proxy` is inert outside `astro dev` (build never runs a

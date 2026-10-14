@@ -843,8 +843,8 @@ test('unauthenticated /settings serves the login page; settings APIs stay guarde
 
 test('settings dashboard shows effective config; update dry-run is check-only', async ({ page }) => {
   await login(page);
-  // The console header's gear link is the way in.
-  await expect(page.locator('.nav-actions wa-button[href$="/settings"]')).toBeVisible();
+  // The global header bar's settings link is the way in.
+  await expect(page.locator('app-header wa-button[href$="/settings"]')).toBeVisible();
   await page.goto('/settings');
 
   const cfg = page.locator('#config');

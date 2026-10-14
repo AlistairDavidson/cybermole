@@ -25,9 +25,6 @@ interface Props {
 }
 const { state, error = null } = Astro.props;
 
-// Matches the server's WEB_PI_BASE ('' for root, else '/foo').
-const base = (import.meta.env.BASE_URL ?? '/').replace(/\/+$/, '');
-
 const rows: Array<[string, string]> = state ? [
   ['web-pi', `v${state.appVersion}`],
   ['node', state.nodeVersion],
@@ -51,12 +48,8 @@ const flag = (name: string, on: boolean): Record<string, true> => (on ? { [name]
 const npmMissing = !state || !state.npmAvailable;
 ---
 <main class="settings-main wa-stack wa-gap-m">
-  <header class="settings-header wa-split">
+  <header class="settings-header">
     <h1><wa-icon name="gear"></wa-icon> settings</h1>
-    <wa-button appearance="plain" size="s" href={`${base}/`}>
-      <wa-icon slot="start" name="arrow-left" label="back to the console"></wa-icon>
-      console
-    </wa-button>
   </header>
 
   <wa-card class="settings-card" with-header>

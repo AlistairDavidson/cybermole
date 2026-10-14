@@ -11,11 +11,14 @@ side-tab bar lets you open a given app
   terminal  
   app preview
 
-self-naming sessions
+ability to end a live session
 
+Disassociate sessions from pi
+  a session is a collection of 
+  
+self-naming sessions
 generalise pi -> any agent
 
-Better auth
 
 ## Apps
 apps folder that contains git submodules

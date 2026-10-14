@@ -21,6 +21,44 @@ body {
 }
 .hidden { display: none !important; }
 
+/* ---- app-header: the global bar every signed-in page wears ---- */
+/* Base.astro adds .app-chrome to <body> when it renders <app-header>: the
+   page becomes bar + content. The console's fixed-height shell then fills
+   what remains of the viewport instead of all of it; the scrollable pages
+   (jobs, settings, management) fill at least the remainder and grow with
+   their content — the body scrolls, the bar stays put (sticky; it is NOT
+   wa-page's header slot because only the console page uses <wa-page> —
+   the bar must sit above every shell alike). z-index 5 matches the layer
+   wa-page gives its own sticky regions; the border, not a shadow, is the
+   app's chrome language elsewhere. */
+body.app-chrome { display: flex; flex-direction: column; }
+body.app-chrome > app-header { flex: none; }
+body.app-chrome > console-app { flex: 1 1 0; min-height: 0; height: auto; }
+body.app-chrome > jobs-app,
+body.app-chrome > settings-app,
+body.app-chrome > management-app { flex: 1 0 auto; }
+
+app-header {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: var(--wa-space-2xs) var(--wa-space-s);
+  padding: var(--wa-space-3xs) var(--wa-space-s);
+  background: var(--wa-color-surface-raised);
+  border-bottom: var(--wa-border-width-s) solid var(--wa-color-surface-border);
+}
+/* The brand link leads the bar (icon in the brand colour, like the page
+   h1s); the current section's link reads brand-coloured + bold.
+   Foreground accents use the *-on-quiet text tokens throughout this
+   file: the fill-* family is background fills, near-black in wa-dark
+   (the app is permanently dark) — dark blue on the dark bar without
+   this. */
+app-header wa-button.app-brand::part(button) { font-weight: var(--wa-font-weight-bold); }
+app-header wa-button.app-brand wa-icon { color: var(--wa-color-brand-on-quiet); }
+app-header wa-button.app-nav-link[aria-current='page']::part(button) {
+  color: var(--wa-color-brand-on-quiet);
+  font-weight: var(--wa-font-weight-bold);
+}
+
 /* ---- console-app: <wa-page> app shell ---- */
 console-app { display: block; height: 100dvh; }
 console-app wa-page { height: 100%; --menu-width: 300px; }
@@ -56,7 +94,7 @@ console-app main {
   display: flex; align-items: center; gap: var(--wa-space-2xs);
   font-size: var(--wa-font-size-m); margin: 0;
 }
-.nav-header h1 wa-icon { color: var(--wa-color-brand-fill-normal); }
+.nav-header h1 wa-icon { color: var(--wa-color-brand-on-quiet); }
 
 /* ---- session-sidebar ---- */
 session-sidebar {
@@ -93,14 +131,14 @@ session-sidebar {
 }
 .nav li:hover { background: color-mix(in oklab, var(--wa-color-text-normal) 6%, transparent); }
 .nav li.active {
-  border-left-color: var(--wa-color-brand-fill-normal);
-  background: color-mix(in oklab, var(--wa-color-brand-fill-normal) 10%, transparent);
+  border-left-color: var(--wa-color-brand-on-quiet);
+  background: color-mix(in oklab, var(--wa-color-brand-on-quiet) 10%, transparent);
 }
 .nav li .t {
   display: flex; align-items: center; gap: var(--wa-space-2xs);
 }
 .nav li .t wa-icon { font-size: var(--wa-font-size-2xs); flex: none; }
-.nav li[data-live] .t wa-icon { color: var(--wa-color-success-fill-normal); }
+.nav li[data-live] .t wa-icon { color: var(--wa-color-success-on-quiet); }
 .nav li .t-name {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
@@ -118,7 +156,7 @@ session-sidebar {
   min-width: var(--wa-space-l); /* stays clickable even if the icon asset fails */
 }
 .nav li .hide-btn:hover, .nav li .hide-btn:focus-visible {
-  color: var(--wa-color-danger-fill-normal);
+  color: var(--wa-color-danger-on-quiet);
 }
 /* "open in Zed" — same quiet shape, but a content action, not a
    destructive one: accent on hover. Rendered only when ConsoleState.zed
@@ -130,7 +168,8 @@ session-sidebar {
   min-width: var(--wa-space-l);
 }
 .nav li .zed-btn:hover, .nav li .zed-btn:focus-visible {
-  color: var(--wa-color-accent-fill-normal);
+  color: var(--wa-color-brand-on-quiet); /* no accent-* family in WA; the
+     old accent-fill-normal reference resolved to nothing */
 }
 .nav li.empty {
   cursor: default; color: var(--wa-color-text-quiet);
@@ -187,12 +226,12 @@ agent-terminal .terminal-status {
 }
 agent-terminal .terminal-status wa-spinner,
 agent-terminal .terminal-status wa-icon { font-size: var(--wa-font-size-2xs); flex: none; }
-agent-terminal .terminal-status.ok wa-icon { color: var(--wa-color-success-fill-normal); }
-agent-terminal .terminal-status.err wa-icon { color: var(--wa-color-danger-fill-normal); }
+agent-terminal .terminal-status.ok wa-icon { color: var(--wa-color-success-on-quiet); }
+agent-terminal .terminal-status.err wa-icon { color: var(--wa-color-danger-on-quiet); }
 
 /* ---- settings ---- */
 .settings-main {
-  min-height: 100dvh; max-width: 48rem; margin-inline: auto;
+  max-width: 48rem; margin-inline: auto;
   padding: var(--wa-space-m);
 }
 .settings-header { align-items: center; }
@@ -200,7 +239,7 @@ agent-terminal .terminal-status.err wa-icon { color: var(--wa-color-danger-fill-
   display: flex; align-items: center; gap: var(--wa-space-2xs);
   font-size: var(--wa-font-size-l); margin: 0;
 }
-.settings-header h1 wa-icon { color: var(--wa-color-brand-fill-normal); }
+.settings-header h1 wa-icon { color: var(--wa-color-brand-on-quiet); }
 .settings-card .card-title { font-size: var(--wa-font-size-m); }
 .settings-card .hint code {
   font-family: var(--wa-font-family-code); font-size: var(--wa-font-size-2xs);
@@ -236,7 +275,7 @@ agent-terminal .terminal-status.err wa-icon { color: var(--wa-color-danger-fill-
   display: flex; align-items: center; gap: var(--wa-space-2xs);
   font-size: var(--wa-font-size-l); margin: 0 0 var(--wa-space-m);
 }
-.login-card h1 wa-icon { color: var(--wa-color-brand-fill-normal); }
+.login-card h1 wa-icon { color: var(--wa-color-brand-on-quiet); }
 .login-card wa-button { width: 100%; margin-block-start: var(--wa-space-2xs); }
 
 .offline-card wa-button { width: 100%; }
@@ -252,21 +291,21 @@ agent-terminal .terminal-status.err wa-icon { color: var(--wa-color-danger-fill-
   font-size: var(--wa-font-size-l); margin: 0 0 var(--wa-space-m);
 }
 .offline-card h1 .offline-glyph {
-  color: var(--wa-color-brand-fill-normal);
+  color: var(--wa-color-brand-on-quiet);
   width: 1em; height: 1em; flex: none;
 }
 .offline-card p {
   color: var(--wa-color-text-quiet); margin: 0 0 var(--wa-space-m);
 }
 
-jobs-app { display: block; min-height: 100dvh; }
+jobs-app { display: block; }
 .jobs-main { max-width: 46rem; margin: 0 auto; padding: var(--wa-space-m); }
 .jobs-header { align-items: center; }
 .jobs-header h1 {
   display: flex; align-items: center; gap: var(--wa-space-2xs);
   font-size: var(--wa-font-size-m); margin: 0;
 }
-.jobs-header h1 wa-icon { color: var(--wa-color-brand-fill-normal); }
+.jobs-header h1 wa-icon { color: var(--wa-color-brand-on-quiet); }
 .jobs-sub { color: var(--wa-color-text-quiet); margin: 0; }
 .jobs-sub code, .job-meta code {
   font-family: var(--wa-font-family-code);
@@ -290,10 +329,10 @@ jobs-app { display: block; min-height: 100dvh; }
   display: flex; align-items: center; gap: var(--wa-space-2xs);
   font-weight: var(--wa-font-weight-bold);
 }
-.job-name wa-icon { color: var(--wa-color-brand-fill-normal); font-size: var(--wa-font-size-2xs); }
+.job-name wa-icon { color: var(--wa-color-brand-on-quiet); font-size: var(--wa-font-size-2xs); }
 .job-view {
   display: inline-flex; align-items: center; gap: var(--wa-space-3xs);
-  color: var(--wa-color-brand-fill-normal); text-decoration: none;
+  color: var(--wa-color-brand-on-quiet); text-decoration: none;
   font-size: var(--wa-font-size-2xs);
 }
 .job-view:hover { text-decoration: underline; }
@@ -321,14 +360,14 @@ jobs-app { display: block; min-height: 100dvh; }
 .field-error:empty { display: none; }
 
 /* ---- management page (<management-app>) ---- */
-management-app { display: block; min-height: 100dvh; }
+management-app { display: block; }
 .mgmt-main { max-width: 48rem; margin: 0 auto; padding: var(--wa-space-m); }
 .mgmt-header { align-items: center; }
 .mgmt-header h1 {
   display: flex; align-items: center; gap: var(--wa-space-2xs);
   font-size: var(--wa-font-size-l); margin: 0;
 }
-.mgmt-header h1 wa-icon { color: var(--wa-color-brand-fill-normal); }
+.mgmt-header h1 wa-icon { color: var(--wa-color-brand-on-quiet); }
 .mgmt-card .card-title { font-size: var(--wa-font-size-m); }
 .mgmt-card .v code, .mgmt-protected code, .mgmt-changed code, .mgmt-commit code, .mgmt-table code {
   font-family: var(--wa-font-family-code); font-size: var(--wa-font-size-2xs);
@@ -346,8 +385,8 @@ management-app { display: block; min-height: 100dvh; }
 .mgmt-commit:last-child { border-bottom: none; }
 .mgmt-commit:hover { background: color-mix(in oklab, var(--wa-color-text-normal) 6%, transparent); }
 .mgmt-commit[data-selected='true'] {
-  border-left-color: var(--wa-color-brand-fill-normal);
-  background: color-mix(in oklab, var(--wa-color-brand-fill-normal) 10%, transparent);
+  border-left-color: var(--wa-color-brand-on-quiet);
+  background: color-mix(in oklab, var(--wa-color-brand-on-quiet) 10%, transparent);
 }
 .mgmt-commit .t { display: block; }
 .mgmt-commit .d {
@@ -363,7 +402,7 @@ management-app { display: block; min-height: 100dvh; }
 .mgmt-verdict.blocked { color: var(--wa-color-danger-on-quiet); }
 .mgmt-protected {
   list-style: none; margin: 0; padding: var(--wa-space-2xs) var(--wa-space-s);
-  border: var(--wa-border-width-s) solid var(--wa-color-danger-fill-normal);
+  border: var(--wa-border-width-s) solid var(--wa-color-danger-on-quiet);
   border-radius: var(--wa-border-radius-m);
   color: var(--wa-color-danger-on-quiet); font-size: var(--wa-font-size-xs);
 }
@@ -390,19 +429,19 @@ management-app { display: block; min-height: 100dvh; }
 .mgmt-changed .st-t { color: var(--wa-color-warning-on-quiet); }
 .mgmt-cta {
   cursor: pointer; font: inherit; font-size: var(--wa-font-size-xs);
-  color: var(--wa-color-brand-fill-normal);
-  background: color-mix(in oklab, var(--wa-color-brand-fill-normal) 12%, transparent);
-  border: var(--wa-border-width-s) solid var(--wa-color-brand-fill-normal);
+  color: var(--wa-color-brand-on-quiet);
+  background: color-mix(in oklab, var(--wa-color-brand-on-quiet) 12%, transparent);
+  border: var(--wa-border-width-s) solid var(--wa-color-brand-on-quiet);
   border-radius: var(--wa-border-radius-m);
   padding: var(--wa-space-2xs) var(--wa-space-s);
 }
-.mgmt-cta:hover { background: color-mix(in oklab, var(--wa-color-brand-fill-normal) 22%, transparent); }
+.mgmt-cta:hover { background: color-mix(in oklab, var(--wa-color-brand-on-quiet) 22%, transparent); }
 .mgmt-cta.danger {
-  color: var(--wa-color-danger-fill-normal);
-  border-color: var(--wa-color-danger-fill-normal);
-  background: color-mix(in oklab, var(--wa-color-danger-fill-normal) 12%, transparent);
+  color: var(--wa-color-danger-on-quiet);
+  border-color: var(--wa-color-danger-on-quiet);
+  background: color-mix(in oklab, var(--wa-color-danger-on-quiet) 12%, transparent);
 }
-.mgmt-cta.danger:hover { background: color-mix(in oklab, var(--wa-color-danger-fill-normal) 22%, transparent); }
+.mgmt-cta.danger:hover { background: color-mix(in oklab, var(--wa-color-danger-on-quiet) 22%, transparent); }
 .mgmt-table { width: 100%; border-collapse: collapse; font-size: var(--wa-font-size-xs); }
 .mgmt-table th {
   text-align: start; color: var(--wa-color-text-quiet);
