@@ -5,9 +5,9 @@
 // refreshes from (src/pages/partials/settings.astro). Regions marked
 // data-refresh hold plain HTML only — no wa-* elements — so the element
 // can swap them by id without re-hydrating components. `state` is null
-// when the request did not come through the web-pi server (astro dev's
-// own render): the regions then say "loading…" and the element fetches
-// the partial.
+// only for a failed settings_state read (the page and the partial render
+// inside the web-pi server or not at all): the configuration card then
+// carries the reason; the status lines show unknown (…).
 import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
@@ -19,8 +19,8 @@ import type { SettingsState } from '../../lib/types';
 
 interface Props {
   state: SettingsState | null;
-  /** Why `state` is null when the server could not read it (a
-   *  settings_state failure) — shown instead of "loading…". */
+  /** why `state` is null — a failed settings_state read (the
+   *  configuration card shows it). */
   error?: string | null;
 }
 const { state, error = null } = Astro.props;
@@ -67,7 +67,7 @@ const npmMissing = !state || !state.npmAvailable;
     <div id="config" class="wa-stack wa-gap-2xs" data-refresh>
       {state
         ? rows.map(([k, v]) => <div class="cfg-row wa-split"><span class="k">{k}</span><span class="v">{v}</span></div>)
-        : <span class="hint">{error === null ? 'loading…' : `could not load settings: ${error}`}</span>}
+        : <span class="hint">could not load settings: {error}</span>}
     </div>
   </wa-card>
 
@@ -117,7 +117,6 @@ const npmMissing = !state || !state.npmAvailable;
       <!-- Flags the element applies to the controls (the switch and the
            update button) after a refresh — plain data, no wa-* inside. -->
       <span id="pi-flags" data-refresh hidden
-        data-loaded={state ? 'true' : 'false'}
         data-npm-available={state?.npmAvailable ? 'true' : 'false'}
         data-auto-enabled={au?.enabled ? 'true' : 'false'}></span>
       <wa-callout id="update-result" class="hidden"></wa-callout>

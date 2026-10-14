@@ -36,9 +36,6 @@ export class SettingsApp extends HTMLElement {
       if ((e.target as HTMLElement).id === 'pi-auto-update') void this.toggleAutoUpdate();
     });
     this.localizeTimes();
-    // Rendered without the server's state (astro dev's own render): load
-    // the regions now.
-    if (this.$('pi-flags').dataset.loaded !== 'true') void this.refresh();
   }
 
   /** Server-rendered <time> values are ISO; show them in the browser's

@@ -134,7 +134,10 @@ is a type error.
     path.
   - `src/middleware.ts` fails closed: `/api/*` and `/partials/*` answer
     503 when `locals.webpi` is missing (`astro dev`, or the Astro handler
-    run on its own).
+    run on its own). The data pages (settings, jobs, management) take the
+    same stance in their frontmatter: `assertWebPiLocals` (src/lib/web/
+    locals.ts) throws — a page without the services is a broken
+    invariant, never a loading placeholder the client fills in.
   - The adapter's `bodySizeLimit` is set (its default is 1 GiB) — to the
     upload cap, `UPLOAD_MAX_BODY_BYTES`, since it is global; every other
     route keeps 10 KiB through `server/main.ts`'s per-route cap
@@ -152,9 +155,13 @@ is a type error.
 
 ## 7. Pages: server-rendered first, enhanced by HTML web components
 
-- Render data in the page's frontmatter (via `Astro.locals.webpi`) so it
-  arrives as HTML. A custom element (light DOM, `connectedCallback`)
-  enhances that markup: wiring buttons, polling, dialogs.
+- Render data in the page's frontmatter so it arrives as HTML: get the
+  services with `assertWebPiLocals(Astro.locals)` — the render throws
+  without them (the gate is the only renderer that has them; in dev,
+  browse the `dev:server` process), never a placeholder the element
+  fills in. A failed service call renders its error message instead. A
+  custom element (light DOM, `connectedCallback`) enhances that markup:
+  wiring buttons, polling, dialogs.
 - Refresh by fetching a server-rendered partial (`src/pages/partials/*`,
   `export const partial = true`) and swapping it in. Don't template HTML
   strings in the browser.

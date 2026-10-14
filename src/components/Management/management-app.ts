@@ -71,8 +71,6 @@ export class ManagementApp extends HTMLElement {
         .setZodSchema(ManagementConfirmFormSchema));
 
     this.localizeTimes();
-    // Rendered without the server's state (astro dev's own render): load now.
-    if (!this.$('mgmt-serving').querySelector('.cfg-row')) void this.refresh();
     this.armPoll();
   }
 

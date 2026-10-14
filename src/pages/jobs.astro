@@ -1,13 +1,20 @@
 ---
 import Base from '../layouts/Base.astro';
 import JobsApp from '../components/JobsApp/JobsApp.astro';
+import { assertWebPiLocals } from '../lib/web/locals';
 // Server-rendered (docs/CODE_STYLE.md §7): the job list arrives as HTML
 // from the scheduler server/main.ts passes in locals; <jobs-app> enhances
-// it (actions, dialogs, a 15 s refresh from /partials/jobs-list). No
-// locals (astro dev's own render) or a failed listing → the element loads
-// the list itself.
-const listed = await Astro.locals.webpi?.scheduler.listJobs();
-const jobs = listed?.ok ? listed.data.jobs : null;
+// it (actions, dialogs, a 15 s refresh from /partials/jobs-list). A page
+// without the services is a broken invariant, not a state to render
+// around — assertWebPiLocals throws (in dev, browse the `npm run
+// dev:server` process: `astro dev`'s own render has none). A failed
+// listing renders the empty state's message; the poll keeps trying.
+const { webpi } = assertWebPiLocals(Astro.locals);
+const listed = await webpi.scheduler.listJobs();
+const jobs = listed.ok ? listed.data.jobs : null;
+// console.error on purpose, not src/lib/logger.ts: frontmatter is
+// Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
+if (!listed.ok) console.error(`jobs page: ${listed.errorMessage}`);
 ---
 <Base title="web-pi — jobs">
   <JobsApp jobs={jobs} />
