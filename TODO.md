@@ -21,10 +21,6 @@ maybe hideable nav on desktop
 global light/dark mode from browser, not hard coded
 vscodium follow global light/dark mode
 
-vscodium - default to trusted mode
-need git installed on the container (according to vscodium)
-astro extension, any other extensions appropriate to our stack
-
 ## Workspaces follow-ups (deferred with the plan — docs/workspaces-plan.md §14)
 
 terminal tab drag-reorder + workspace/app reorder UI (the sort_order columns exist)
