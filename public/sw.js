@@ -1,4 +1,4 @@
-const VERSION = 'web-pi-v2'; // v2: /partials/* bypass the cache (old caches are dropped on activate)
+const VERSION = 'web-pi-v3'; // v3: /editor/* bypass the cache (old caches are dropped on activate)
 const SCOPE = new URL(self.registration.scope); // <origin><base>/
 const at = (p) => new URL(p, SCOPE).href;
 const PRECACHE = [
@@ -65,10 +65,15 @@ self.addEventListener('fetch', (event) => {
   const dir = SCOPE.pathname; // '<base>/'
   const rel = url.pathname.startsWith(dir) ? url.pathname.slice(dir.length) : null;
   if (rel === null) return; // outside the app's base
-  // Live per-user data is never served from cache: the JSON API and the
+  // Live per-user data is never served from cache: the JSON API, the
   // server-rendered partials (fragments the pages swap in as refreshes —
-  // a stale one would undo a delete on screen).
-  if (rel.startsWith('api/') || rel.startsWith('partials/') || rel === 'ws' || rel === 'sw.js') return;
+  // a stale one would undo a delete on screen), and the proxied editor
+  // (task/ws-editor): VS Code's asset paths are unhashed, so a cached copy
+  // would serve MIXED-VERSION workbench assets after an editor upgrade
+  // (the classic blank-editor failure), authed editor content would outlive
+  // its logout, and the offline shell would render inside the iframe.
+  if (rel.startsWith('api/') || rel.startsWith('partials/') || rel.startsWith('editor/')
+    || rel === 'ws' || rel === 'sw.js') return;
 
   if (request.mode === 'navigate') {
     event.respondWith(networkFirstNavigation(request));
