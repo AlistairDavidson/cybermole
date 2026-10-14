@@ -41,9 +41,9 @@ if (RAW_ENV.WEB_PI_TMUX_CONF && !fs.existsSync(CONF)) {
 }
 
 /** Session name a scheduled job's run opens on this socket (src/lib/jobs.ts
- *  fires runs under it; the Live list shows it like any session). Always a
- *  valid session name: JOB_NAME_RE caps names at 40, 'webpi-' + 40 = 46
- *  fits TMUX_SESSION_NAME_RE's 64 (unit-tested). */
+ *  fires runs under it; the jobs page's running badge and ?run= view link
+ *  address it). Always a valid session name: JOB_NAME_RE caps names at 40,
+ *  'webpi-' + 40 = 46 fits TMUX_SESSION_NAME_RE's 64 (unit-tested). */
 export function jobSessionName(job: JobName): TmuxSessionName {
   return asTmuxSessionName(`webpi-${job}`);
 }

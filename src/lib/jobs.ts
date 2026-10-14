@@ -2,9 +2,9 @@
 // A job = name + 5-field cron schedule + arbitrary shell command, stored
 // in the state db (jobs table, src/lib/db.ts). The Scheduler ticks every
 // ~30s and fires due jobs; every run — scheduler-fired or "run now" —
-// opens a tmux session `webpi-<name>` on the app's own socket, so runs
-// appear in the Live list and are attachable, exactly like a main-page
-// session. Replaces the old systemd user-timer backend (DESIGN_REVIEW
+// opens a tmux session `webpi-<name>` on the app's own socket, so the
+// jobs page can show a run as live and link its console view (/?run=)
+// at it. Replaces the old systemd user-timer backend (DESIGN_REVIEW
 // §3.1): jobs now work wherever the app runs, container included, at the
 // cost of not firing while the server is down — boot catch-up covers that.
 //

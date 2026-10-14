@@ -2,9 +2,10 @@
 //
 // Everything the app itself writes lives in ENV.WEB_PI_DB_FILE (default
 // <state dir>/webpi.db): the login credential (single row), the login
-// sessions (`auth_sessions` — token hashes only, src/lib/auth.ts), a
-// `sessions` overlay table, the apps/workspaces/terminals tables
-// (docs/workspaces-plan.md §2 — src/lib/apps.ts, src/lib/workspaces.ts),
+// sessions (`auth_sessions` — token hashes only, src/lib/auth.ts), the
+// apps/workspaces/terminals tables (docs/workspaces-plan.md §2 —
+// src/lib/apps.ts, src/lib/workspaces.ts; the pi-session `sessions`
+// overlay died with the scan that read it, plan §11),
 // the scheduled-jobs tables (`jobs` definitions,
 // `job_runs` bookkeeping — src/lib/jobs.ts), a small `settings` kv
 // (src/lib/auto-update.ts), and the management page's `releases` history
