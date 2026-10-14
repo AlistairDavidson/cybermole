@@ -88,3 +88,42 @@ test('checkCron: 5-field cron accepted, other syntax rejected with an error', ()
     assert.equal(c.next, null);
   }
 });
+
+// ---------- task/ws-jobs (plan §9): the run wrapper + file paths, pure ----------
+
+const { runCommandArgv, runLogPaths } = await import('../../dist-server/src/lib/jobs.js');
+
+test('runCommandArgv: the exact wrapper argv — command as $1, never string-embedded', () => {
+  // The plan's pinned argv: an outer /bin/sh -c whose script tees the
+  // inner command's output to $2 and captures its exit INSIDE the
+  // pipeline (before tee) into $3. 'sh' is $0; the user command, log
+  // path and exit path are $1/$2/$3 — argv elements, so any quoting, #,
+  // braces or quotes in the command can't break the wrapper.
+  const tricky = 'echo "hi there" # not a comment-start for the wrapper; } | pipe &';
+  assert.deepEqual(runCommandArgv(tricky, '/logs/j/1.log', '/logs/j/1.exit'), [
+    '/bin/sh', '-c',
+    'mkdir -p "$(dirname "$2")"; { /bin/sh -c "$1" 2>&1; echo $? > "$3"; } | tee "$2"',
+    'sh', tricky, '/logs/j/1.log', '/logs/j/1.exit',
+  ]);
+  // The user command rides as its OWN argv element — it is not inside
+  // the script string, and the script mentions $1/$2/$3 only.
+  const [sh, flag, script, argv0, command, log, exitFile] = runCommandArgv('true', 'L', 'E');
+  assert.equal(sh, '/bin/sh');
+  assert.equal(flag, '-c');
+  assert.equal(argv0, 'sh');
+  assert.equal(command, 'true');
+  assert.equal(log, 'L');
+  assert.equal(exitFile, 'E');
+  assert.ok(!script.includes('true'));
+  // Pure POSIX: no pipefail (dash rejects it), no shell-specific bits.
+  assert.ok(!/pipefail/.test(script));
+  // The exit code is captured before tee: $? is written inside the { }.
+  assert.ok(script.includes('echo $? > "$3"'));
+});
+
+test('runLogPaths: <logDir>/<job>/<firedAt>.{log,exit} — the pair every side derives', () => {
+  assert.deepEqual(runLogPaths('/workspace/.webpi/job-logs', 'nightly', 1730000000000), {
+    log: '/workspace/.webpi/job-logs/nightly/1730000000000.log',
+    exit: '/workspace/.webpi/job-logs/nightly/1730000000000.exit',
+  });
+});

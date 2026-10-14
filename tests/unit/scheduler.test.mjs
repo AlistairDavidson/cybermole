@@ -32,14 +32,14 @@ const haveTmux = (() => { try { execFileSync('tmux', ['-V'], { stdio: 'ignore' }
 
 function freshScheduler() {
   const db = new StateDb(path.join(fs.mkdtempSync(path.join(dir, 'db-')), 'webpi.db'));
-  return new Scheduler(db, { cwd: dir, env: {} });
+  return new Scheduler(db, { cwd: dir, env: {}, logDir: path.join(dir, 'job-logs') });
 }
 
 /** A Scheduler whose state db can never open (its parent is a file). */
 function brokenScheduler() {
   const file = path.join(fs.mkdtempSync(path.join(dir, 'broken-')), 'not-a-dir');
   fs.writeFileSync(file, '');
-  return new Scheduler(new StateDb(path.join(file, 'webpi.db')), { cwd: dir, env: {} });
+  return new Scheduler(new StateDb(path.join(file, 'webpi.db')), { cwd: dir, env: {}, logDir: path.join(dir, 'job-logs') });
 }
 
 const GOOD = { name: 'nightly', schedule: '*/5 * * * *', command: 'true' };
@@ -108,7 +108,7 @@ test('runJob: database_error when the job cannot be read, or its fire cannot be 
   // Reads work, the run bookkeeping write doesn't: the fire is refused
   // before any spawn (a tmux attempt would answer tmux_error instead).
   const db = new StateDb(path.join(fs.mkdtempSync(path.join(dir, 'db-')), 'webpi.db'));
-  const s = new Scheduler(db, { cwd: dir, env: {} });
+  const s = new Scheduler(db, { cwd: dir, env: {}, logDir: path.join(dir, 'job-logs') });
   await s.saveJob(GOOD);
   db.db().prepare('DROP TABLE job_runs').run();
   const unrecorded = await s.runJob('nightly');
@@ -152,6 +152,9 @@ test('runJob: opens the run, then run_active while it lives; 40-char names run t
 const FAKE_TMUX = `#!/bin/sh
 # Stand-in tmux (written by scheduler.test.mjs): up/sessions files in
 # $FAKE_TMUX_DIR steer it; speaks the commands src/lib/tmux.ts issues.
+# list-sessions answers the pipe-field -F format tmux.ts actually sends
+# (task/ws-jobs made that matter: the live set drives the finish
+# observation) — the human default format would parse as NO sessions.
 dir="$FAKE_TMUX_DIR"; sessions="$dir/sessions"
 # Created here, not by the test: a missing file would make the read
 # redirection below a fatal error in sh and read as a dead server.
@@ -161,7 +164,14 @@ sub="$1"; shift
 case "$sub" in
   list-sessions)
     [ -e "$dir/up" ] || { echo "error connecting to $WEB_PI_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
-    while IFS= read -r name; do echo "$name: 1 windows (created at Fri Oct 10 00:00:00 2026)"; done < "$sessions"
+    fmt=""
+    while [ $# -gt 0 ]; do
+      [ "$1" = "-F" ] && { fmt="$2"; shift 2; continue; }
+      shift
+    done
+    while IFS= read -r name; do
+      [ -n "$fmt" ] && echo "$name|1|0||" || echo "$name: 1 windows (created at Fri Oct 10 00:00:00 2026)"
+    done < "$sessions"
     ;;
   has-session)
     [ -e "$dir/up" ] || exit 1
@@ -185,7 +195,7 @@ const { Scheduler } = require(process.cwd() + '/dist-server/src/lib/jobs.js');
 const { StateDb } = require(process.cwd() + '/dist-server/src/lib/db.js');
 const { JobSaveSchema } = require(process.cwd() + '/dist-server/src/schemas/jobs.js');
 const db = new StateDb(path.join(dir, 'webpi.db'));
-const s = new Scheduler(db, { cwd: dir, env: {} });
+const s = new Scheduler(db, { cwd: dir, env: {}, logDir: path.join(dir, 'job-logs') });
 // No process.exit in here: it can truncate the pipe-buffered console
 // output mid-write; exitCode + natural exit lets the lines drain.
 (async () => {
@@ -239,13 +249,18 @@ test('tick: fires an overdue run, skips it while it lives, logs its finish; run-
     assert.ok(!out.includes('CHILD-FAIL'), `child failed: ${out}`);
     assert.match(out, /info +\[scheduler\] job nightly fired \(catchup\) — opening run session webpi-nightly/,
       'the overdue fire is logged');
-    assert.match(out, /info +\[tmux\] tmux session webpi-nightly started \{"command":"\/bin\/sh -c true"\}/,
+    // The run session now opens the plan §9 wrapper, not the bare
+    // command: the exact argv is pinned by jobs.test.mjs; here just the
+    // shape — an outer /bin/sh -c whose script tees to a log file, with
+    // the user command riding as $1 (never string-embedded).
+    assert.match(out, /info +\[tmux\] tmux session webpi-nightly started \{"command":"\/bin\/sh -c mkdir -p \\"\$\(dirname/,
       'the run session opening is logged');
     assert.match(out, /info +\[scheduler\] job nightly fired \(manual\) — opening run session webpi-nightly/,
       'the run-now fire is logged');
     const finishes = out.split('\n').filter(l => l.includes('run finished'));
     assert.equal(finishes.length, 2, `one finish line per run (got ${finishes.length}): ${finishes.join(' | ')}`);
-    assert.match(finishes[0], /info +\[scheduler\] job nightly run finished \(run session webpi-nightly gone\)/);
+    assert.match(finishes[0], /info +\[scheduler\] job nightly run finished \(run session webpi-nightly gone, exit unknown\)/,
+      'no exit file under the fake (it never runs the wrapper) → unknown');
     assert.match(out, /CHILD-RUNS catchup,manual,schedule/,
       'exactly the seeded fire + the catch-up + the run-now — the live run was never re-fired');
   });

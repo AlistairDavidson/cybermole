@@ -725,6 +725,127 @@ test('jobs persist across a server restart; missed runs catch up', async () => {
   }
 });
 
+test('jobs: app tag chip, persisted run logs, run history + log view (task/ws-jobs)', async ({ page }) => {
+  test.setTimeout(150_000);
+  await login(page);
+
+  // An app to tag with (the tag is display-only — no behavioral coupling).
+  const app = await api(page, 'POST', '/api/apps', { name: 'E2E Jobs App' });
+  expect(app.status).toBe(200);
+  const appId = app.json.id as string;
+
+  // The runs routes' guards, before anything ran: a bad job name or a
+  // malformed :fired_at is a 400, an unknown job a 404.
+  expect(await api(page, 'GET', '/api/jobs/%E0/runs')).toMatchObject({ status: 400 });
+  expect(await api(page, 'GET', '/api/jobs/none-such/runs')).toMatchObject({ status: 404 });
+
+  // Save with the app tag through the dialog the way a user would: the
+  // picker's options come from the same server render (data-apps), and
+  // the save carries the picked id.
+  await page.goto('/jobs');
+  await page.waitForFunction(() => customElements.get('jobs-app') !== undefined);
+  await page.click('#jobs-new');
+  await expect(page.locator('wa-select#job-app')).toBeVisible();
+  // Options are (re)populated on open from the swapped-in list's data-apps.
+  await expect(page.locator('#job-app wa-option')).toHaveCount(1);
+  expect(await page.locator('#job-app wa-option').getAttribute('value')).toBe(appId);
+  expect(await page.locator('#job-app wa-option').textContent()).toBe('E2E Jobs App');
+  // Select the app (the value the save reads), then fill the rest.
+  await page.evaluate(id => { (document.querySelector('#job-app') as unknown as { value: string }).value = id; }, appId);
+  await page.fill('wa-input#job-name input', 'e2e-job');
+  await page.fill('wa-input#job-schedule input', '0 0 31 12 *'); // never due — runs below are manual
+  await page.fill('wa-textarea#job-command textarea', 'echo JOBS_RUN_MARKER; sleep 8');
+  await page.click('#job-save');
+  await expect(page.locator('jobs-app .job')).toHaveCount(1);
+
+  // The tag chip renders (the card also carries the tag for re-edit).
+  await expect(page.locator('jobs-app .job-app')).toHaveText('E2E Jobs App');
+  expect(await page.locator('jobs-app wa-button[data-edit="e2e-job"]').getAttribute('data-app')).toBe(appId);
+  // ...and the listing answers it (LEFT JOIN — no second fetch).
+  const listed = await api(page, 'GET', '/api/jobs');
+  expect(listed.json.jobs[0]).toMatchObject({ appId, appName: 'E2E Jobs App', lastResult: 'unknown' });
+  // The runs routes' param guards, now that the job exists: a malformed
+  // :fired_at (not an integer epoch-ms value) is a 400; a well-formed
+  // one that names no run is a 404 — as is a run whose log was never
+  // written (none exists yet).
+  for (const bad of ['abc', '-1', '12.5', '1234567890123456', '17600000000001234']) {
+    expect(await api(page, 'GET', `/api/jobs/e2e-job/runs/${bad}/log`))
+      .toMatchObject({ status: 400, json: { code: 'invalid_fired_at' } });
+  }
+  expect(await api(page, 'GET', '/api/jobs/e2e-job/runs/1760000000000/log')).toMatchObject({ status: 404 });
+  // An empty history still answers its shape.
+  expect(await api(page, 'GET', '/api/jobs/e2e-job/runs')).toMatchObject({ status: 200, json: { runs: [] } });
+
+  // Run now (the card's button): a live webpi-<name> session whose
+  // wrapper tees output to a durable log under WEB_PI_JOB_LOG_DIR.
+  await page.click('jobs-app wa-button[data-run="e2e-job"]');
+  await expect(page.locator('jobs-app .job-view')).toHaveAttribute('href', /\?run=webpi-e2e-job$/);
+  await expect.poll(() => fs.readdirSync(`${WORKSPACE}/job-logs/e2e-job`).length, { timeout: 10_000 })
+    .toBeGreaterThanOrEqual(1);
+  // The live run's session really is up, and its runs row exists (no
+  // exit/finish yet — the run is still going).
+  const live = () => {
+    try {
+      return execFileSync('tmux', ['-L', TMUX_SOCKET, 'list-sessions', '-F', '#{session_name}'], { encoding: 'utf8' });
+    } catch { return ''; }
+  };
+  await expect.poll(live, { timeout: 10_000 }).toContain('webpi-e2e-job');
+  const runsLive = await api(page, 'GET', '/api/jobs/e2e-job/runs');
+  expect(runsLive.json.runs[0]).toMatchObject({ origin: 'manual', exitCode: null, finishedAt: null, hasLog: true });
+
+  // The "view run" link is the console deep link (plan §9): the terminal
+  // attaches in run mode and shows the run's output.
+  await page.click('jobs-app .job-view');
+  await page.waitForURL(u => u.pathname === '/');
+  await waitForTermText(page, 'JOBS_RUN_MARKER');
+
+  // The run ends (~8s) and the tick observes it (≤30s later): exit_code
+  // + finished_at fill in, lastResult finally reports an outcome.
+  await expect.poll(async () => (await api(page, 'GET', '/api/jobs')).json.jobs[0].lastResult,
+    { timeout: 45_000 }).toBe('success');
+  const after = await api(page, 'GET', '/api/jobs/e2e-job/runs');
+  expect(after.json.runs[0]).toMatchObject({ exitCode: 0 });
+  expect(typeof after.json.runs[0].finishedAt).toBe('number');
+
+  // The history dialog renders the run (fired/origin/duration/exit) and
+  // the log viewer shows the wrapper's tee'd tail.
+  await page.goto('/jobs');
+  await page.click('jobs-app wa-button[data-runs="e2e-job"]');
+  await expect(page.locator('#runs-dialog .run-row:not(.run-head)')).toHaveCount(1);
+  await expect(page.locator('#runs-dialog .run-row:not(.run-head)')).toContainText('manual');
+  await expect(page.locator('#runs-dialog .run-exit.ok')).toHaveText('exit 0');
+  await page.click('#runs-dialog wa-button[data-log]');
+  await expect(page.locator('#run-log')).toContainText('JOBS_RUN_MARKER');
+
+  // The log route itself: text/plain, the same tail, no-store.
+  const firedAt = after.json.runs[0].firedAt as number;
+  const log = await page.evaluate(async at => {
+    const r = await fetch(`/api/jobs/e2e-job/runs/${at}/log`);
+    return { status: r.status, type: r.headers.get('content-type'), cache: r.headers.get('cache-control'), text: await r.text() };
+  }, firedAt);
+  expect(log.status).toBe(200);
+  expect(log.type).toContain('text/plain');
+  expect(log.cache).toBe('no-store');
+  expect(log.text).toContain('JOBS_RUN_MARKER');
+  // The run's own log path answers 404 (a client never names a path).
+  expect(await api(page, 'GET', '/api/jobs/e2e-job/runs/1/log')).toMatchObject({ status: 404 });
+
+  // A failed run reports failed (the exit file carries the real code).
+  await api(page, 'POST', '/api/jobs', { name: 'e2e-fail', schedule: '0 0 31 12 *', command: 'echo bad; exit 7' });
+  await api(page, 'POST', '/api/jobs/e2e-fail/run');
+  await expect.poll(async () => (await api(page, 'GET', '/api/jobs')).json.jobs.find((j: { name: string }) => j.name === 'e2e-fail').lastResult,
+    { timeout: 45_000 }).toBe('failed');
+  await page.click('jobs-app wa-button[data-runs="e2e-fail"]');
+  await expect(page.locator('#runs-dialog .run-exit.failed')).toHaveText('exit 7');
+
+  // Cleanup: both jobs (and their run files) go; the live sessions die
+  // with the jobs' commands.
+  for (const name of ['e2e-job', 'e2e-fail']) {
+    expect((await api(page, 'DELETE', `/api/jobs/${name}`)).status).toBe(200);
+    fs.rmSync(`${WORKSPACE}/job-logs/${name}`, { recursive: true, force: true });
+  }
+});
+
 test('hide: session leaves the sidebar, manage dialog restores it', async ({ page }) => {
   await login(page);
   const row = page.locator(`session-sidebar li[data-resume="${FIXTURE_B}"]`);
