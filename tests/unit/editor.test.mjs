@@ -2,14 +2,17 @@
 // policy surface, docs/editor-webapp.md) + the WEB_PI_EDITOR_UPSTREAM boot
 // checks (src/lib/env.ts). One test per behavior the proxy relies on: path
 // routing (HTTP + WS), the header set that overrides the global DENY, the
-// body-cap/chunked policy, per-token tunnel tracking, and the env var's
-// shape validation.
+// body-cap/chunked policy, the upstream WS handshake headers (the
+// regression guard: a stripped-header request never gets a 101 — verified
+// against a live upgrade server during review; kept pure here because
+// detached upgrade sockets are unreliable under this sandbox's node:test),
+// per-token tunnel tracking, and the env var's shape validation.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
   EditorTunnelTracker, EDITOR_MAX_BODY_BYTES, editorBodyCapStatus, editorSecurityHeaders,
-  isEditorHttpPath, isEditorUpgradePath,
+  editorUpgradeHeaders, isEditorHttpPath, isEditorUpgradePath,
 } from '../../dist-server/src/lib/editor.js';
 
 // ---------- path routing ----------
@@ -80,6 +83,38 @@ test('editorBodyCapStatus: sized to a big save, chunked accepted, small bodies p
   assert.equal(editorBodyCapStatus({ method: 'HEAD', headers: {} }), null);
 });
 
+// ---------- the upstream WS handshake headers ----------
+
+test('editorUpgradeHeaders: hop-by-hop out, the upgrade pair in, the load-bearing rest preserved', () => {
+  const incoming = {
+    host: 'webpi.example.com',            // load-bearing: the editor embeds it
+    connection: 'keep-alive',             // hop-by-hop: must go...
+    'keep-alive': 'timeout=5',
+    'transfer-encoding': 'chunked',
+    upgrade: 'websocket',                 // ...and come back as the explicit pair
+    'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==',
+    'sec-websocket-version': '13',
+    cookie: 'webpi_session=t',
+  };
+  const h = editorUpgradeHeaders(incoming);
+  // Without Connection: Upgrade no upstream ever answers 101 — every editor
+  // tunnel dial fails — which is the regression this guards (found in
+  // review: the transport once sent the stripped headers verbatim).
+  assert.equal(h.connection, 'Upgrade');
+  assert.equal(h.upgrade, 'websocket');
+  assert.equal(h['keep-alive'], undefined);
+  assert.equal(h['transfer-encoding'], undefined);
+  assert.equal(h.host, 'webpi.example.com');
+  assert.equal(h['sec-websocket-key'], 'dGhlIHNhbXBsZSBub25jZQ==');
+  assert.equal(h.cookie, 'webpi_session=t');
+  // no Upgrade in the incoming (a bare probe): default to websocket
+  const bare = editorUpgradeHeaders({ host: 'x' });
+  assert.equal(bare.connection, 'Upgrade');
+  assert.equal(bare.upgrade, 'websocket');
+  // the input is not mutated
+  assert.equal(incoming.connection, 'keep-alive');
+});
+
 // ---------- per-token tunnel tracking ----------
 
 test('EditorTunnelTracker: logout cuts only that token; closeAll cuts everything; untrack cleans up', () => {
@@ -128,7 +163,7 @@ function bootUpstream(env) {
   }
 }
 
-test('env: unset or empty WEB_PI_EDITOR_UPSTREAM is off (compose `VAR: \"\"` states)', () => {
+test('env: unset or empty WEB_PI_EDITOR_UPSTREAM is off (compose `VAR: ""` states)', () => {
   assert.deepEqual(bootUpstream({}), { config: null });
   assert.deepEqual(bootUpstream({ WEB_PI_EDITOR_UPSTREAM: '' }), { config: null });
   assert.deepEqual(bootUpstream({ WEB_PI_EDITOR_UPSTREAM: '   ' }), { config: null });

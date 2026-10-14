@@ -22,8 +22,8 @@ import { componentLogger, closeLogger } from '../src/lib/logger';
 import * as jobs from '../src/lib/jobs';
 import { AutoUpdater } from '../src/lib/auto-update';
 import {
-  EDITOR_MAX_BODY_BYTES, EditorTunnelTracker, editorBodyCapStatus, editorSecurityHeaders,
-  isEditorHttpPath, isEditorUpgradePath, type EditorUpstream,
+  EDITOR_HOP_BY_HOP_HEADERS, EDITOR_MAX_BODY_BYTES, EditorTunnelTracker, editorBodyCapStatus,
+  editorSecurityHeaders, editorUpgradeHeaders, isEditorHttpPath, isEditorUpgradePath, type EditorUpstream,
 } from '../src/lib/editor';
 import { createServices, type ServerConfig, type WebPiLocals } from '../src/lib/services';
 import { resolveServingDirs } from '../src/lib/releases';
@@ -504,18 +504,15 @@ function hardenResponse(res: http.ServerResponse): void {
 // authenticated route — the console frames it in an iframe, so auth is
 // the existing session cookie and no cross-origin anything applies.
 // The decision surface (path matching, header set, body cap, tunnel
-// tracking) lives in src/lib/editor.ts; this is the transport.
-
-/** Response/request headers that must not be copied across a proxy hop:
- *  Node (re)generates them for the leg it owns. */
-const HOP_BY_HOP_HEADERS = ['connection', 'keep-alive', 'transfer-encoding', 'upgrade'];
+// tracking, the upgrade header pair) lives in src/lib/editor.ts; this is
+// the transport.
 
 function proxyEditorRequest(req: http.IncomingMessage, res: http.ServerResponse, upstream: EditorUpstream): void {
   // The original Host header is forwarded UNCHANGED: the editor embeds it
   // in the workbench HTML as `remoteAuthority` (spike-verified), which is
   // how the browser learns to dial its WebSocket back through this proxy.
   const headers = { ...req.headers };
-  for (const hop of HOP_BY_HOP_HEADERS) delete headers[hop];
+  for (const hop of EDITOR_HOP_BY_HOP_HEADERS) delete headers[hop];
   const target = new URL(req.url ?? '/', upstream.origin);
   const proxied = http.request(target, { method: req.method, headers }, upstreamRes => {
     const out: Record<string, string> = {};
@@ -523,7 +520,7 @@ function proxyEditorRequest(req: http.IncomingMessage, res: http.ServerResponse,
       if (Array.isArray(value)) out[name] = value.join(', ');
       else if (value !== undefined) out[name] = value;
     }
-    for (const hop of HOP_BY_HOP_HEADERS) delete out[hop];
+    for (const hop of EDITOR_HOP_BY_HOP_HEADERS) delete out[hop];
     // Editor HTML carries its own header set (framing + the VS Code web
     // CSP, pinned by the spike): handler-set headers win — hardenResponse
     // only fills absent ones. Assets keep the global set.
@@ -558,8 +555,11 @@ function upgradeEditorSocket(req: http.IncomingMessage, socket: import('node:str
   head: Buffer, token: SessionToken): void {
   const upstream = CFG.editorUpstream;
   if (!upstream) { socket.destroy(); return; } // raced a reconfigure: fail closed
-  const headers = { ...req.headers };
-  for (const hop of HOP_BY_HOP_HEADERS) delete headers[hop];
+  // editorUpgradeHeaders strips hop-by-hop AND re-adds the upgrade pair —
+  // without Connection: Upgrade / Upgrade: websocket the upstream sees a
+  // plain GET and never answers 101 (the header list alone would strip
+  // them; nginx's proxy_set_header does this same dance).
+  const headers = editorUpgradeHeaders(req.headers);
   const target = new URL(req.url ?? '/', upstream.origin);
   const proxied = http.request(target, { method: 'GET', headers });
   proxied.setTimeout(30_000, () => proxied.destroy(new Error('editor upstream upgrade idle')));

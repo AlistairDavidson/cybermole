@@ -10,6 +10,29 @@
 import type { SessionToken } from '../types/branded';
 import { UPLOAD_MAX_BODY_BYTES } from '../schemas/uploads';
 
+/** Response/request headers that must not be copied verbatim across a
+ *  proxy hop: Node (re)generates them for the leg it owns. */
+export const EDITOR_HOP_BY_HOP_HEADERS = ['connection', 'keep-alive', 'transfer-encoding', 'upgrade'] as const;
+
+/** Request headers as Node's http hands them to a proxy. */
+export type IncomingHeaders = Record<string, string | string[] | undefined>;
+
+/** Headers for the upstream WebSocket handshake: the client's, minus
+ *  hop-by-hop, PLUS the upgrade pair an outgoing http.request needs before
+ *  any server will answer 101 — without `Connection: Upgrade` the upstream
+ *  sees a plain GET and never upgrades (nginx's `proxy_set_header
+ *  Upgrade/Connection` does the same; the bug this function exists to
+ *  prevent). The client's `Upgrade` value is kept when present, else
+ *  'websocket'. Everything else — Host (load-bearing: the editor embeds it
+ *  as remoteAuthority), Sec-WebSocket-Key/Version, cookies — passes through. */
+export function editorUpgradeHeaders(incoming: IncomingHeaders): IncomingHeaders {
+  const headers: IncomingHeaders = { ...incoming };
+  for (const hop of EDITOR_HOP_BY_HOP_HEADERS) delete headers[hop];
+  headers.connection = 'Upgrade';
+  headers.upgrade = typeof incoming.upgrade === 'string' && incoming.upgrade !== '' ? incoming.upgrade : 'websocket';
+  return headers;
+}
+
 /** The editor webapp's upstream (readEditorUpstream in env.ts builds it
  *  from WEB_PI_EDITOR_UPSTREAM), or null when unset = editor off. */
 export interface EditorUpstream {
@@ -17,7 +40,6 @@ export interface EditorUpstream {
    *  proxy forwards request paths verbatim under the app's base) */
   origin: string;
 }
-
 /** Does this request path belong to the editor proxy? `${BASE}/editor`
  *  and everything below it; `/editorial` must NOT match. */
 export function isEditorHttpPath(base: string, url: string): boolean {

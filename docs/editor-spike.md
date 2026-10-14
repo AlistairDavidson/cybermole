@@ -148,7 +148,20 @@ Each item below was observed, not inferred:
 | `?folder=` URI-encoded | `console-app.ts` open-editor listener |
 | Editor header set | `editorSecurityHeaders()` (src/lib/editor.ts) + applied to HTML in `proxyEditorRequest` |
 | Marketplaces denied in browser CSP | `editorSecurityHeaders()` — the single constant to flip |
+| WS handshake headers (`Connection: Upgrade` re-added after the hop-by-hop strip — without them no upstream answers 101) | `editorUpgradeHeaders()` (src/lib/editor.ts) |
 | SW bypass | `public/sw.js` fetch handler (`editor/` beside `api/`, `partials/`) |
+
+### Review finding (round 1) — the WS handshake headers
+
+The first shipped transport forwarded the browser's upgrade headers minus
+the hop-by-hop list — which strips `Connection`/`Upgrade` — so the upstream
+saw a plain GET and never answered 101 (the spike proxy worked because it
+forwarded headers verbatim; the shipped code diverged from it). Found in
+review, reproduced both ways against a live upgrade server (fixed shape →
+101 + byte round-trip; stripped shape → plain 200, no tunnel), and fixed
+by extracting `editorUpgradeHeaders()` into the policy module with a unit
+regression guard — nginx's `proxy_set_header Upgrade/Connection` is the
+same dance.
 
 ## Host-side verification (run these at merge time)
 
