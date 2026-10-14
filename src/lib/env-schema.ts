@@ -47,6 +47,12 @@ export const envSchema = {
   WEB_PI_ASTRO_ENTRY: { type: 'string', context: 'server', access: 'secret', optional: true },
   WEB_PI_SESSIONS_DIR: { type: 'string', context: 'server', access: 'secret', optional: true },
   WEB_PI_NEW_SESSION_CWD: { type: 'string', context: 'server', access: 'secret', optional: true },
+  // task/ws-jobs (workspaces-plan §9): the root under which job runs
+  // persist their logs — /workspace/.webpi/job-logs, a path that exists
+  // in BOTH containers of the compose split (created by workspace-init;
+  // see compose.yaml). Unset/empty keeps that default; the e2e suite and
+  // dev shapes point it somewhere writable.
+  WEB_PI_JOB_LOG_DIR: { type: 'string', context: 'server', access: 'secret', optional: true },
   // The command a new terminal tab runs (workspaces-plan §10),
   // whitespace-split by main.ts. Dynamic default in env.ts: a login
   // shell — $SHELL -l, /bin/sh -l when SHELL is unset.

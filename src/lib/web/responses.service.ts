@@ -8,7 +8,9 @@
 // Type-only imports from the domain modules: safe for the Astro bundle.
 import type { DatabaseUpdateFailure } from '../db';
 import type { DeleteAppFailure, SaveAppFailure } from '../apps';
-import type { DeleteJobFailure, ListJobsFailure, RunJobFailure, SaveJobFailure } from '../jobs';
+import type {
+  DeleteJobFailure, ListJobsFailure, ListRunsFailure, RunJobFailure, RunLogData, RunLogFailure, SaveJobFailure,
+} from '../jobs';
 import type {
   CloseTerminalFailure, DeleteWorkspaceFailure, NewTerminalFailure, RenameTerminalFailure, SaveWorkspaceFailure,
 } from '../workspaces';
@@ -73,7 +75,7 @@ export function validationFailureResponse<DataType extends object>(result: Valid
 
 // ---------- domain mappers ----------
 
-export type JobFailure = SaveJobFailure | DeleteJobFailure | RunJobFailure | ListJobsFailure;
+export type JobFailure = SaveJobFailure | DeleteJobFailure | RunJobFailure | ListJobsFailure | ListRunsFailure | RunLogFailure;
 
 /** Jobs failures → status + the { error, detail } body /jobs reads. */
 export function jobFailureResponse(f: JobFailure): Response {
@@ -81,12 +83,19 @@ export function jobFailureResponse(f: JobFailure): Response {
   switch (f.errorCode) {
     case 'invalid_schedule':
       return jsonResponse(body(f.errorMessage ?? f.errorCode), 400);
+    case 'app_not_found':
     case 'job_not_found':
       return jsonResponse(body(f.errorMessage ?? 'no such job'), 404);
+    case 'run_not_found':
+      return jsonResponse(body(f.errorMessage ?? 'no such run'), 404);
+    case 'log_missing':
+      return jsonResponse(body(f.errorMessage ?? 'the run left no log'), 404);
     case 'run_active':
       return jsonResponse(body(f.errorMessage ?? 'previous run is still active', f.data?.session ?? null), 409);
     case 'tmux_error':
       return jsonResponse(body('could not open run session', f.errorMessage ?? null), 500);
+    case 'read_error':
+      return jsonResponse(body(f.errorMessage ?? 'could not read the run log'), 500);
     case 'database_error':
       return jsonResponse(body(f.errorMessage ?? 'database error'), 500);
     default:
@@ -97,6 +106,25 @@ export function jobFailureResponse(f: JobFailure): Response {
 /** A job name from the path that is not a valid JobName. */
 export function invalidJobNameResponse(): Response {
   return jsonResponse({ error: 'invalid job name', detail: null, code: 'invalid_job_name' }, 400);
+}
+
+/** A :fired_at path param that is not an integer epoch-ms value. */
+export function invalidFiredAtResponse(): Response {
+  return jsonResponse({ error: 'invalid fired_at (integer epoch ms)', detail: null, code: 'invalid_fired_at' }, 400);
+}
+
+/** GET /api/jobs/:name/runs/:fired_at/log's success: the tail as
+ *  text/plain (the fetch caller reads .text(); truncation disclosed via
+ *  a header — the body itself is just the log). */
+export function runLogResponse(data: RunLogData): Response {
+  return new Response(data.text, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store',
+      ...(data.truncated ? { 'X-Run-Log-Truncated': '1' } : {}),
+    },
+  });
 }
 
 /** POST /api/new failures: the never-fork guard's refusal is a distinct,

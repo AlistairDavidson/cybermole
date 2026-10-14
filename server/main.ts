@@ -81,6 +81,7 @@ const CFG: ServerConfig = {
   astroEntry: ENV.WEB_PI_ASTRO_ENTRY,
   sessionsDir: ENV.WEB_PI_SESSIONS_DIR,
   newSessionCwd: ENV.WEB_PI_NEW_SESSION_CWD,
+  jobLogDir: ENV.WEB_PI_JOB_LOG_DIR,
   // whitespace-split command line a new terminal tab runs (plan §4;
   // default a login shell — src/lib/env.ts); resume appends --session <id>
   // (pi-family CLI) until branch 4 deletes that path
@@ -191,7 +192,7 @@ const hiddenSessions = new HiddenSessions(stateDb);
 // In-process job scheduler (src/lib/jobs.ts): definitions + run
 // bookkeeping live in the state db; fires open tmux sessions on the app's
 // socket under the same job-session conventions as interactive sessions.
-const scheduler = new jobs.Scheduler(stateDb, { cwd: CFG.newSessionCwd, env: sessionEnv });
+const scheduler = new jobs.Scheduler(stateDb, { cwd: CFG.newSessionCwd, env: sessionEnv, logDir: CFG.jobLogDir });
 scheduler.start();
 // pi auto-update (src/lib/auto-update.ts): when the persisted setting is
 // ON, one check shortly after boot and then daily — always within the
