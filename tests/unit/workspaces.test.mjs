@@ -48,8 +48,7 @@ const termRows = (db, workspaceId) =>
 
 async function appless(db) {
   // an app row is only needed for the parent tests; make it through the domain
-  const { killed, killSession } = recorder();
-  const a = new Apps({ db, username: () => USERNAME, killSession });
+  const a = new Apps({ db, username: () => USERNAME, killSession: async () => true });
   return (await a.saveApp('parent')).data;
 }
 
@@ -253,6 +252,8 @@ test('rename_terminal: sets the title, null clears it; terminal_not_found / data
   const cleared = await w.renameTerminal(t.id, null);
   assert.deepEqual(cleared.data, { id: t.id, title: null });
   assert.equal(termRows(db, ws.id)[0].title, null);
+  const noop = await w.renameTerminal(t.id, undefined); // absent title: no-op read-back
+  assert.deepEqual(noop.data, { id: t.id, title: null });
   const missing = await w.renameTerminal(MISSING_WS, 'x');
   assert.equal(missing.errorCode, 'terminal_not_found');
   assert.equal(missing.resultType, 'rename_terminal');

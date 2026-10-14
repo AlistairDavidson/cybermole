@@ -100,8 +100,10 @@ export const terminalCreateBody = z.object({
   title: z.string().trim().min(1, 'title is required').max(120, 'title is too long (max 120)').optional(),
 });
 
-/** PATCH /api/terminals/:id — rename the tab; title null clears it back to
- *  the "term N" label (an empty string is a 400, not a clear). */
+/** PATCH /api/terminals/:id — rename the tab: a non-empty string sets the
+ *  title, null clears it back to the "term N" label, absent is a no-op
+ *  that returns the row (the plan's {title?} — same convention as the
+ *  app/workspace patches; an empty string is a 400, not a clear). */
 export const terminalPatchBody = z.object({
-  title: z.string().trim().min(1, 'title is required').max(120, 'title is too long (max 120)').nullable(),
+  title: z.string().trim().min(1, 'title is required').max(120, 'title is too long (max 120)').nullable().optional(),
 });

@@ -184,10 +184,11 @@ test('terminalCreateBody: optional non-empty title, capped at 120', () => {
   assert.equal(issueText(terminalCreateBody, { title: '' }), 'title: title is required');
 });
 
-test('terminalPatchBody: title is a non-empty string or null (null clears the tab title)', () => {
+test('terminalPatchBody: non-empty string, null (clear), or absent (no-op); empty is a 400', () => {
   assert.deepEqual(parse(terminalPatchBody, { title: 'build' }), { title: 'build' });
   assert.deepEqual(parse(terminalPatchBody, { title: null }), { title: null });
-  for (const bad of [{}, { title: '' }, { title: 'x'.repeat(121) }, { title: 5 }]) {
+  assert.deepEqual(parse(terminalPatchBody, {}), {}); // absent = no-op, like the other patches
+  for (const bad of [{ title: '' }, { title: 'x'.repeat(121) }, { title: 5 }]) {
     assert.equal(ok(terminalPatchBody, bad), false, JSON.stringify(bad));
   }
 });

@@ -281,11 +281,20 @@ export class Workspaces {
     return { ok: true, resultType: 'close_terminal', data: { id } } satisfies CloseTerminalSuccess;
   }
 
-  /** Rename a terminal tab (title null clears it back to the "term N"
-   *  label); the title's shape was validated at the request boundary. */
-  async renameTerminal(id: TerminalId, title: string | null): Promise<RenameTerminalResult> {
+  /** Rename a terminal tab — title null clears it back to the "term N"
+   *  label; an absent title is a no-op that returns the row (the {title?}
+   *  convention of the app/workspace patches). The title's shape was
+   *  validated at the request boundary. */
+  async renameTerminal(id: TerminalId, title: string | null | undefined): Promise<RenameTerminalResult> {
     const fail = (errorCode: RenameTerminalErrorCode, errorMessage: string) =>
       ({ ok: false, resultType: 'rename_terminal', errorCode, errorMessage }) satisfies RenameTerminalFailure;
+    if (title === undefined) {
+      const found = this.terminal(id);
+      if (!found.ok) return fail('database_error', found.errorMessage);
+      const row = found.data.value;
+      if (!row) return fail('terminal_not_found', 'no such terminal');
+      return { ok: true, resultType: 'rename_terminal', data: { id, title: row.title } } satisfies RenameTerminalSuccess;
+    }
     const actor = this.actor();
     if (!actor.ok) return fail('database_error', actor.errorMessage);
     const updated = databaseUpdate('could not save the terminal', () =>
