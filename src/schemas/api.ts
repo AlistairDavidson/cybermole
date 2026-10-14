@@ -57,8 +57,3 @@ export const updatePiBody = z.object({ dryRun: z.boolean().default(false) });
 
 /** POST /api/auto-update-pi — the toggle's one boolean. */
 export const autoUpdateBody = z.object({ enabled: z.boolean({ error: 'enabled must be a boolean' }) });
-
-/** POST /api/zed/open — a directory (a session's cwd) to open in the Zed
- *  webapp (docs/zed-webapp.md). Absolute paths only: the server checks
- *  it is a directory it can see before forwarding to the launcher. */
-export const zedOpenBody = z.object({ path: z.string().regex(/^\//, 'path must be absolute') });

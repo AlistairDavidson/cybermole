@@ -158,16 +158,16 @@ session-sidebar {
 .nav li .hide-btn:hover, .nav li .hide-btn:focus-visible {
   color: var(--wa-color-danger-on-quiet);
 }
-/* "open in Zed" — same quiet shape, but a content action, not a
-   destructive one: accent on hover. Rendered only when ConsoleState.zed
+/* "open in editor" — same quiet shape, but a content action, not a
+   destructive one: accent on hover. Rendered only when ConsoleState.editor
    is set (the webapp configured). */
-.nav li .zed-btn {
+.nav li .editor-btn {
   flex: none; align-self: center; color: var(--wa-color-text-quiet);
 }
-.nav li .zed-btn::part(button) {
+.nav li .editor-btn::part(button) {
   min-width: var(--wa-space-l);
 }
-.nav li .zed-btn:hover, .nav li .zed-btn:focus-visible {
+.nav li .editor-btn:hover, .nav li .editor-btn:focus-visible {
   color: var(--wa-color-brand-on-quiet); /* no accent-* family in WA; the
      old accent-fill-normal reference resolved to nothing */
 }

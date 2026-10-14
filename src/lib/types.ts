@@ -37,9 +37,10 @@ export interface ConsoleState {
   /** total ids in the hidden-sessions state file (may exceed the
    *  hidden ones inside `sessions`, which is capped like the list) */
   hiddenCount: number;
-  /** the Zed webapp (docs/zed-webapp.md), or null when not configured:
-   *  the console hides its "open in Zed" affordances without it. */
-  zed: { url: string } | null;
+  /** the editor webapp is configured (WEB_PI_EDITOR_UPSTREAM set — the
+   *  same-origin `${BASE}/editor/` proxy, docs/editor-webapp.md): false
+   *  hides the "open in editor" affordances (task/ws-editor). */
+  editor: boolean;
 }
 
 // ---- scheduled jobs (in-process scheduler — see src/lib/jobs.ts) ----

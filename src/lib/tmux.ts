@@ -184,7 +184,7 @@ function tmuxFailure(name: TmuxSessionName, what: string, error: TmuxError) {
 /** Live sessions on the app socket. Can't fail by design: no server yet
  *  (or any error) is simply no live sessions. Explicit -F format: the
  *  default layout varies across tmux versions, and the cwd (resolved via
- *  the session's active pane) is what the sidebar's "open in Zed" needs.
+ *  the session's active pane) is what the sidebar's "open in editor" needs.
  *  That field is #{pane_current_path} falling back to
  *  #{pane_start_path}: current needs the pane tty's foreground pgrp
  *  (tmux's osdep_get_cwd → tcgetpgrp → /proc/<pgrp>/cwd), which a normal
