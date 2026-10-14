@@ -96,49 +96,60 @@ console-app main {
 }
 .nav-header h1 wa-icon { color: var(--wa-color-brand-on-quiet); }
 
-/* ---- session-sidebar ---- */
-session-sidebar {
+/* ---- workspace-sidebar (the sidebar IS the app switcher — plan §8) ---- */
+workspace-sidebar {
   display: flex; flex-direction: column; height: 100%; min-height: 0;
   padding: 0; /* beats wa-page's ::slotted padding */
 }
-.new-session {
-  padding: var(--wa-space-xs) var(--wa-space-s);
-  border-bottom: var(--wa-border-width-s) solid var(--wa-color-surface-border);
-}
-.new-session wa-input { flex: 1; min-width: 0; }
 .nav { overflow-y: auto; flex: 1; padding-bottom: var(--wa-space-m); }
-.nav h2 {
-  display: flex; align-items: center; gap: var(--wa-space-2xs);
+.workspace-search {
+  display: block;
+  margin: var(--wa-space-2xs) var(--wa-space-s) var(--wa-space-3xs);
+}
+.nav .ws-group h2 {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--wa-space-2xs);
   font-size: var(--wa-font-size-2xs); text-transform: uppercase;
   letter-spacing: .08em; color: var(--wa-color-text-quiet);
-  margin: var(--wa-space-s) var(--wa-space-s) var(--wa-space-2xs);
+  margin: var(--wa-space-s) var(--wa-space-2xs) var(--wa-space-3xs);
 }
-.session-search {
-  display: block;
-  margin: 0 var(--wa-space-s) var(--wa-space-2xs);
+.nav .ws-group h2 .g-name {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.manage-hidden {
-  display: block;
-  margin: 0 var(--wa-space-s) var(--wa-space-2xs);
-  color: var(--wa-color-text-quiet);
+.nav .ws-group h2 .g-actions {
+  display: inline-flex; align-items: center; gap: var(--wa-space-3xs); flex: none;
+}
+.nav .ws-group h2 .g-actions wa-button { color: var(--wa-color-text-quiet); }
+.nav .ws-group h2 .g-actions wa-button::part(button) {
+  min-width: var(--wa-space-l); /* stays clickable even if the icon asset fails */
+}
+.nav .ws-group h2 .g-actions wa-button:hover, .nav .ws-group h2 .g-actions wa-button:focus-visible {
+  color: var(--wa-color-brand-on-quiet);
+}
+.nav .ws-group h2 .g-actions .del-app-btn:hover,
+.nav .ws-group h2 .g-actions .del-app-btn:focus-visible {
+  color: var(--wa-color-danger-on-quiet);
+}
+.nav .ws-group .group-empty {
+  margin: 0 var(--wa-space-s); color: var(--wa-color-text-quiet);
   font-size: var(--wa-font-size-2xs);
 }
-.manage-hidden::part(base) { justify-content: flex-start; }
 .nav ul { list-style: none; margin: 0; padding: 0; }
 .nav li {
   padding: var(--wa-space-2xs) var(--wa-space-s); cursor: pointer;
   border-left: var(--wa-border-width-m) solid transparent;
+  display: flex; align-items: flex-start; gap: var(--wa-space-3xs);
 }
 .nav li:hover { background: color-mix(in oklab, var(--wa-color-text-normal) 6%, transparent); }
 .nav li.active {
   border-left-color: var(--wa-color-brand-on-quiet);
   background: color-mix(in oklab, var(--wa-color-brand-on-quiet) 10%, transparent);
 }
+.nav li .row-main { flex: 1; min-width: 0; }
 .nav li .t {
   display: flex; align-items: center; gap: var(--wa-space-2xs);
 }
 .nav li .t wa-icon { font-size: var(--wa-font-size-2xs); flex: none; }
-.nav li[data-live] .t wa-icon { color: var(--wa-color-success-on-quiet); }
 .nav li .t-name {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
@@ -147,67 +158,104 @@ session-sidebar {
   display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   margin-block-start: var(--wa-space-3xs);
 }
-.nav li[data-resume] { display: flex; align-items: flex-start; gap: var(--wa-space-3xs); }
-.nav li[data-resume] .row-main { flex: 1; min-width: 0; }
-.nav li .hide-btn {
-  flex: none; align-self: center; color: var(--wa-color-text-quiet);
+.nav li .row-actions {
+  display: inline-flex; align-items: center; gap: var(--wa-space-3xs); flex: none;
 }
-.nav li .hide-btn::part(button) {
+.nav li .ws-count {
+  color: var(--wa-color-text-quiet); font-size: var(--wa-font-size-2xs);
+}
+.nav li .del-ws-btn { color: var(--wa-color-text-quiet); }
+.nav li .del-ws-btn::part(button) {
   min-width: var(--wa-space-l); /* stays clickable even if the icon asset fails */
 }
-.nav li .hide-btn:hover, .nav li .hide-btn:focus-visible {
+.nav li .del-ws-btn:hover, .nav li .del-ws-btn:focus-visible {
   color: var(--wa-color-danger-on-quiet);
 }
-/* "open in editor" — same quiet shape, but a content action, not a
-   destructive one: accent on hover. Rendered only when ConsoleState.editor
-   is set (the webapp configured). */
-.nav li .editor-btn {
-  flex: none; align-self: center; color: var(--wa-color-text-quiet);
+.nav .new-app {
+  display: block; margin: var(--wa-space-s) var(--wa-space-s) 0;
+  color: var(--wa-color-text-quiet);
 }
-.nav li .editor-btn::part(button) {
-  min-width: var(--wa-space-l);
-}
-.nav li .editor-btn:hover, .nav li .editor-btn:focus-visible {
-  color: var(--wa-color-brand-on-quiet); /* no accent-* family in WA; the
-     old accent-fill-normal reference resolved to nothing */
-}
-.nav li.empty {
-  cursor: default; color: var(--wa-color-text-quiet);
-  font-size: var(--wa-font-size-2xs);
-}
-.nav li.empty:hover { background: none; }
-.nav li.group {
-  display: flex; align-items: center; gap: var(--wa-space-2xs);
-  color: var(--wa-color-text-quiet); font-size: var(--wa-font-size-2xs);
-  cursor: default; padding-block-start: var(--wa-space-s);
-}
-.nav li.group:hover { background: none; }
-.nav li.group wa-icon { font-size: var(--wa-font-size-2xs); flex: none; }
+.nav .new-app::part(base) { justify-content: flex-start; }
 
-/* ---- console-app dialogs (hide confirm + manage hidden) ---- */
+/* ---- terminal-tabs (plan §8): the workspace's tab bar + panes ---- */
+terminal-tabs {
+  flex: 1; display: flex; flex-direction: column;
+  min-width: 0; min-height: 0;
+}
+.tabs-bar {
+  display: flex; align-items: stretch; gap: var(--wa-space-3xs);
+  padding: var(--wa-space-3xs) var(--wa-space-s) 0;
+  border-bottom: var(--wa-border-width-s) solid var(--wa-color-surface-border);
+  overflow-x: auto; /* many tabs scroll the bar, never the page */
+  flex: none;
+}
+.tabs-bar .tab {
+  display: inline-flex; align-items: center; gap: var(--wa-space-3xs);
+  padding: var(--wa-space-3xs) var(--wa-space-2xs);
+  background: none; color: var(--wa-color-text-normal);
+  border: none; border-bottom: var(--wa-border-width-m) solid transparent;
+  border-radius: var(--wa-border-radius-s) var(--wa-border-radius-s) 0 0;
+  font: inherit; font-size: var(--wa-font-size-xs);
+  cursor: pointer; white-space: nowrap; flex: none;
+}
+.tabs-bar .tab:hover {
+  background: color-mix(in oklab, var(--wa-color-text-normal) 6%, transparent);
+}
+.tabs-bar .tab.active {
+  color: var(--wa-color-brand-on-quiet);
+  border-bottom-color: var(--wa-color-brand-on-quiet);
+}
+.tabs-bar .tab .tab-dot {
+  width: 0.5em; height: 0.5em; border-radius: 50%;
+  background: var(--wa-color-text-quiet); opacity: .5; flex: none;
+}
+.tabs-bar .tab .tab-dot.live {
+  background: var(--wa-color-success-on-quiet); opacity: 1;
+}
+.tabs-bar .tab .tab-label {
+  max-width: 18ch; overflow: hidden; text-overflow: ellipsis;
+}
+.tabs-bar .tab .tab-close {
+  display: inline-flex; align-items: center;
+  border-radius: var(--wa-border-radius-s);
+  color: var(--wa-color-text-quiet); font-size: var(--wa-font-size-2xs);
+}
+.tabs-bar .tab .tab-close:hover { color: var(--wa-color-danger-on-quiet); }
+.tabs-bar .tab.editor-tab wa-icon { font-size: var(--wa-font-size-2xs); flex: none; }
+.tabs-bar .tab-new {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--wa-space-xl); flex: none;
+  background: none; color: var(--wa-color-text-quiet);
+  border: none; border-bottom: var(--wa-border-width-m) solid transparent;
+  border-radius: var(--wa-border-radius-s) var(--wa-border-radius-s) 0 0;
+  cursor: pointer;
+}
+.tabs-bar .tab-new:hover { color: var(--wa-color-brand-on-quiet); }
+.tabs-body {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+}
+/* The editor iframe fills the pane; its workbench does its own layout. */
+.editor-frame {
+  flex: 1; min-height: 0; width: 100%;
+  border: none; background: var(--wa-color-surface-default);
+}
+.run-host { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.tabs-empty {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: var(--wa-space-2xs);
+  color: var(--wa-color-text-quiet);
+  border: var(--wa-border-width-s) dashed var(--wa-color-surface-border);
+  border-radius: var(--wa-border-radius-m);
+  margin: var(--wa-space-s);
+}
+.tabs-empty wa-icon { font-size: var(--wa-font-size-l); }
+.tabs-empty p { margin: 0; font-size: var(--wa-font-size-s); }
+
+/* ---- console-app dialogs ---- */
 console-app .dialog-text { margin: 0 0 var(--wa-space-2xs); }
 console-app .dialog-note {
   margin: 0; color: var(--wa-color-text-quiet);
   font-size: var(--wa-font-size-s);
-}
-console-app .hidden-list {
-  display: flex; flex-direction: column; gap: var(--wa-space-2xs);
-  min-width: 0;
-}
-console-app .hidden-row {
-  display: flex; align-items: center; gap: var(--wa-space-2xs);
-  padding-block-end: var(--wa-space-2xs);
-  border-bottom: var(--wa-border-width-s) solid var(--wa-color-surface-border);
-}
-console-app .hidden-row:last-of-type { border-bottom: none; padding-block-end: 0; }
-console-app .hidden-meta { flex: 1; min-width: 0; }
-console-app .hidden-meta .t-name {
-  display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-console-app .hidden-meta .d {
-  display: block; color: var(--wa-color-text-quiet);
-  font-size: var(--wa-font-size-2xs); white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis;
 }
 
 /* ---- agent-terminal ---- */

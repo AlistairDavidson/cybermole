@@ -1,42 +1,73 @@
 ---
 // ConsoleApp.astro — SSRs the console app shell: <wa-page> (sidebar +
-// free mobile drawer), header, <session-sidebar> slot, terminal, toasts,
-// and the two dialogs the sidebar's innerHTML poll can't host (they live
-// outside it, so their open/closed state survives every re-render).
-// console-app.ts (imported client-side below) upgrades <console-app> and
-// orchestrates it. Frontmatter imports SSR the wa-* components in this
-// markup (astro-lit, declarative shadow DOM); they do NOT register in the
-// browser — console-app.ts re-imports them there (AGENTS.md: SSR ≠ client).
+// free mobile drawer), header, <workspace-sidebar> slot, the terminal
+// tabs pane, toasts, and the dialogs the sidebar's innerHTML poll can't
+// host (they live outside it, so their open/closed state survives every
+// re-render). console-app.ts (imported client-side below) upgrades
+// <console-app> and orchestrates it. Frontmatter imports SSR the wa-*
+// components in this markup (astro-lit, declarative shadow DOM); they do
+// NOT register in the browser — console-app.ts re-imports them there
+// (AGENTS.md: SSR ≠ client).
 import '@awesome.me/webawesome/dist/components/page/page.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/dialog/dialog.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/toast/toast.js';
-import AgentTerminal from '../AgentTerminal/AgentTerminal.astro';
+import WaField from '../form/WaField.astro';
+import { zodSchemaToHTMLAttributes } from '../../lib/web/zod.service';
+import { appForm, workspaceForm } from '../../schemas/api';
+
+// Native constraints matching the schemas the dialogs validate with in
+// the browser (validation-enhancer-zod — an empty field never costs a
+// POST; the server re-validates with its own bodies either way).
+const appValidation = zodSchemaToHTMLAttributes(appForm);
+const wsValidation = zodSchemaToHTMLAttributes(workspaceForm);
 ---
 <console-app>
   <wa-page>
-    <session-sidebar slot="navigation"></session-sidebar>
-    <main><AgentTerminal /></main>
+    <workspace-sidebar slot="navigation"></workspace-sidebar>
+    <main><terminal-tabs></terminal-tabs></main>
   </wa-page>
   <wa-toast placement="bottom-start"></wa-toast>
 
-  <wa-dialog id="confirm-hide" label="Hide session" with-footer>
-    <p class="dialog-text">
-      Hide <strong id="confirm-hide-title"></strong> from the session list?
-    </p>
-    <p class="dialog-note">
-      Nothing is deleted — the session file stays on disk. Restore it any time
-      via “N hidden — manage” in the sidebar.
-    </p>
+  <wa-dialog id="app-dialog" label="New app" with-footer>
+    <validation-enhancer-zod>
+      <form id="app-form" class="wa-stack wa-gap-s">
+        <WaField
+          id="app-name"
+          name="name"
+          label="name"
+          hint="the slug is derived (lowercase, dashes) and stays fixed"
+          {...appValidation.name}
+        />
+      </form>
+    </validation-enhancer-zod>
     <wa-button slot="footer" appearance="plain" data-dialog="close">cancel</wa-button>
-    <wa-button slot="footer" id="confirm-hide-ok" variant="brand">hide</wa-button>
+    <wa-button slot="footer" id="app-save" variant="brand">create</wa-button>
   </wa-dialog>
 
-  <wa-dialog id="hidden-dialog" label="Hidden sessions" with-footer>
-    <div id="hidden-list" class="hidden-list"></div>
-    <wa-button slot="footer" id="unhide-all" appearance="plain">unhide all</wa-button>
-    <wa-button slot="footer" appearance="plain" data-dialog="close">close</wa-button>
+  <wa-dialog id="workspace-dialog" label="New workspace" with-footer>
+    <validation-enhancer-zod>
+      <form id="workspace-form" class="wa-stack wa-gap-s">
+        <WaField id="workspace-name" name="name" label="name" {...wsValidation.name} />
+        <WaField
+          id="workspace-cwd"
+          name="cwd"
+          label="working directory"
+          hint="terminal tabs start here; the editor tab opens it"
+          {...wsValidation.cwd}
+        />
+      </form>
+    </validation-enhancer-zod>
+    <wa-button slot="footer" appearance="plain" data-dialog="close">cancel</wa-button>
+    <wa-button slot="footer" id="workspace-save" variant="brand">create</wa-button>
+  </wa-dialog>
+
+  <wa-dialog id="confirm-delete" label="Delete" with-footer>
+    <p class="dialog-text" id="confirm-delete-text"></p>
+    <p class="dialog-note" id="confirm-delete-note"></p>
+    <wa-button slot="footer" appearance="plain" data-dialog="close">cancel</wa-button>
+    <wa-button slot="footer" id="confirm-delete-ok" variant="danger">delete</wa-button>
   </wa-dialog>
 </console-app>
 

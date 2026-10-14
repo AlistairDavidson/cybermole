@@ -1,9 +1,9 @@
 // tmux.test.mjs — the privilege split's socket plumbing (src/lib/tmux.ts):
 // -S-vs-L selection for WEB_PI_TMUX_SOCKET, the never-fork guard's
 // decision table, and (where tmux exists — a stated requirement) the
-// guarded new/resume behaviour against a real server on an absolute-path
-// socket, plus the umask-0007 inheritance the split's group-sharing
-// relies on. Run against the compiled output: `npm run test:unit`.
+// guarded new-session behaviour against a real server on an absolute-path
+// socket, the live-name set /api/state diffs against, plus the
+// umask-0007 inheritance the split's group-sharing relies on. Run against the compiled output: `npm run test:unit`.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -17,8 +17,8 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-tmux-test-'));
 process.env.WEB_PI_TMUX_SOCKET = path.join(dir, 'tmux');
 
 const { socketArgs, forksServer, isServerDown, SERVER_NOT_RUNNING_MSG, requireServer,
-        newSession, newSessionArgs, resumeSession, hasSession, liveSessionNames, jobSessionName,
-        resumeSessionName, terminalSessionName, listSessions } =
+        newSession, newSessionArgs, hasSession, liveSessionNames, jobSessionName,
+        terminalSessionName } =
   await import('../../dist-server/src/lib/tmux.js');
 const { TmuxSessionNameSchema } = await import('../../dist-server/src/schemas/ids.js');
 
@@ -67,15 +67,6 @@ test('jobSessionName: every valid job name yields a valid tmux session name (40-
   }
 });
 
-test('resumeSessionName: r-<full id>, hashed only when the id would not fit', () => {
-  const id = '019f4706-0000-7000-8000-000000000001';
-  assert.equal(resumeSessionName(id), `r-${id}`);
-  const long = 'a'.repeat(64);
-  const hashed = resumeSessionName(long);
-  assert.match(hashed, /^r-[0-9a-f]{32}$/);
-  assert.equal(TmuxSessionNameSchema.safeParse(hashed).success, true);
-});
-
 // ---------- task/ws-terminal (plan §4): the terminal-tab session ----------
 
 test('terminalSessionName: t-<uuid> for every terminal row id — always a valid session name', () => {
@@ -119,7 +110,7 @@ function startServer() {
 }
 
 test('requireServer (the guard runner, absolute socket): refuses while down, passes once a server answers', { skip: !haveTmux }, async () => {
-  // The export every guarded call site (new/resume/attach spawn) uses.
+  // The export every guarded call site (new-session/attach spawn) uses.
   assert.equal(fs.existsSync(SOCKET), false);
   const refused = await requireServer();
   assert.equal(refused.ok, false, 'must refuse');
@@ -166,41 +157,22 @@ test('guarded create works once the workspace side owns a live server', { skip: 
   assert.equal(fs.readFileSync(envfile, 'utf8').trim(), 'delivered');
 });
 
-test('resume path: reuse when the session exists, guard when the server is down', { skip: !haveTmux }, async () => {
-  // Existing resume session → no create, no error.
-  const reused = await resumeSession('live1', dir, ['/bin/sh'], '019f4706-0000-7000-8000-000000000009', {});
-  assert.equal(reused.ok, true);
-  execFileSync('tmux', ['-S', SOCKET, 'kill-server']);
-  assert.equal(tmuxUp(), false);
-  // Server down → the resume-create branch hits the same guard.
-  const refused = await resumeSession('r-019f4706-0000-7000-8000-000000000010', dir, ['/bin/sh'],
-    '019f4706-0000-7000-8000-000000000010', {});
-  assert.equal(refused.ok, false);
-  assert.equal(refused.errorCode, 'server_not_running');
-  assert.ok(refused.errorMessage.startsWith(SERVER_NOT_RUNNING_MSG), refused.errorMessage);
-});
-
-test('listSessions: explicit -F rows with the pane cwd (current, else the spawn dir)', { skip: !haveTmux }, async () => {
-  // The sidebar's "open in editor" reads LiveSession.cwd: #{pane_current_path},
-  // falling back to #{pane_start_path} (tmux resolves current via the pane
-  // tty's foreground pgrp; a normal kernel sets it when the pane process
-  // takes the tty, some pty layers never do — the fallback then yields the
-  // `-c` spawn dir, which newSession sets to the session's cwd either way).
+test('liveSessionNames: the name set the /api/state live diff reads', { skip: !haveTmux }, async () => {
+  // A name-set source only now (plan §11): the cwd/attached fields died
+  // with the Live list + its editor button. A down server reads as empty
+  // (the previous test left a live one behind — clean slate first).
+  try { execFileSync('tmux', ['-S', SOCKET, 'kill-server'], { stdio: 'ignore' }); } catch { /* gone */ }
+  fs.rmSync(SOCKET, { force: true }); // a stale socket must not count either
+  assert.equal((await liveSessionNames()).size, 0);
   startServer();
   try {
-    const workdir = path.join(dir, 'cwd-probe');
+    const workdir = path.join(dir, 'live-probe');
     fs.mkdirSync(workdir, { recursive: true });
-    const created = await newSession('listprobe', workdir, ['/bin/sh', '-c', 'sleep 5'], {});
+    const created = await newSession('liveprobe', workdir, ['/bin/sh', '-c', 'sleep 5'], {});
     assert.equal(created.ok, true);
-    const live = await listSessions();
-    const row = live.find(s => s.name === 'listprobe');
-    assert.ok(row, `the session must be listed: ${JSON.stringify(live)}`);
-    assert.equal(row.socket, SOCKET);
-    assert.equal(row.windows, 1);
-    assert.equal(row.attached, false);
-    assert.equal(row.cwd, workdir); // current when resolvable, else the -c spawn dir
-    assert.match(row.created, /\d{4}/, 'the epoch is formatted in JS, not raw');
-    execFileSync('tmux', ['-S', SOCKET, 'kill-session', '-t', 'listprobe'], { stdio: 'ignore' });
+    const names = await liveSessionNames();
+    assert.ok(names.has('liveprobe'), `the session must be live: ${[...names]}`);
+    execFileSync('tmux', ['-S', SOCKET, 'kill-session', '-t', 'liveprobe'], { stdio: 'ignore' });
   } finally {
     try { execFileSync('tmux', ['-S', SOCKET, 'kill-server'], { stdio: 'ignore' }); } catch { /* gone */ }
   }

@@ -13,14 +13,14 @@ import JobsList from "./JobsList.astro";
 import WaField from "../form/WaField.astro";
 import { zodSchemaToHTMLAttributes } from "../../lib/web/zod.service";
 import { JobSaveSchema } from "../../schemas/jobs";
-import type { AppOption } from "../../lib/apps";
+import type { AppState } from "../../lib/types";
 import type { ScheduledJob } from "../../lib/types";
 
 interface Props {
   /** The listing, server-rendered; null when the read failed (the poll retries). */
   jobs: ScheduledJob[] | null;
   /** The app-tag picker's options (plan §9), from the same render. */
-  apps: AppOption[];
+  apps: AppState[];
 }
 const { jobs, apps } = Astro.props;
 

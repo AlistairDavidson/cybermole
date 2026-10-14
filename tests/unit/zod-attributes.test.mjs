@@ -10,7 +10,7 @@ import { compilesAsHtmlPattern, zodSchemaToHTMLAttributes } from '../../dist-ser
 import { JobSaveSchema } from '../../dist-server/src/schemas/jobs.js';
 import { loginForm } from '../../dist-server/src/schemas/api.js';
 import { UUID_RE } from '../../dist-server/src/schemas/patterns.js';
-import { JobNameSchema, PiSessionIdSchema, TmuxSessionNameSchema } from '../../dist-server/src/schemas/ids.js';
+import { JobNameSchema, TmuxSessionNameSchema } from '../../dist-server/src/schemas/ids.js';
 
 const attrs = (shape) => zodSchemaToHTMLAttributes(z.object(shape));
 
@@ -65,13 +65,13 @@ test('the app’s form schemas: the attributes the forms render', () => {
 });
 
 test('every pattern an app schema emits compiles under the v flag', () => {
-  const schemas = [JobSaveSchema, loginForm, z.object({ a: JobNameSchema, b: PiSessionIdSchema, c: TmuxSessionNameSchema })];
+  const schemas = [JobSaveSchema, loginForm, z.object({ a: JobNameSchema, b: TmuxSessionNameSchema })];
   for (const schema of schemas) {
     for (const [field, a] of Object.entries(zodSchemaToHTMLAttributes(schema))) {
       if (a.pattern !== undefined) assert.equal(compilesAsHtmlPattern(a.pattern), true, `${field}: ${a.pattern}`);
     }
   }
   // and the ID schemas really do emit theirs (the escaped hyphens are why they pass)
-  const ids = zodSchemaToHTMLAttributes(z.object({ a: JobNameSchema, b: PiSessionIdSchema, c: TmuxSessionNameSchema }));
-  assert.ok(ids.a.pattern && ids.b.pattern && ids.c.pattern);
+  const ids = zodSchemaToHTMLAttributes(z.object({ a: JobNameSchema, b: TmuxSessionNameSchema }));
+  assert.ok(ids.a.pattern && ids.b.pattern);
 });

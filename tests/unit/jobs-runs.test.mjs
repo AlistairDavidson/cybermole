@@ -29,9 +29,10 @@ const { JobSaveSchema } = await import('../../dist-server/src/schemas/jobs.js');
 
 // The stand-in tmux (scheduler.test.mjs's, plus the -F format):
 // $FAKE_TMUX/up marks the server up, $FAKE_TMUX/sessions lists live session
-// names (new-session appends). list-sessions answers the pipe-field -F
-// format src/lib/tmux.ts actually sends — the human default format
-// would parse as NO sessions and make every live set empty.
+// names (new-session appends). list-sessions answers the -F formats
+// src/lib/tmux.ts actually sends — '#{session_name}' (liveSessionNames,
+// one bare name per line) and the older pipe-field shape anything
+// fancier would parse as.
 const FAKE_TMUX = `#!/bin/sh
 dir="$FAKE_TMUX_DIR"; sessions="$dir/sessions"
 [ -e "$sessions" ] || : > "$sessions"
@@ -46,7 +47,9 @@ case "$sub" in
       shift
     done
     while IFS= read -r name; do
-      [ -n "$fmt" ] && echo "$name|1|0||" || echo "$name: 1 windows (created at Fri Oct 10 00:00:00 2026)"
+      # liveSessionNames asks -F '#{session_name}' — one bare name per
+      # line; anything fancier falls back to the old pipe-field shape.
+      [ "$fmt" = '#{session_name}' ] && echo "$name" || echo "$name|1|0||"
     done < "$sessions"
     ;;
   has-session)

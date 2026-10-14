@@ -20,6 +20,7 @@ import type { DatabaseReadResult } from './db';
 import type { ResultFailure, ResultSuccess } from '../types/result';
 import type { AppId, AppSlug, TmuxSessionName } from '../types/branded';
 import { asAppId, asAppSlug } from '../types/branded';
+import type { AppState } from './types';
 import { APP_SLUG_RE, normalizeSlug } from '../schemas/patterns';
 
 const log = componentLogger('apps');
@@ -47,15 +48,11 @@ export type DeleteAppSuccess = ResultSuccess<'delete_app', DeleteAppData>;
 export type DeleteAppFailure = ResultFailure<'delete_app', DeleteAppData, DeleteAppErrorCode>;
 export type DeleteAppResult = DeleteAppSuccess | DeleteAppFailure;
 
-/** task/ws-jobs (plan §9): the app picker's options — one read, the
- *  display fields only (the jobs dialog tags with the id). */
-export interface AppOption {
-  id: AppId;
-  name: string;
-  slug: AppSlug;
-  order: number;
-}
-export type ListAppsData = { apps: AppOption[] };
+/** The app list (task/ws-jobs plan §9 + task/ws-console plan §5): ONE
+ *  read serves both the jobs dialog's tag picker (server-rendered
+ *  options, no per-job fetches anywhere) and GET /api/state's apps
+ *  half. AppState is the shared client+server shape (src/lib/types.ts). */
+export type ListAppsData = { apps: AppState[] };
 export type ListAppsErrorCode = 'database_error';
 export type ListAppsSuccess = ResultSuccess<'list_apps', ListAppsData>;
 export type ListAppsFailure = ResultFailure<'list_apps', ListAppsData, ListAppsErrorCode>;
@@ -179,13 +176,16 @@ export class Apps {
     return { ok: true, resultType: 'delete_app', data: { id: row.id } } satisfies DeleteAppSuccess;
   }
 
-  /** All apps, ordered — the jobs dialog's tag picker (plan §9: the
-   *  page reads this once server-side; no per-job fetches anywhere). */
+  /** Every app, sort_order asc (+ created_at tiebreak — order allocation
+   *  is in steps of 10, plan §2, but nothing rewrites gaps in v1). One
+   *  read: the sidebar's grouping order (plan §5) and the jobs dialog's
+   *  tag picker (plan §9). */
   listApps(): ListAppsResult {
     const read = databaseRead('could not read apps', (): Array<{
-      id: AppId; name: string; slug: AppSlug; sort_order: number;
-    }> => this.deps.db.all(qb.selectFrom('apps').select(['id', 'name', 'slug', 'sort_order'])
-      .orderBy('sort_order', 'asc').orderBy('name', 'asc')));
+      id: AppId; name: string; slug: AppSlug; sort_order: number; created_at: number;
+    }> => this.deps.db.all(qb.selectFrom('apps')
+      .select(['id', 'name', 'slug', 'sort_order', 'created_at'])
+      .orderBy('sort_order', 'asc').orderBy('created_at', 'asc')));
     if (!read.ok) {
       return {
         ok: false, resultType: 'list_apps', errorCode: 'database_error', errorMessage: read.errorMessage,

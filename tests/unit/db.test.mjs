@@ -1,8 +1,9 @@
 // db.test.mjs — the schema v6 upgrade (src/lib/db.ts, workspaces-plan §2):
 // a fresh file (user_version 0) gets the new shape at CREATE; a v5-shaped
-// file opens as v6 with the ALTERs applied and its data intact; a newer
-// file refuses; and the foreign_keys pragma the cascade story rests on is
-// actually ON. Reopening never re-runs an ALTER (they are guarded by
+// file opens as v6 with the ALTERs applied and its data intact — and its
+// pi-session `sessions` overlay DROPPED (task/ws-console, plan §11); a
+// newer file refuses; and the foreign_keys pragma the cascade story rests
+// on is actually ON. Reopening never re-runs an ALTER (they are guarded by
 // table_info, not the version number).
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -84,8 +85,10 @@ test('a fresh file (user_version 0) gets the v6 shape at CREATE — no ALTER eve
   for (const c of ['log', 'exit_code', 'finished_at']) {
     assert.ok(columns(db, 'job_runs').includes(c), c);
   }
+  // the pi-session overlay is never created (plan §11)
+  assert.ok(db.db().prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sessions'").get() == null);
   // reopening runs the same guards and skips every ALTER (ADD COLUMN twice
-  // would throw "duplicate column name")
+  // would throw "duplicate column name") — and the DROP re-runs harmlessly
   const reopened = new StateDb(file);
   reopened.db();
   assert.equal(userVersion(file), 6);
@@ -99,8 +102,6 @@ test('a v5-shaped file upgrades to v6 with the ALTERs applied and its data intac
   raw.prepare("INSERT INTO jobs (name, schedule, command, created_at) VALUES ('nightly', '* * * * *', 'true', 123)")
     .run();
   raw.prepare("INSERT INTO job_runs (job, fired_at, origin) VALUES ('nightly', 456, 'schedule')").run();
-  raw.prepare("INSERT INTO sessions (session_id, hidden_at) VALUES ('019f4706-0000-7000-8000-00000000000a', 789)")
-    .run();
   raw.prepare("INSERT INTO settings (key, value) VALUES ('k', '\"v\"')").run();
   raw.close();
 
@@ -120,9 +121,15 @@ test('a v5-shaped file upgrades to v6 with the ALTERs applied and its data intac
   assert.deepEqual(
     { ...db.get(qb.selectFrom('job_runs').select(['job', 'fired_at', 'origin', 'log', 'exit_code', 'finished_at'])) },
     { job: 'nightly', fired_at: 456, origin: 'schedule', log: null, exit_code: null, finished_at: null });
-  assert.deepEqual([...new Set(db.all(qb.selectFrom('sessions').select('session_id')).map(r => r.session_id))],
-    ['019f4706-0000-7000-8000-00000000000a']);
   assert.equal(db.getSetting('k'), '"v"');
+  // the pi-session overlay is GONE (plan §11): the DROP ran at open, runs
+  // again on every reopen, and user_version stays 6 — no bookkeeping.
+  const tableExists = (name) =>
+    db.db().prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) != null;
+  assert.equal(tableExists('sessions'), false);
+  assert.equal(userVersion(file), 6);
+  new StateDb(file).db(); // reopen: the DROP is idempotent
+  assert.equal(tableExists('sessions'), false);
   // and the upgraded file takes the new tables' rows (FKs resolve)
   db.run(qb.insertInto('apps').values({
     id: '123e4567-e89b-42d3-a456-426614174000', name: 'a', slug: 'a', sort_order: 10,

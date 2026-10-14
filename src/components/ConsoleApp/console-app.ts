@@ -1,24 +1,32 @@
-// console-app.ts — <console-app>: orchestrates sidebar ↔ terminal on a
-// <wa-page> app shell (sidebar + free mobile drawer), state polling,
-// hide/unhide dialogs, toasts. Shell markup is SSR'd by
-// ConsoleApp.astro; this module registers <console-app> client-side and
-// drives it. Dialogs live here (outside the sidebar's innerHTML poll):
-// the sidebar only emits hide-session / manage-hidden and stays stateless.
-// Page navigation (and sign-out) lives in the global <app-header>.
-import type { ActiveKey, ConsoleState, PastSession } from '../../lib/types';
-import { asPiSessionId, asTerminalId, asTmuxSessionName, type PiSessionId, type TerminalId, type TmuxSessionName } from '../../types/branded';
+// console-app.ts — <console-app>: orchestrates the workspace sidebar ↔
+// terminal tabs on a <wa-page> app shell (sidebar + free mobile drawer),
+// the 15 s state poll, the create/delete dialogs and toasts. Shell markup
+// is SSR'd by ConsoleApp.astro; this module registers <console-app>
+// client-side and drives it. The dialogs live here, outside the sidebar's
+// innerHTML poll; the sidebar and <terminal-tabs> stay stateless emitters
+// (select-workspace / new-workspace / new-app / delete-* / new-terminal /
+// close-terminal). Page navigation (and sign-out) lives in the global
+// <app-header>.
+import type { ConsoleState, WorkspaceState } from '../../lib/types';
+import type { AppId, AppSlug, TerminalId, TmuxSessionName, WorkspaceId } from '../../types/branded';
+import { asTerminalId, asTmuxSessionName, asWorkspaceId } from '../../types/branded';
 import { TMUX_SESSION_NAME_RE, UUID_RE } from '../../schemas/patterns';
 import { BASE } from '../../base';
 import { signedInFetch, type SignedInFetchFailure } from '../signed-in-fetch';
+// Registers <validation-enhancer-zod> (and the base <validation-enhancer>).
+import 'validation-enhancer/zod';
+import type { ValidationEnhancerZod } from 'validation-enhancer/zod';
+import { appForm, workspaceForm } from '../../schemas/api';
 import '@awesome.me/webawesome/dist/components/page/page.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/dialog/dialog.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/toast/toast.js';
-import '@awesome.me/webawesome/dist/components/relative-time/relative-time.js';
-import '../AgentTerminal/agent-terminal';
-import '../session-sidebar';
-import { esc } from '../html';
+import '@awesome.me/webawesome/dist/components/input/input.js';
+import type { TerminalTabs } from '../TerminalTabs/terminal-tabs';
+import '../TerminalTabs/terminal-tabs';
+import type { WorkspaceSidebar } from '../workspace-sidebar';
+import '../workspace-sidebar';
 
 /** Minimal typing for <wa-toast>.create(). */
 type WaToast = HTMLElement & {
@@ -28,104 +36,103 @@ type WaToast = HTMLElement & {
 /** Minimal typing for <wa-dialog>. */
 type WaDialog = HTMLElement & { show(): void; open: boolean };
 
+/** wa-input surface. An empty wa-input's value is null, not ''. */
+type WaInput = HTMLElement & { value: string | null };
+
+/** What the delete-confirmation dialog is about to remove. */
+type PendingDelete =
+  | { kind: 'workspace'; id: WorkspaceId; name: string }
+  | { kind: 'app'; slug: AppSlug; name: string }
+  | { kind: 'terminal'; id: TerminalId; name: string };
+
 export class ConsoleApp extends HTMLElement {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
-  private activeKey: ActiveKey | null = null;
-  /** Deep-link target (/?live=<session>) — attached on the first state
-   *  load that sees the session alive (e.g. "view run" from /jobs).
-   * junction(task/ws-console): ?t=/?run= below replace ?live= when the
-   *  workspace sidebar lands (plan §7) — this one dies with the Live
-   *  list that feeds it. */
-  private pendingLive: TmuxSessionName | null = (() => {
-    const v = new URLSearchParams(location.search).get('live') ?? '';
-    return TMUX_SESSION_NAME_RE.test(v) ? asTmuxSessionName(v) : null;
-  })();
-  /** Deep-link target (/?t=<terminal uuid>) — attached on the first state
-   *  load. Nothing to wait for: the terminal attach mode respawns the
-   *  session on demand (plan §4), so a dead or never-spawned tab still
-   *  opens. A uuid that isn't ours degrades to the server's 'no such
-   *  terminal' error frame in the status line. */
+  private state: ConsoleState | null = null;
+  private selected: WorkspaceId | null = null;
+  /** The group the new-workspace dialog will create under (null = the
+   *  console group — the sidebar's or empty state's `+` that opened it). */
+  private newWorkspaceAppId: AppId | null = null;
+  private pendingDelete: PendingDelete | null = null;
+  /** Deep-link target (/?t=<terminal uuid>) — resolved on the first state
+   *  load: opens the terminal's workspace with that tab selected. Nothing
+   *  to wait for: the terminal attach mode respawns the session on demand
+   *  (plan §4), so a dead or never-spawned tab still opens. A uuid that
+   *  isn't ours degrades to a toast. */
   private pendingTerminal: TerminalId | null = (() => {
     const v = new URLSearchParams(location.search).get('t') ?? '';
     return UUID_RE.test(v) ? asTerminalId(v) : null;
   })();
   /** Deep-link target (/?run=<session name> — a live job run, the jobs
-   *  page's "view" link). Same wait-for-live shape as ?live=: the run
-   * mode never respawns, so the attach only makes sense while the
-   * session is listed. A name that never appears stays pending,
-   * harmlessly. */
+   *  page's "view" link): shown as the transient run pane on the first
+   *  state load. The run mode never respawns — a dead session answers
+   *  'no such run session' in the status line. */
   private pendingRun: TmuxSessionName | null = (() => {
     const v = new URLSearchParams(location.search).get('run') ?? '';
     return TMUX_SESSION_NAME_RE.test(v) ? asTmuxSessionName(v) : null;
   })();
-  private state: ConsoleState | null = null;
-  private pendingHide: { id: PiSessionId; title: string } | null = null;
 
   connectedCallback(): void {
-    const term = this.querySelector('agent-terminal') as
-      import('../AgentTerminal/agent-terminal').AgentTerminal & HTMLElement;
-
-    // Event details round-trip through the sidebar's markup, which was
-    // rendered from server state — a trusted source for these ids.
-    this.addEventListener('attach-live', e => {
-      const name = asTmuxSessionName((e as CustomEvent<string>).detail);
-      this.activeKey = `live:${name}`;
-      term.attach('live', name, this.activeKey);
-      this.loadState();
-    });
-    this.addEventListener('attach-resume', e => {
-      const id = asPiSessionId((e as CustomEvent<string>).detail);
-      this.activeKey = `resume:${id}`;
-      term.attach('resume', id, this.activeKey);
-    });
-    this.addEventListener('new-session', async e => {
-      const name = (e as CustomEvent<string>).detail;
-      const sent = await signedInFetch(`${BASE}/api/new`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
-      });
-      if (!sent.ok) { this.notAnswered(sent); return; }
-      const r = sent.data.response;
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({ error: 'could not create session' }));
-        const msg = (err as { error?: string }).error ?? 'could not create session';
-        this.toast(msg, { variant: 'danger', icon: 'triangle-exclamation', duration: 6000 });
-        return;
+    // Event details round-trip through the sidebar's/tab bar's markup,
+    // rendered from server state — a trusted source for these ids; the
+    // ids are re-checked against the fresh state before use anyway.
+    this.addEventListener('select-workspace', e => {
+      const id = (e as CustomEvent<{ id?: string }>).detail.id ?? '';
+      if (!UUID_RE.test(id)) return;
+      const target = asWorkspaceId(id);
+      if (target !== this.selected) {
+        this.selected = target;
+        this.applySelection();
       }
-      const out = await r.json() as { name: TmuxSessionName };
-      this.activeKey = `live:${out.name}`;
-      await this.loadState();
-      term.attach('live', out.name, this.activeKey);
     });
-    this.addEventListener('terminal-closed', () => this.loadState());
+    this.addEventListener('new-workspace', e => {
+      const appId = (e as CustomEvent<{ appId?: string | null }>).detail.appId ?? null;
+      this.newWorkspaceAppId = appId !== null && UUID_RE.test(appId) ? (appId as AppId) : null;
+      this.openWorkspaceDialog();
+    });
+    this.addEventListener('new-app', () => this.openAppDialog());
+    this.addEventListener('delete-workspace', e => {
+      const d = (e as CustomEvent<{ id: string; name: string }>).detail;
+      this.confirmDelete({ kind: 'workspace', id: asWorkspaceId(d.id), name: d.name });
+    });
+    this.addEventListener('delete-app', e => {
+      const d = (e as CustomEvent<{ slug: string; name: string }>).detail;
+      this.confirmDelete({ kind: 'app', slug: d.slug as AppSlug, name: d.name });
+    });
+    this.addEventListener('new-terminal', e => {
+      const id = (e as CustomEvent<{ workspaceId?: string }>).detail.workspaceId ?? '';
+      if (UUID_RE.test(id)) void this.createTerminal(asWorkspaceId(id));
+    });
+    this.addEventListener('close-terminal', e => {
+      const d = (e as CustomEvent<{ id: string }>).detail;
+      const t = this.selectedWorkspace()?.terminals.find(x => x.id === d.id);
+      this.confirmDelete({ kind: 'terminal', id: asTerminalId(d.id), name: t?.title ?? d.id.slice(0, 8) });
+    });
+    // Any pane's socket closing (server restart, a drop) → refresh dots.
+    this.addEventListener('terminal-closed', () => void this.loadState());
 
-    // "Open in editor" (task/ws-editor, docs/editor-webapp.md): the editor
-     // is the same-origin /editor proxy — a folder opens by URL param
-         // (?folder=, spike-pinned URI-encoded), so a plain window.open inside
-     // the click's task is the whole mechanism (an await first would eat the
-     // user activation and the popup blocker would eat the tab).
-     // junction(task/ws-console): editor tab UI lands here (plan §8) — the
-     // per-workspace iframe replaces this window.open.
-    this.addEventListener('open-editor', e => {
-      const { cwd } = (e as CustomEvent<{ cwd: string }>).detail;
-      if (!this.state?.editor) return; // feature off — the sidebar never renders the button
-      window.open(`${BASE}/editor/?folder=${encodeURIComponent(cwd)}`, '_blank', 'noopener');
+    // The dialogs' footer buttons live outside their forms (dialog footer
+    // slot): submit the form so <validation-enhancer-zod> validates first.
+    (this.querySelector('#app-save') as HTMLElement).onclick = () =>
+      (this.querySelector('#app-form') as HTMLFormElement).requestSubmit();
+    (this.querySelector('#workspace-save') as HTMLElement).onclick = () =>
+      (this.querySelector('#workspace-form') as HTMLFormElement).requestSubmit();
+    (this.querySelector('#confirm-delete-ok') as HTMLElement).onclick = () => void this.runDelete();
+    // Valid submits only: the enhancer stops an invalid one from
+    // propagating, so this listener sits ABOVE it — a listener on the
+    // form itself would fire (target phase) before validation ran.
+    this.addEventListener('submit', e => {
+      e.preventDefault();
+      const form = e.target as HTMLFormElement;
+      if (form.id === 'app-form') void this.createApp();
+      else if (form.id === 'workspace-form') void this.createWorkspace();
     });
-
-    // Sidebar hide/manage affordances → the dialogs owned here.
-    this.addEventListener('hide-session', e => {
-      const detail = (e as CustomEvent<{ id: string; title: string }>).detail;
-      this.pendingHide = { id: asPiSessionId(detail.id), title: detail.title };
-      (this.querySelector('#confirm-hide-title') as HTMLElement).textContent =
-        `“${this.pendingHide.title}”`;
-      this.dialog('#confirm-hide').show();
+    // The forms validate against the same schemas the routes parse with.
+    void customElements.whenDefined('validation-enhancer-zod').then(() => {
+      (this.querySelector('#app-dialog validation-enhancer-zod') as ValidationEnhancerZod)
+        ?.setZodSchema(appForm);
+      (this.querySelector('#workspace-dialog validation-enhancer-zod') as ValidationEnhancerZod)
+        ?.setZodSchema(workspaceForm);
     });
-    this.addEventListener('manage-hidden', () => {
-      this.renderHiddenList();
-      this.dialog('#hidden-dialog').show();
-    });
-    (this.querySelector('#confirm-hide-ok') as HTMLElement).onclick = () => void this.confirmHide();
-    (this.querySelector('#unhide-all') as HTMLElement).onclick = () => void this.unhideAll();
 
     this.loadState();
     this.pollTimer = setInterval(() => this.loadState(), 15000);
@@ -133,6 +140,18 @@ export class ConsoleApp extends HTMLElement {
 
   disconnectedCallback(): void {
     if (this.pollTimer) clearInterval(this.pollTimer);
+  }
+
+  private sidebar(): WorkspaceSidebar | null {
+    return this.querySelector('workspace-sidebar') as WorkspaceSidebar | null;
+  }
+
+  private tabs(): TerminalTabs | null {
+    return this.querySelector('terminal-tabs') as TerminalTabs | null;
+  }
+
+  private selectedWorkspace(): WorkspaceState | null {
+    return this.state?.workspaces.find(w => w.id === this.selected) ?? null;
   }
 
   private dialog(sel: string): WaDialog {
@@ -155,75 +174,24 @@ export class ConsoleApp extends HTMLElement {
     }
   }
 
-  /** POST JSON; toasts on failure. False → caller keeps its UI as-is. */
-  private async post(path: string, body: Record<string, unknown>): Promise<boolean> {
+  /** One JSON call; the parsed body (error bodies included) comes back. */
+  private async call(method: string, path: string, body?: Record<string, unknown>):
+    Promise<{ ok: boolean; status: number; json: any } | null> {
     const sent = await signedInFetch(`${BASE}${path}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      method, headers: { 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-    if (!sent.ok) { this.notAnswered(sent); return false; }
+    if (!sent.ok) { this.notAnswered(sent); return null; }
     const r = sent.data.response;
-    if (!r.ok) {
-      this.toast('could not save — try again', { variant: 'danger', icon: 'triangle-exclamation', duration: 6000 });
-      return false;
-    }
-    return true;
+    const json = await r.json().catch(() => null);
+    return { ok: r.ok, status: r.status, json };
   }
 
-  private async confirmHide(): Promise<void> {
-    const pending = this.pendingHide;
-    if (!pending) return;
-    const ok = await this.post('/api/session/hide', { id: pending.id });
-    this.pendingHide = null;
-    this.dialog('#confirm-hide').open = false;
-    if (!ok) return;
-    await this.loadState();
-    this.toast('hidden from the list — undo via “hidden — manage”', { variant: 'neutral', icon: 'eye-slash', duration: 6000 });
+  private errorToast(fallback: string, json: { error?: string } | null): void {
+    this.toast(json?.error ?? fallback, { variant: 'danger', icon: 'triangle-exclamation', duration: 6000 });
   }
 
-  private async unhide(id: PiSessionId): Promise<void> {
-    if (await this.post('/api/session/unhide', { id })) {
-      await this.loadState();          // refreshes sidebar + this dialog
-      this.renderHiddenList();
-    }
-  }
-
-  private async unhideAll(): Promise<void> {
-    if (await this.post('/api/session/unhide', { all: true })) {
-      await this.loadState();
-      this.renderHiddenList();
-    }
-  }
-
-  /** Body of the manage-hidden dialog: hidden sessions from the last
-   *  state poll (the dialog itself is static, so polls only swap this). */
-  private renderHiddenList(): void {
-    const body = this.querySelector('#hidden-list') as HTMLElement | null;
-    if (!body) return;
-    const hidden = (this.state?.sessions ?? []).filter(s => s.hidden);
-    const older = (this.state?.hiddenCount ?? 0) - hidden.length;
-    body.innerHTML = hidden.length
-      ? hidden.map(s => this.hiddenRow(s)).join('')
-        + (older > 0 ? `<p class="dialog-note">… and ${older} older hidden session${older === 1 ? '' : 's'} ` +
-          `(beyond the newest cap) — “unhide all” restores those too.</p>` : '')
-      : '<p class="dialog-note">No hidden sessions.</p>';
-    body.querySelectorAll<HTMLElement>('[data-unhide]').forEach(btn => {
-      btn.onclick = () => void this.unhide(asPiSessionId(btn.dataset.unhide!));
-    });
-    (this.querySelector('#unhide-all') as HTMLElement).toggleAttribute('disabled', hidden.length === 0);
-  }
-
-  private hiddenRow(s: PastSession): string {
-    return `<div class="hidden-row">` +
-      `<span class="hidden-meta">` +
-      `<span class="t-name" title="${esc(s.id)}">${esc(s.title)}</span>` +
-      `<span class="d">${esc(s.cwd)} · ` +
-      `<wa-relative-time date="${new Date(s.mtime).toISOString()}" format="narrow" sync></wa-relative-time>` +
-      `</span></span>` +
-      `<wa-button data-unhide="${esc(s.id)}" size="s" appearance="accent" variant="neutral" ` +
-      `title="show this session in the list again">` +
-      `<wa-icon slot="start" name="eye"></wa-icon>unhide</wa-button></div>`;
-  }
+  // ---- state poll ----
 
   async loadState(): Promise<void> {
     const sent = await signedInFetch(`${BASE}/api/state`);
@@ -232,52 +200,172 @@ export class ConsoleApp extends HTMLElement {
     if (!r.ok) return;
     const st = await r.json() as ConsoleState;
     this.state = st;
-    const sidebar = this.querySelector('session-sidebar');
-    if (sidebar) (sidebar as import('../session-sidebar').SessionSidebar).render(st, this.activeKey);
-    if (this.pendingLive) {
-      const target = this.pendingLive;
-      if (st.live.some(s => s.name === target)) {
-        this.pendingLive = null;
-        this.activeKey = `live:${target}`;
-        const term = this.querySelector('agent-terminal') as
-          (import('../AgentTerminal/agent-terminal').AgentTerminal & HTMLElement) | null;
-        term?.attach('live', target, this.activeKey);
-        (sidebar as import('../session-sidebar').SessionSidebar | null)
-          ?.render(st, this.activeKey);
+    // Deep links (/?t=…, /?run=…): consumed in ONE pass, on the first
+    // state load — a ?t= hit must not leave a ?run= armed to hijack the
+    // next poll.
+    const pendingTerminal = this.pendingTerminal;
+    const pendingRun = this.pendingRun;
+    this.pendingTerminal = null;
+    this.pendingRun = null;
+    if (pendingTerminal) {
+      const home = st.workspaces.find(w => w.terminals.some(t => t.id === pendingTerminal));
+      if (home) {
+        this.selected = home.id;
+        this.applySelection(pendingTerminal);
+        return;
       }
+      // A well-formed uuid that is not ours: shown, and the console still
+      // lands on a workspace (the auto-select below) instead of the empty
+      // state — the deep link degrades, the page doesn't.
+      this.toast('no such terminal', { variant: 'neutral', icon: 'circle-info', duration: 6000 });
     }
+    // A deleted-out-from-under selection clears FIRST — the auto-select
+    // below then lands on the first remaining workspace immediately, not
+    // on an empty state the next poll would un-explain.
+    if (this.selected !== null && !this.selectedWorkspace()) this.selected = null;
+    // Nothing selected (first load, a missed deep link, or a delete that
+    // took the selection): land on the first workspace when one exists
+    // (the empty state's create prompt is for empty stores).
+    if (this.selected === null && st.workspaces.length > 0) {
+      this.selected = st.workspaces[0]!.id;
+    }
+    // ?run=<session name>: the transient run pane (the jobs page's view).
+    if (pendingRun) {
+      this.applySelection();
+      this.tabs()?.showRun(pendingRun);
+      return;
+    }
+    this.applySelection();
+  }
 
-    // task/ws-terminal (plan §7): the workspace-model deep links — both
-    // attach through the same singleton <agent-terminal> until branch 4's
-    // terminal-tabs UI replaces it.
-    // junction(task/ws-console): terminal-tabs UI lands here (plan §8) —
-    // ?t= opens the tab in its workspace, ?run=/ ?live= are retargeted or
-    // deleted with the sidebar swap.
-    if (this.pendingTerminal) {
-      const id = this.pendingTerminal;
-      this.pendingTerminal = null;
-      this.activeKey = `terminal:${id}`;
-      const term = this.querySelector('agent-terminal') as
-        (import('../AgentTerminal/agent-terminal').AgentTerminal & HTMLElement) | null;
-      term?.attach('terminal', id, this.activeKey);
-      (sidebar as import('../session-sidebar').SessionSidebar | null)
-        ?.render(st, this.activeKey);
+  /** Drive sidebar + tabs from the current state and selection.
+   *  initialTab: the ?t= deep link's tab — passed to setWorkspace so it,
+   *  not the first tab, is the one that gets a pane. */
+  private applySelection(initialTab?: TerminalId): void {
+    const st = this.state;
+    if (!st) return;
+    const ws = this.selectedWorkspace();
+    this.sidebar()?.render(st, this.selected);
+    const tabs = this.tabs();
+    if (!tabs) return;
+    if (ws) {
+      // setWorkspace on a selection CHANGE (it tears panes down); sync on
+      // a refresh of the SAME workspace (panes persist, dots flip).
+      if (tabs.activeWorkspaceId() !== ws.id) tabs.setWorkspace(ws, st.editor, initialTab);
+      else tabs.sync(ws);
+    } else {
+      tabs.setWorkspace(null, st.editor);
     }
-    if (this.pendingRun) {
-      const target = this.pendingRun;
-      if (st.live.some(s => s.name === target)) {
-        this.pendingRun = null;
-        this.activeKey = `run:${target}`;
-        const term = this.querySelector('agent-terminal') as
-          (import('../AgentTerminal/agent-terminal').AgentTerminal & HTMLElement) | null;
-        term?.attach('run', target, this.activeKey);
-        (sidebar as import('../session-sidebar').SessionSidebar | null)
-          ?.render(st, this.activeKey);
-      }
-    }
+  }
 
-    const dlg = this.dialog('#hidden-dialog');
-    if (dlg.open) this.renderHiddenList(); // keep an open manage dialog fresh
+  // ---- create dialogs ----
+
+  private openAppDialog(): void {
+    this.resetForm('#app-form');
+    this.dialog('#app-dialog').show();
+    this.focusField('#app-name');
+  }
+
+  private openWorkspaceDialog(): void {
+    this.resetForm('#workspace-form');
+    const cwd = this.querySelector('#workspace-cwd') as WaInput | null;
+    if (cwd) cwd.value = this.state?.defaultCwd ?? '';
+    this.dialog('#workspace-dialog').show();
+    this.focusField('#workspace-name');
+  }
+
+  /** Clear a dialog form's fields + validation state (a re-open starts
+   *  clean — the jobs dialog's discipline). */
+  private resetForm(sel: string): void {
+    const form = this.querySelector(sel) as HTMLFormElement | null;
+    if (!form) return;
+    form.querySelectorAll('.field-error').forEach(el => { el.textContent = ''; });
+    form.querySelectorAll<WaInput>('wa-input').forEach(el => { el.value = null; });
+  }
+
+  /** Focus after <wa-input>'s first render (its .focus() forwards to the
+   *  native input inside the shadow root, built on a microtask). */
+  private focusField(sel: string): void {
+    requestAnimationFrame(() => (this.querySelector(sel) as WaInput | null)?.focus());
+  }
+
+  private async createApp(): Promise<void> {
+    const name = ((this.querySelector('#app-name') as WaInput | null)?.value ?? '').trim();
+    const done = await this.call('POST', '/api/apps', { name });
+    if (!done) return;
+    if (!done.ok) { this.errorToast('could not create the app — try again', done.json); return; }
+    this.dialog('#app-dialog').open = false;
+    await this.loadState();
+    this.toast(`app “${done.json.name}” created`, { variant: 'neutral', icon: 'circle-check', duration: 4000 });
+  }
+
+  private async createWorkspace(): Promise<void> {
+    const name = ((this.querySelector('#workspace-name') as WaInput | null)?.value ?? '').trim();
+    const cwd = ((this.querySelector('#workspace-cwd') as WaInput | null)?.value ?? '').trim();
+    const appId = this.newWorkspaceAppId;
+    const done = await this.call('POST', '/api/workspaces',
+      appId === null ? { name, cwd } : { appId, name, cwd });
+    if (!done) return;
+    if (!done.ok) { this.errorToast('could not create the workspace — try again', done.json); return; }
+    this.dialog('#workspace-dialog').open = false;
+    this.selected = asWorkspaceId(done.json.id);
+    await this.loadState();
+    this.toast(`workspace “${done.json.name}” created`, { variant: 'neutral', icon: 'circle-check', duration: 4000 });
+  }
+
+  // ---- terminal tabs ----
+
+  /** Open a terminal tab (the + button): POST the create, then select the
+   *  new tab. A spawn failure still carries the row (plan §4: a dead tab)
+   *  — it is selected all the same; the first attach retries the spawn. */
+  private async createTerminal(workspaceId: WorkspaceId): Promise<void> {
+    const done = await this.call('POST', `/api/workspaces/${workspaceId}/terminals`, {});
+    if (!done) return;
+    const row = done.ok ? done.json : done.json?.terminal;
+    if (!row?.id) { this.errorToast('could not open a terminal — try again', done.json); return; }
+    await this.loadState();
+    this.tabs()?.selectTerminal(asTerminalId(row.id));
+  }
+
+  // ---- delete confirmations ----
+
+  private confirmDelete(pending: PendingDelete): void {
+    this.pendingDelete = pending;
+    const what = pending.kind === 'workspace'
+      ? `the workspace “${pending.name}”`
+      : pending.kind === 'app'
+        ? `the app “${pending.name}” and every workspace in it`
+        : `the terminal “${pending.name}”`;
+    (this.querySelector('#confirm-delete-text') as HTMLElement).textContent = `Delete ${what}?`;
+    (this.querySelector('#confirm-delete-note') as HTMLElement).textContent =
+      pending.kind === 'terminal'
+        ? 'The tab closes and its tmux session is killed.'
+        : 'Its terminals\u2019 tmux sessions are killed. This cannot be undone.';
+    this.dialog('#confirm-delete').show();
+  }
+
+  private async runDelete(): Promise<void> {
+    const pending = this.pendingDelete;
+    if (!pending) return;
+    const path = pending.kind === 'workspace'
+      ? `/api/workspaces/${pending.id}`
+      : pending.kind === 'app'
+        ? `/api/apps/${pending.slug}`
+        : `/api/terminals/${pending.id}`;
+    this.pendingDelete = null;
+    this.dialog('#confirm-delete').open = false;
+    const done = await this.call('DELETE', path);
+    if (!done) return;
+    if (!done.ok) {
+      this.errorToast(`could not delete — try again`, done.json);
+      await this.loadState();
+      return;
+    }
+    // A delete that took the SELECTION with it is loadState's business: its
+    // deleted-out check clears the selection and the first-workspace
+    // auto-select lands on what remains (the empty state when nothing
+    // does).
+    await this.loadState();
   }
 }
 

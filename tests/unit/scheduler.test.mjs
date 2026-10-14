@@ -170,7 +170,9 @@ case "$sub" in
       shift
     done
     while IFS= read -r name; do
-      [ -n "$fmt" ] && echo "$name|1|0||" || echo "$name: 1 windows (created at Fri Oct 10 00:00:00 2026)"
+      # liveSessionNames asks -F '#{session_name}' — one bare name per
+      # line; anything fancier falls back to the old pipe-field shape.
+      [ "$fmt" = '#{session_name}' ] && echo "$name" || echo "$name|1|0||"
     done < "$sessions"
     ;;
   has-session)

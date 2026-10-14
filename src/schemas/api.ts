@@ -6,12 +6,12 @@
 // body names the field (responses.service.ts).
 //
 // The ID rules (regex + brand) live in ids.ts and are reused here, so a
-// parsed id is already a PiSessionId. What deliberately does NOT live
+// parsed id is already branded. What deliberately does NOT live
 // here: cron validity (cron-parser stays server-side — saveJob) and value
-// normalization that isn't part of a form (name slugification in
-// /api/new, resize clamps).
+// normalization that isn't part of a form (name slugification in the
+// apps domain, resize clamps).
 import { z } from 'zod';
-import { AppIdSchema, PiSessionIdSchema } from './ids';
+import { AppIdSchema } from './ids';
 
 /** POST /login — both fields must be strings; a parse failure answers 401
  *  upstream (like the old typeof check), because fail2ban counts 401/429
@@ -27,28 +27,12 @@ export const loginForm = z.object({
   password: z.string().min(1, 'enter your password'),
 });
 
-/** POST /api/new — any string; slugification and the empty check ('name
- *  required') stay in the handler: normalization is not validation. */
-export const newSessionBody = z.object({ name: z.string() });
-
 // POST /api/jobs (save): JobSaveSchema in jobs.ts — shared with the
 // /jobs dialog's client-side validation.
 
 /** POST /api/jobs/validate — the schedule string. '' passes: checkCron
  *  answers { valid: false, 'schedule is required' } with a 200. */
 export const jobValidateBody = z.object({ schedule: z.string() });
-
-/** POST /api/session/hide */
-export const hideBody = z.object({ id: PiSessionIdSchema });
-
-/** POST /api/session/unhide — {all:true} (restore everything) or {id} to
- *  restore one; all wins when both are present, like the old check. The
- *  union's own message: zod's default for a failed union is only
- *  'Invalid input'. */
-export const unhideBody = z.union([
-  z.object({ all: z.literal(true) }),
-  z.object({ id: PiSessionIdSchema }),
-], { error: 'invalid session id' });
 
 /** POST /api/update-pi — dryRun defaults to false (a real update), like
  *  the old `dryRun === true`; a mistyped dryRun is a 400 instead of
@@ -101,4 +85,21 @@ export const terminalCreateBody = z.object({
  *  app/workspace patches; an empty string is a 400, not a clear). */
 export const terminalPatchBody = z.object({
   title: z.string().trim().min(1, 'title is required').max(120, 'title is too long (max 120)').nullable().optional(),
+});
+
+// ---------- the console dialogs' forms (task/ws-console, plan §8) ----------
+// Stricter than the create bodies on purpose — the loginForm precedent:
+// an empty field never costs a round trip, while the server stays
+// permissive so a malformed POST is the domain's 400/409 to answer.
+
+/** The new-app dialog: one required name (the domain slugs it). */
+export const appForm = z.object({
+  name: z.string().trim().min(1, 'name is required').max(80, 'name is too long (max 80)'),
+});
+
+/** The new-workspace dialog: name + cwd (prefilled from state.defaultCwd;
+ *  the server re-validates absolute + existing directory). */
+export const workspaceForm = z.object({
+  name: z.string().trim().min(1, 'name is required').max(120, 'name is too long (max 120)'),
+  cwd: z.string().trim().min(1, 'cwd is required').max(4096, 'cwd is too long'),
 });

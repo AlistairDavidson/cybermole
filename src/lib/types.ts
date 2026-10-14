@@ -1,46 +1,53 @@
 // Shared types across server + client (the WS wire protocol is
 // described exactly once, on both ends).
 
-import type { AppId, JobName, PiSessionId, TerminalId, TmuxSessionName } from '../types/branded';
+import type { AppId, AppSlug, JobName, TerminalId, TmuxSessionName, WorkspaceId } from '../types/branded';
 
-export interface PastSession {
-  /** pi session id (uuid) — resume target */
-  id: PiSessionId;
-  /** first-user-message preview */
-  title: string;
-  mtime: number;
-  timestamp: string;
-  cwd: string;
-  /** hidden from the sidebar list (hide ≠ delete: reversible, file kept) */
-  hidden?: boolean;
+// ---- GET /api/state: the workspace tree (workspaces-plan §5) ----
+
+/** One app row, as the console's sidebar sees it. */
+export interface AppState {
+  id: AppId;
+  name: string;
+  slug: AppSlug;
+  order: number;
 }
 
-export interface LiveSession {
-  name: TmuxSessionName;
-  windows: number;
-  created: string;
-  attached: boolean;
-  /** tmux socket name owning the session */
-  socket: string;
-  /** the session's active pane cwd (where a dive-in editor should open),
-   *  falling back to the pane's spawn dir when the pane tty's foreground
-   *  pgrp can't be resolved (src/lib/tmux.ts listSessions); null when
-   *  tmux reports none (e.g. the pane is dying) */
-  cwd: string | null;
+/** One terminal tab: its row + the live diff's answer (the `t-<uuid>`
+ *  tmux session is present — plan §4/§5). */
+export interface TerminalState {
+  id: TerminalId;
+  /** NULL → the tab bar labels it "term N". */
+  title: string | null;
+  order: number;
+  live: boolean;
+}
+
+/** One workspace row with its terminals — flat with appId so the server
+ *  read stays one query per table; grouping (console group first, then
+ *  apps by order) is client-side in the sidebar. */
+export interface WorkspaceState {
+  id: WorkspaceId;
+  /** null = the console group (the console is NOT an app row — plan §1). */
+  appId: AppId | null;
+  name: string;
+  cwd: string;
+  order: number;
+  terminals: TerminalState[];
 }
 
 export interface ConsoleState {
   me: 'ok';
   configured: boolean;
-  live: LiveSession[];
-  sessions: PastSession[];
-  /** total ids in the hidden-sessions state file (may exceed the
-   *  hidden ones inside `sessions`, which is capped like the list) */
-  hiddenCount: number;
   /** the editor webapp is configured (WEB_PI_EDITOR_UPSTREAM set — the
    *  same-origin `${BASE}/editor/` proxy, docs/editor-webapp.md): false
-   *  hides the "open in editor" affordances (task/ws-editor). */
+   *  hides the editor tab (plan §8). */
   editor: boolean;
+  /** WEB_PI_NEW_SESSION_CWD — prefills the new-workspace dialog (plan §10). */
+  defaultCwd: string;
+  apps: AppState[];
+  /** flat; the client groups by appId. */
+  workspaces: WorkspaceState[];
 }
 
 // ---- scheduled jobs (in-process scheduler — see src/lib/jobs.ts) ----
@@ -59,7 +66,7 @@ export interface ScheduledJob {
   appName: string | null;
   /** schedule armed and parses (false only for a hand-edited db row) */
   active: boolean;
-  /** the run's tmux session is alive (visible in Live) */
+  /** the run's tmux session is alive */
   running: boolean;
   /** tmux session name a run opens */
   session: TmuxSessionName;
@@ -133,7 +140,6 @@ export interface SettingsState {
   command: string;
   newSessionCwd: string;
   agentDir: string;
-  sessionsDir: string;
   stateDb: string;
   tmuxSocket: string;
   tmuxConf: string | null;
@@ -287,14 +293,10 @@ export type ServerMsg =
    *  unlike 'exit'/'error' the client reattaches with its usual backoff */
   | { type: 'restart' };
 
-/** Which terminal target the console has selected: a live tmux session or
- *  a past pi session being resumed (sidebar highlight + reconnect key).
- *  task/ws-terminal (plan §7): the union GROWS with the workspace-model
- *  keys — a terminal tab (its row's uuid) and a job run (its live tmux
- *  session name); the old live:/resume: variants stay until branch 4
- *  (task/ws-console) deletes them with the UI that mints them. */
+/** Which terminal target the console has selected (sidebar highlight +
+ *  reconnect key): a terminal tab (its row's uuid) or a job run (its live
+ *  tmux session name) — the live:/resume: variants died with the
+ *  pi-session UI (workspaces-plan §11). */
 export type ActiveKey =
-  | `live:${TmuxSessionName}`
-  | `resume:${PiSessionId}`
   | `terminal:${TerminalId}`
   | `run:${TmuxSessionName}`;

@@ -96,7 +96,6 @@ test.beforeAll(() => {
       WEB_PI_HOST: '127.0.0.1',
       WEB_PI_DB_FILE: path.join(STATE, 'webpi.db'),
       WEB_PI_AGENT_DIR: path.join(STATE, 'pi-agent'),
-      WEB_PI_SESSIONS_DIR: path.join(STATE, 'sessions'),
       WEB_PI_NEW_SESSION_CWD: STATE,
       WEB_PI_TMUX_SOCKET: `webpi-mgmt-itest-${process.pid}`,
       WEB_PI_MANAGEMENT_CHECKOUT: CHECKOUT,

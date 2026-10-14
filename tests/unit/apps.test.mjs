@@ -223,18 +223,22 @@ test('delete_app: database_error on an unwritable db — and a failed kill never
   assert.equal(appRow(db, 'doomed'), undefined);
 });
 
-// task/ws-jobs (plan §9): the app picker's read — list_apps.
+// ---------- listApps (task/ws-jobs plan §9 + task/ws-console plan §5 — one read) ----------
 
-test('list_apps: all apps ordered by sort_order then name, database_error when the db cannot open', async () => {
-  const a = apps(freshDb());
-  const b = (await a.saveApp('Beta')).data;
-  const c = (await a.saveApp('Coda')).data;
-  const first = (await a.saveApp('Alpha')).data;
+test('list_apps: every app, sort_order asc (+ created_at tiebreak); empty; database_error on a broken db', async () => {
+  const db = freshDb();
+  const a = apps(db);
+  const b = (await a.saveApp('beta app')).data;
+  const c = (await a.saveApp('alpha app')).data;
+  const d = (await a.saveApp('gamma')).data;
   const listed = a.listApps();
-  assert.equal(listed.ok, true);
-  // save_app allocates order by insertion; the read is by (order, name).
+  assert.equal(listed.ok, true, listed.errorMessage);
+  assert.equal(listed.resultType, 'list_apps');
+  // save_app allocates order by insertion; the read is by (order, created_at).
   assert.deepEqual(listed.data.apps.map(x => [x.id, x.name, x.slug, x.order]),
-    [[b.id, 'Beta', 'beta', 10], [c.id, 'Coda', 'coda', 20], [first.id, 'Alpha', 'alpha', 30]]);
+    [[b.id, 'beta app', 'beta-app', 10], [c.id, 'alpha app', 'alpha-app', 20], [d.id, 'gamma', 'gamma', 30]]);
+  for (const app of listed.data.apps) assert.match(app.id, UUID_RE);
+  assert.equal(a.listApps().data.apps.length, 3); // stable across calls
 
   const empty = apps(freshDb()).listApps();
   assert.deepEqual(empty.data.apps, []);

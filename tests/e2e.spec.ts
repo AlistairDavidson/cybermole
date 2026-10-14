@@ -1,9 +1,9 @@
 // e2e.spec.ts — integration tests against the real built app:
 // Astro SSR pages, wa-* components upgraded client-side, auth, the
-// sidebar's pi-session fixtures, and the full terminal round trip
-// (xterm → WS → node-pty → tmux → back).
+// workspace/terminal fixture tree (tests/global-setup.ts), and the full
+// terminal round trip (xterm → WS → node-pty → tmux → back).
 // Runs serially (workers: 1) — see playwright.config.ts.
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as os from 'node:os';
@@ -18,11 +18,8 @@ import { expect, test, type Cookie, type Page } from '@playwright/test';
 import { WebSocket as NodeWebSocket } from 'ws';
 import { setCredential } from '../src/lib/auth';
 import { StateDb } from '../src/lib/db';
-import { MARKER, PASSWORD, S3_BUCKET, S3_PORT, TMUX_SOCKET, USERNAME, UUIDV7_SIBLINGS, WORKSPACE } from './env';
+import { MARKER, PASSWORD, S3_BUCKET, S3_PORT, TMUX_SOCKET, USERNAME, WORKSPACE } from './env';
 import { UPLOAD_MAX_BODY_BYTES } from '../src/schemas/uploads';
-
-const FIXTURE_A = '11111111-1111-1111-1111-111111111111';
-const FIXTURE_B = '22222222-2222-2222-2222-222222222222';
 
 /** Terminal sizing invariants, evaluated in the page:
  *  - the app shell is viewport-locked: the terminal never makes the page
@@ -32,9 +29,9 @@ const FIXTURE_B = '22222222-2222-2222-2222-222222222222';
  *    available space, not its own previously rendered size. */
 async function waitForTerminalFitted(page: Page, timeout = 5000): Promise<void> {
   await page.waitForFunction(() => {
-    const el = document.querySelector('agent-terminal');
-    const box = document.querySelector('agent-terminal .terminal-container');
-    const screen = document.querySelector('agent-terminal .terminal-container .xterm-screen');
+    const el = document.querySelector('agent-terminal:not(.hidden)');
+    const box = document.querySelector('agent-terminal:not(.hidden) .terminal-container');
+    const screen = document.querySelector('agent-terminal:not(.hidden) .terminal-container .xterm-screen');
     if (!el || !box || !screen) return false;
     const rows = (el as unknown as { terminal?: { rows: number } }).terminal?.rows ?? 0;
     if (rows <= 0) return false;
@@ -49,7 +46,7 @@ async function waitForTerminalFitted(page: Page, timeout = 5000): Promise<void> 
 /** The browser terminal's current cols/rows. */
 async function termDims(page: Page): Promise<{ cols: number; rows: number }> {
   return page.evaluate(() => {
-    const t = (document.querySelector('agent-terminal') as unknown as { terminal: { cols: number; rows: number } })
+    const t = (document.querySelector('agent-terminal:not(.hidden)') as unknown as { terminal: { cols: number; rows: number } })
       .terminal;
     return { cols: t.cols, rows: t.rows };
   });
@@ -61,7 +58,7 @@ async function termDims(page: Page): Promise<{ cols: number; rows: number }> {
 async function waitForTermText(page: Page, text: string, timeout = 10_000): Promise<void> {
   await page.waitForFunction(
     marker => {
-      const el = document.querySelector('agent-terminal') as unknown as
+      const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as
         | { terminal?: { buffer: { active: { length: number; getLine(i: number): { translateToString(trimRight?: boolean): string } | undefined } } } }
         | null;
       const buf = el?.terminal?.buffer.active;
@@ -101,9 +98,48 @@ async function login(page: Page): Promise<void> {
     await page.waitForURL(u => u.pathname === '/');
     sessionCookie = (await page.context().cookies()).find(c => c.name === 'webpi_session') ?? null;
   }
-  await page.waitForSelector('session-sidebar .nav');
+  await page.waitForSelector('workspace-sidebar .nav');
 }
 
+
+/** tmux CLI against the suite socket: status 0 = ok, nonzero = refused. */
+function tmuxStatus(args: string[]): number {
+  return spawnSync('tmux', ['-L', TMUX_SOCKET, ...args], { stdio: 'ignore' }).status ?? 1;
+}
+
+/** Make a workspace through the real API (in-page fetch — Playwright's
+ *  API client doesn't send the Secure session cookie over this suite's
+ *  plain-http origin), refresh the console's state, return its id. */
+async function makeWorkspace(page: Page, name: string, cwd = WORKSPACE): Promise<string> {
+  const made = await api(page, 'POST', '/api/workspaces', { name, cwd });
+  expect(made.status, JSON.stringify(made.json)).toBe(200);
+  await refreshState(page);
+  // select it through the sidebar (the real UI path) so its tab bar renders
+  await page.click(`workspace-sidebar li[data-ws="${made.json.id}"]`);
+  return made.json.id as string;
+}
+
+/** Open one more terminal tab in an existing workspace; refresh state. */
+async function makeTerminalIn(page: Page, ws: string): Promise<string> {
+  const term = await api(page, 'POST', `/api/workspaces/${ws}/terminals`, {});
+  expect(term.status, JSON.stringify(term.json)).toBe(200);
+  await refreshState(page);
+  return term.json.id as string;
+}
+
+/** Make a workspace + one terminal tab; return both ids. The tab's pane is
+ *  created by CLICKING the tab (first activation). */
+async function makeTerminal(page: Page, name: string, cwd = WORKSPACE): Promise<{ ws: string; id: string }> {
+  const ws = await makeWorkspace(page, name, cwd);
+  return { ws, id: await makeTerminalIn(page, ws) };
+}
+
+/** Pull a fresh /api/state into the console's sidebar + tabs (the 15 s
+ *  poll, forced — raw in-page POSTs don't trigger it). */
+async function refreshState(page: Page): Promise<void> {
+  await page.evaluate(() =>
+    (document.querySelector('console-app') as unknown as { loadState(): Promise<void> }).loadState());
+}
 
 test('unauthenticated / serves the login page with upgraded wa-* controls', async ({ page }) => {
   await page.goto('/');
@@ -136,8 +172,9 @@ test('API routes stay guarded without a session', async ({ request }) => {
   // (an element would swap login HTML into its list).
   expect((await request.get('/partials/jobs-list')).status()).toBe(401);
   expect((await request.get('/partials/settings')).status()).toBe(401);
-  expect((await request.post('/api/session/hide', { data: { id: FIXTURE_A } })).status()).toBe(401);
-  expect((await request.post('/api/session/unhide', { data: { id: FIXTURE_A } })).status()).toBe(401);
+  expect((await request.post('/api/workspaces', { data: { name: 'x' } })).status()).toBe(401);
+  expect((await request.post('/api/apps', { data: { name: 'x' } })).status()).toBe(401);
+  expect((await request.delete('/api/terminals/123e4567-e89b-42d3-a456-426614174000')).status()).toBe(401);
 });
 
 test('bad credentials show the danger callout', async ({ page }) => {
@@ -178,70 +215,138 @@ test('the login form validates in the browser: empty fields show their messages,
   expect(posts).toEqual([]);
 });
 
-test('login lands on the console with fixture sessions in the sidebar', async ({ page }) => {
+test('login lands on the console with the fixture workspace tree in the sidebar', async ({ page }) => {
   await login(page);
   await expect(page.locator('console-app wa-page')).toHaveCount(1);
-  await expect(page.locator('agent-terminal .terminal-container .xterm')).toHaveCount(1);
 
-  // The WebGL renderer is lazy-imported as an async chunk; once it loads,
-  // xterm swaps its DOM rows for canvas rendering (the addon mounts >1
-  // canvas, so assert presence, not an exact count). Headless Chromium has
-  // SwiftShader WebGL, so the renderer should engage.
+  // The first workspace auto-selects (global-setup seeds three, ordered):
+  // the console group's "scratch", whose untitled first tab is the LIVE
+  // fixture (a live auto-selection attaches without respawning) — so a
+  // terminal pane (and its xterm) is on screen at once.
+  await expect(page.locator('agent-terminal:not(.hidden) .terminal-container .xterm')).toHaveCount(1);
+
+  // The WebGL renderer is lazy-loaded on a tab's FIRST activation (plan
+  // §8); once it loads, xterm swaps its DOM rows for canvas rendering (the
+  // addon mounts >1 canvas, so assert presence, not an exact count).
+  // Headless Chromium has SwiftShader WebGL, so the renderer should engage.
   await page.waitForFunction(
-    () => document.querySelectorAll('agent-terminal .terminal-container canvas').length > 0,
+    () => document.querySelectorAll('agent-terminal:not(.hidden) .terminal-container canvas').length > 0,
     null, { timeout: 10_000 }
   );
 
-  const nav = page.locator('session-sidebar .nav');
-  await expect(nav).toContainText('fix the login bug in auth module');
-  await expect(nav).toContainText('refactor the tmux helpers');
-  await expect(nav).toContainText('deploy checklist review');
-  // Sessions grouped by cwd: two groups across the five fixtures.
-  await expect(nav.locator('li.group')).toHaveCount(2);
+  // The sidebar groups (plan §8): the Console group first, then each app
+  // by sort_order — one fixture app ("alpha app") with its one workspace.
+  const nav = page.locator('workspace-sidebar .nav');
+  const groups = nav.locator('.ws-group');
+  await expect(groups).toHaveCount(2);
+  await expect(groups.first().locator('h2 .g-name')).toHaveText('console');
+  await expect(groups.nth(1).locator('h2 .g-name')).toHaveText('alpha app');
+  // rows: console group carries scratch + deploy checklist, the app carries proj
+  await expect(groups.first().locator('li[data-ws]')).toHaveCount(2);
+  await expect(groups.first()).toContainText('scratch');
+  await expect(groups.first()).toContainText('deploy checklist');
+  await expect(groups.nth(1).locator('li[data-ws]')).toHaveCount(1);
+  await expect(groups.nth(1)).toContainText('proj');
+  // live-terminal badges (plan §5's diff): every fixture workspace has one
+  // live tab (scratch's second tab is the dead fixture), except scratch's
+  // dead tab which shows no badge of its own — one badge per row.
+  await expect(groups.first().locator('li[data-ws] wa-badge')).toHaveCount(2);
+  // the selected row is highlighted
+  await expect(groups.first().locator('li[data-ws].active')).toHaveCount(1);
+
+  // the selected workspace's tab bar: scratch's two tabs, in order, the
+  // first one active and live, no editor tab (unconfigured in this suite).
+  const tabs = page.locator('terminal-tabs .tabs-bar');
+  await expect(tabs.locator('.tab')).toHaveCount(2);
+  await expect(tabs.locator('.tab').first()).toHaveClass(/active/);
+  await expect(tabs.locator('.tab').first().locator('.tab-dot')).toHaveClass(/live/);
+  await expect(tabs.locator('.tab').nth(1).locator('.tab-dot')).not.toHaveClass(/live/);
+  await expect(tabs.locator('.editor-tab')).toHaveCount(0);
+  // the [+] sits last
+  await expect(tabs.locator('.tab-new')).toHaveCount(1);
 });
 
-test('new session: created, attached, terminal round-trips input', async ({ page }) => {
+test('console flow: create app → workspace (default cwd) → new terminal → live tab → input round-trips; close kills the session', async ({ page }) => {
+  test.setTimeout(90_000);
   await login(page);
+  await page.waitForFunction(() => customElements.get('validation-enhancer-zod') !== undefined);
 
-  await page.fill('wa-input#new-name input', 'itest-live');
-  await page.click('wa-button#new-btn');
-  await expect(page.locator('session-sidebar li[data-live="itest-live"]')).toHaveCount(1);
+  // Every POST this test makes through the UI (the empty-name attempts
+  // below must spend none).
+  const posts: string[] = [];
+  page.on('request', r => { if (r.method() === 'POST') posts.push(new URL(r.url()).pathname); });
 
-  // WS attach → tmux → banner from the session command appears in xterm.
+  // --- new app through the dialog: an empty name is blocked in the browser
+  await page.click('workspace-sidebar #new-app');
+  await page.click('#app-save');
+  await expect(page.locator('#app-name-error')).toHaveText('name is required');
+  expect(posts).toEqual([]);
+  await page.fill('wa-input#app-name input', 'Flow App');
+  await page.click('#app-save');
+  const group = page.locator('workspace-sidebar .ws-group[data-group="flow-app"]');
+  await expect(group.locator('h2 .g-name')).toHaveText('Flow App');
+
+  // --- new workspace under it: cwd prefilled from state.defaultCwd
+  await group.locator('[data-new-ws]').click();
+  await expect(page.locator('wa-input#workspace-cwd input')).toHaveValue(WORKSPACE);
+  await page.click('#workspace-save');
+  await expect(page.locator('#workspace-name-error')).toHaveText('name is required');
+  // blocked in the browser: no workspace POST yet — only the app POST so far
+  expect(posts.filter(p => p === '/api/workspaces')).toEqual([]);
+  await page.fill('wa-input#workspace-name input', 'flow ws');
+  await page.click('#workspace-save');
+  // selected: the tab bar's no-terminals prompt carries its own +
+  await expect(page.locator('.tabs-empty-terminals')).toBeVisible();
+  await expect(page.locator('workspace-sidebar li[data-ws].active')).toContainText('flow ws');
+
+  // --- new terminal via the tab bar's + : the tab appears LIVE, the pane
+  //     attaches, the banner (cmd.sh) renders, input round-trips
+  await page.click('terminal-tabs .tab-new');
+  await expect(page.locator('terminal-tabs .tabs-bar .tab')).toHaveCount(1);
+  const tabId = await page.locator('terminal-tabs .tabs-bar .tab').getAttribute('data-term');
+  expect(tabId).toMatch(/^[0-9a-f-]{36}$/);
+  await expect(page.locator(`terminal-tabs .tab[data-term="${tabId}"] .tab-dot`)).toHaveClass(/live/, { timeout: 10_000 });
   await waitForTermText(page, MARKER, 20_000);
-  await expect(page.locator('.terminal-status.ok')).toContainText('attached');
+  await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${tabId}`);
 
   // Full loop: keystrokes in xterm → WS → pty → tmux → output rendered.
   // $((41+1)) distinguishes the shell's evaluated output (TYPIST_42) from
   // the locally echoed command line (which contains the expression).
-  await page.locator('agent-terminal .terminal-container').click();
+  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
   await page.keyboard.type('echo TYPIST_$((41+1))\n');
   await waitForTermText(page, 'TYPIST_42', 10_000);
-});
 
-test('resume a past session from the sidebar', async ({ page }) => {
-  await login(page);
-  await page.click(`session-sidebar li[data-resume="${FIXTURE_A}"]`);
-  await expect(page.locator('.terminal-status.ok')).toContainText('attached', { timeout: 20_000 });
-  await waitForTermText(page, MARKER);
-});
+  // the spawn really ran on the suite's socket, at the workspace cwd
+  expect(tmuxStatus(['has-session', '-t', `t-${tabId}`])).toBe(0);
+  const pane = spawnSync('tmux', ['-L', TMUX_SOCKET, 'display-message', '-p', '-t', `t-${tabId}:0.0`, '#{pane_current_path}'],
+    { encoding: 'utf8' });
+  expect(pane.stdout?.toString().trim()).toBe(WORKSPACE);
 
-test('resuming sessions whose ids share a prefix gives each its own tmux session', async ({ page }) => {
-  // pi ids are UUIDv7: the first 8 hex chars are a timestamp, so sessions
-  // started close together share them. Regression: resume named its tmux
-  // session r-<first 8 chars> and reused it, attaching the second resume
-  // to the first one's running pi.
-  const [one, two] = UUIDV7_SIBLINGS;
-  await login(page);
-  await page.click(`session-sidebar li[data-resume="${one}"]`);
-  await expect(page.locator('.terminal-status.ok')).toContainText(`attached: r-${one}`, { timeout: 20_000 });
-  await page.click(`session-sidebar li[data-resume="${two}"]`);
-  await expect(page.locator('.terminal-status.ok')).toContainText(`attached: r-${two}`, { timeout: 20_000 });
+  // --- close the tab: confirm dialog → row + tmux session both gone
+  await page.click(`terminal-tabs .tab[data-term="${tabId}"] .tab-close`);
+  // a title-less tab is confirmed by its uuid prefix
+  await expect(page.locator('#confirm-delete-text')).toContainText('terminal');
+  await expect(page.locator('#confirm-delete-text')).toContainText(tabId!.slice(0, 8));
+  await page.click('#confirm-delete-ok');
+  await expect(page.locator('terminal-tabs .tabs-bar .tab')).toHaveCount(0);
+  await expect.poll(() => tmuxStatus(['has-session', '-t', `t-${tabId}`]), { timeout: 10_000 }).not.toBe(0);
+  await expect(page.locator('.tabs-empty-terminals')).toBeVisible();
 
-  const names = execFileSync('tmux', ['-L', TMUX_SOCKET, 'list-sessions', '-F', '#{session_name}'],
-    { encoding: 'utf8' }).split('\n');
-  expect(names).toContain(`r-${one}`);
-  expect(names).toContain(`r-${two}`);
+  // --- delete the workspace (its delete button → confirm) → row gone;
+  //     the selection falls back to the FIRST remaining workspace
+  await page.locator('workspace-sidebar li[data-ws].active [data-del-ws]').click();
+  await page.click('#confirm-delete-ok');
+  await expect(page.locator('workspace-sidebar li[data-ws]').filter({ hasText: 'flow ws' })).toHaveCount(0);
+  await expect(page.locator('workspace-sidebar li[data-ws].active')).toContainText('scratch');
+
+  // --- delete the app → the whole group goes; the fixture groups remain
+  await page.locator('workspace-sidebar .ws-group[data-group="flow-app"] [data-del-app]').click();
+  await expect(page.locator('#confirm-delete-text')).toContainText('Flow App');
+  await page.click('#confirm-delete-ok');
+  await expect(page.locator('workspace-sidebar .ws-group[data-group="flow-app"]')).toHaveCount(0);
+  await expect(page.locator('workspace-sidebar .ws-group')).toHaveCount(2);
+  // (the empty state — zero workspaces — is covered on the restart-survival
+  //  spec's private server, where the fixture tree isn't in the way)
 });
 
 test('a paste bigger than one WebSocket frame reaches the session whole', async ({ page }) => {
@@ -250,50 +355,50 @@ test('a paste bigger than one WebSocket frame reaches the session whole', async 
   const size = 1_200_000;
   const out = `${WORKSPACE}/paste.out`;
   await login(page);
-  await page.fill('wa-input#new-name input', 'itest-paste');
-  await page.click('wa-button#new-btn');
+  const { id } = await makeTerminal(page, 'paste ws');
+  await page.click(`terminal-tabs .tab[data-term="${id}"]`);
   await waitForTermText(page, MARKER, 20_000);
 
   // Raw mode + no echo on the pane's tty so head sees the paste byte for
   // byte (a canonical-mode line is capped at 4 KiB by the kernel, which
   // would make this a test of the tty rather than of web-pi).
-  await page.locator('agent-terminal .terminal-container').click();
+  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
   await page.keyboard.type(`stty raw -echo; echo RAW_$((40+2)); head -c ${size} > ${out}; stty sane\n`);
   await waitForTermText(page, 'RAW_42');
   await page.evaluate(n => {
-    const el = document.querySelector('agent-terminal') as unknown as { terminal: { paste(d: string): void } };
+    const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as { terminal: { paste(d: string): void } };
     el.terminal.paste('x'.repeat(n));
   }, size);
 
   await expect.poll(() => {
     try { return fs.statSync(out).size; } catch { return -1; }
   }, { timeout: 30_000 }).toBe(size);
-  await expect(page.locator('.terminal-status.ok')).toContainText('attached: itest-paste');
+  await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`);
 });
 
 test('a dropped socket reconnects to the same session; a session that ends is not retried', async ({ page }) => {
   await login(page);
-  await page.fill('wa-input#new-name input', 'itest-reconnect');
-  await page.click('wa-button#new-btn');
+  const { id } = await makeTerminal(page, 'reconnect ws');
+  await page.click(`terminal-tabs .tab[data-term="${id}"]`);
   await waitForTermText(page, MARKER, 20_000);
-  await expect(page.locator('.terminal-status.ok')).toContainText('attached: itest-reconnect');
+  await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`);
 
   // Drop the socket the way a proxy idle cut does: closed under the
   // component, with no 'exit' from the server first.
   await page.evaluate(() =>
-    (document.querySelector('agent-terminal') as unknown as { websocket: WebSocket }).websocket.close());
+    (document.querySelector('agent-terminal:not(.hidden)') as unknown as { websocket: WebSocket }).websocket.close());
   await expect(page.locator('.terminal-status')).toContainText('reconnecting');
-  await expect(page.locator('.terminal-status.ok')).toContainText('attached: itest-reconnect', { timeout: 10_000 });
-  await page.locator('agent-terminal .terminal-container').click();
+  await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`, { timeout: 10_000 });
+  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
   await page.keyboard.type('echo BACK_$((40+2))\n');
   await waitForTermText(page, 'BACK_42');
 
   // The session itself ending arrives as the server's 'exit': reported,
   // never reconnected (that would also loop two tabs bumping each other).
-  execFileSync('tmux', ['-L', TMUX_SOCKET, 'kill-session', '-t', 'itest-reconnect']);
-  await expect(page.locator('.terminal-status.info')).toContainText('detached: itest-reconnect');
+  execFileSync('tmux', ['-L', TMUX_SOCKET, 'kill-session', '-t', `t-${id}`]);
+  await expect(page.locator('.terminal-status.info')).toContainText(`detached: t-${id}`);
   await page.waitForTimeout(2500); // longer than the first reconnect backoff
-  await expect(page.locator('.terminal-status.info')).toContainText('detached: itest-reconnect');
+  await expect(page.locator('.terminal-status.info')).toContainText(`detached: t-${id}`);
 });
 
 test('malformed requests and frames are rejected without taking the server down', async ({ page }) => {
@@ -310,30 +415,33 @@ test('malformed requests and frames are rejected without taking the server down'
   expect(await status('DELETE', '/api/jobs/%E0')).toBe(400);
   expect(await status('POST', '/api/jobs/%E0/run')).toBe(400);
   // JSON bodies must be objects.
-  expect(await status('POST', '/api/session/hide', '[]')).toBe(400);
-  expect(await status('POST', '/api/new', '"just a string"')).toBe(400);
+  expect(await status('POST', '/api/apps', '[]')).toBe(400);
+  expect(await status('POST', '/api/workspaces', '"just a string"')).toBe(400);
   // Bodies are capped at 10 KiB off the upload route: server/main.ts
   // refuses an oversized one from its Content-Length before Astro reads it.
-  expect(await status('POST', '/api/new', JSON.stringify({ name: 'x'.repeat(20_000) }))).toBe(413);
+  expect(await status('POST', '/api/apps', JSON.stringify({ name: 'x'.repeat(20_000) }))).toBe(413);
   // The JSON API only parses JSON (or form) bodies.
-  expect(await page.evaluate(async () => (await fetch('/api/new', {
+  expect(await page.evaluate(async () => (await fetch('/api/workspaces', {
     method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '{"name":"x"}',
   })).status)).toBe(415);
   // API answers are per-user state: never cached.
   expect(await page.evaluate(async () => (await fetch('/api/state')).headers.get('cache-control'))).toBe('no-store');
 
   // Junk WS frames — before and after attaching (`null` and a data-less
-  // input each used to crash the server) — are dropped; the socket lives on.
-  expect(await status('POST', '/api/new', '{"name":"itest-junk"}')).toBe(200);
+  // input each used to crash the server) — are dropped; the socket lives
+  // on. The deleted live/resume modes (plan §7/§11) are junk frames now.
+  const { id } = await makeTerminal(page, 'junk ws');
   const junk = ['null', '[]', '"x"', 'not json', '{"type":"input"}', '{"type":"input","data":5}',
-    '{"type":"resize","cols":"wide"}', '{"type":"attach","mode":"live"}', '{"type":"attach","mode":"resume","id":7}',
-    // the task/ws-terminal modes reject the same way: missing id/target
+    '{"type":"resize","cols":"wide"}',
+    '{"type":"attach","mode":"live"}', '{"type":"attach","mode":"live","target":"x"}',
+    '{"type":"attach","mode":"resume","id":7}',
+    // the workspace-model modes reject a missing/mistyped id/target the same way
     '{"type":"attach","mode":"terminal"}', '{"type":"attach","mode":"run"}'];
-  const stillOpen = await page.evaluate(async frames => {
+  const stillOpen = await page.evaluate(async ([frames, termId]) => {
     const ws = new WebSocket(`ws://${location.host}/ws`);
     await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject; });
     for (const f of frames) ws.send(f);
-    ws.send(JSON.stringify({ type: 'attach', mode: 'live', target: 'itest-junk' }));
+    ws.send(JSON.stringify({ type: 'attach', mode: 'terminal', id: termId }));
     await new Promise<void>(resolve => {
       ws.onmessage = ev => { if ((JSON.parse(ev.data as string) as { type: string }).type === 'attached') resolve(); };
     });
@@ -342,9 +450,46 @@ test('malformed requests and frames are rejected without taking the server down'
     const open = ws.readyState === WebSocket.OPEN;
     ws.close();
     return open;
-  }, junk);
+  }, [junk, id] as const);
   expect(stillOpen).toBe(true);
   expect(await status('GET', '/api/state')).toBe(200);
+});
+
+test('dead tab: an out-of-band kill shows not-live in the poll; clicking the tab respawns at the workspace cwd', async ({ page }) => {
+  test.setTimeout(60_000);
+  await login(page);
+  // The workspace cwd is deliberately NOT WEB_PI_NEW_SESSION_CWD's default
+  // (both are WORKSPACE here) — a distinct dir proves the respawn targets
+  // the workspace row's cwd, not the configured default.
+  const cwd = `${WORKSPACE}/dead-tab-cwd`;
+  fs.mkdirSync(cwd, { recursive: true });
+  const { id } = await makeTerminal(page, 'dead tab ws', cwd);
+  await page.click(`terminal-tabs .tab[data-term="${id}"]`);
+  await waitForTermText(page, MARKER, 20_000);
+  await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`);
+
+  // Out-of-band kill (the workspace-container-loss story, plan §4): the
+  // row is the structure; the session is the content.
+  execFileSync('tmux', ['-L', TMUX_SOCKET, 'kill-session', '-t', `t-${id}`]);
+  await expect(page.locator('.terminal-status.info')).toContainText(`detached: t-${id}`);
+
+  // The 15 s poll (forced here) flips the tab's dot and the row's badge.
+  await page.evaluate(() =>
+    (document.querySelector('console-app') as unknown as { loadState(): Promise<void> }).loadState());
+  await expect(page.locator(`terminal-tabs .tab[data-term="${id}"] .tab-dot`)).not.toHaveClass(/live/);
+
+  // Clicking the ended pane's tab is a FRESH attach: the server respawns
+  // the session at the workspace cwd and the banner shows again.
+  await page.click(`terminal-tabs .tab[data-term="${id}"]`);
+  await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`, { timeout: 20_000 });
+  await waitForTermText(page, MARKER, 20_000);
+
+  // The respawn ran AT the workspace cwd (t-<uuid> name, fresh content).
+  const proof = `${cwd}/respawn-pwd.txt`;
+  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page.keyboard.type(`pwd > ${JSON.stringify(proof)}\n`);
+  await expect.poll(() => (fs.existsSync(proof) ? fs.readFileSync(proof, 'utf8').trim() : ''),
+    { timeout: 10_000 }).toBe(cwd);
 });
 
 test('files: upload streams into object storage; downloads come back as resumable attachments', async ({ page }) => {
@@ -476,7 +621,7 @@ test('files: upload streams into object storage; downloads come back as resumabl
   })).toBe(413);
   // A body with no Content-Length (chunked) is refused off the upload
   // route — the 10 KiB cap can't be checked up front.
-  expect(await raw('/api/new', { 'Content-Type': 'application/json', 'Transfer-Encoding': 'chunked' },
+  expect(await raw('/api/workspaces', { 'Content-Type': 'application/json', 'Transfer-Encoding': 'chunked' },
     ['{"name":', '"itest-chunked"}'])).toBe(411);
 });
 
@@ -487,16 +632,16 @@ test('attached session opens at the browser terminal\'s size, not 80x24', async 
   // server must carry that size across its async tmux lookup and spawn the
   // pty at it (regression: resize was dropped pre-spawn, so the session
   // opened 80x24 in the corner of a larger browser terminal).
-  await page.fill('wa-input#new-name input', 'itest-openfit');
-  await page.click('wa-button#new-btn');
-  await expect(page.locator('.terminal-status.ok')).toContainText('attached', { timeout: 20_000 });
+  const { id } = await makeTerminal(page, 'openfit ws');
+  await page.click(`terminal-tabs .tab[data-term="${id}"]`);
+  await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`, { timeout: 20_000 });
   await waitForTerminalFitted(page);
 
   const dims = await termDims(page);
   expect(dims.cols).toBeGreaterThan(100); // default viewport is far wider than 80
 
   const pane = execFileSync('tmux',
-    ['-L', TMUX_SOCKET, 'display-message', '-p', '-t', 'itest-openfit:0.0', '#{pane_width}x#{pane_height}'],
+    ['-L', TMUX_SOCKET, 'display-message', '-p', '-t', `t-${id}:0.0`, '#{pane_width}x#{pane_height}'],
     { encoding: 'utf8' }).trim();
   const [w, h] = pane.split('x').map(Number) as [number, number];
   expect(w).toBe(dims.cols);
@@ -508,9 +653,9 @@ test('terminal fills the available space and refits when it shrinks', async ({ p
   await login(page);
 
   // Attach so the status bar is in its final state before measuring.
-  await page.fill('wa-input#new-name input', 'itest-fill');
-  await page.click('wa-button#new-btn');
-  await expect(page.locator('.terminal-status.ok')).toContainText('attached', { timeout: 20_000 });
+  const { id } = await makeTerminal(page, 'fill ws');
+  await page.click(`terminal-tabs .tab[data-term="${id}"]`);
+  await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`, { timeout: 20_000 });
 
   // At load the terminal must fill the viewport-height box without
   // pushing the page past the viewport.
@@ -522,6 +667,44 @@ test('terminal fills the available space and refits when it shrinks', async ({ p
   await page.setViewportSize({ width: 1280, height: 500 });
   await waitForTerminalFitted(page);
   expect(await termRows(page)).toBeLessThan(rowsBefore);
+});
+
+test('hidden tabs keep their WS attached: state and scrollback persist, refit on re-show', async ({ page }) => {
+  await login(page);
+  // The multi-instance costs (plan §8): a hidden tab (display:none) must
+  // keep its socket, and re-showing it must refit + re-send the size — the
+  // pane's screen (tmux redraws it) and its scrollback both survive.
+  const ws = await makeWorkspace(page, 'hidden tabs ws');
+  const first = await makeTerminalIn(page, ws);
+  const second = await makeTerminalIn(page, ws);
+  await page.click(`terminal-tabs .tab[data-term="${first}"]`);
+  await waitForTermText(page, MARKER, 20_000);
+  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page.keyboard.type('echo FIRST_$((40+2))\n');
+  await waitForTermText(page, 'FIRST_42', 10_000);
+  // a second pane exists only after its tab is activated once
+  await page.click(`terminal-tabs .tab[data-term="${second}"]`);
+  await waitForTermText(page, MARKER, 20_000);
+  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page.keyboard.type('echo SECOND_$((40+2))\n');
+  await waitForTermText(page, 'SECOND_42', 10_000);
+
+  // back to the first tab: its pane still holds the earlier output (the
+  // socket was never closed by hiding) and is usable again
+  await page.click(`terminal-tabs .tab[data-term="${first}"]`);
+  await waitForTermText(page, 'FIRST_42', 10_000);
+  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page.keyboard.type('echo AGAIN_$((40+2))\n');
+  await waitForTermText(page, 'AGAIN_42', 10_000);
+
+  // only the shown pane holds a live xterm render; the hidden one is
+  // display:none but still in the DOM with its socket attached
+  const sockets = await page.evaluate(() => {
+    const panes = [...document.querySelectorAll('agent-terminal')] as unknown as
+      Array<{ websocket?: WebSocket }>;
+    return panes.map(p => p.websocket === undefined ? 'closed' : `${p.websocket!.readyState}`);
+  });
+  expect(sockets).toEqual(['1', '1']); // both panes: OPEN
 });
 
 // jobs (in-process scheduler): the backend is inside the server, so the
@@ -670,7 +853,6 @@ test('jobs persist across a server restart; missed runs catch up', async () => {
       WEB_PI_PORT: String(PORT2),
       WEB_PI_HOST: '127.0.0.1',
       WEB_PI_DB_FILE: dbCopy,
-      WEB_PI_SESSIONS_DIR: `${WORKSPACE}/sessions`,
       WEB_PI_AGENT_DIR: `${WORKSPACE}/pi-agent`,
       WEB_PI_NEW_SESSION_CWD: WORKSPACE,
       WEB_PI_TMUX_SOCKET: TMUX_SOCKET,
@@ -746,10 +928,14 @@ test('jobs: app tag chip, persisted run logs, run history + log view (task/ws-jo
   await page.waitForFunction(() => customElements.get('jobs-app') !== undefined);
   await page.click('#jobs-new');
   await expect(page.locator('wa-select#job-app')).toBeVisible();
-  // Options are (re)populated on open from the swapped-in list's data-apps.
-  await expect(page.locator('#job-app wa-option')).toHaveCount(1);
-  expect(await page.locator('#job-app wa-option').getAttribute('value')).toBe(appId);
-  expect(await page.locator('#job-app wa-option').textContent()).toBe('E2E Jobs App');
+  // Options are (re)populated on open from the swapped-in list's data-apps:
+  // the fixture's "alpha app" (global-setup) plus this test's app.
+  const options = page.locator('#job-app wa-option');
+  await expect(options).toHaveCount(2);
+  const picked = options.filter({ hasText: 'E2E Jobs App' });
+  await expect(picked).toHaveCount(1);
+  expect(await picked.getAttribute('value')).toBe(appId);
+  expect(await picked.textContent()).toBe('E2E Jobs App');
   // Select the app (the value the save reads), then fill the rest.
   await page.evaluate(id => { (document.querySelector('#job-app') as unknown as { value: string }).value = id; }, appId);
   await page.fill('wa-input#job-name input', 'e2e-job');
@@ -856,104 +1042,70 @@ test('jobs: app tag chip, persisted run logs, run history + log view (task/ws-jo
   expect((await api(page, 'DELETE', '/api/apps/e2e-jobs-app')).status).toBe(200);
 });
 
-test('hide: session leaves the sidebar, manage dialog restores it', async ({ page }) => {
+test('the workspace filter matches names, hides empty groups, and survives the poll re-render', async ({ page }) => {
   await login(page);
-  const row = page.locator(`session-sidebar li[data-resume="${FIXTURE_B}"]`);
-  await expect(row).toContainText('refactor the tmux helpers');
+  const search = page.locator('wa-input#workspace-search input');
+  const rows = page.locator('workspace-sidebar li[data-ws]');
+  const groups = page.locator('workspace-sidebar .ws-group');
 
-  // The row action asks for confirmation before hiding.
-  await row.locator('wa-button[data-hide]').click();
-  const confirm = page.locator('wa-dialog#confirm-hide');
-  await expect(confirm.locator('#confirm-hide-title')).toContainText('refactor the tmux helpers');
-  await confirm.locator('wa-button#confirm-hide-ok').click();
+  // Name match: one row, one group (the app group hides — no match in it).
+  await search.fill('deploy');
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText('deploy checklist');
+  await expect(groups).toHaveCount(1);
+  await expect(groups.first().locator('h2 .g-name')).toHaveText('console');
 
-  await expect(page.locator(`session-sidebar li[data-resume="${FIXTURE_B}"]`)).toHaveCount(0);
-  await expect(page.locator('session-sidebar #session-list')).not.toContainText('refactor the tmux helpers');
+  // Name-only match (the plan's locked shape): a cwd fragment of a
+  // fixture workspace's directory matches nothing.
+  await search.fill('web-pi-itest');
+  await expect(rows).toHaveCount(0);
+  await expect(groups).toHaveCount(0);
+  await search.fill('scratch');
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText('scratch');
 
-  // "N hidden — manage" appears; the dialog (outside the poll-rendered
-  // sidebar) lists the hidden session and unhides it.
-  await expect(page.locator('session-sidebar wa-button#manage-hidden')).toContainText('1 hidden');
-  await page.click('session-sidebar wa-button#manage-hidden');
-  const dialog = page.locator('wa-dialog#hidden-dialog');
-  await expect(dialog.locator('.hidden-row .t-name')).toContainText('refactor the tmux helpers');
-  await dialog.locator('wa-button[data-unhide]').click();
-  await expect(page.locator(`session-sidebar li[data-resume="${FIXTURE_B}"]`)).toHaveCount(1);
-  await expect(page.locator('session-sidebar wa-button#manage-hidden')).toHaveCount(0);
-});
-
-test('hide persists across reload in the sqlite state db', async ({ page }) => {
-  await login(page);
-  await page.locator(`session-sidebar li[data-resume="${FIXTURE_B}"] wa-button[data-hide]`).click();
-  await page.locator('wa-dialog#confirm-hide wa-button#confirm-hide-ok').click();
-  await expect(page.locator(`session-sidebar li[data-resume="${FIXTURE_B}"]`)).toHaveCount(0);
-
-  await page.reload();
-  await page.waitForSelector('session-sidebar .nav');
-  await expect(page.locator(`session-sidebar li[data-resume="${FIXTURE_B}"]`)).toHaveCount(0);
-  await expect(page.locator('session-sidebar wa-button#manage-hidden')).toContainText('1 hidden');
-
-  // The state db carries the id (hide ≠ delete: the fixture session file
-  // is untouched).
-  const db = new DatabaseSync(`${WORKSPACE}/webpi.db`);
-  const hidden = db.prepare('SELECT session_id FROM sessions WHERE hidden_at IS NOT NULL').all() as Array<{ session_id: string }>;
-  db.close();
-  expect(hidden.map(r => r.session_id)).toContain(FIXTURE_B);
-  expect(fs.existsSync(`${WORKSPACE}/sessions/alpha/2026-10-02T10-00-00_${FIXTURE_B}.jsonl`)).toBe(true);
-
-  // Tidy via unhide-all so later tests see a clean list.
-  await page.click('session-sidebar wa-button#manage-hidden');
-  await page.locator('wa-dialog#hidden-dialog wa-button#unhide-all').click();
-  await expect(page.locator(`session-sidebar li[data-resume="${FIXTURE_B}"]`)).toHaveCount(1);
-});
-
-test('search filters the past-session list and survives the poll re-render', async ({ page }) => {
-  await login(page);
-  const search = page.locator('wa-input#session-search input');
-
-  // Title match: one row, one cwd group, count badge follows.
-  await search.fill('login bug');
-  await expect(page.locator('session-sidebar li[data-resume]')).toHaveCount(1);
-  await expect(page.locator('session-sidebar li[data-resume]')).toContainText('fix the login bug');
-  await expect(page.locator('session-sidebar li.group')).toHaveCount(1);
-  await expect(page.locator('session-sidebar #sessions-count')).toHaveText('1');
-
-  // cwd match and the empty state.
-  await search.fill('/srv');
-  await expect(page.locator('session-sidebar li[data-resume]')).toHaveCount(1);
-  await expect(page.locator('session-sidebar li[data-resume]')).toContainText('deploy checklist review');
+  // No match: every group hides.
   await search.fill('zzz-no-match');
-  await expect(page.locator('session-sidebar li.empty')).toContainText('no sessions match');
+  await expect(rows).toHaveCount(0);
+  await expect(groups).toHaveCount(0);
 
-  // Escape clears.
+  // Escape clears. Rows are permanent in the workspace model (unlike the
+  // old live sessions): count whatever the shared db holds at this point —
+  // the fixtures plus the workspaces earlier specs left behind.
+  const total = (await api(page, 'GET', '/api/state')).json.workspaces.length;
+  expect(total).toBeGreaterThanOrEqual(3); // the three fixtures
   await search.press('Escape');
-  await expect(page.locator('session-sidebar li[data-resume]')).toHaveCount(5);
+  await expect(rows).toHaveCount(total);
 
   // A state poll re-render (the 15s interval, forced here) must not eat
   // the search box: value, focus and caret are restored.
-  await search.fill('tmux');
+  await search.fill('checklist');
   await page.keyboard.press('ArrowLeft'); // caret mid-string, not at the end
   const caretBefore = await page.evaluate(() => {
-    const wa = document.querySelector('#session-search') as HTMLElement & { shadowRoot: ShadowRoot | null };
+    const wa = document.querySelector('#workspace-search') as HTMLElement & { shadowRoot: ShadowRoot | null };
     return wa.shadowRoot?.querySelector('input')?.selectionStart ?? null;
   });
-  expect(caretBefore).toBe(3);
-  await page.evaluate(() =>
-    (document.querySelector('console-app') as unknown as { loadState(): Promise<void> }).loadState());
+  expect(caretBefore).toBe(8);
+  await refreshState(page);
   await page.waitForFunction(() => {
-    const wa = document.querySelector('#session-search') as HTMLElement & { shadowRoot: ShadowRoot | null };
+    const wa = document.querySelector('#workspace-search') as HTMLElement & { shadowRoot: ShadowRoot | null };
     const native = wa.shadowRoot?.querySelector('input') ?? null;
     // Focus inside an open shadow root retargets document.activeElement to
     // the host, so accept either the host or the inner input being focused.
-    return native != null && native.value === 'tmux'
+    return native != null && native.value === 'checklist'
       && (document.activeElement === wa || wa.shadowRoot?.activeElement === native);
   });
   const caretAfter = await page.evaluate(() => {
-    const wa = document.querySelector('#session-search') as HTMLElement & { shadowRoot: ShadowRoot | null };
+    const wa = document.querySelector('#workspace-search') as HTMLElement & { shadowRoot: ShadowRoot | null };
     return wa.shadowRoot?.querySelector('input')?.selectionStart ?? null;
   });
   expect(caretAfter).toBe(caretBefore);
   // The filter is still applied after the re-render.
-  await expect(page.locator('session-sidebar li[data-resume]')).toHaveCount(1);
+  await expect(rows).toHaveCount(1);
+
+  // Escape clears again (a re-rendered search box still wires its events).
+  await search.press('Escape');
+  await expect(rows).toHaveCount(total);
 });
 
 test('signed out, any page URL serves the login page and sign-in returns to it', async ({ page }) => {
@@ -981,11 +1133,11 @@ test('settings dashboard shows effective config; update dry-run is check-only', 
   await page.goto('/settings');
 
   const cfg = page.locator('#config');
-  await expect(cfg.locator('.cfg-row')).toHaveCount(12);
+  await expect(cfg.locator('.cfg-row')).toHaveCount(11);
   const text = await cfg.innerText();
   expect(text).toContain('web-pi-itest');             // tmux socket (config env)
-  expect(text).toContain('cmd.sh');                   // session command
-  expect(text).toContain('/tmp/web-pi-itest/sessions'); // sessions dir
+  expect(text).toContain('cmd.sh');                   // the shell a new terminal tab runs
+  expect(text).toContain('default workspace cwd');    // relabeled (plan §10)
   expect(text).toContain('/tmp/web-pi-itest/webpi.db'); // state db path — path only, never contents
   await expect(page.locator('#pi-badge')).toContainText(/pi /);
   await expect(page.locator('#pi-declared')).toContainText('declared');
@@ -1001,187 +1153,6 @@ test('settings dashboard shows effective config; update dry-run is check-only', 
   expect(dry.body.ok).toBe(true);
   expect(dry.body.dryRun).toBe(true);
   expect(dry.body.output).toContain('would run');
-});
-
-// ---- /api/state scan (async fs + title cache) over a populated store ----
-// Bulk sessions for the scan tests: 205 valid two-line .jsonl files (session
-// header + first user message) in their own scope, aged strictly between the
-// two alpha fixtures (30 min and 24 h) so the newest-first order is
-// unambiguous. 205 + 5 fixtures = 210 → the MAX_FILES=200 cap drops the 10
-// oldest (the 4 older fixtures + bulk 199..204).
-const BULK_SCOPE = 'bulk';
-const BULK_COUNT = 205;
-const CACHE_ID = 'dddddddd-dddd-4000-8000-dddddddddddd';
-const bulkId = (i: number): string => `cccccccc-cccc-4000-8000-${(0xcafe00000000 + i).toString(16).padStart(12, '0')}`;
-const bulkTitle = (i: number): string => `bulk task ${i.toString().padStart(3, '0')}: migrate the widget registry`;
-
-/** One /api/state poll via in-page fetch → Map<id, {title, mtime}>. */
-async function pollSessions(page: Page): Promise<Map<string, { title: string; mtime: number }>> {
-  const rows = await page.evaluate(async () => {
-    const r = await fetch('/api/state');
-    const body = await r.json() as { sessions: Array<{ id: string; title: string; mtime: number }> };
-    return { status: r.status, sessions: body.sessions.map(s => [s.id, s.title, s.mtime] as const) };
-  });
-  expect(rows.status).toBe(200);
-  return new Map(rows.sessions.map(([id, title, mtime]) => [id as string, { title: title as string, mtime: mtime as number }]));
-}
-
-test('/api/state lists the fixture + bulk sessions newest-first with correct titles and the 200 cap', async ({ page }) => {
-  const dir = path.join(WORKSPACE, 'sessions', BULK_SCOPE);
-  fs.rmSync(dir, { recursive: true, force: true });
-  fs.mkdirSync(dir, { recursive: true });
-  const now = Date.now();
-  for (let i = 0; i < BULK_COUNT; i++) {
-    const file = path.join(dir, `2026-10-02T12-30-00_${bulkId(i)}.jsonl`);
-    fs.writeFileSync(file, [
-      JSON.stringify({ type: 'session', id: bulkId(i), timestamp: '2026-10-02T12:30:00.000Z', cwd: '/home/tester/bulk-proj' }),
-      JSON.stringify({ type: 'message', message: { role: 'user', content: bulkTitle(i) } }),
-    ].join('\n') + '\n');
-    const when = new Date(now - (40 + i * 5) * 60_000);
-    fs.utimesSync(file, when, when);
-  }
-
-  // Junk tolerance: a corrupt binary and a >64 KiB first line must never
-  // 500 the poll — both degrade to id = file name, '(no preview)'. They
-  // share one mtime, pinning the filename tiebreaker too (concurrent
-  // scope scans resolve in arbitrary order; ties need determinism).
-  const JUNK = ['2026-10-02T12-30-00_junk-corrupt.jsonl', '2026-10-02T12-30-00_junk-hugefirst.jsonl'];
-  fs.writeFileSync(path.join(dir, JUNK[0]), Buffer.from([0x00, 0xff, 0xfe, 0x81, 0x0a, 0x7f, 0x03]));
-  fs.writeFileSync(path.join(dir, JUNK[1]),
-    'x'.repeat(70 * 1024) + '\n' + JSON.stringify({ type: 'message', message: { role: 'user', content: 'never seen' } }) + '\n');
-  const junkWhen = new Date(now - 5 * 60_000); // newest: inside the kept window
-  for (const j of JUNK) fs.utimesSync(path.join(dir, j), junkWhen, junkWhen);
-
-  await login(page);
-  // The Map preserves the response's array order — assert on that, not a
-  // client-side re-sort, so an unordered response can't pass.
-  const sessions = [...(await pollSessions(page)).entries()].map(([id, e]) => ({ id, ...e }));
-
-  // Capped at MAX_FILES=200: the two junk files (newest, 5 min), fixture A
-  // (30 min) and bulk 0..196 (40 min … 1020 min).
-  expect(sessions).toHaveLength(200);
-  for (let i = 1; i < sessions.length; i++) {
-    expect(sessions[i].mtime).toBeLessThanOrEqual(sessions[i - 1].mtime);
-  }
-  expect(sessions[0]).toMatchObject({ id: JUNK[0], title: '(no preview)' });
-  expect(sessions[1]).toMatchObject({ id: JUNK[1], title: '(no preview)' });
-  expect(sessions[2].id).toBe(FIXTURE_A);
-  expect(sessions[2].title).toBe('fix the login bug in auth module');
-  const keptBulk = 197; // 200 minus the junk pair and fixture A's slots
-  for (let i = 0; i < keptBulk; i++) {
-    expect(sessions[i + 3].id).toBe(bulkId(i));
-    expect(sessions[i + 3].title).toBe(bulkTitle(i));
-  }
-
-  // The 12 oldest fell off the cap: the four older fixtures and the
-  // oldest bulk files (197..204).
-  const ids = new Set(sessions.map(s => s.id));
-  for (const absent of [FIXTURE_B, '33333333-3333-3333-333333333333', ...UUIDV7_SIBLINGS,
-    ...Array.from({ length: BULK_COUNT - keptBulk }, (_, k) => bulkId(keptBulk + k))]) {
-    expect(ids.has(absent)).toBe(false);
-  }
-});
-
-test('/api/state title cache: untouched files reuse their entry, an mtime bump re-reads', async ({ page }) => {
-  await login(page);
-
-  // A header-only session: no first user message yet → '(no preview)'.
-  // Mtimes are pinned to whole seconds (utimes round-trips integer
-  // seconds exactly): the coarse-mtime case, where each cache-key leg can
-  // be isolated deterministically.
-  const dir = path.join(WORKSPACE, 'sessions', 'cachetest');
-  fs.rmSync(dir, { recursive: true, force: true });
-  fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, `2026-10-02T13-00-00_${CACHE_ID}.jsonl`);
-  const header = JSON.stringify({ type: 'session', id: CACHE_ID, timestamp: '2026-10-02T13:00:00.000Z', cwd: '/tmp/cache-check' });
-  fs.writeFileSync(file, header + '\n');
-  const T = Math.floor(Date.now() / 1000) * 1000 - 60_000;
-  fs.utimesSync(file, new Date(T), new Date(T));
-
-  const first = await pollSessions(page);
-  expect(first.get(CACHE_ID)?.title).toBe('(no preview)');
-  expect(first.get(CACHE_ID)!.mtime).toBe(T);
-
-  // Size leg: append a first user message, then re-pin the mtime to the
-  // SAME whole second — same mtime, grown file. Only the size half of the
-  // (mtime, size) key notices; an mtime-only cache keeps serving the stale
-  // title (the real case: an append landing inside the mtime tick on
-  // coarse-mtime network storage).
-  fs.appendFileSync(file, JSON.stringify({ type: 'message', message: { role: 'user', content: 'cache invalidation probe' } }) + '\n');
-  fs.utimesSync(file, new Date(T), new Date(T));
-  const second = await pollSessions(page);
-  expect(second.get(CACHE_ID)?.title).toBe('cache invalidation probe');
-  expect(second.get(CACHE_ID)!.mtime).toBe(T); // the served mtime really is unchanged
-
-  // Mtime leg: same byte size, different whole-second mtime — rewrite the
-  // message with a same-length title ('probe' → 'probF') and bump the mtime
-  // one second. Only the mtime half of the key notices; a size-only cache
-  // would keep serving the stale title.
-  fs.writeFileSync(file, [
-    header,
-    JSON.stringify({ type: 'message', message: { role: 'user', content: 'cache invalidation probF' } }),
-  ].join('\n') + '\n');
-  fs.utimesSync(file, new Date(T + 1000), new Date(T + 1000));
-  const third = await pollSessions(page);
-  expect(third.get(CACHE_ID)?.title).toBe('cache invalidation probF');
-  expect(third.get(CACHE_ID)!.mtime).toBe(T + 1000);
-
-  // Untouched files answer identically across polls — cached, not re-derived.
-  for (const [id, entry] of first) {
-    if (id === CACHE_ID) continue;
-    expect(third.get(id)).toEqual(entry);
-  }
-
-  fs.rmSync(dir, { recursive: true, force: true }); // gone before the next test's scan
-});
-
-test('/api/state poll stays fast and terminal traffic keeps flowing during it', async ({ page }) => {
-  test.setTimeout(60_000);
-  await login(page);
-
-  // The cache-probe file from the previous test must have left the list.
-  expect((await pollSessions(page)).has(CACHE_ID)).toBe(false);
-
-  // Force the heavy path: bump every bulk mtime so the poll re-reads
-  // ~200 files instead of being answered from the title cache.
-  const dir = path.join(WORKSPACE, 'sessions', BULK_SCOPE);
-  const names = fs.readdirSync(dir);
-  const now = Date.now();
-  const bump = (offset: number): void => {
-    for (const [i, f] of names.entries()) {
-      const when = new Date(now + offset + i * 1000);
-      fs.utimesSync(path.join(dir, f), when, when);
-    }
-  };
-  bump(0);
-
-  const timed = await page.evaluate(async () => {
-    const t0 = performance.now();
-    const r = await fetch('/api/state');
-    const body = await r.json() as { sessions: unknown[] };
-    return { ms: performance.now() - t0, status: r.status, n: body.sessions.length };
-  });
-  expect(timed.status).toBe(200);
-  expect(timed.n).toBe(200);
-  expect(timed.ms).toBeLessThan(2000); // loose smoke: ~200 × 64 KiB reads, off the event loop
-
-  // Liveness: keystrokes reach the pty and output renders while a poll is
-  // in flight — the scan must never freeze the terminal WS. Bump the bulk
-  // mtimes AGAIN first: the timed poll above left the cache warm, and a
-  // liveness check against a warm cache proves nothing — this way the
-  // concurrent poll re-reads ~200 files while the terminal is typing.
-  bump(1000 * names.length);
-  await page.fill('wa-input#new-name input', 'itest-poll-live');
-  await page.click('wa-button#new-btn');
-  await waitForTermText(page, MARKER, 20_000);
-  await page.locator('agent-terminal .terminal-container').click();
-  const poll = page.evaluate(async () => (await fetch('/api/state')).status);
-  await page.keyboard.type('echo LIVE_$((40+2))\n');
-  expect(await poll).toBe(200);
-  await waitForTermText(page, 'LIVE_42', 10_000);
-
-  // Tidy: drop the generated store so nothing after sees the bulk files.
-  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 // ---------- browser hardening (DESIGN_REVIEW §1.2) ----------
@@ -1202,21 +1173,22 @@ test('non-GET requests with a foreign Origin are rejected; no Origin behaves nor
   // A present-but-mismatched Origin (sibling subdomain, sandboxed "null")
   // is 403 before auth is even consulted.
   for (const origin of ['https://evil.example', 'https://console.example.com', 'null']) {
-    const r = await request.post('/api/session/hide', { headers: { Origin: origin }, data: { id: FIXTURE_A } });
+    const r = await request.post('/api/apps', { headers: { Origin: origin }, data: { name: 'x' } });
     expect(r.status(), `Origin: ${origin}`).toBe(403);
   }
   // No Origin header at all (curl, API clients) and a matching Origin both
   // reach the normal auth gate — 401 here, this context has no session.
-  expect((await request.post('/api/session/hide', { data: { id: FIXTURE_A } })).status()).toBe(401);
+  expect((await request.post('/api/apps', { data: { name: 'x' } })).status()).toBe(401);
   const origin = new URL(page.url()).origin;
-  expect((await request.post('/api/session/hide', { headers: { Origin: origin }, data: { id: FIXTURE_A } })).status()).toBe(401);
+  expect((await request.post('/api/apps', { headers: { Origin: origin }, data: { name: 'x' } })).status()).toBe(401);
 
   // The browser path — a same-origin POST from an authed page — keeps
-  // working (the browser attaches the page's own Origin).
+  // working (the browser attaches the page's own Origin). The schedule
+  // validator is the side-effect-free POST.
   await login(page);
   expect(await page.evaluate(async () =>
-    (await fetch('/api/session/unhide', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"all":true}',
+    (await fetch('/api/jobs/validate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"schedule":""}',
     })).status)).toBe(200);
 });
 
@@ -1315,7 +1287,7 @@ test('console/jobs/settings load requests nothing off-origin and glyphs render f
     }, null, { timeout: 8000 }).then(() => true, () => false);
 
   await page.goto('/');
-  await page.waitForSelector('session-sidebar .nav');
+  await page.waitForSelector('workspace-sidebar .nav');
   expect(await glyphsRender()).toBe(true);
   for (const p of ['/jobs', '/settings']) {
     await page.goto(p);
@@ -1326,16 +1298,19 @@ test('console/jobs/settings load requests nothing off-origin and glyphs render f
 
 test('logout ends live terminal sockets: signed-out message, no reconnect', async ({ page }) => {
   await login(page);
-  await page.fill('wa-input#new-name input', 'itest-signout');
-  await page.click('wa-button#new-btn');
+  const { id } = await makeTerminal(page, 'signout ws');
+  await page.click(`terminal-tabs .tab[data-term="${id}"]`);
   await waitForTermText(page, MARKER, 20_000);
-  await expect(page.locator('.terminal-status.ok')).toContainText('attached: itest-signout');
+  await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`);
 
   // Keep the page on the console while its session dies: the sidebar poll
-  // (and the terminal-closed re-poll) would otherwise 401 → /login.
-  await page.route('**/api/state', route => route.fulfill({
-    json: { me: 'ok', configured: true, live: [], sessions: [], hiddenCount: 0 },
-  }));
+  // (and the terminal-closed re-poll) would otherwise 401 → /login. The
+  // mock replays the §5-shaped state captured while still signed in — an
+  // EMPTY tree would re-render the console to the no-workspace state and
+  // tear the pane under test down with it.
+  const stateBody = await page.evaluate(async () => (await fetch('/api/state')).text());
+  await page.route('**/api/state', route =>
+    route.fulfill({ body: stateBody, contentType: 'application/json' }));
 
   // Protocol: a second socket on the same cookie sees 'signed-out' and
   // then the close — in that order.
@@ -1360,7 +1335,7 @@ test('logout ends live terminal sockets: signed-out message, no reconnect', asyn
   await expect(page.locator('.terminal-status.info')).toContainText('signed out');
   await waitForTermText(page, 'signed out');
   await expect.poll(() => page.evaluate(() =>
-    (document.querySelector('agent-terminal') as unknown as { websocket?: WebSocket }).websocket
+    (document.querySelector('agent-terminal:not(.hidden)') as unknown as { websocket?: WebSocket }).websocket
     === undefined)).toBe(true);
   await page.waitForTimeout(2600);
   await expect(page.locator('.terminal-status.info')).toContainText('signed out');
@@ -1405,8 +1380,8 @@ test('SIGTERM: every socket gets restart, closes, and the process exits 0', asyn
   const dbFile = path.join(dir, 'webpi.db');
   expect(setCredential(new StateDb(dbFile), USERNAME, PASSWORD).ok).toBe(true);
   const port = 3481;
-  // Per-run socket: a server left over from an interrupted run would hold
-  // the sig-live session name and /api/new would 409.
+  // Per-run socket: a server left over from an interrupted run would
+  // hold the derived t-<uuid> session name of a leftover row.
   const tmuxSocket = `webpi-itest-sig-${process.pid}`;
   const child = spawn(process.execPath, ['dist-server/server/main.js'], {
     env: {
@@ -1414,7 +1389,6 @@ test('SIGTERM: every socket gets restart, closes, and the process exits 0', asyn
       WEB_PI_PORT: String(port),
       WEB_PI_HOST: '127.0.0.1',
       WEB_PI_DB_FILE: dbFile,
-      WEB_PI_SESSIONS_DIR: path.join(dir, 'sessions'),
       WEB_PI_AGENT_DIR: path.join(dir, 'pi-agent'),
       WEB_PI_NEW_SESSION_CWD: dir,
       WEB_PI_TMUX_SOCKET: tmuxSocket,
@@ -1457,15 +1431,26 @@ test('SIGTERM: every socket gets restart, closes, and the process exits 0', asyn
       ws!.on('error', reject);
     });
 
-    // And one real console page attached to a session: the client must
+    // And one real console page attached to a terminal tab: the client must
     // treat 'restart' as reconnectable (unlike 'exit'/'error') — it says
     // so and starts its backoff instead of going dark.
     await page.goto(`http://127.0.0.1:${port}/login`);
     await signIn(page);
     await page.waitForURL(u => u.pathname === '/');
-    await page.fill('wa-input#new-name input', 'sig-live');
-    await page.click('wa-button#new-btn');
-    await expect(page.locator('.terminal-status.ok')).toContainText('attached: sig-live', { timeout: 20_000 });
+    const wsMade = await page.evaluate(async cwd => {
+      const w = await fetch('/api/workspaces', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'sig ws', cwd }),
+      });
+      return (await w.json()) as { id: string };
+    }, dir);
+    await page.evaluate(() =>
+      (document.querySelector('console-app') as unknown as { loadState(): Promise<void> }).loadState());
+    await page.click(`workspace-sidebar li[data-ws="${wsMade.id}"]`);
+    await page.click('terminal-tabs .tab-new'); // creates + selects the terminal tab
+    const tabId = await page.locator('terminal-tabs .tabs-bar .tab').getAttribute('data-term');
+    expect(tabId).toBeTruthy();
+    await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${tabId}`, { timeout: 20_000 });
 
     // Listeners armed BEFORE the signal: if the drain ever completes fast
     // (no keep-alive straggler), 'exit'/'close' can fire before a
@@ -1558,15 +1543,18 @@ test('auto-update setting: default OFF, toggle persists across reload, status li
 });
 
 test('the editor stays absent when unconfigured (task/ws-editor)', async ({ page, request }) => {
-  // This suite never sets WEB_PI_EDITOR_UPSTREAM, so the sidebar must
-  // render no open-in-editor affordances, /api/state reports editor:
+  // This suite never sets WEB_PI_EDITOR_UPSTREAM, so the selected
+  // workspace's tab bar renders no editor tab (the only editor
+  // affordance now — the sidebar's ⌷ buttons died with the Live/past
+  // lists), no editor iframe is ever built, /api/state reports editor:
   // false, and the same-origin proxy fails closed: /editor/ answers 404
   // signed in (the editor profile isn't deployed) and 401 unsigned in —
   // it is a data route, never a page, so no login shell either. The
   // cookieless leg uses Playwright's API client, which never sends the
   // Secure session cookie over this plain-http origin (AGENTS.md).
   await login(page);
-  await expect(page.locator('session-sidebar [data-editor]')).toHaveCount(0);
+  await expect(page.locator('terminal-tabs .editor-tab')).toHaveCount(0);
+  await expect(page.locator('terminal-tabs .editor-frame')).toHaveCount(0);
   expect((await api(page, 'GET', '/api/state')).json.editor).toBe(false);
 
   expect((await page.goto('/editor/'))?.status()).toBe(404);
@@ -1575,11 +1563,12 @@ test('the editor stays absent when unconfigured (task/ws-editor)', async ({ page
   expect((await request.get('/editor/')).status()).toBe(401);
 });
 
-test('deep link ?t=<uuid> attaches the terminal tab; an unknown uuid degrades to the error status (task/ws-terminal)', async ({ page }) => {
+test('deep link ?t=<uuid> opens the terminal\'s workspace with its tab selected; an unknown uuid degrades to a toast', async ({ page }) => {
   // Runs before the rate-limit test (last). The shared webServer spawns
   // the suite's cmd.sh on the webpi-itest socket; the terminal-mode WS
   // attach (plan §4/§7) is exercised through the real page wiring:
-  // console-app's pendingTerminal → agent-terminal attach('terminal').
+  // console-app's pendingTerminal → the workspace opens → the tab gets
+  // its pane.
   await login(page);
   const cwd = `${WORKSPACE}/t-deep-link`;
   fs.mkdirSync(cwd, { recursive: true });
@@ -1590,21 +1579,142 @@ test('deep link ?t=<uuid> attaches the terminal tab; an unknown uuid degrades to
   expect(made.json.live).toBe(true);
   const id = made.json.id as string;
 
-  // The deep link opens the tab's terminal directly (terminal tabs UI is
-  // branch 4's): attached to the derived t-<uuid> session, banner shown.
+  // The deep link opens the terminal's workspace with that tab selected:
+  // sidebar row + tab both active, attached to the derived t-<uuid>
+  // session, banner shown.
   await page.goto(`/?t=${id}`);
+  await expect(page.locator(`workspace-sidebar li[data-ws="${wsMade.json.id}"]`)).toHaveClass(/active/);
+  await expect(page.locator(`terminal-tabs .tab[data-term="${id}"]`)).toHaveClass(/active/);
   await expect(page.locator('.terminal-status')).toContainText(`attached: t-${id}`);
   await waitForTermText(page, MARKER);
 
-  // Graceful degradation: a well-formed uuid that is not ours is a dead
-  // end shown in the status line — the page stays up, nothing respawns.
+  // Graceful degradation: a well-formed uuid that is not ours is a toast,
+  // the page stays up, the first fixture workspace re-selected, nothing
+  // respawns. (The toast's text is read from the host's light OR shadow
+  // DOM — wherever the component renders its items.)
   await page.goto('/?t=99999999-9999-4999-8999-999999999999');
-  await expect(page.locator('.terminal-status')).toContainText('no such terminal');
+  await page.waitForFunction(() => {
+    const host = document.querySelector('wa-toast');
+    if (!host) return false;
+    const text = (host.textContent ?? '')
+      + (host.shadowRoot?.textContent ?? '');
+    return text.includes('no such terminal');
+  }, null, { timeout: 10_000 });
+  await expect(page.locator('workspace-sidebar li[data-ws].active')).toHaveCount(1);
+  expect(tmuxStatus(['has-session', '-t', 't-99999999-9999-4999-8999-999999999999'])).not.toBe(0);
 
   // Cleanup: close the tab (row + best-effort session kill) and the
-  // workspace, so later state reads (and the Live list) are unchanged.
+  // workspace, so later state reads are unchanged.
   expect((await api(page, 'DELETE', `/api/terminals/${id}`)).status).toBe(200);
   expect((await api(page, 'DELETE', `/api/workspaces/${wsMade.json.id}`)).status).toBe(200);
+});
+
+test('a terminal tab survives a WEB restart: tmux keeps the session, the client reconnects to it (plan §4/§12)', async ({ browser }) => {
+  test.setTimeout(120_000);
+  // The spawned-child pattern (jobs-persist precedent): the suite's shared
+  // webServer is NEVER SIGTERMed — this spec boots its own server on a
+  // spare port with its own db + tmux socket, so the shared login budget
+  // and the shared socket are untouched (the private server's limiter is
+  // its own; sign-in goes through its login form, in-page).
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-restart-survive-'));
+  const dbFile = path.join(dir, 'webpi.db');
+  expect(setCredential(new StateDb(dbFile), USERNAME, PASSWORD).ok).toBe(true);
+  const cwd = path.join(dir, 'work');
+  fs.mkdirSync(cwd, { recursive: true });
+  const cmd = path.join(dir, 'cmd.sh');
+  fs.writeFileSync(cmd, `#!/bin/sh\necho '${MARKER}'\nexec /bin/sh\n`);
+  fs.chmodSync(cmd, 0o755);
+  const port = 3482; // clear of the shared :3470 and the specs' 3471–3485
+  const tmuxSocket = `webpi-itest-survive-${process.pid}`;
+  const env = {
+    ...process.env,
+    WEB_PI_PORT: String(port),
+    WEB_PI_HOST: '127.0.0.1',
+    WEB_PI_DB_FILE: dbFile,
+    WEB_PI_AGENT_DIR: path.join(dir, 'pi-agent'),
+    WEB_PI_NEW_SESSION_CWD: cwd,
+    WEB_PI_TMUX_SOCKET: tmuxSocket,
+    WEB_PI_COMMAND: cmd,
+  };
+  const boot = (): ChildProcess => spawn(process.execPath, ['dist-server/server/main.js'], {
+    env, stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  const stop = async (child: ChildProcess): Promise<void> => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    child.kill('SIGTERM');
+    await new Promise<void>(resolve => {
+      child.once('exit', () => resolve());
+      setTimeout(() => child.kill('SIGKILL'), 5_000).unref();
+    });
+  };
+  let child = boot();
+  let bootLog = '';
+  child.stderr!.setEncoding('utf8').on('data', (d: string) => { bootLog += d; });
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  try {
+    await expect.poll(async () => {
+      try { return (await fetch(`http://127.0.0.1:${port}/login`)).status; } catch { return 0; }
+    }, { timeout: 20_000 }).toBe(200);
+
+    // Sign in through the private server's own form (its own budget).
+    await page.goto(`http://127.0.0.1:${port}/login`);
+    await signIn(page);
+    await page.waitForURL(u => u.pathname === '/');
+
+    // One workspace + terminal tab, attached through the real UI.
+    const wsMade = await api(page, 'POST', '/api/workspaces', { name: 'survive', cwd });
+    expect(wsMade.status).toBe(200);
+    await refreshState(page);
+    await page.click(`workspace-sidebar li[data-ws="${wsMade.json.id}"]`);
+    await page.click('terminal-tabs .tab-new');
+    const tabId = await page.locator('terminal-tabs .tabs-bar .tab').getAttribute('data-term');
+    expect(tabId).toBeTruthy();
+    await waitForTermText(page, MARKER, 20_000);
+    await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${tabId}`);
+    await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+    await page.keyboard.type('echo SURVIVES_$((40+2))\n');
+    await waitForTermText(page, 'SURVIVES_42', 10_000);
+
+    // The WEB restart (the common case, plan §4): the server SIGTERMs
+    // itself gracefully (restart frames), tmux keeps the session, and a
+    // fresh process on the same db + socket serves the reconnect.
+    await stop(child);
+    child = boot();
+    child.stderr!.setEncoding('utf8').on('data', (d: string) => { bootLog += d; });
+    await expect.poll(async () => {
+      try { return (await fetch(`http://127.0.0.1:${port}/login`)).status; } catch { return 0; }
+    }, { timeout: 20_000 }).toBe(200);
+
+    // The client said "restarting" and reconnected on its backoff — same
+    // tab, same session (no respawn: a respawn would be a fresh shell).
+    await expect(page.locator('.terminal-status')).toContainText('reconnect', { timeout: 15_000 });
+    await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${tabId}`, { timeout: 30_000 });
+    await waitForTermText(page, 'SURVIVES_42', 10_000); // the screen survived: tmux redraws it
+
+    // The tab is still live in the fresh server's state (tmux-derived) and
+    // the terminal is still usable.
+    const state = await api(page, 'GET', '/api/state');
+    const row = state.json.workspaces.find((w: { id: string }) => w.id === wsMade.json.id);
+    expect(row.terminals[0].live).toBe(true);
+    await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+    await page.keyboard.type('echo AFTER_$((40+2))\n');
+    await waitForTermText(page, 'AFTER_42', 10_000);
+
+    // And the empty state on a workspace-less db (the fixture tree isn't
+    // here to get in the way): delete the workspace, the selection falls
+    // back to the no-workspace prompt.
+    expect((await api(page, 'DELETE', `/api/workspaces/${wsMade.json.id}`)).status).toBe(200);
+    await refreshState(page);
+    await expect(page.locator('.tabs-empty p')).toContainText('no workspace selected');
+    await expect(page.locator('.tabs-empty .empty-new-workspace')).toBeVisible();
+  } finally {
+    await stop(child);
+    await ctx.close();
+    try { execFileSync('tmux', ['-L', tmuxSocket, 'kill-server'], { stdio: 'ignore' }); } catch { /* gone */ }
+    fs.rmSync(dir, { recursive: true, force: true });
+    if (bootLog && !/ExperimentalWarning/.test(bootLog)) console.log(`restart-survive stderr:\n${bootLog}`);
+  }
 });
 
 test('login rate limit kicks in (10 per 15 min per IP) and ignores a spoofed X-Forwarded-For', async ({ request }) => {

@@ -2,14 +2,17 @@
 // A job = name + 5-field cron schedule + arbitrary shell command, stored
 // in the state db (jobs table, src/lib/db.ts). The Scheduler ticks every
 // ~30s and fires due jobs; every run — scheduler-fired or "run now" —
-// opens a tmux session `webpi-<name>` on the app's own socket, so runs
-// are attachable from the console (plan §9: a live run via /?run=<name>).
-// Since plan §9 every fire also persists a DURABLE run log + exit code
-// under the workspace-side log dir: the wrapper argv (runCommandArgv)
+// opens a tmux session `webpi-<name>` on the app's own socket, so the
+// jobs page can show a run as live and link its console view (/?run=)
+// at it. Since plan §9 every fire also persists a DURABLE run log + exit
+// code under the workspace-side log dir: the wrapper argv (runCommandArgv)
 // tees output to a log file and captures the command's exit INSIDE the
 // pipeline; the tick's finish observation reads the exit file back into
 // job_runs (exit_code/finished_at), and pruning (RUN_HISTORY) unlinks
-// the pruned runs' files.
+// the pruned runs' files. Replaces the old systemd user-timer backend
+// (DESIGN_REVIEW §3.1): jobs now work wherever the app runs, container
+// included, at the cost of not firing while the server is down — boot
+// catch-up covers that.
 //
 // SECURITY INVARIANT: job names are validated (JOB_NAME_RE) before they
 // touch the db or tmux — every entry point takes a JobName, which

@@ -6,28 +6,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  JOB_NAME_RE, SESSION_ID_RE, TMUX_SESSION_NAME_RE, APP_SLUG_RE, OBJECT_KEY_RE, UUID_RE, normalizeJobName,
+  JOB_NAME_RE, TMUX_SESSION_NAME_RE, APP_SLUG_RE, OBJECT_KEY_RE, UUID_RE, normalizeJobName,
 } from '../../dist-server/src/schemas/patterns.js';
 import {
-  JobNameSchema, PiSessionIdSchema, TmuxSessionNameSchema,
+  JobNameSchema, TmuxSessionNameSchema,
 } from '../../dist-server/src/schemas/ids.js';
 
 const ok = (schema, v) => schema.safeParse(v).success;
 
 test('every ID pattern compiles under the v flag (HTML pattern attributes)', () => {
-  for (const re of [JOB_NAME_RE, SESSION_ID_RE, TMUX_SESSION_NAME_RE, APP_SLUG_RE, OBJECT_KEY_RE, UUID_RE]) {
+  for (const re of [JOB_NAME_RE, TMUX_SESSION_NAME_RE, APP_SLUG_RE, OBJECT_KEY_RE, UUID_RE]) {
     assert.doesNotThrow(() => new RegExp(re.source, 'v'), re.source);
   }
-});
-
-test('PiSessionIdSchema: uuid-ish ids pass unchanged; junk is rejected with the named message', () => {
-  const id = '019f4706-0000-7000-8000-000000000001';
-  assert.equal(PiSessionIdSchema.parse(id), id);
-  assert.equal(ok(PiSessionIdSchema, 'a'.repeat(64)), true);
-  for (const bad of ['', 'a'.repeat(65), '../etc', 'id with space', 'x/y', 5, null]) {
-    assert.equal(ok(PiSessionIdSchema, bad), false, String(bad));
-  }
-  assert.equal(PiSessionIdSchema.safeParse('../x').error.issues[0].message, 'invalid session id');
 });
 
 test('TmuxSessionNameSchema: tmux-safe charset, 1..64', () => {
@@ -48,7 +38,7 @@ test('JobNameSchema: lowercase charset up to 40, never webpi-*', () => {
   }
 });
 
-test('normalizeJobName: slugifies the way /api/new does, capped at 40', () => {
+test('normalizeJobName: slugifies like the shared slug rules, capped at 40', () => {
   assert.equal(normalizeJobName('  Nightly Check!! '), 'nightly-check');
   assert.equal(normalizeJobName('--a--'), 'a');
   assert.equal(normalizeJobName('x'.repeat(50)), 'x'.repeat(40));

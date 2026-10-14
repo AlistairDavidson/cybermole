@@ -9,12 +9,12 @@
 // swapped-in root: <jobs-app> re-reads it when the dialog opens, so a
 // list refresh renews the picker without a second fetch.
 import JobCard from './JobCard.astro';
-import type { AppOption } from '../../lib/apps';
+import type { AppState } from '../../lib/types';
 import type { ScheduledJob } from '../../lib/types';
 
 interface Props {
   jobs: ScheduledJob[] | null;
-  apps: AppOption[];
+  apps: AppState[];
 }
 const { jobs, apps } = Astro.props;
 ---

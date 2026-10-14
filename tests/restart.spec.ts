@@ -34,7 +34,6 @@ async function boot(dir: string): Promise<ChildProcess> {
       WEB_PI_PORT: String(PORT),
       WEB_PI_HOST: '127.0.0.1',
       WEB_PI_STATE_DIR: dir,
-      WEB_PI_SESSIONS_DIR: path.join(dir, 'sessions'),
       WEB_PI_TMUX_SOCKET: `webpi-restart-itest-${process.pid}`,
     }),
     stdio: ['ignore', 'pipe', 'pipe'],

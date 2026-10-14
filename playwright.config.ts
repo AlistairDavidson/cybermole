@@ -5,7 +5,7 @@ const PORT = 3470;
 
 export default defineConfig({
   testDir: './tests',
-  // Only the Playwright specs (e2e / state-dir / sessions-cache …): the
+  // Only the Playwright specs (e2e / state-dir / restart …): the
   // node:test units under tests/unit/ are `npm run test:unit` territory,
   // and Playwright's default pattern (*.@(spec|test).(c|m)…js) would import
   // them as specs and run their tests inline mid-suite.
@@ -38,7 +38,6 @@ export default defineConfig({
       WEB_PI_PORT: String(PORT),
       WEB_PI_HOST: '127.0.0.1',
       WEB_PI_DB_FILE: `${WORKSPACE}/webpi.db`,
-      WEB_PI_SESSIONS_DIR: `${WORKSPACE}/sessions`,
       WEB_PI_AGENT_DIR: `${WORKSPACE}/pi-agent`,
       WEB_PI_NEW_SESSION_CWD: WORKSPACE,
       WEB_PI_TMUX_SOCKET: TMUX_SOCKET,

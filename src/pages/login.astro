@@ -88,7 +88,7 @@ const validation = zodSchemaToHTMLAttributes(loginForm);
     });
     if (res.ok) {
       // The server renders this page in place of any signed-out page URL
-      // (/jobs, /?live=…): reload it to land where the user was going.
+      // (/jobs, /?t=…): reload it to land where the user was going.
       if (location.pathname === `${BASE}/login`) location.href = `${BASE}/`;
       else location.reload();
       return;

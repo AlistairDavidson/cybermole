@@ -1,8 +1,9 @@
 // workspaces.test.mjs — the workspace + terminal domain
 // (src/lib/workspaces.ts, workspaces-plan §3): every Result family at
 // every error code — save/update/delete workspace, new/close/rename
-// terminal, the attach lookup — including the cascade deletes and the
-// best-effort tmux kills. Runs against dist-server (npm run test:unit).
+// terminal, the attach lookup, the GET /api/state tree read + live diff
+// (plan §5) — including the cascade deletes and the best-effort tmux
+// kills. Runs against dist-server (npm run test:unit).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -56,9 +57,18 @@ const spawnFail = (errorCode, errorMessage = 'tmux new-session failed: boom') =>
 
 const spawnOk = async name => ({ ok: true, resultType: 'tmux_session', data: { name } });
 
+/** Live-name stub for the tree read's diff: a controllable set, empty by
+ *  default — a down tmux server reads as "nothing live" either way. */
+function liveNames(set = new Set()) {
+  return { names: set, liveSessionNames: async () => set };
+}
+
 function domain(db, username = USERNAME, killSession = async () => true, defaultCwd = os.tmpdir(),
-  spawnSession = spawnOk) {
-  return new Workspaces({ db, username: () => username, killSession, defaultCwd, spawnSession });
+  spawnSession = spawnOk, live = liveNames()) {
+  return new Workspaces({
+    db, username: () => username, killSession, defaultCwd, spawnSession,
+    liveSessionNames: live.liveSessionNames,
+  });
 }
 
 const wsRow = (db, id) =>
@@ -340,4 +350,57 @@ test('terminalForAttach: the row + its workspace\'s cwd; terminal_not_found / da
   const missing = await w.terminalForAttach(MISSING_WS);
   assert.equal(missing.errorCode, 'terminal_not_found');
   assert.equal((await domain(brokenDb()).terminalForAttach(MISSING_WS)).errorCode, 'database_error');
+});
+
+// ---------- workspaceTree (GET /api/state's half — plan §5) ----------
+
+test('workspaceTree: flat with appId, terminals in order, live from the tmux name set', async () => {
+  const db = freshDb();
+  const parent = await appless(db);
+  const names = new Set();
+  const w = domain(db, USERNAME, async () => true, os.tmpdir(), spawnOk, liveNames(names));
+
+  const consoleWs = await w.saveWorkspace({ name: 'scratch' });       // appId null
+  const appWs = await w.saveWorkspace({ appId: parent.id, name: 'proj' });
+  const orphan = await w.saveWorkspace({ name: 'other' });
+  const t1 = await w.newTerminal(consoleWs.data.id, undefined);
+  const t2 = await w.newTerminal(consoleWs.data.id, 'build');
+  const t3 = await w.newTerminal(appWs.data.id, undefined);
+  assert.equal(t1.ok && t2.ok && t3.ok, true);
+
+  // nothing live: every terminal reads live:false
+  let tree = await w.workspaceTree();
+  assert.equal(tree.ok, true, tree.errorMessage);
+  assert.equal(tree.resultType, 'workspace_tree');
+  assert.deepEqual(tree.data.workspaces.map(x => [x.id, x.appId]), [
+    [consoleWs.data.id, null], [appWs.data.id, parent.id], [orphan.data.id, null],
+  ]);
+  // flat rows carry name/cwd/order + their terminals in sort_order
+  const scratch = tree.data.workspaces.find(x => x.id === consoleWs.data.id);
+  assert.equal(scratch.name, 'scratch');
+  assert.equal(scratch.cwd, os.tmpdir());
+  assert.deepEqual(scratch.terminals.map(t => [t.title, t.order, t.live]),
+    [[null, 10, false], ['build', 20, false]]);
+  assert.equal(scratch.terminals[0].id, t1.data.id);
+  assert.equal(tree.data.workspaces.find(x => x.id === appWs.data.id).terminals.length, 1);
+
+  // the live diff: t-<uuid> present in the tmux set flips exactly that tab
+  names.add(terminalSessionName(t2.data.id));
+  tree = await w.workspaceTree();
+  assert.deepEqual(tree.data.workspaces.find(x => x.id === consoleWs.data.id)
+    .terminals.map(t => t.live), [false, true]);
+
+  // rows deleted out-of-band leave the tree (no orphans, no phantom tabs)
+  await w.closeTerminal(t1.data.id);
+  tree = await w.workspaceTree();
+  assert.equal(tree.data.workspaces.find(x => x.id === consoleWs.data.id).terminals.length, 1);
+});
+
+test('workspaceTree: database_error on an unreadable db', async () => {
+  const w = domain(brokenDb());
+  const tree = await w.workspaceTree();
+  assert.equal(tree.ok, false);
+  assert.equal(tree.resultType, 'workspace_tree');
+  assert.equal(tree.errorCode, 'database_error');
+  assert.match(tree.errorMessage, /could not read/);
 });

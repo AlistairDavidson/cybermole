@@ -29,8 +29,9 @@ export const envSchema = {
   // server and every pi session run as ANOTHER uid/container (workspace),
   // and this process is only a client on that shared socket — tmux gets
   // `-S <path>` instead of `-L <name>` (a relative name resolves per-uid
-  // as $TMUX_TMPDIR/tmux-<uid>/<name>, unusable across uids), and
-  // new/resume sessions refuse to fork a server (see src/lib/tmux.ts).
+  // as $TMUX_TMPDIR/tmux-<uid>/<name>, unusable across uids), and every
+  // session-creating call (terminal spawns, job runs, the WS attach)
+  // refuses to fork a server (see src/lib/tmux.ts).
   WEB_PI_TMUX_SOCKET: { type: 'string', context: 'server', access: 'secret', default: 'web-pi' },
   // Reverse-proxy hops in front of the server whose X-Forwarded-For entries
   // are trusted (nginx = 1, ALB → nginx = 2). 0: XFF is ignored entirely.
@@ -41,11 +42,11 @@ export const envSchema = {
   // dynamic default in env.ts ($WEB_PI_HOME/.local/state/web-pi).
   WEB_PI_STATE_DIR: { type: 'string', context: 'server', access: 'secret', optional: true },
   WEB_PI_AGENT_DIR: { type: 'string', context: 'server', access: 'secret', optional: true },
-  // sqlite state db (credential + hidden sessions) — dynamic default in env.ts.
+  // sqlite state db (login credential, login sessions, the workspace
+  // tree, jobs) — dynamic default in env.ts.
   WEB_PI_DB_FILE: { type: 'string', context: 'server', access: 'secret', optional: true },
   WEB_PI_CLIENT_DIR: { type: 'string', context: 'server', access: 'secret', optional: true },
   WEB_PI_ASTRO_ENTRY: { type: 'string', context: 'server', access: 'secret', optional: true },
-  WEB_PI_SESSIONS_DIR: { type: 'string', context: 'server', access: 'secret', optional: true },
   WEB_PI_NEW_SESSION_CWD: { type: 'string', context: 'server', access: 'secret', optional: true },
   // task/ws-jobs (workspaces-plan §9): the root under which job runs
   // persist their logs — /workspace/.webpi/job-logs, a path that exists

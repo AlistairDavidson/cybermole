@@ -18,7 +18,6 @@ import type { ActivateFailure, EnforcementFailure, ListCommitsFailure, Managemen
 import type { ConsoleStateFailure, SettingsStateFailure } from '../services';
 import type { PiUpdateFailure, PiUpdateResult } from '../settings';
 import type { FetchedObject, FetchObjectFailure, ObjectInfo, StatObjectFailure, StoreUploadFailure } from '../storage';
-import type { TmuxSessionFailure } from '../tmux';
 import type { UpdateResult } from '../types';
 import { UPLOAD_ALLOWED_MIME_TYPES } from '../../schemas/uploads';
 import type { FileUploadFailure, ParseFailure, ValidationFailure } from './parsing.service';
@@ -127,20 +126,6 @@ export function runLogResponse(data: RunLogData): Response {
   });
 }
 
-/** POST /api/new failures: the never-fork guard's refusal is a distinct,
- *  user-facing error (503 — retryable once the workspace side is back),
- *  unlike tmux's own failure, almost always a taken name (409). */
-export function tmuxSessionFailureResponse(f: TmuxSessionFailure): Response {
-  switch (f.errorCode) {
-    case 'server_not_running':
-      return jsonResponse({ error: f.errorMessage ?? 'workspace tmux server not running', code: f.errorCode }, 503);
-    case 'tmux_error':
-      return jsonResponse({ error: 'could not create session (name taken?)', code: f.errorCode }, 409);
-    default:
-      return f satisfies never;
-  }
-}
-
 // task/ws-schema (docs/workspaces-plan.md §6): the apps / workspaces /
 // terminals families → statuses. server_not_running and tmux_error on the
 // terminal family cannot fire until the spawn lands (task/ws-terminal)
@@ -197,8 +182,9 @@ export function invalidWorkspaceIdResponse(): Response {
 
 export type TerminalFailure = NewTerminalFailure | CloseTerminalFailure | RenameTerminalFailure;
 
-/** Terminal failures → status. server_not_running mirrors POST /api/new's
- *  503 (retryable once the workspace side is back). A spawn-failed create
+/** Terminal failures → status. server_not_running is the never-fork
+ *  guard's refusal (retryable once the workspace side is back — the WS
+ *  attach path surfaces the same message). A spawn-failed create
  *  still carries its row (plan §4: live:false, a dead tab) — the body
  *  includes it so the UI can show the tab. */
 export function terminalFailureResponse(f: TerminalFailure): Response {
