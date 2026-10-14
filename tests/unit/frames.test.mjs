@@ -20,6 +20,17 @@ test('accepts each frame shape, stripping unknown extra keys', () => {
     { type: 'attach', mode: 'live', target: 'dev' });
   assert.deepEqual(parseClientMsg('{"type":"attach","mode":"resume","id":"019f4706-0000-7000-8000-000000000001"}'),
     { type: 'attach', mode: 'resume', id: '019f4706-0000-7000-8000-000000000001' });
+  // task/ws-terminal (plan §7): the workspace-model modes join the union —
+  // 'terminal' carries the tab's uuid, 'run' a live job run's session
+  // name. The schemas keep both plain strings ON PURPOSE: server/main.ts
+  // brands them, so a junk id/target answers an error frame instead of
+  // the frame being silently dropped — so even a non-uuid id parses here.
+  assert.deepEqual(parseClientMsg('{"type":"attach","mode":"terminal","id":"123e4567-e89b-42d3-a456-426614174000"}'),
+    { type: 'attach', mode: 'terminal', id: '123e4567-e89b-42d3-a456-426614174000' });
+  assert.deepEqual(parseClientMsg('{"type":"attach","mode":"terminal","id":"junk-still-parses"}'),
+    { type: 'attach', mode: 'terminal', id: 'junk-still-parses' });
+  assert.deepEqual(parseClientMsg('{"type":"attach","mode":"run","target":"webpi-nightly"}'),
+    { type: 'attach', mode: 'run', target: 'webpi-nightly' });
   // a stray id on live / target on resume is ignored; mode decides
   assert.deepEqual(parseClientMsg('{"type":"attach","mode":"live","target":"dev","id":"x"}'),
     { type: 'attach', mode: 'live', target: 'dev' });
@@ -35,6 +46,11 @@ test('rejects non-objects, bad JSON, unknown types and mistyped fields — null,
     '{"type":"attach","mode":"live"}', '{"type":"attach","mode":"resume"}',
     '{"type":"attach","mode":"resume","id":7}', '{"type":"attach","mode":"other","target":"t"}',
     '{"type":"attach","target":"t"}',
+    // the new modes reject the same way: a missing/mistyped id or target
+    '{"type":"attach","mode":"terminal"}', '{"type":"attach","mode":"terminal","id":7}',
+    '{"type":"attach","mode":"run"}', '{"type":"attach","mode":"run","target":9}',
+    // a bare mode with no type is still junk
+    '{"mode":"terminal","id":"123e4567-e89b-42d3-a456-426614174000"}',
   ];
   for (const f of junk) {
     assert.doesNotThrow(() => parseClientMsg(f), f);

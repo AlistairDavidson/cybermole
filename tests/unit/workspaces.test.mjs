@@ -11,7 +11,7 @@ import * as path from 'node:path';
 import { StateDb, qb } from '../../dist-server/src/lib/db.js';
 import { Workspaces } from '../../dist-server/src/lib/workspaces.js';
 import { Apps } from '../../dist-server/src/lib/apps.js';
-import { terminalSessionName } from '../../dist-server/src/lib/tmux.js';
+import { terminalSessionName, SERVER_NOT_RUNNING_MSG } from '../../dist-server/src/lib/tmux.js';
 import { UUID_RE } from '../../dist-server/src/schemas/patterns.js';
 import { WorkspaceIdSchema, TerminalIdSchema } from '../../dist-server/src/schemas/ids.js';
 
@@ -36,8 +36,29 @@ function recorder() {
   return { killed, killSession: async name => (killed.push(name), true) };
 }
 
-function domain(db, username = USERNAME, killSession = async () => true, defaultCwd = os.tmpdir()) {
-  return new Workspaces({ db, username: () => username, killSession, defaultCwd, sessionEnv: {} });
+/** Spawn-session stub (task/ws-terminal, plan §4): records (name, cwd)
+ *  pairs and succeeds — the domain's spawn dep, injected for the same
+ *  reason as killSession (no tmux server in a unit run). */
+function spawner() {
+  const spawned = [];
+  return {
+    spawned,
+    spawnSession: async (name, cwd) => {
+      spawned.push({ name, cwd });
+      return { ok: true, resultType: 'tmux_session', data: { name } };
+    },
+  };
+}
+
+/** A spawn dep that fails with the given tmux family code. */
+const spawnFail = (errorCode, errorMessage = 'tmux new-session failed: boom') =>
+  async name => ({ ok: false, resultType: 'tmux_session', data: { name }, errorCode, errorMessage });
+
+const spawnOk = async name => ({ ok: true, resultType: 'tmux_session', data: { name } });
+
+function domain(db, username = USERNAME, killSession = async () => true, defaultCwd = os.tmpdir(),
+  spawnSession = spawnOk) {
+  return new Workspaces({ db, username: () => username, killSession, defaultCwd, spawnSession });
 }
 
 const wsRow = (db, id) =>
@@ -193,20 +214,25 @@ test('delete_workspace: workspace_not_found / database_error; a failing kill nev
   assert.equal(still.ok, true, still.errorMessage);
 });
 
-// ---------- new_terminal ----------
+// ---------- new_terminal (spawn-wired — task/ws-terminal, plan §4) ----------
 
-test('new_terminal: inserts the row (title optional, order max+10) and answers live:false — no spawn in this branch', async () => {
+test('new_terminal: inserts the row (title optional, order max+10), spawns t-<uuid> at the workspace cwd, live:true', async () => {
   const db = freshDb();
-  const w = domain(db);
+  const { spawned, spawnSession } = spawner();
+  const w = domain(db, USERNAME, async () => true, os.tmpdir(), spawnSession);
   const ws = (await w.saveWorkspace({ name: 'x', cwd: os.tmpdir() })).data;
   const first = await w.newTerminal(ws.id, 'main');
   assert.equal(first.ok, true, first.errorMessage);
   assert.equal(first.resultType, 'new_terminal');
-  assert.deepEqual(first.data, { id: first.data.id, workspaceId: ws.id, title: 'main', live: false });
+  assert.equal(first.data.workspaceId, ws.id);
+  assert.equal(first.data.title, 'main');
+  assert.equal(first.data.live, true); // the spawn succeeded
   assert.match(first.data.id, UUID_RE);
+  assert.deepEqual(spawned, [{ name: terminalSessionName(first.data.id), cwd: os.tmpdir() }],
+    'the derived name + the workspace cwd, exactly once');
   const second = await w.newTerminal(ws.id, undefined);
   assert.equal(second.data.title, null);
-  assert.equal(second.data.live, false);
+  assert.equal(second.data.live, true);
   const third = await w.newTerminal(ws.id, 'extra');
   assert.deepEqual(termRows(db, ws.id).map(r => r.sort_order), [10, 20, 30]);
   // created_by stamps the credential username
@@ -214,11 +240,40 @@ test('new_terminal: inserts the row (title optional, order max+10) and answers l
   assert.equal(row.created_by, 'tester');
 });
 
-test('new_terminal: workspace_not_found / database_error', async () => {
-  const w = domain(freshDb());
-  assert.equal((await w.newTerminal(MISSING_WS, undefined)).errorCode, 'workspace_not_found');
-  assert.equal((await w.newTerminal(MISSING_WS, undefined)).resultType, 'new_terminal');
-  assert.equal((await domain(brokenDb()).newTerminal(MISSING_WS, undefined)).errorCode, 'database_error');
+test('new_terminal: the row exists even when the spawn fails — server_not_running / tmux_error carry it (live:false)', async () => {
+  const db = freshDb();
+  const ws = (await domain(db).saveWorkspace({ name: 'x', cwd: os.tmpdir() })).data;
+  // The never-fork guard's refusal (the split shape, no server behind
+  // the absolute socket) — the row is still created and returned.
+  const w = domain(db, USERNAME, async () => true, os.tmpdir(),
+    spawnFail('server_not_running', SERVER_NOT_RUNNING_MSG));
+  const refused = await w.newTerminal(ws.id, undefined);
+  assert.equal(refused.ok, false, 'the spawn failure must report');
+  assert.equal(refused.resultType, 'new_terminal');
+  assert.equal(refused.errorCode, 'server_not_running');
+  assert.equal(refused.data.workspaceId, ws.id);
+  assert.equal(refused.data.live, false); // a dead tab, not a missing one
+  assert.deepEqual(termRows(db, ws.id).map(r => r.id), [refused.data.id], 'the row EXISTS despite the failure');
+  // tmux's own failure (a taken name, a bad cwd) — same contract.
+  const w2 = domain(db, USERNAME, async () => true, os.tmpdir(), spawnFail('tmux_error'));
+  const failed = await w2.newTerminal(ws.id, 'two');
+  assert.equal(failed.ok, false);
+  assert.equal(failed.errorCode, 'tmux_error');
+  assert.equal(failed.data.title, 'two');
+  assert.equal(failed.data.live, false);
+  assert.equal(termRows(db, ws.id).length, 2);
+});
+
+test('new_terminal: workspace_not_found / database_error (no row, no spawn)', async () => {
+  const { spawned, spawnSession } = spawner();
+  const w = domain(freshDb(), USERNAME, async () => true, os.tmpdir(), spawnSession);
+  const missing = await w.newTerminal(MISSING_WS, undefined);
+  assert.equal(missing.errorCode, 'workspace_not_found');
+  assert.equal(missing.resultType, 'new_terminal');
+  assert.equal(missing.data, undefined); // nothing was created
+  assert.deepEqual(spawned, []); // nothing was spawned
+  const broken = await domain(brokenDb()).newTerminal(MISSING_WS, undefined);
+  assert.equal(broken.errorCode, 'database_error');
 });
 
 // ---------- close / rename terminal ----------
@@ -238,6 +293,16 @@ test('close_terminal: deletes the row and best-effort-kills the derived session 
   const again = await w.closeTerminal(t.id);
   assert.equal(again.errorCode, 'terminal_not_found');
   assert.equal((await domain(brokenDb()).closeTerminal(t.id)).errorCode, 'database_error');
+});
+
+test('close_terminal: a FAILING kill still deletes the row (best-effort, plan §4)', async () => {
+  const db = freshDb();
+  const w = domain(db, USERNAME, async () => false); // kill-session errors
+  const ws = (await w.saveWorkspace({ name: 'x', cwd: os.tmpdir() })).data;
+  const t = (await w.newTerminal(ws.id, undefined)).data;
+  const closed = await w.closeTerminal(t.id);
+  assert.equal(closed.ok, true, 'a failed kill must never fail the close');
+  assert.deepEqual(termRows(db, ws.id), [], 'the row is gone either way');
 });
 
 test('rename_terminal: sets the title, null clears it; terminal_not_found / database_error', async () => {

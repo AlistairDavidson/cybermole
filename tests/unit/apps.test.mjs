@@ -171,7 +171,8 @@ test('delete_app: cascades workspaces and terminals, un-tags jobs, best-effort-k
   const { killed, killSession } = recorder();
   const a = apps(db, USERNAME, killSession);
   const w = new Workspaces({
-    db, username: () => USERNAME, killSession, defaultCwd: os.tmpdir(), sessionEnv: {},
+    db, username: () => USERNAME, killSession, defaultCwd: os.tmpdir(),
+    spawnSession: async name => ({ ok: true, resultType: 'tmux_session', data: { name } }),
   });
   const app = (await a.saveApp('gone')).data;
   const ws = (await w.saveWorkspace({ appId: app.id, name: 'under it' })).data;
@@ -211,7 +212,10 @@ test('delete_app: database_error on an unwritable db — and a failed kill never
   const db = freshDb();
   const failingKill = apps(db, USERNAME, async () => false);
   const app = (await failingKill.saveApp('doomed')).data;
-  const w = new Workspaces({ db, username: () => USERNAME, killSession: async () => false, defaultCwd: os.tmpdir(), sessionEnv: {} });
+  const w = new Workspaces({
+    db, username: () => USERNAME, killSession: async () => false, defaultCwd: os.tmpdir(),
+    spawnSession: async name => ({ ok: true, resultType: 'tmux_session', data: { name } }),
+  });
   const ws = (await w.saveWorkspace({ appId: app.id, name: 'x' })).data;
   await w.newTerminal(ws.id, undefined);
   const still = await failingKill.deleteApp('doomed');
