@@ -206,6 +206,9 @@ bootLog.info(objectStore.describe() === null
 // there (a Vite-bundled second copy would carry its own state; see
 // src/lib/services.ts).
 const services = createServices({ cfg: CFG, stateDb, auth, hiddenSessions, scheduler, autoUpdater, objectStore, sessionEnv,
+  // task/ws-schema: the apps/workspaces domains' best-effort terminal
+  // session kill (deletes/closes — src/lib/tmux.ts killSession).
+  killSession: tmux.killSession,
   // task/mgmt-page: the swap service's restart trigger + the honest
   // "serving now" LIVE snapshot (a getter: the import fallback above
   // flips it; docs/management-page.md §3.2).

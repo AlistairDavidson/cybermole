@@ -18,6 +18,8 @@ import type { StateDb } from './db';
 import { APP_ROOT, MANAGEMENT_CHECKOUT, RELEASES_DIR } from './env';
 import type { HiddenSessions } from './hidden-sessions';
 import { checkCron, type Scheduler } from './jobs';
+import { Apps } from './apps';
+import { Workspaces } from './workspaces';
 import { Releases } from './releases';
 import { listSessions } from './sessions';
 import type { ObjectStore } from './storage';
@@ -76,6 +78,13 @@ export interface WebPiServices {
   // task/mgmt-page: the management page's service — enforcement, git
   // reads, release bookkeeping, the swap (docs/management-page.md).
   management: Releases;
+  // task/ws-schema (docs/workspaces-plan.md §3): the app and
+  // workspace/terminal domains, constructed once here and reached by the
+  // /api/apps, /api/workspaces, /api/terminals routes.
+  /** The app domain — apps.ts. */
+  apps: Apps;
+  /** The workspace/terminal domain — workspaces.ts. */
+  workspaces: Workspaces;
   /** GET /api/state's body: pi's session store (title-cached scan) +
    *  the live tmux list + hidden flags. */
   consoleState(): Promise<ConsoleStateResult>;
@@ -113,6 +122,10 @@ export interface ServiceDeps {
   objectStore: ObjectStore;
   /** env for processes spawned inside tmux sessions (pi) */
   sessionEnv: Record<string, string>;
+  /** Best-effort tmux kill of one session (tmux.killSession) — the
+   *  terminal/app/workspace deletes; injected so the domains stay
+   * unit-testable without a tmux server. */
+  killSession: (name: TmuxSessionName) => Promise<boolean>;
   // task/mgmt-page: graceful-restart trigger for the swap step (the
   // server's own shutdown path — no docker socket anywhere), and the
   // LIVE snapshot of what this process serves (a GETTER: main.ts falls
@@ -136,8 +149,17 @@ export function createServices(deps: ServiceDeps): WebPiServices {
     requestRestart,
     verify: (username, password) => auth.verify(username, password),
   });
+  // task/ws-schema: the app + workspace domains. The username dep reads
+  // the credential row through Auth (created_by/updated_by — plan §2);
+  // killSession is main.ts's tmux.killSession; defaultCwd is
+  // WEB_PI_NEW_SESSION_CWD (POST /api/workspaces' cwd default — plan §6).
+  const apps = new Apps({ db: stateDb, username: () => auth.username(), killSession: deps.killSession });
+  const workspaces = new Workspaces({
+    db: stateDb, username: () => auth.username(), killSession: deps.killSession,
+    defaultCwd: cfg.newSessionCwd, sessionEnv,
+  });
   return {
-    cfg, auth, hiddenSessions, scheduler, autoUpdater, objectStore, management,
+    cfg, auth, hiddenSessions, scheduler, autoUpdater, objectStore, management, apps, workspaces,
 
     async consoleState() {
       // Both scans are async (and the session scan title-cached), so the
