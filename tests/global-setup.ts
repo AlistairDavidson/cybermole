@@ -70,9 +70,11 @@ export default async function globalSetup(): Promise<void> {
 
   // Live fixture tabs: real tmux sessions named t-<uuid> at their
   // workspace cwd (the derived-name contract, plan §4) running cmd.sh.
-  // scratch's first tab stays DEAD (no session) — the dead-tab story
-  // (live:false, attach respawns) is part of what the suite asserts.
-  for (const [group, index] of [[scratch, 1], [deploy, 0], [proj, 0]] as const) {
+  // scratch's second tab ('build') stays DEAD (no session) — the dead-tab
+  // story (live:false, attach respawns) is part of what the suite asserts.
+  // The first tab is the live one on purpose: it is the tab auto-selected
+  // at login, and a live auto-selection attaches without respawning.
+  for (const [group, index] of [[scratch, 0], [deploy, 0], [proj, 0]] as const) {
     const id = group.terminals[index];
     if (!id) throw new Error('global-setup: fixture terminal missing');
     execFileSync('tmux', ['-L', TMUX_SOCKET, 'new-session', '-d',

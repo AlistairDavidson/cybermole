@@ -81,7 +81,12 @@ export class TerminalTabs extends HTMLElement {
       return;
     }
     this.body.innerHTML = '';
-    for (const t of ws.terminals) this.addTabButton(t);
+    // addTabButton + updateTabButton: the bar renders with the state's
+    // dots/labels immediately — live flags are in hand, no poll needed.
+    for (const [i, t] of ws.terminals.entries()) {
+      this.addTabButton(t);
+      this.updateTabButton(t, i);
+    }
     this.appendEditorTab();
     this.appendPlusButton();
     this.body.appendChild(this.runPaneHost());

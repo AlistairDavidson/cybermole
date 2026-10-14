@@ -200,11 +200,6 @@ export class ConsoleApp extends HTMLElement {
     if (!r.ok) return;
     const st = await r.json() as ConsoleState;
     this.state = st;
-    // First load with nothing selected: land on the first workspace when
-    // one exists (the empty state's create prompt is for empty stores).
-    if (this.selected === null && st.workspaces.length > 0 && !this.pendingTerminal) {
-      this.selected = st.workspaces[0]!.id;
-    }
     // ?t=<uuid>: open the terminal's workspace with that tab selected.
     if (this.pendingTerminal) {
       const id = this.pendingTerminal;
@@ -215,7 +210,16 @@ export class ConsoleApp extends HTMLElement {
         this.applySelection(id);
         return;
       }
+      // A well-formed uuid that is not ours: shown, and the console still
+      // lands on a workspace (the next block's auto-select) instead of the
+      // empty state — the deep link degrades, the page doesn't.
       this.toast('no such terminal', { variant: 'neutral', icon: 'circle-info', duration: 6000 });
+    }
+    // Nothing selected (first load, or a missed deep link): land on the
+    // first workspace when one exists (the empty state's create prompt is
+    // for empty stores).
+    if (this.selected === null && st.workspaces.length > 0) {
+      this.selected = st.workspaces[0]!.id;
     }
     // ?run=<session name>: the transient run pane (the jobs page's view).
     if (this.pendingRun) {

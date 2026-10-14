@@ -289,7 +289,8 @@ test('console flow: create app → workspace (default cwd) → new terminal → 
   await expect(page.locator('wa-input#workspace-cwd input')).toHaveValue(WORKSPACE);
   await page.click('#workspace-save');
   await expect(page.locator('#workspace-name-error')).toHaveText('name is required');
-  expect(posts.filter(p => p === '/api/workspaces')).toEqual(['/api/workspaces']); // only the app so far
+  // blocked in the browser: no workspace POST yet — only the app POST so far
+  expect(posts.filter(p => p === '/api/workspaces')).toEqual([]);
   await page.fill('wa-input#workspace-name input', 'flow ws');
   await page.click('#workspace-save');
   // selected: the tab bar's no-terminals prompt carries its own +
@@ -321,7 +322,9 @@ test('console flow: create app → workspace (default cwd) → new terminal → 
 
   // --- close the tab: confirm dialog → row + tmux session both gone
   await page.click(`terminal-tabs .tab[data-term="${tabId}"] .tab-close`);
-  await expect(page.locator('#confirm-delete-text')).toContainText('flow ws');
+  // a title-less tab is confirmed by its uuid prefix
+  await expect(page.locator('#confirm-delete-text')).toContainText('terminal');
+  await expect(page.locator('#confirm-delete-text')).toContainText(tabId!.slice(0, 8));
   await page.click('#confirm-delete-ok');
   await expect(page.locator('terminal-tabs .tabs-bar .tab')).toHaveCount(0);
   await expect.poll(() => tmuxStatus(['has-session', '-t', `t-${tabId}`]), { timeout: 10_000 }).not.toBe(0);
@@ -615,7 +618,7 @@ test('files: upload streams into object storage; downloads come back as resumabl
   })).toBe(413);
   // A body with no Content-Length (chunked) is refused off the upload
   // route — the 10 KiB cap can't be checked up front.
-  expect(await raw('/api/new', { 'Content-Type': 'application/json', 'Transfer-Encoding': 'chunked' },
+  expect(await raw('/api/workspaces', { 'Content-Type': 'application/json', 'Transfer-Encoding': 'chunked' },
     ['{"name":', '"itest-chunked"}'])).toBe(411);
 });
 
@@ -924,9 +927,13 @@ test('the workspace filter matches names, hides empty groups, and survives the p
   await expect(rows).toHaveCount(0);
   await expect(groups).toHaveCount(0);
 
-  // Escape clears.
+  // Escape clears. Rows are permanent in the workspace model (unlike the
+  // old live sessions): count whatever the shared db holds at this point —
+  // the fixtures plus the workspaces earlier specs left behind.
+  const total = (await api(page, 'GET', '/api/state')).json.workspaces.length;
+  expect(total).toBeGreaterThanOrEqual(3); // the three fixtures
   await search.press('Escape');
-  await expect(rows).toHaveCount(3);
+  await expect(rows).toHaveCount(total);
 
   // A state poll re-render (the 15s interval, forced here) must not eat
   // the search box: value, focus and caret are restored.
@@ -956,7 +963,7 @@ test('the workspace filter matches names, hides empty groups, and survives the p
 
   // Escape clears again (a re-rendered search box still wires its events).
   await search.press('Escape');
-  await expect(rows).toHaveCount(3);
+  await expect(rows).toHaveCount(total);
 });
 
 test('signed out, any page URL serves the login page and sign-in returns to it', async ({ page }) => {
