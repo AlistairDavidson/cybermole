@@ -19,7 +19,7 @@ import { terminalSessionName } from './tmux';
 import type { DatabaseReadResult } from './db';
 import type { ResultFailure, ResultSuccess } from '../types/result';
 import type { AppId, AppSlug, TmuxSessionName } from '../types/branded';
-import { asAppId } from '../types/branded';
+import { asAppId, asAppSlug } from '../types/branded';
 import { APP_SLUG_RE, normalizeSlug } from '../schemas/patterns';
 
 const log = componentLogger('apps');
@@ -95,7 +95,7 @@ export class Apps {
     if (!slug || !APP_SLUG_RE.test(slug)) return fail('invalid_name', 'name must contain letters or digits');
     const actor = this.actor();
     if (!actor.ok) return fail('database_error', actor.errorMessage);
-    const taken = this.bySlug(slug as AppSlug);
+    const taken = this.bySlug(asAppSlug(slug));
     if (!taken.ok) return fail('database_error', taken.errorMessage);
     if (taken.data.value) return fail('duplicate_slug', `an app with the slug "${slug}" already exists`);
     const order = this.nextOrder();
@@ -104,12 +104,12 @@ export class Apps {
     const now = Date.now();
     const inserted = databaseUpdate('could not save the app', () =>
       this.deps.db.run(qb.insertInto('apps').values({
-        id, name: trimmed, slug: slug as AppSlug, sort_order: order.data.value,
+        id, name: trimmed, slug: asAppSlug(slug), sort_order: order.data.value,
         created_at: now, updated_at: now, created_by: actor.username, updated_by: actor.username,
       })));
     if (!inserted.ok) return fail('database_error', inserted.errorMessage);
     log.info(`app "${trimmed}" (${slug}) created`);
-    return { ok: true, resultType: 'save_app', data: { id, name: trimmed, slug: slug as AppSlug } } satisfies SaveAppSuccess;
+    return { ok: true, resultType: 'save_app', data: { id, name: trimmed, slug: asAppSlug(slug) } } satisfies SaveAppSuccess;
   }
 
   /** Rename an app. The slug is stable once created (v1 — plan §6); an
