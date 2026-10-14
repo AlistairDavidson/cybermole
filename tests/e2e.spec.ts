@@ -1243,8 +1243,8 @@ test('SIGTERM: every socket gets restart, closes, and the process exits 0', asyn
   const dbFile = path.join(dir, 'webpi.db');
   expect(setCredential(new StateDb(dbFile), USERNAME, PASSWORD).ok).toBe(true);
   const port = 3481;
-  // Per-run socket: a server left over from an interrupted run would hold
-  // the sig-live session name and /api/new would 409.
+  // Per-run socket: a server left over from an interrupted run would
+  // hold the derived t-<uuid> session name of a leftover row.
   const tmuxSocket = `webpi-itest-sig-${process.pid}`;
   const child = spawn(process.execPath, ['dist-server/server/main.js'], {
     env: {

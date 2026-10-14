@@ -154,8 +154,9 @@ export function invalidWorkspaceIdResponse(): Response {
 
 export type TerminalFailure = NewTerminalFailure | CloseTerminalFailure | RenameTerminalFailure;
 
-/** Terminal failures → status. server_not_running mirrors POST /api/new's
- *  503 (retryable once the workspace side is back). A spawn-failed create
+/** Terminal failures → status. server_not_running is the never-fork
+ *  guard's refusal (retryable once the workspace side is back — the WS
+ *  attach path surfaces the same message). A spawn-failed create
  *  still carries its row (plan §4: live:false, a dead tab) — the body
  *  includes it so the UI can show the tab. */
 export function terminalFailureResponse(f: TerminalFailure): Response {

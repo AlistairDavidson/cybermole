@@ -200,19 +200,23 @@ export class ConsoleApp extends HTMLElement {
     if (!r.ok) return;
     const st = await r.json() as ConsoleState;
     this.state = st;
-    // ?t=<uuid>: open the terminal's workspace with that tab selected.
-    if (this.pendingTerminal) {
-      const id = this.pendingTerminal;
-      const home = st.workspaces.find(w => w.terminals.some(t => t.id === id));
-      this.pendingTerminal = null;
+    // Deep links (/?t=…, /?run=…): consumed in ONE pass, on the first
+    // state load — a ?t= hit must not leave a ?run= armed to hijack the
+    // next poll.
+    const pendingTerminal = this.pendingTerminal;
+    const pendingRun = this.pendingRun;
+    this.pendingTerminal = null;
+    this.pendingRun = null;
+    if (pendingTerminal) {
+      const home = st.workspaces.find(w => w.terminals.some(t => t.id === pendingTerminal));
       if (home) {
         this.selected = home.id;
-        this.applySelection(id);
+        this.applySelection(pendingTerminal);
         return;
       }
       // A well-formed uuid that is not ours: shown, and the console still
-      // lands on a workspace (the next block's auto-select) instead of the
-      // empty state — the deep link degrades, the page doesn't.
+      // lands on a workspace (the auto-select below) instead of the empty
+      // state — the deep link degrades, the page doesn't.
       this.toast('no such terminal', { variant: 'neutral', icon: 'circle-info', duration: 6000 });
     }
     // Nothing selected (first load, or a missed deep link): land on the
@@ -222,11 +226,9 @@ export class ConsoleApp extends HTMLElement {
       this.selected = st.workspaces[0]!.id;
     }
     // ?run=<session name>: the transient run pane (the jobs page's view).
-    if (this.pendingRun) {
-      const target = this.pendingRun;
-      this.pendingRun = null;
+    if (pendingRun) {
       this.applySelection();
-      this.tabs()?.showRun(target);
+      this.tabs()?.showRun(pendingRun);
       return;
     }
     // A deleted-out-from-under selection falls back to the empty state.
@@ -357,9 +359,10 @@ export class ConsoleApp extends HTMLElement {
       await this.loadState();
       return;
     }
-    if (pending.kind !== 'terminal' && this.selected !== null && !this.state?.workspaces.some(w => w.id === this.selected)) {
-      this.selected = null; // the delete took the selection with it
-    }
+    // A delete that took the SELECTION with it is loadState's business: its
+    // deleted-out check clears the selection and the first-workspace
+    // auto-select lands on what remains (the empty state when nothing
+    // does).
     await this.loadState();
   }
 }

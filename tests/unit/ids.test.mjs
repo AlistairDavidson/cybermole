@@ -38,7 +38,7 @@ test('JobNameSchema: lowercase charset up to 40, never webpi-*', () => {
   }
 });
 
-test('normalizeJobName: slugifies the way /api/new does, capped at 40', () => {
+test('normalizeJobName: slugifies like the shared slug rules, capped at 40', () => {
   assert.equal(normalizeJobName('  Nightly Check!! '), 'nightly-check');
   assert.equal(normalizeJobName('--a--'), 'a');
   assert.equal(normalizeJobName('x'.repeat(50)), 'x'.repeat(40));

@@ -82,14 +82,6 @@ export class WorkspaceSidebar extends HTMLElement {
     }
     (this.querySelector('#new-app') as HTMLElement).onclick = () =>
       this.dispatchEvent(new CustomEvent('new-app', { bubbles: true, composed: true }));
-    this.querySelectorAll<HTMLElement>('[data-new-ws]').forEach(el => {
-      el.onclick = e => {
-        e.stopPropagation();
-        this.dispatchEvent(new CustomEvent('new-workspace', {
-          detail: { appId: el.dataset.newWs || null }, bubbles: true, composed: true,
-        }));
-      };
-    });
     this.wireRows();
   }
 
@@ -165,9 +157,18 @@ export class WorkspaceSidebar extends HTMLElement {
     this.wireRows();
   }
 
-  /** Row + group-header actions (delegated clicks would also work; the
-   *  explicit wiring matches the poll-rendered rows' lifecycle). */
+  /** Row + group-header actions — everything the innerHTML re-renders
+   *  (render() AND updateList(): a filter keystroke rebuilds the groups,
+   *  whose headers carry the + workspace buttons). */
   private wireRows(): void {
+    this.querySelectorAll<HTMLElement>('[data-new-ws]').forEach(el => {
+      el.onclick = e => {
+        e.stopPropagation();
+        this.dispatchEvent(new CustomEvent('new-workspace', {
+          detail: { appId: el.dataset.newWs || null }, bubbles: true, composed: true,
+        }));
+      };
+    });
     this.querySelectorAll<HTMLElement>('[data-ws]').forEach(el => {
       el.onclick = () => this.dispatchEvent(new CustomEvent('select-workspace', {
         detail: { id: el.dataset.ws }, bubbles: true, composed: true,
