@@ -17,6 +17,18 @@ and comment density aren't prescribed; match the surrounding code.
 tests) plus a no-emit `tsc` of the server build. `astro build` does
 not type-check, so run this before review.
 
+`npm run lint` / `npm run lint:fix` — ESLint 9 flat config
+(`eslint.config.mjs`): typescript-eslint strict + type-checked promise
+rules over `src/`, `server/`, `tests/`, `tools/` and the `.mjs` configs.
+Per-line disables in the code mark deliberate idioms (escaped `\-` in
+schema regexes, the distribution `any` in `src/types/result.ts`,
+computed `delete`s) — don't "fix" those.
+
+`npm run format` / `npm run format:check` — Prettier (`.prettierrc`,
+code-only scope per `.prettierignore`). The repo-wide `npm run format`
+has NOT been applied yet (TODO.md, Quality) — don't run `format` on
+files you didn't otherwise touch until that lands.
+
 `npm run test:unit` — node:test units in `tests/unit/` against the
 compiled `dist-server` — `npm run build` first (tsc-only is enough:
 `tsc -p tsconfig.server.json && npm run test:unit`).

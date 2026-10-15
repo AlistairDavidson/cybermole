@@ -10,6 +10,7 @@
 /** tmux session names on the app socket. 64, not 40: a job run's session
  *  is `webpi-<job name>` and job names go up to 40 (JOB_NAME_RE), so a
  *  40-char cap rejected every run of a job named longer than 34. */
+// eslint-disable-next-line no-useless-escape -- escaped `-` compiles as an HTML `pattern` attribute (`v` flag); tests/unit/zod-attributes.test.mjs guards this
 export const TMUX_SESSION_NAME_RE = /^[a-zA-Z0-9_\-]{1,64}$/;
 
 /** Object keys POST /api/files mints (src/lib/storage.ts): uploads/<uuid v4>,

@@ -14,6 +14,10 @@
     "start": "docker compose up -d --build",
     "set-password": "node dist-server/server/set-password.js",
     "check": "astro check && tsc -p tsconfig.server.json --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test:e2e": "playwright test",
     "test:unit": "tsc -p tsconfig.server.json && node --test tests/unit/*.test.mjs",
     "prepack": "npm run build && node tools/prepack.mjs"
@@ -56,6 +60,10 @@
     "@playwright/test": "^1.59.1",
     "@types/node": "^26.6.3",
     "@types/ws": "^8.18.2",
-    "typescript": "^5.8.0"
+    "eslint": "^9.39.5",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.10",
+    "typescript": "^5.8.0",
+    "typescript-eslint": "^8.71.2"
   }
 }

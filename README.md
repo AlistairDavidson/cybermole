@@ -202,6 +202,13 @@ tab; open terminals drop with a restart). A failed build keeps the
 running server on the last good one, and the in-memory login rate limit
 clears on every restart, so neither ever bites while iterating.
 
+Quality commands, host or container alike:
+
+```sh
+npm run lint           # ESLint (eslint.config.mjs) — lint:fix = --fix
+npm run format:check   # Prettier (.prettierrc) — format = --write
+```
+
 **On the host** (no docker): `npm run dev:server` alone serves the same
 `:3001` (build + boot + rebuild/restart on change) — you lose only the
 containers around it. Uploads need the dev object store (without it,

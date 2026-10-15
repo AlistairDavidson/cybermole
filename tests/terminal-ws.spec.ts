@@ -101,6 +101,7 @@ function tmux(socket: string, args: string[]): { status: number | null; stdout: 
 
 /** One JSON call against the private server. */
 async function api(cookie: string, method: string, url: string, body?: unknown):
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- the parsed body, callers narrow it
   Promise<{ status: number; json: any }> {
   const r = await fetch(`${BASE}${url}`, {
     method,

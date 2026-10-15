@@ -32,7 +32,7 @@ export class AppHeader extends HTMLElement {
     switch (failure.errorCode) {
       case 'signed_out': return;
       case 'network_error':
-        (document.querySelector('wa-toast') as WaToast | null)?.create(
+        void (document.querySelector('wa-toast') as WaToast | null)?.create(
           'network error — try again',
           { variant: 'danger', icon: 'triangle-exclamation', duration: 6000 },
         );

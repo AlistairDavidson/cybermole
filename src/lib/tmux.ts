@@ -26,7 +26,6 @@ import { ENV, RAW_ENV } from './env';
 import { componentLogger } from './logger';
 import type { ResultFailure, ResultSuccess } from '../types/result';
 import { asTmuxSessionName, type JobName, type TerminalId, type TmuxSessionName } from '../types/branded';
-import { TMUX_SESSION_NAME_RE } from '../schemas/patterns';
 
 export const SOCKET = ENV.WEB_PI_TMUX_SOCKET;
 

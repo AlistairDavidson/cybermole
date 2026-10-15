@@ -139,8 +139,8 @@ export class ConsoleApp extends HTMLElement {
         ?.setZodSchema(workspaceForm);
     });
 
-    this.loadState();
-    this.pollTimer = setInterval(() => this.loadState(), 15000);
+    void this.loadState();
+    this.pollTimer = setInterval(() => { void this.loadState(); }, 15000);
   }
 
   disconnectedCallback(): void {
@@ -164,7 +164,7 @@ export class ConsoleApp extends HTMLElement {
   }
 
   private toast(message: string, options?: Record<string, unknown>): void {
-    (this.querySelector('wa-toast') as WaToast | null)?.create(message, options);
+    void (this.querySelector('wa-toast') as WaToast | null)?.create(message, options);
   }
 
   /** A request that got no answer. Signed out needs no toast: the page is
@@ -181,6 +181,7 @@ export class ConsoleApp extends HTMLElement {
 
   /** One JSON call; the parsed body (error bodies included) comes back. */
   private async call(method: string, path: string, body?: Record<string, unknown>):
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the parsed body, callers narrow it (errorToast: { error?: string })
     Promise<{ ok: boolean; status: number; json: any } | null> {
     const sent = await signedInFetch(`${BASE}${path}`, {
       method, headers: { 'Content-Type': 'application/json' },

@@ -104,6 +104,7 @@ export function readLokiConfig(): LokiConfig | null {
   const label = job ?? 'webpi';
   // A conservative label value: safe to interpolate into a LogQL stream
   // selector ({job="webpi"}) without escaping games.
+  // eslint-disable-next-line no-useless-escape -- escaped `-` is house style (CODE_STYLE §5: schema regexes render as HTML `pattern` attributes, compiled with the `v` flag)
   if (!/^[a-zA-Z0-9_][a-zA-Z0-9_\-]{0,63}$/.test(label)) {
     throw new Error(`WEB_PI_LOKI_JOB=${JSON.stringify(label)} is not a valid job label ` +
       '(letters, digits, "_" and "-", max 64 chars)');
@@ -133,6 +134,7 @@ export function readObjectStoreConfig(): ObjectStoreConfig | null {
     throw new Error(`WEB_PI_S3_ENDPOINT=${JSON.stringify(endpoint)} is not an http(s) URL`);
   }
   // S3's bucket naming rules (path-style requests put it in the URL path).
+  // eslint-disable-next-line no-useless-escape -- escaped `-` is house style (CODE_STYLE §5)
   if (!/^[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]$/.test(RAW_ENV.WEB_PI_S3_BUCKET)) {
     throw new Error(`WEB_PI_S3_BUCKET=${JSON.stringify(RAW_ENV.WEB_PI_S3_BUCKET)} is not a valid bucket name`);
   }
