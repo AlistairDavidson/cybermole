@@ -36,6 +36,12 @@ export const envSchema = {
   // Reverse-proxy hops in front of the server whose X-Forwarded-For entries
   // are trusted (nginx = 1, ALB → nginx = 2). 0: XFF is ignored entirely.
   WEB_PI_TRUST_PROXY: { type: 'number', context: 'server', access: 'secret', default: 0 },
+  // Terminal WS upgrades allowed per minute per client IP (the brute-force
+  // gate next to the login limiter, server/main.ts). Default is a production
+  // shape; the e2e suite is serial from one IP and legitimately upgrades far
+  // more (every terminal test attaches, pops, reconnects), so its config
+  // raises this — the jobs test's run attach was refused at exactly 30.
+  WEB_PI_WS_UPGRADES_PER_MIN: { type: 'number', context: 'server', access: 'secret', default: 30 },
   // Dynamic defaults — see env.ts (homedir / app root / fs probe / cross-var).
   WEB_PI_HOME: { type: 'string', context: 'server', access: 'secret', optional: true },
   // One directory for all web-pi state (db, runtime pi agent dir) —

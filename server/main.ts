@@ -237,7 +237,7 @@ const services = createServices({ cfg: CFG, stateDb, auth, scheduler, autoUpdate
 // process (and the tick interval) down anyway.
 const shutdownScheduler = (): void => scheduler.stop();
 const loginLimiter = new RateLimiter(10, 15 * 60 * 1000);
-const wsLimiter = new RateLimiter(30, 60 * 1000);
+const wsLimiter = new RateLimiter(Math.max(1, ENV.WEB_PI_WS_UPGRADES_PER_MIN), 60 * 1000);
 // Password hashes in flight at once. Each scrypt holds 16 MiB and a libuv
 // threadpool thread (4 by default, shared with fs) — past this, logins get
 // 503 instead of queueing without bound.

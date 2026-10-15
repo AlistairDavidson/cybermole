@@ -37,6 +37,10 @@ export default defineConfig({
     env: {
       WEB_PI_PORT: String(PORT),
       WEB_PI_HOST: '127.0.0.1',
+      // The suite is serial from one IP and legitimately upgrades far more
+      // than a human (every terminal test attaches/pops/reconnects) — the
+      // production default of 30/min refuses the jobs test's run attach.
+      WEB_PI_WS_UPGRADES_PER_MIN: '300',
       WEB_PI_DB_FILE: `${WORKSPACE}/webpi.db`,
       WEB_PI_AGENT_DIR: `${WORKSPACE}/pi-agent`,
       WEB_PI_NEW_SESSION_CWD: WORKSPACE,
