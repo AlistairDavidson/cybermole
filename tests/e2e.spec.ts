@@ -707,6 +707,93 @@ test('hidden tabs keep their WS attached: state and scrollback persist, refit on
   expect(sockets).toEqual(['1', '1']); // both panes: OPEN
 });
 
+test('terminal toolbar: copy output and download transcript capture the terminal buffer', async ({ page }) => {
+  test.setTimeout(60_000);
+  await login(page);
+  const { id } = await makeTerminal(page, 'transcript ws');
+  await page.click(`terminal-tabs .tab[data-term="${id}"]`);
+  await waitForTermText(page, MARKER, 20_000);
+
+  // More output than one screen (the default viewport holds ~30 rows) —
+  // the head of the seq ends up scrolled off the pane. While a pane is
+  // attached, tmux holds the client terminal in its ALTERNATE screen, so
+  // the client's buffer IS the visible screen (tmux's history is
+  // server-side — the task/terminal-search backfill TODO); the walk's
+  // scrollback half is exercised against a stub buffer below.
+  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page.keyboard.type('seq 1 120; echo TAIL_$((40+2))\n');
+  await waitForTermText(page, 'TAIL_42', 10_000);
+
+  // The toolbar: two independent buttons with tooltips, overlaid on the
+  // pane (the fit tests around this one keep proving the ResizeObserver
+  // sizing is untouched).
+  const toolbar = page.locator('agent-terminal:not(.hidden) .terminal-toolbar');
+  await expect(toolbar).toBeVisible();
+  const copyBtn = toolbar.locator('wa-button.tb-copy-output');
+  const dlBtn = toolbar.locator('wa-button.tb-download-transcript');
+  await expect(copyBtn).toHaveCount(1);
+  await expect(dlBtn).toHaveCount(1);
+  expect(await copyBtn.getAttribute('title')).toContain('copy');
+  expect(await dlBtn.getAttribute('title')).toContain('download');
+
+  // The buffer walk behind both buttons: the screen's content — the seq
+  // tail, the fresh output — with trailing blank rows trimmed (the last
+  // line is non-empty).
+  const walked = await page.evaluate(() =>
+    (document.querySelector('agent-terminal:not(.hidden)') as unknown as { transcriptText(): string })
+      .transcriptText());
+  expect(walked).toContain('118\n119\n120');
+  expect(walked).toContain('TAIL_42');
+  const lines = walked.split('\n');
+  expect(lines[lines.length - 1]!.trim()).not.toBe('');
+
+  // The walk's scrollback + trim half, deterministically: swap in a stub
+  // buffer shaped like one WITH scrollback (3000 rows: a scrolled-off
+  // head, content, then the never-written blank rows a fresh pane has).
+  const stubbed = await page.evaluate(() => {
+    const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as
+      { terminal: unknown; transcriptText(): string };
+    const real = el.terminal;
+    const rows = Array.from({ length: 3000 }, (_, i) =>
+      i < 2500 ? `scroll-line-${i}` : (i === 2500 ? 'last-content-row' : ''));
+    el.terminal = {
+      buffer: {
+        active: {
+          length: rows.length,
+          getLine: (i: number) => ({ translateToString: () => rows[i] ?? '' }),
+        },
+      },
+    };
+    const text = el.transcriptText();
+    el.terminal = real;
+    return text;
+  });
+  expect(stubbed.startsWith('scroll-line-0\nscroll-line-1\n')).toBe(true);
+  expect(stubbed).toContain('\nlast-content-row');
+  expect(stubbed.endsWith('\n')).toBe(false); // 499 trailing blanks trimmed
+
+  // copy output → the REAL clipboard (permissions granted for this
+  // test's context), byte-identical with the walk above.
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await copyBtn.click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(walked);
+  await expect(page.locator('wa-toast wa-toast-item', { hasText: 'copied the terminal output' })).toBeVisible();
+
+  // download transcript → a blob download named after the attached
+  // session, ANSI-serialized (the SGR escapes that make it an .ans).
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    dlBtn.click(),
+  ]);
+  expect(download.suggestedFilename()).toBe(`t-${id}-transcript.ans`);
+  const saved = await download.path();
+  const ans = fs.readFileSync(saved!, 'utf8');
+  expect(ans).toContain('TAIL_42');
+  expect(ans).toContain('120');
+  expect(ans).toContain('\u001b[');
+  await download.cancel();
+});
+
 // jobs (in-process scheduler): the backend is inside the server, so the
 // suite exercises the real thing everywhere — no degraded mode, no
 // systemctl dependency. Runs land on the suite's tmux socket like any

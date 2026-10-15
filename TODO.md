@@ -96,4 +96,4 @@ xterm:
   
   search addon + ctrl+F bar (wa-input cluster in terminal toolbar, NOT the workspace sidebar - 15s innerHTML poll eats state) server backfill via `tmux capture-pane -S -5000 -p` written to WS on attach so attached terminals have searchable scrollback
 
-  serialize - "download transcript" / "copy output" button, zero server changes; maybe e2e assertions on terminal state
+  ~~serialize - "download transcript" / "copy output" button, zero server changes; maybe e2e assertions on terminal state~~ DONE (task/terminal-transcript: .terminal-toolbar in agent-terminal — copy = plain-text buffer walk to the clipboard, download = serialize() .ans; real-clipboard + download-event e2e)

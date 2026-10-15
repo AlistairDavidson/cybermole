@@ -288,9 +288,28 @@ console-app .dialog-note {
 agent-terminal {
   flex: 1; display: flex; flex-direction: column;
   min-width: 0; min-height: 0; padding: var(--wa-space-xs);
+  /* the toolbar's containing block */
+  position: relative;
 }
 agent-terminal .terminal-container { flex: 1; min-height: 0; }
 agent-terminal .terminal-container .xterm { height: 100%; }
+/* The pane's toolbar (transcript actions — task/terminal-transcript; the
+   find bar joins it — task/terminal-search): overlaid on the terminal's
+   top-right corner. Absolutely positioned on PURPOSE — it must never be
+   in .terminal-container's flow, or it would eat a row of terminal and
+   muddy the ResizeObserver fit's box (AGENTS.md: the terminal tracks the
+   available space). The translucent surface keeps glyphs underneath from
+   bleeding through the small buttons. */
+agent-terminal .terminal-toolbar {
+  position: absolute;
+  top: var(--wa-space-3xs);
+  right: var(--wa-space-3xs);
+  z-index: 2;
+  padding: var(--wa-space-3xs) var(--wa-space-2xs);
+  border-radius: var(--wa-border-radius-m);
+  background: color-mix(in srgb, var(--wa-color-surface-raised) 85%, transparent);
+  border: var(--wa-border-width-s) solid var(--wa-color-surface-border);
+}
 agent-terminal .terminal-status {
   display: flex; align-items: center; gap: var(--wa-space-2xs);
   color: var(--wa-color-text-quiet); font-size: var(--wa-font-size-2xs);
