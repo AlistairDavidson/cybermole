@@ -114,8 +114,34 @@ workspace-sidebar {
   margin: var(--wa-space-s) var(--wa-space-2xs) var(--wa-space-3xs);
 }
 .nav .ws-group h2 .g-name {
+  flex: 1; min-width: 0; /* the chevron + actions flank it; ellipsis needs the shrink */
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* Group collapse toggle (task/collapsible-apps): a real <button> (the
+   poll discipline forbids stateful wa-* here); its chevron rotates with
+   aria-expanded, and the rows container's native [hidden] does the
+   hiding — both written by the render/toggle, never by JS layout. */
+.nav .ws-group h2 .g-collapse {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: none;
+  width: var(--wa-space-l); height: var(--wa-space-l);
+  padding: 0;
+  background: none; border: none;
+  border-radius: var(--wa-border-radius-s);
+  color: var(--wa-color-text-quiet); cursor: pointer; font: inherit;
+}
+.nav .ws-group h2 .g-collapse:hover,
+.nav .ws-group h2 .g-collapse:focus-visible {
+  color: var(--wa-color-brand-on-quiet);
+}
+.nav .ws-group h2 .g-collapse wa-icon {
+  font-size: var(--wa-font-size-2xs);
+  transition: transform var(--wa-transition-normal) var(--wa-transition-easing); /* nice-to-have rotation; state is aria-expanded */
+}
+.nav .ws-group h2 .g-collapse[aria-expanded='false'] wa-icon {
+  transform: rotate(-90deg);
+}
+.nav .ws-group-rows[hidden] { display: none; } /* beats any future display rule over [hidden] */
 .nav .ws-group h2 .g-actions {
   display: inline-flex; align-items: center; gap: var(--wa-space-3xs); flex: none;
 }

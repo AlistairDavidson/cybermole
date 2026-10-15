@@ -1108,6 +1108,70 @@ test('the workspace filter matches names, hides empty groups, and survives the p
   await expect(rows).toHaveCount(total);
 });
 
+test('nav groups collapse per app: rows hide, state survives poll re-render + reload, aria-expanded tracks it (task/collapsible-apps)', async ({ page }) => {
+  await login(page);
+  // Fixture order (global-setup): the console group first, then "alpha app".
+  const groups = page.locator('workspace-sidebar .ws-group');
+  const app = page.locator('workspace-sidebar .ws-group[data-group="alpha-app"]');
+  const toggle = app.locator('h2 .g-collapse');
+  const rows = app.locator('.ws-group-rows');
+
+  // Both groups start expanded.
+  await expect(groups.first().locator('h2 .g-collapse')).toHaveAttribute('aria-expanded', 'true');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(rows).toBeVisible();
+  await expect(rows.locator('li[data-ws]')).toBeVisible();
+
+  // Collapse the app group: its rows hide, the header stays (name +
+  // the + workspace affordance), the console group is untouched.
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(rows).toBeHidden();
+  await expect(rows.locator('li[data-ws]')).toBeHidden();
+  await expect(app.locator('h2 .g-name')).toHaveText('alpha app');
+  await expect(groups.first().locator('.ws-group-rows')).toBeVisible();
+  // The toggle is a real <button> flipped in place — focus survives the click.
+  await expect(toggle).toBeFocused();
+
+  // Persisted under the app's stable slug in the namespaced localStorage key.
+  const stored = await page.evaluate(() => localStorage.getItem('webpi:nav-collapsed'));
+  expect(JSON.parse(stored ?? '{}')).toEqual({ 'alpha-app': true });
+
+  // The 15s poll re-render keeps the group collapsed (no flicker open).
+  await refreshState(page);
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(rows).toBeHidden();
+
+  // The collapsed header's + workspace affordance still works.
+  await app.locator('[data-new-ws]').click();
+  await expect(page.locator('wa-input#workspace-name input')).toBeVisible();
+  await page.locator('#workspace-dialog wa-button[data-dialog="close"]').click();
+
+  // Reload: the collapse persists from localStorage (same context).
+  await page.reload();
+  await page.waitForSelector('workspace-sidebar .nav');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(rows).toBeHidden();
+
+  // A non-empty filter forces groups open (matches visible) without
+  // touching the stored state; clearing it restores the collapse.
+  const search = page.locator('wa-input#workspace-search input');
+  await search.fill('proj');
+  await expect(app.locator('li[data-ws]')).toBeVisible();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await search.fill('');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(rows).toBeHidden();
+
+  // Expanding again works and persists (keyboard path — it's a real button).
+  await toggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(rows).toBeVisible();
+  const storedAfterExpand = await page.evaluate(() => localStorage.getItem('webpi:nav-collapsed')) ?? '{}';
+  expect(JSON.parse(storedAfterExpand)).toEqual({});
+});
+
 test('signed out, any page URL serves the login page and sign-in returns to it', async ({ page }) => {
   // Regression: /jobs answered a bare "unauthorized" while / and /settings
   // rendered the login page.
