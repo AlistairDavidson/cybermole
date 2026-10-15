@@ -14,13 +14,29 @@ import * as pty from 'node-pty';
 import { Auth, RateLimiter, type Auth as AuthType } from '../src/lib/auth';
 import { StateDb } from '../src/lib/db';
 import * as tmux from '../src/lib/tmux';
-import { ENV, RAW_ENV, APP_ROOT, PI_BIN, PI_AGENT_DIR, PI_SESSION_DIR, readObjectStoreConfig, readEditorUpstream, RELEASES_DIR } from '../src/lib/env';
+import {
+  ENV,
+  RAW_ENV,
+  APP_ROOT,
+  PI_BIN,
+  PI_AGENT_DIR,
+  PI_SESSION_DIR,
+  readObjectStoreConfig,
+  readEditorUpstream,
+  RELEASES_DIR,
+} from '../src/lib/env';
 import { componentLogger, closeLogger } from '../src/lib/logger';
 import * as jobs from '../src/lib/jobs';
 import { AutoUpdater } from '../src/lib/auto-update';
 import {
-  EDITOR_HOP_BY_HOP_HEADERS, EditorTunnelTracker, editorBodyCapStatus,
-  editorSecurityHeaders, editorUpgradeHeaders, isEditorHttpPath, isEditorUpgradePath, type EditorUpstream,
+  EDITOR_HOP_BY_HOP_HEADERS,
+  EditorTunnelTracker,
+  editorBodyCapStatus,
+  editorSecurityHeaders,
+  editorUpgradeHeaders,
+  isEditorHttpPath,
+  isEditorUpgradePath,
+  type EditorUpstream,
 } from '../src/lib/editor';
 import { createServices, type ServerConfig, type WebPiLocals } from '../src/lib/services';
 import { resolveServingDirs } from '../src/lib/releases';
@@ -62,8 +78,10 @@ const home = ENV.WEB_PI_HOME;
 // it would overwrite their config.
 const agentDir = ENV.WEB_PI_AGENT_DIR;
 if (PI_AGENT_DIR && !RAW_ENV.WEB_PI_AGENT_DIR) {
-  bootLog.warn(`PI_CODING_AGENT_DIR is set (${PI_AGENT_DIR}) — ignoring it; ` +
-    `web-pi uses its own runtime agent dir (${agentDir}). Set WEB_PI_AGENT_DIR to move it.`);
+  bootLog.warn(
+    `PI_CODING_AGENT_DIR is set (${PI_AGENT_DIR}) — ignoring it; ` +
+      `web-pi uses its own runtime agent dir (${agentDir}). Set WEB_PI_AGENT_DIR to move it.`,
+  );
 }
 const agentTemplate = path.join(APP_ROOT, 'pi');
 
@@ -108,8 +126,10 @@ if (SERVING.note !== 'serving the image copy') console.warn(`web-pi management: 
 // task/mgmt-page: what this process serves, LIVE — the boot snapshot, and
 // the import fallback below flips it to the image copy when a release's
 // SSR entry fails to load (the "serving now" card reports the truth).
-let servingNow: { kind: 'image' | 'release'; sha: string | null } =
-  { kind: SERVING.dirs.releaseDir === null ? 'image' : 'release', sha: SERVING.dirs.sha };
+let servingNow: { kind: 'image' | 'release'; sha: string | null } = {
+  kind: SERVING.dirs.releaseDir === null ? 'image' : 'release',
+  sha: SERVING.dirs.sha,
+};
 
 // task/mgmt-page: the swap's restart. No docker socket exists anywhere in
 // webpi (it would be root on the host); instead the process exits through
@@ -160,8 +180,11 @@ function seedAgentDir(): void {
 // 0644 files pi can't write next to its config. Single-user shapes
 // (relative socket name) keep seeding here.
 if (tmux.forksServer(tmux.SOCKET)) seedAgentDir();
-else bootLog.info(`privilege split: tmux socket ${tmux.SOCKET} is an absolute path — ` +
-  `pi agent dir seeding and tmux server ownership live on the workspace side`);
+else
+  bootLog.info(
+    `privilege split: tmux socket ${tmux.SOCKET} is an absolute path — ` +
+      `pi agent dir seeding and tmux server ownership live on the workspace side`,
+  );
 
 // Environment for processes spawned inside tmux sessions (pi). Delivered
 // per-session via `tmux new-session -e` — deterministic no matter when the
@@ -186,7 +209,11 @@ const auth: AuthType = new Auth(stateDb);
 // In-process job scheduler (src/lib/jobs.ts): definitions + run
 // bookkeeping live in the state db; fires open tmux sessions on the app's
 // socket under the same job-session conventions as interactive sessions.
-const scheduler = new jobs.Scheduler(stateDb, { cwd: CFG.newSessionCwd, env: sessionEnv, logDir: CFG.jobLogDir });
+const scheduler = new jobs.Scheduler(stateDb, {
+  cwd: CFG.newSessionCwd,
+  env: sessionEnv,
+  logDir: CFG.jobLogDir,
+});
 scheduler.start();
 // pi auto-update (src/lib/auto-update.ts): when the persisted setting is
 // ON, one check shortly after boot and then daily — always within the
@@ -199,12 +226,16 @@ autoUpdater.start();
 // Object storage (src/lib/storage.ts): any S3-compatible server, or none —
 // uploads then answer 503. Nothing connects until the first upload.
 const objectStore = new ObjectStore(readObjectStoreConfig());
-bootLog.info(objectStore.describe() === null
-  ? 'object storage: not configured (WEB_PI_S3_ENDPOINT unset) — uploads answer 503'
-  : `object storage: ${objectStore.describe()}`);
-bootLog.info(CFG.editorUpstream === null
-  ? 'editor: not configured (WEB_PI_EDITOR_UPSTREAM unset) — /editor answers 404'
-  : `editor: proxying ${CFG.base === '/' ? '' : CFG.base}/editor/ → ${CFG.editorUpstream.origin}`);
+bootLog.info(
+  objectStore.describe() === null
+    ? 'object storage: not configured (WEB_PI_S3_ENDPOINT unset) — uploads answer 503'
+    : `object storage: ${objectStore.describe()}`,
+);
+bootLog.info(
+  CFG.editorUpstream === null
+    ? 'editor: not configured (WEB_PI_EDITOR_UPSTREAM unset) — /editor answers 404'
+    : `editor: proxying ${CFG.base === '/' ? '' : CFG.base}/editor/ → ${CFG.editorUpstream.origin}`,
+);
 // task/ws-terminal (plan §4): a terminal tab's spawn/respawn — one
 // guarded new-session with the configured command + sessionEnv, shared
 // by the workspaces domain (through createServices) and the WS attach
@@ -216,7 +247,13 @@ const spawnTerminalSession = (name: TmuxSessionName, cwd: string) =>
 // once here and passed to the Astro handler in locals — never imported
 // there (a Vite-bundled second copy would carry its own state; see
 // src/lib/services.ts).
-const services = createServices({ cfg: CFG, stateDb, auth, scheduler, autoUpdater, objectStore,
+const services = createServices({
+  cfg: CFG,
+  stateDb,
+  auth,
+  scheduler,
+  autoUpdater,
+  objectStore,
   // task/ws-schema: the apps/workspaces domains' best-effort terminal
   // session kill (deletes/closes — src/lib/tmux.ts killSession).
   killSession: tmux.killSession,
@@ -228,7 +265,9 @@ const services = createServices({ cfg: CFG, stateDb, auth, scheduler, autoUpdate
   // task/mgmt-page: the swap service's restart trigger + the honest
   // "serving now" LIVE snapshot (a getter: the import fallback above
   // flips it; docs/management-page.md §3.2).
-  requestRestart, bootServing: () => servingNow });
+  requestRestart,
+  bootServing: () => servingNow,
+});
 // The scheduler's single shutdown hook. The SIGTERM/SIGINT handler is a
 // sibling task (task/session-lifecycle, merged separately); at merge time
 // it calls shutdownScheduler() — wired here so teardown has exactly one
@@ -254,8 +293,12 @@ const MIME: Record<string, string> = {
   '.woff2': 'font/woff2',
 };
 
-function send(res: http.ServerResponse, code: number, body: string,
-  headers?: Record<string, string>): void {
+function send(
+  res: http.ServerResponse,
+  code: number,
+  body: string,
+  headers?: Record<string, string>,
+): void {
   res.writeHead(code, { 'Cache-Control': 'no-store', ...headers });
   res.end(body);
 }
@@ -263,10 +306,14 @@ function sendClientFile(res: http.ServerResponse, rel: string, cache: boolean): 
   // rel is from a fixed route table or validated against traversal below.
   const file = path.normalize(path.join(CFG.clientDir, rel));
   if (!file.startsWith(CFG.clientDir + path.sep) && file !== CFG.clientDir) {
-    send(res, 404, 'not found'); return;
+    send(res, 404, 'not found');
+    return;
   }
   fs.readFile(file, (err, data) => {
-    if (err) { send(res, 404, 'not found'); return; }
+    if (err) {
+      send(res, 404, 'not found');
+      return;
+    }
     res.writeHead(200, {
       'Content-Type': MIME[path.extname(file)] ?? 'application/octet-stream',
       'Cache-Control': cache ? 'public, max-age=3600' : 'no-store',
@@ -276,14 +323,32 @@ function sendClientFile(res: http.ServerResponse, rel: string, cache: boolean): 
 }
 /** JSON request body, capped at 10 KiB. Anything but a JSON object (array,
  *  string, null, …) is a bad request, so handlers can read fields freely. */
-function readBody(req: http.IncomingMessage, cb: (err: Error | null, body?: Record<string, unknown>) => void): void {
-  let n = 0; const chunks: Buffer[] = [];
-  req.on('data', (c: Buffer) => { n += c.length; if (n > 10240) { req.destroy(); return; } chunks.push(c); });
+function readBody(
+  req: http.IncomingMessage,
+  cb: (err: Error | null, body?: Record<string, unknown>) => void,
+): void {
+  let n = 0;
+  const chunks: Buffer[] = [];
+  req.on('data', (c: Buffer) => {
+    n += c.length;
+    if (n > 10240) {
+      req.destroy();
+      return;
+    }
+    chunks.push(c);
+  });
   req.on('end', () => {
     let body: unknown;
-    try { body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); }
-    catch { cb(new Error('bad json')); return; }
-    if (typeof body !== 'object' || body === null || Array.isArray(body)) { cb(new Error('not an object')); return; }
+    try {
+      body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+    } catch {
+      cb(new Error('bad json'));
+      return;
+    }
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      cb(new Error('not an object'));
+      return;
+    }
     cb(null, body as Record<string, unknown>); // outside the try: a throwing handler must not be re-called
   });
 }
@@ -297,8 +362,10 @@ function ipOf(req: http.IncomingMessage): string {
   const peer = req.socket.remoteAddress ?? '?';
   if (CFG.trustProxy === 0) return peer;
   const xff = req.headers['x-forwarded-for'];
-  const hops = (Array.isArray(xff) ? xff.join(',') : xff ?? '')
-    .split(',').map(h => h.trim()).filter(Boolean);
+  const hops = (Array.isArray(xff) ? xff.join(',') : (xff ?? ''))
+    .split(',')
+    .map(h => h.trim())
+    .filter(Boolean);
   if (hops.length === 0) return peer; // reached us without passing the proxy
   return hops[Math.max(0, hops.length - CFG.trustProxy)]!;
 }
@@ -315,8 +382,10 @@ function ipOf(req: http.IncomingMessage): string {
 function protoOf(req: http.IncomingMessage): string {
   if (CFG.trustProxy === 0) return 'http';
   const xfp = req.headers['x-forwarded-proto'];
-  const hops = (Array.isArray(xfp) ? xfp.join(',') : xfp ?? '')
-    .split(',').map(h => h.trim().toLowerCase()).filter(Boolean);
+  const hops = (Array.isArray(xfp) ? xfp.join(',') : (xfp ?? ''))
+    .split(',')
+    .map(h => h.trim().toLowerCase())
+    .filter(Boolean);
   if (hops.length === 0) return 'http'; // reached us without passing the proxy
   return hops[Math.max(0, hops.length - CFG.trustProxy)]!;
 }
@@ -328,7 +397,11 @@ function protoOf(req: http.IncomingMessage): string {
  *  literal "null" some browsers send from sandboxed frames). */
 function normalizeOrigin(origin: string): string | null {
   let u: URL;
-  try { u = new URL(origin); } catch { return null; }
+  try {
+    u = new URL(origin);
+  } catch {
+    return null;
+  }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
   const defPort = u.protocol === 'https:' ? ':443' : ':80';
   const host = u.host.toLowerCase();
@@ -396,9 +469,15 @@ const UPLOAD_STALL_MS = 120_000;
 /** Arm the whole-request deadline; the returned function disarms it. */
 function armBodyDeadline(req: http.IncomingMessage): () => void {
   const { socket } = req;
-  const timer = setTimeout(() => { if (!req.complete) socket.destroy(); }, BODY_DEADLINE_MS).unref();
+  const timer = setTimeout(() => {
+    if (!req.complete) socket.destroy();
+  }, BODY_DEADLINE_MS).unref();
   // Listeners come off with the timer: a keep-alive socket serves many requests.
-  const disarm = (): void => { clearTimeout(timer); req.off('end', disarm); socket.off('close', disarm); };
+  const disarm = (): void => {
+    clearTimeout(timer);
+    req.off('end', disarm);
+    socket.off('close', disarm);
+  };
   req.once('end', disarm);
   socket.once('close', disarm);
   return disarm;
@@ -411,11 +490,24 @@ function guardUploadStall(req: http.IncomingMessage): void {
   const { socket } = req;
   let seen = socket.bytesRead;
   let quietSince = Date.now();
-  const stop = (): void => { clearInterval(check); socket.off('close', stop); };
+  const stop = (): void => {
+    clearInterval(check);
+    socket.off('close', stop);
+  };
   const check = setInterval(() => {
-    if (req.complete) { stop(); return; }
-    if (socket.bytesRead !== seen) { seen = socket.bytesRead; quietSince = Date.now(); return; }
-    if (Date.now() - quietSince >= UPLOAD_STALL_MS) { stop(); socket.destroy(); }
+    if (req.complete) {
+      stop();
+      return;
+    }
+    if (socket.bytesRead !== seen) {
+      seen = socket.bytesRead;
+      quietSince = Date.now();
+      return;
+    }
+    if (Date.now() - quietSince >= UPLOAD_STALL_MS) {
+      stop();
+      socket.destroy();
+    }
   }, 10_000).unref();
   socket.once('close', stop);
 }
@@ -432,41 +524,56 @@ const clearSessionCookie = (): string =>
 // The Astro build emits an ESM handler (dist/server/entry.mjs); loaded once
 // via dynamic import (the compiled server here is CJS). Page routes render
 // through it; the `next` fallback covers unknown paths (404).
-type AstroHandler = (req: http.IncomingMessage, res: http.ServerResponse,
-  next: (err?: unknown) => void, locals?: WebPiLocals) => void;
+type AstroHandler = (
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  next: (err?: unknown) => void,
+  locals?: WebPiLocals,
+) => void;
 
-const astroReady: Promise<AstroHandler> =
-  import(pathToFileURL(CFG.astroEntry).href)
-    .then((m: { handler: AstroHandler }) => m.handler)
-    // task/mgmt-page: a release's SSR entry that fails to LOAD (its own
-    // imports — the one failure class no layout check can see; activate
-    // probes for it, this is the belt-and-braces second line) must not
-    // take the app down: fall back to the IMAGE's entry + assets, loudly,
-    // and report the fallback (servingNow above feeds the page's
-    // "serving now" card — the now-working page can roll back). Only the
-    // image itself failing rethrows (the pre-existing behavior: every
-    // render 500s).
-    // task/winston-loki merge: the fallback line routes through the boot
-    // logger (the operational-logging migration covers this new code).
-    .catch(async (err: unknown): Promise<AstroHandler> => {
-      if (CFG.astroEntry === IMAGE_ASTRO_ENTRY) throw err;
-      bootLog.error(
-        `web-pi management: the release's SSR entry (${CFG.astroEntry}) failed to load — falling back to the image copy, rollback from the management page: ${(err as Error)?.message ?? err}`);
-      CFG.astroEntry = IMAGE_ASTRO_ENTRY;
-      CFG.clientDir = IMAGE_CLIENT_DIR;
-      servingNow = { kind: 'image', sha: null };
-      return (await import(pathToFileURL(IMAGE_ASTRO_ENTRY).href) as { handler: AstroHandler }).handler;
-    });
-astroReady.catch(err => bootLog.error(
-  `astro SSR entry failed to load (${CFG.astroEntry}) — did 'npm run build' run?): ${(err as Error)?.message ?? err}`));
+const astroReady: Promise<AstroHandler> = import(pathToFileURL(CFG.astroEntry).href)
+  .then((m: { handler: AstroHandler }) => m.handler)
+  // task/mgmt-page: a release's SSR entry that fails to LOAD (its own
+  // imports — the one failure class no layout check can see; activate
+  // probes for it, this is the belt-and-braces second line) must not
+  // take the app down: fall back to the IMAGE's entry + assets, loudly,
+  // and report the fallback (servingNow above feeds the page's
+  // "serving now" card — the now-working page can roll back). Only the
+  // image itself failing rethrows (the pre-existing behavior: every
+  // render 500s).
+  // task/winston-loki merge: the fallback line routes through the boot
+  // logger (the operational-logging migration covers this new code).
+  .catch(async (err: unknown): Promise<AstroHandler> => {
+    if (CFG.astroEntry === IMAGE_ASTRO_ENTRY) throw err;
+    bootLog.error(
+      `web-pi management: the release's SSR entry (${CFG.astroEntry}) failed to load — falling back to the image copy, rollback from the management page: ${(err as Error)?.message ?? err}`,
+    );
+    CFG.astroEntry = IMAGE_ASTRO_ENTRY;
+    CFG.clientDir = IMAGE_CLIENT_DIR;
+    servingNow = { kind: 'image', sha: null };
+    return ((await import(pathToFileURL(IMAGE_ASTRO_ENTRY).href)) as { handler: AstroHandler })
+      .handler;
+  });
+astroReady.catch(err =>
+  bootLog.error(
+    `astro SSR entry failed to load (${CFG.astroEntry}) — did 'npm run build' run?): ${(err as Error)?.message ?? err}`,
+  ),
+);
 
 /** Render through Astro. `locals` (the services + the request's session
  *  token) only on the authenticated path — src/middleware.ts fails closed
  *  for the API and partials without them. */
-function renderAstro(req: http.IncomingMessage, res: http.ServerResponse, locals?: WebPiLocals): void {
+function renderAstro(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  locals?: WebPiLocals,
+): void {
   astroReady
     .then(handler => handler(req, res, () => send(res, 404, 'not found'), locals))
-    .catch(err => { httpLog.error('astro handler error', { error: err }); send(res, 500, 'render failed'); });
+    .catch(err => {
+      httpLog.error('astro handler error', { error: err });
+      send(res, 500, 'render failed');
+    });
 }
 
 // ---------- security headers (DESIGN_REVIEW §1.2) ----------
@@ -488,7 +595,9 @@ const SECURITY_HEADERS: Record<string, string> = {
 /** Same headers as a raw HTTP/1.1 response block (upgrade rejections are
  *  written straight to the socket — there is no ServerResponse). */
 function securityHeaderBlock(): string {
-  return Object.entries(SECURITY_HEADERS).map(([n, v]) => `${n}: ${v}\r\n`).join('');
+  return Object.entries(SECURITY_HEADERS)
+    .map(([n, v]) => `${n}: ${v}\r\n`)
+    .join('');
 }
 
 /** Arm `res` so the security headers ride on every response the process
@@ -506,8 +615,14 @@ function hardenResponse(res: http.ServerResponse): void {
   };
   const writeHead = res.writeHead.bind(res) as (...args: unknown[]) => http.ServerResponse;
   const end = res.end.bind(res) as (...args: unknown[]) => http.ServerResponse;
-  res.writeHead = ((...args: unknown[]) => { apply(); return writeHead(...args); }) as typeof res.writeHead;
-  res.end = ((...args: unknown[]) => { apply(); return end(...args); }) as typeof res.end;
+  res.writeHead = ((...args: unknown[]) => {
+    apply();
+    return writeHead(...args);
+  }) as typeof res.writeHead;
+  res.end = ((...args: unknown[]) => {
+    apply();
+    return end(...args);
+  }) as typeof res.end;
 }
 
 // ---------- editor reverse proxy (task/ws-editor, docs/editor-webapp.md) ----------
@@ -519,7 +634,11 @@ function hardenResponse(res: http.ServerResponse): void {
 // tracking, the upgrade header pair) lives in src/lib/editor.ts; this is
 // the transport.
 
-function proxyEditorRequest(req: http.IncomingMessage, res: http.ServerResponse, upstream: EditorUpstream): void {
+function proxyEditorRequest(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  upstream: EditorUpstream,
+): void {
   // The original Host header is forwarded UNCHANGED: the editor embeds it
   // in the workbench HTML as `remoteAuthority` (spike-verified), which is
   // how the browser learns to dial its WebSocket back through this proxy.
@@ -565,10 +684,17 @@ const editorTunnels = new EditorTunnelTracker();
 /** Raw WebSocket proxy: bytes through, no frame handling, no pty — never
  *  the terminal wss/attach path. Gates (shuttingDown, Origin, session)
  *  have already run when this is called. */
-function upgradeEditorSocket(req: http.IncomingMessage, socket: import('node:stream').Duplex,
-  head: Buffer, token: SessionToken): void {
+function upgradeEditorSocket(
+  req: http.IncomingMessage,
+  socket: import('node:stream').Duplex,
+  head: Buffer,
+  token: SessionToken,
+): void {
   const upstream = CFG.editorUpstream;
-  if (!upstream) { socket.destroy(); return; } // raced a reconfigure: fail closed
+  if (!upstream) {
+    socket.destroy();
+    return;
+  } // raced a reconfigure: fail closed
   // editorUpgradeHeaders strips hop-by-hop AND re-adds the upgrade pair —
   // without Connection: Upgrade / Upgrade: websocket the upstream sees a
   // plain GET and never answers 101 (the header list alone would strip
@@ -584,16 +710,21 @@ function upgradeEditorSocket(req: http.IncomingMessage, socket: import('node:str
   // A plain (non-101) answer to an upgrade: forward the status, then end —
   // the browser treats anything but 101 as a failed upgrade.
   proxied.on('response', upstreamRes => {
-    socket.write(`HTTP/1.1 ${upstreamRes.statusCode ?? 502} ${upstreamRes.statusMessage ?? ''}\r
-` +
-      'Connection: close\r\n\r\n');
+    socket.write(
+      `HTTP/1.1 ${upstreamRes.statusCode ?? 502} ${upstreamRes.statusMessage ?? ''}\r
+` + 'Connection: close\r\n\r\n',
+    );
     socket.destroy();
   });
   proxied.on('upgrade', (upstreamRes, upstreamSocket, upstreamHead) => {
     // The upstream's handshake, verbatim (Sec-WebSocket-Accept et al).
-    socket.write('HTTP/1.1 101 Switching Protocols\r\n' +
-      Object.entries(upstreamRes.headers).map(([name, value]) =>
-        `${name}: ${Array.isArray(value) ? value.join(', ') : value}`).join('\r\n') + '\r\n\r\n');
+    socket.write(
+      'HTTP/1.1 101 Switching Protocols\r\n' +
+        Object.entries(upstreamRes.headers)
+          .map(([name, value]) => `${name}: ${Array.isArray(value) ? value.join(', ') : value}`)
+          .join('\r\n') +
+        '\r\n\r\n',
+    );
     const tunnel = {
       close(): void {
         socket.destroy();
@@ -637,10 +768,13 @@ function upgradeEditorSocket(req: http.IncomingMessage, socket: import('node:str
 // silent on the console transport (level http) but pushed to loki, where
 // volume is cheap; everything else is an `http`-level line.
 const quietAccessPath = (p: string): boolean =>
-  p === route('/api/state') || p.startsWith(route('/_astro/')) || p === route('/sw.js')
-  || p === route('/manifest.webmanifest') || p.startsWith(route('/icons/'))
+  p === route('/api/state') ||
+  p.startsWith(route('/_astro/')) ||
+  p === route('/sw.js') ||
+  p === route('/manifest.webmanifest') ||
+  p.startsWith(route('/icons/')) ||
   // an IDE's worth of asset traffic at http level would bury the console
-  || p.startsWith(route('/editor/'));
+  p.startsWith(route('/editor/'));
 
 function logAccess(req: http.IncomingMessage, res: http.ServerResponse): void {
   const start = Date.now();
@@ -658,10 +792,12 @@ function logAccess(req: http.IncomingMessage, res: http.ServerResponse): void {
 const server = http.createServer((req, res) => {
   hardenResponse(res);
   logAccess(req, res);
-  try { handle(req, res); }
-  catch (err) {
+  try {
+    handle(req, res);
+  } catch (err) {
     httpLog.error('request handler error', { error: err });
-    if (!res.headersSent) send(res, 500, 'internal error'); else res.destroy();
+    if (!res.headersSent) send(res, 500, 'internal error');
+    else res.destroy();
   }
 });
 // Off: armBodyDeadline()/guardUploadStall() replace it per request.
@@ -688,7 +824,10 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
       return;
     }
     readBody(req, (err, body) => {
-      if (err) { send(res, 400, 'bad request'); return; }
+      if (err) {
+        send(res, 400, 'bad request');
+        return;
+      }
       const parsed = loginBody.safeParse(body);
       if (!parsed.success) {
         authLog.info('login failed: invalid credentials (malformed body)', { ip });
@@ -702,7 +841,8 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
         return;
       }
       loginVerifying++;
-      auth.verify(username, password)
+      auth
+        .verify(username, password)
         .then(verified => {
           if (!verified.ok) {
             switch (verified.errorCode) {
@@ -716,7 +856,9 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
                 authLog.error(`login verify db error: ${verified.errorMessage}`);
                 send(res, 503, 'busy, try again', { 'Retry-After': '1' });
                 return;
-              default: verified satisfies never; return;
+              default:
+                verified satisfies never;
+                return;
             }
           }
           const session = auth.newSession();
@@ -732,7 +874,9 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
           authLog.error('login verify failed', { error: e });
           send(res, 500, 'internal error');
         })
-        .finally(() => { loginVerifying--; });
+        .finally(() => {
+          loginVerifying--;
+        });
     });
     return;
   }
@@ -785,7 +929,8 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
       return;
     }
     switch (session.errorCode) {
-      case 'no_session': break;
+      case 'no_session':
+        break;
       // Unreadable session store: fail closed, but don't claim the
       // session ended — no login page, no 401 (the console would bounce
       // to /login and a terminal would read it as signed out).
@@ -793,7 +938,8 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
         authLog.error(`session store unavailable: ${session.errorMessage}`);
         send(res, 503, 'session store unavailable, try again', { 'Retry-After': '5' });
         return;
-      default: session satisfies never;
+      default:
+        session satisfies never;
     }
     // Any other page GET under the base (/, /jobs, /settings, a typo'd
     // path, …) renders the login page in place — the address bar keeps
@@ -802,9 +948,13 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     // routes are never pages: the API, the server-rendered partials
     // (fragments an element swaps in) and the proxied editor answer 401
     // instead.
-    if (req.method === 'GET' && underBase(url)
-      && !url.startsWith(route('/api/')) && !url.startsWith(route('/partials/'))
-      && !isEditorHttpPath(CFG.base, url)) {
+    if (
+      req.method === 'GET' &&
+      underBase(url) &&
+      !url.startsWith(route('/api/')) &&
+      !url.startsWith(route('/partials/')) &&
+      !isEditorHttpPath(CFG.base, url)
+    ) {
       req.url = route('/login');
       renderAstro(req, res);
       return;
@@ -836,9 +986,15 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
   // 5-minute whole-body deadline for the upload route's stall guard. The
   // origin check already ran at the top of handle().
   if (isEditorHttpPath(CFG.base, url)) {
-    if (!CFG.editorUpstream) { send(res, 404, 'not found'); return; }
+    if (!CFG.editorUpstream) {
+      send(res, 404, 'not found');
+      return;
+    }
     const capped = editorBodyCapStatus(req);
-    if (capped === 413) { send(res, 413, 'request body too large'); return; }
+    if (capped === 413) {
+      send(res, 413, 'request body too large');
+      return;
+    }
     disarmBodyDeadline();
     guardUploadStall(req);
     proxyEditorRequest(req, res, CFG.editorUpstream);
@@ -848,7 +1004,10 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
   // Authenticated: hashed assets served statically; /login is pointless
   // when signed in (redirect).
   if (req.method === 'GET') {
-    if (url.startsWith(route('/_astro/'))) { sendClientFile(res, url.slice(CFG.base.length), true); return; }
+    if (url.startsWith(route('/_astro/'))) {
+      sendClientFile(res, url.slice(CFG.base.length), true);
+      return;
+    }
     if (url === route('/login')) {
       res.writeHead(302, { Location: CFG.base === '/' ? '/' : CFG.base }).end();
       return;
@@ -859,14 +1018,31 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
   // and partials — renders through Astro, with the services and this
   // request's token in locals. The origin and session checks above have
   // already run; this is the only place locals are passed.
-  if (!underBase(url)) { send(res, 404, 'not found'); return; }
+  if (!underBase(url)) {
+    send(res, 404, 'not found');
+    return;
+  }
   // Astro throws on an undecodable path (a bad %-escape such as
   // /api/jobs/%E0) — a client error, answered here.
-  try { decodeURI(url); } catch { send(res, 400, 'bad request'); return; }
+  try {
+    decodeURI(url);
+  } catch {
+    send(res, 400, 'bad request');
+    return;
+  }
   const capped = bodyCapStatus(req, url);
-  if (capped === 413) { send(res, 413, 'request body too large'); return; }
-  if (capped === 411) { send(res, 411, 'request body needs a Content-Length'); return; }
-  if (isUpload(req, url)) { disarmBodyDeadline(); guardUploadStall(req); }
+  if (capped === 413) {
+    send(res, 413, 'request body too large');
+    return;
+  }
+  if (capped === 411) {
+    send(res, 411, 'request body needs a Content-Length');
+    return;
+  }
+  if (isUpload(req, url)) {
+    disarmBodyDeadline();
+    guardUploadStall(req);
+  }
   renderAstro(req, res, { webpi: services, session: session.data.token });
 }
 
@@ -881,7 +1057,10 @@ const socketsByToken = new Map<SessionToken, Set<WebSocket>>();
 
 function trackSocket(token: SessionToken, ws: WebSocket): void {
   let set = socketsByToken.get(token);
-  if (!set) { set = new Set(); socketsByToken.set(token, set); }
+  if (!set) {
+    set = new Set();
+    socketsByToken.set(token, set);
+  }
   set.add(ws);
 }
 function untrackSocket(token: SessionToken, ws: WebSocket): void {
@@ -895,8 +1074,18 @@ function untrackSocket(token: SessionToken, ws: WebSocket): void {
  *  (dead client, or a script holding a stolen token) is terminated — a
  *  logout/shutdown can't leave a live terminal behind on a limp socket. */
 function closeSoon(ws: WebSocket): void {
-  try { ws.close(); } catch { /* already closed */ }
-  setTimeout(() => { try { ws.terminate(); } catch { /* gone */ } }, 1500).unref();
+  try {
+    ws.close();
+  } catch {
+    /* already closed */
+  }
+  setTimeout(() => {
+    try {
+      ws.terminate();
+    } catch {
+      /* gone */
+    }
+  }, 1500).unref();
 }
 
 /** Send `final`, then end every socket authenticated with `token`. */
@@ -904,13 +1093,19 @@ function closeTokenSockets(token: SessionToken, final: ServerMsg): void {
   const set = socketsByToken.get(token);
   if (!set) return;
   socketsByToken.delete(token);
-  for (const ws of set) { wsSend(ws, final); closeSoon(ws); }
+  for (const ws of set) {
+    wsSend(ws, final);
+    closeSoon(ws);
+  }
 }
 
 /** Send `final`, then end every socket, whichever token it used. */
 function closeAllSockets(final: ServerMsg): void {
   for (const set of socketsByToken.values()) {
-    for (const ws of set) { wsSend(ws, final); closeSoon(ws); }
+    for (const ws of set) {
+      wsSend(ws, final);
+      closeSoon(ws);
+    }
   }
   socketsByToken.clear();
 }
@@ -929,7 +1124,10 @@ server.on('upgrade', (req, socket, head) => {
   // tunnel to the upstream — never the terminal's wss/attach path (no pty) —
   // tracked per token so logout cuts editor shells too.
   if (isEditorUpgradePath(CFG.base, url)) {
-    if (shuttingDown) { socket.destroy(); return; }
+    if (shuttingDown) {
+      socket.destroy();
+      return;
+    }
     if (!CFG.editorUpstream) {
       socket.write(`HTTP/1.1 404 Not Found\r\n${securityHeaderBlock()}\r\n`);
       socket.destroy();
@@ -957,7 +1155,8 @@ server.on('upgrade', (req, socket, head) => {
           authLog.error(`session store unavailable: ${session.errorMessage}`);
           status = '503 Service Unavailable';
           break;
-        default: return session satisfies never;
+        default:
+          return session satisfies never;
       }
       socket.write(`HTTP/1.1 ${status}\r\n${securityHeaderBlock()}\r\n`);
       socket.destroy();
@@ -966,8 +1165,14 @@ server.on('upgrade', (req, socket, head) => {
     upgradeEditorSocket(req, socket, head, session.data.token);
     return;
   }
-  if (url !== route('/ws')) { socket.destroy(); return; }
-  if (shuttingDown) { socket.destroy(); return; } // stopping: no new terminals
+  if (url !== route('/ws')) {
+    socket.destroy();
+    return;
+  }
+  if (shuttingDown) {
+    socket.destroy();
+    return;
+  } // stopping: no new terminals
   const ip = ipOf(req);
   if (!wsLimiter.allow(ip)) {
     wsLog.warn('ws upgrade rate-limited (30 per min per IP)', { ip });
@@ -998,7 +1203,8 @@ server.on('upgrade', (req, socket, head) => {
         authLog.error(`session store unavailable: ${session.errorMessage}`);
         status = '503 Service Unavailable';
         break;
-      default: return session satisfies never;
+      default:
+        return session satisfies never;
     }
     socket.write(`HTTP/1.1 ${status}\r\n${securityHeaderBlock()}\r\n`);
     socket.destroy();
@@ -1007,8 +1213,13 @@ server.on('upgrade', (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, ws => attach(ws, session.data.token));
 });
 
-interface Pty { write(d: string): void; resize(c: number, r: number): void; kill(): void;
-  onData(cb: (d: string) => void): void; onExit(cb: () => void): void }
+interface Pty {
+  write(d: string): void;
+  resize(c: number, r: number): void;
+  kill(): void;
+  onData(cb: (d: string) => void): void;
+  onExit(cb: () => void): void;
+}
 
 function wsSend(ws: WebSocket, msg: ServerMsg): void {
   if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
@@ -1050,15 +1261,26 @@ function attach(ws: WebSocket, token: SessionToken): void {
     // tmux command too — on an absolute socket it must not run against a
     // missing/stale socket (that forks a server as the web uid).
     const server = await tmux.requireServer();
-    if (!server.ok) { starting = false; wsSend(ws, { type: 'error', message: tmux.SERVER_NOT_RUNNING_MSG }); return; }
+    if (!server.ok) {
+      starting = false;
+      wsSend(ws, { type: 'error', message: tmux.SERVER_NOT_RUNNING_MSG });
+      return;
+    }
     const env = Object.assign({}, process.env, {
-      TERM: 'xterm-256color', COLORTERM: 'truecolor', HOME: CFG.home,
+      TERM: 'xterm-256color',
+      COLORTERM: 'truecolor',
+      HOME: CFG.home,
       PI_CODING_AGENT_DIR: CFG.agentDir,
     });
     let x: Pty;
     try {
-      x = pty.spawn('tmux', [...tmux.socketArgs(tmux.SOCKET), 'attach', '-d', '-t', target],
-        { name: 'xterm-256color', cols: size.cols, rows: size.rows, cwd: CFG.newSessionCwd, env }) as Pty;
+      x = pty.spawn('tmux', [...tmux.socketArgs(tmux.SOCKET), 'attach', '-d', '-t', target], {
+        name: 'xterm-256color',
+        cols: size.cols,
+        rows: size.rows,
+        cwd: CFG.newSessionCwd,
+        env,
+      }) as Pty;
     } catch (e) {
       starting = false;
       wsSend(ws, { type: 'error', message: 'spawn failed: ' + (e as Error).message });
@@ -1079,7 +1301,10 @@ function attach(ws: WebSocket, token: SessionToken): void {
       if (flushing) wsSend(ws, { type: 'output', data: d });
       else held.push(d);
     });
-    x.onExit(() => { wsSend(ws, { type: 'exit', target }); ws.close(); });
+    x.onExit(() => {
+      wsSend(ws, { type: 'exit', target });
+      ws.close();
+    });
     p = x;
     attachedTo = target;
     wsSend(ws, { type: 'attached', target, socket: tmux.SOCKET });
@@ -1110,7 +1335,13 @@ function attach(ws: WebSocket, token: SessionToken): void {
       const c = Math.min(Math.max(Math.trunc(msg.cols) || 80, 10), 500);
       const r = Math.min(Math.max(Math.trunc(msg.rows) || 24, 4), 200);
       size = { cols: c, rows: r };
-      if (p) { try { p.resize(c, r); } catch { /* race on exit */ } }
+      if (p) {
+        try {
+          p.resize(c, r);
+        } catch {
+          /* race on exit */
+        }
+      }
     } else if (msg.type === 'attach' && !p && !starting) {
       starting = true;
       const failed = (message: string): void => {
@@ -1127,21 +1358,33 @@ function attach(ws: WebSocket, token: SessionToken): void {
         // guarded new-session the create route uses, so the never-fork
         // guard covers it on absolute sockets.
         const id = TerminalIdSchema.safeParse(msg.id);
-        if (!id.success) { failed('bad terminal id'); return; }
+        if (!id.success) {
+          failed('bad terminal id');
+          return;
+        }
         const found = await services.workspaces.terminalForAttach(id.data);
         if (!found.ok) {
-          failed(found.errorCode === 'database_error' ? 'could not read the terminal' : 'no such terminal');
+          failed(
+            found.errorCode === 'database_error'
+              ? 'could not read the terminal'
+              : 'no such terminal',
+          );
           return;
         }
         const name = tmux.terminalSessionName(id.data);
-        if (!await tmux.hasSession(name)) {
+        if (!(await tmux.hasSession(name))) {
           const spawned = await spawnTerminalSession(name, found.data.cwd);
           if (!spawned.ok) {
             switch (spawned.errorCode) {
               // the never-fork guard — say it, don't bury it
-              case 'server_not_running': failed(tmux.SERVER_NOT_RUNNING_MSG); return;
-              case 'tmux_error': failed('could not start terminal session'); return;
-              default: spawned satisfies never;
+              case 'server_not_running':
+                failed(tmux.SERVER_NOT_RUNNING_MSG);
+                return;
+              case 'tmux_error':
+                failed('could not start terminal session');
+                return;
+              default:
+                spawned satisfies never;
             }
             return;
           }
@@ -1154,8 +1397,14 @@ function attach(ws: WebSocket, token: SessionToken): void {
         // run IS the session, it dies with the command, and a re-run is a
         // new session (jobs.ts), not a respawn of a dead one.
         const target = TmuxSessionNameSchema.safeParse(msg.target);
-        if (!target.success) { failed('bad target'); return; }
-        if (!await tmux.hasSession(target.data)) { failed('no such run session'); return; }
+        if (!target.success) {
+          failed('bad target');
+          return;
+        }
+        if (!(await tmux.hasSession(target.data))) {
+          failed('no such run session');
+          return;
+        }
         await spawnTmux(target.data);
       }
     }
@@ -1168,9 +1417,14 @@ function attach(ws: WebSocket, token: SessionToken): void {
   });
 
   let alive = true;
-  ws.on('pong', () => { alive = true; });
+  ws.on('pong', () => {
+    alive = true;
+  });
   const keepalive = setInterval(() => {
-    if (!alive) { ws.terminate(); return; }
+    if (!alive) {
+      ws.terminate();
+      return;
+    }
     // Liveness sweep: the expiry clocks must bind established terminals
     // too. A socket whose token died — idle, the 30-day absolute cap, or
     // a logout-everywhere — gets the signed-out message and closes on
@@ -1181,36 +1435,64 @@ function attach(ws: WebSocket, token: SessionToken): void {
     const live = auth.alive(token);
     if (!live.ok) {
       switch (live.errorCode) {
-        case 'no_session': closeTokenSockets(token, { type: 'signed-out' }); return;
+        case 'no_session':
+          closeTokenSockets(token, { type: 'signed-out' });
+          return;
         // Unreadable session store: can't tell, so don't sign the terminal
         // out over a db hiccup — its token was alive at the last sweep;
         // re-check next tick (the peer-liveness ping below still runs).
-        case 'database_error': authLog.error(`session store unavailable: ${live.errorMessage}`); break;
-        default: live satisfies never;
+        case 'database_error':
+          authLog.error(`session store unavailable: ${live.errorMessage}`);
+          break;
+        default:
+          live satisfies never;
       }
     }
     alive = false;
-    try { ws.ping(); } catch { /* closing */ }
+    try {
+      ws.ping();
+    } catch {
+      /* closing */
+    }
   }, PING_INTERVAL_MS);
 
   ws.on('close', () => {
     untrackSocket(token, ws);
     clearInterval(keepalive);
-    if (p) { try { p.kill(); } catch { /* already gone */ } }
+    if (p) {
+      try {
+        p.kill();
+      } catch {
+        /* already gone */
+      }
+    }
     // Covers both ways a terminal ends: the pty exiting (the 'exit' frame
     // above) and the peer closing the tab.
     if (attachedTo) wsLog.info('terminal detached', { target: attachedTo });
   });
-  ws.on('error', () => { if (p) { try { p.kill(); } catch { /* noop */ } } });
+  ws.on('error', () => {
+    if (p) {
+      try {
+        p.kill();
+      } catch {
+        /* noop */
+      }
+    }
+  });
 }
 
 server.listen(CFG.port, CFG.host, () => {
-  bootLog.info(`web-pi listening on ${CFG.host}:${CFG.port} base ${CFG.base} ` +
-    `(tmux socket ${tmux.SOCKET}, command "${CFG.command.join(' ')}", client ${CFG.clientDir})`);
+  bootLog.info(
+    `web-pi listening on ${CFG.host}:${CFG.port} base ${CFG.base} ` +
+      `(tmux socket ${tmux.SOCKET}, command "${CFG.command.join(' ')}", client ${CFG.clientDir})`,
+  );
   // Best-effort vendored-pi version at boot — makes dependency drift visible.
   if (CFG.command[0] === PI_BIN) {
     execFile(PI_BIN, ['--version'], { timeout: 5000 }, (err, out) =>
-      bootLog.info(err ? `pi: version check failed (${(err as Error).message})` : `pi ${String(out).trim()}`));
+      bootLog.info(
+        err ? `pi: version check failed (${(err as Error).message})` : `pi ${String(out).trim()}`,
+      ),
+    );
   }
 });
 
@@ -1226,11 +1508,21 @@ server.listen(CFG.port, CFG.host, () => {
 const SHUTDOWN_DEADLINE_MS = 5000;
 const whenClosed = new Promise<void>(resolve => server.once('close', resolve));
 const shutdownSteps: Array<() => void | Promise<void>> = [
-  () => { shutdownScheduler(); },                    // 0. stop firing scheduled jobs
-  () => { autoUpdater.stop(); },                    // 0.5 stop the auto-update loop
-  () => { server.close(); },                        // 1. stop listening
-  () => { closeAllSockets({ type: 'restart' }); },  // 2. notify + close every client
-  () => { editorTunnels.closeAll(); },              // 2.5 editor tunnels: cut (the iframe reconnects)
+  () => {
+    shutdownScheduler();
+  }, // 0. stop firing scheduled jobs
+  () => {
+    autoUpdater.stop();
+  }, // 0.5 stop the auto-update loop
+  () => {
+    server.close();
+  }, // 1. stop listening
+  () => {
+    closeAllSockets({ type: 'restart' });
+  }, // 2. notify + close every client
+  () => {
+    editorTunnels.closeAll();
+  }, // 2.5 editor tunnels: cut (the iframe reconnects)
   () => {
     // Re-armed on an interval, not one-shot: a terminal's close makes the
     // console page re-poll /api/state on its keep-alive socket — busy
@@ -1259,7 +1551,11 @@ function shutdown(signal: string): void {
   }, SHUTDOWN_DEADLINE_MS);
   void (async () => {
     for (const step of shutdownSteps) {
-      try { await step(); } catch (err) { shutdownLog.error('shutdown step failed', { error: err }); }
+      try {
+        await step();
+      } catch (err) {
+        shutdownLog.error('shutdown step failed', { error: err });
+      }
     }
     clearTimeout(deadline);
     process.exit(0);

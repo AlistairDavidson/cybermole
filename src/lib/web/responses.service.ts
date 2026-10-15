@@ -9,20 +9,46 @@
 import type { DatabaseUpdateFailure } from '../db';
 import type { DeleteAppFailure, SaveAppFailure } from '../apps';
 import type {
-  DeleteJobFailure, ListJobsFailure, ListRunsFailure, RunJobFailure, RunLogData, RunLogFailure, SaveJobFailure,
+  DeleteJobFailure,
+  ListJobsFailure,
+  ListRunsFailure,
+  RunJobFailure,
+  RunLogData,
+  RunLogFailure,
+  SaveJobFailure,
 } from '../jobs';
 import type {
-  CloseTerminalFailure, DeleteWorkspaceFailure, NewTerminalFailure, RenameTerminalFailure, SaveWorkspaceFailure,
+  CloseTerminalFailure,
+  DeleteWorkspaceFailure,
+  NewTerminalFailure,
+  RenameTerminalFailure,
+  SaveWorkspaceFailure,
 } from '../workspaces';
-import type { ActivateFailure, EnforcementFailure, ListCommitsFailure, ManagementStateFailure, RequestBuildFailure } from '../releases';
+import type {
+  ActivateFailure,
+  EnforcementFailure,
+  ListCommitsFailure,
+  ManagementStateFailure,
+  RequestBuildFailure,
+} from '../releases';
 import type { ConsoleStateFailure, SettingsStateFailure } from '../services';
 import type { PiUpdateFailure, PiUpdateResult } from '../settings';
-import type { FetchedObject, FetchObjectFailure, ObjectInfo, StatObjectFailure, StoreUploadFailure } from '../storage';
+import type {
+  FetchedObject,
+  FetchObjectFailure,
+  ObjectInfo,
+  StatObjectFailure,
+  StoreUploadFailure,
+} from '../storage';
 import type { UpdateResult } from '../types';
 import { UPLOAD_ALLOWED_MIME_TYPES } from '../../schemas/uploads';
 import type { FileUploadFailure, ParseFailure, ValidationFailure } from './parsing.service';
 
-export function jsonResponse(body: unknown, status: number, headers?: Record<string, string>): Response {
+export function jsonResponse(
+  body: unknown,
+  status: number,
+  headers?: Record<string, string>,
+): Response {
   return new Response(JSON.stringify(body), {
     status,
     // no-store: these bodies are per-user state (and the service worker
@@ -47,11 +73,20 @@ export function failureResponse<DataType extends object>(
     case 'unsupported_content_type':
       return jsonResponse({ error: 'Unsupported content type', code: result.errorCode }, 415);
     case 'no_file_provided':
-      return jsonResponse({ error: result.errorMessage ?? 'No file provided', code: result.errorCode }, 400);
+      return jsonResponse(
+        { error: result.errorMessage ?? 'No file provided', code: result.errorCode },
+        400,
+      );
     case 'file_too_large':
-      return jsonResponse({ error: result.errorMessage ?? 'File too large', code: result.errorCode }, 413);
+      return jsonResponse(
+        { error: result.errorMessage ?? 'File too large', code: result.errorCode },
+        413,
+      );
     case 'unsupported_file_type':
-      return jsonResponse({ error: result.errorMessage ?? 'Unsupported file type', code: result.errorCode }, 400);
+      return jsonResponse(
+        { error: result.errorMessage ?? 'Unsupported file type', code: result.errorCode },
+        400,
+      );
     case 'validation_failure':
       return validationFailureResponse(result);
     default:
@@ -68,17 +103,32 @@ export function firstIssueText(issues: Record<string, string>): string {
   return field ? `${field}: ${message}` : message;
 }
 
-export function validationFailureResponse<DataType extends object>(result: ValidationFailure<DataType>): Response {
-  return jsonResponse({ error: firstIssueText(result.issues), code: result.errorCode, issues: result.issues }, 400);
+export function validationFailureResponse<DataType extends object>(
+  result: ValidationFailure<DataType>,
+): Response {
+  return jsonResponse(
+    { error: firstIssueText(result.issues), code: result.errorCode, issues: result.issues },
+    400,
+  );
 }
 
 // ---------- domain mappers ----------
 
-export type JobFailure = SaveJobFailure | DeleteJobFailure | RunJobFailure | ListJobsFailure | ListRunsFailure | RunLogFailure;
+export type JobFailure =
+  | SaveJobFailure
+  | DeleteJobFailure
+  | RunJobFailure
+  | ListJobsFailure
+  | ListRunsFailure
+  | RunLogFailure;
 
 /** Jobs failures → status + the { error, detail } body /jobs reads. */
 export function jobFailureResponse(f: JobFailure): Response {
-  const body = (error: string, detail: string | null = null) => ({ error, detail, code: f.errorCode });
+  const body = (error: string, detail: string | null = null) => ({
+    error,
+    detail,
+    code: f.errorCode,
+  });
   switch (f.errorCode) {
     case 'invalid_schedule':
       return jsonResponse(body(f.errorMessage ?? f.errorCode), 400);
@@ -90,7 +140,10 @@ export function jobFailureResponse(f: JobFailure): Response {
     case 'log_missing':
       return jsonResponse(body(f.errorMessage ?? 'the run left no log'), 404);
     case 'run_active':
-      return jsonResponse(body(f.errorMessage ?? 'previous run is still active', f.data?.session ?? null), 409);
+      return jsonResponse(
+        body(f.errorMessage ?? 'previous run is still active', f.data?.session ?? null),
+        409,
+      );
     case 'tmux_error':
       return jsonResponse(body('could not open run session', f.errorMessage ?? null), 500);
     case 'read_error':
@@ -109,7 +162,10 @@ export function invalidJobNameResponse(): Response {
 
 /** A :fired_at path param that is not an integer epoch-ms value. */
 export function invalidFiredAtResponse(): Response {
-  return jsonResponse({ error: 'invalid fired_at (integer epoch ms)', detail: null, code: 'invalid_fired_at' }, 400);
+  return jsonResponse(
+    { error: 'invalid fired_at (integer epoch ms)', detail: null, code: 'invalid_fired_at' },
+    400,
+  );
 }
 
 /** GET /api/jobs/:name/runs/:fired_at/log's success: the tail as
@@ -143,7 +199,10 @@ export function appFailureResponse(f: AppFailure): Response {
     case 'invalid_cwd':
       return jsonResponse({ error: f.errorMessage ?? 'invalid cwd', code: f.errorCode }, 400);
     case 'duplicate_slug':
-      return jsonResponse({ error: f.errorMessage ?? 'an app with that slug already exists', code: f.errorCode }, 409);
+      return jsonResponse(
+        { error: f.errorMessage ?? 'an app with that slug already exists', code: f.errorCode },
+        409,
+      );
     case 'app_not_found':
       return jsonResponse({ error: f.errorMessage ?? 'no such app', code: f.errorCode }, 404);
     case 'database_error':
@@ -200,9 +259,19 @@ export function terminalFailureResponse(f: TerminalFailure): Response {
     case 'terminal_not_found':
       return jsonResponse({ error: f.errorMessage ?? 'no such terminal', code: f.errorCode }, 404);
     case 'server_not_running':
-      return jsonResponse({ error: f.errorMessage ?? 'workspace tmux server not running', code: f.errorCode, ...terminal }, 503);
+      return jsonResponse(
+        {
+          error: f.errorMessage ?? 'workspace tmux server not running',
+          code: f.errorCode,
+          ...terminal,
+        },
+        503,
+      );
     case 'tmux_error':
-      return jsonResponse({ error: f.errorMessage ?? 'tmux error', code: f.errorCode, ...terminal }, 500);
+      return jsonResponse(
+        { error: f.errorMessage ?? 'tmux error', code: f.errorCode, ...terminal },
+        500,
+      );
     case 'database_error':
       return jsonResponse({ error: f.errorMessage ?? 'database error', code: f.errorCode }, 500);
     default:
@@ -218,21 +287,28 @@ export function invalidTerminalIdResponse(): Response {
 /** /api/files failures (upload and download): no storage configured is
  *  the operator's to fix (503); a failed read or write is the storage
  *  server's (502 — it's the upstream that failed, not this request). */
-export function objectStoreFailureResponse(f: StoreUploadFailure | FetchObjectFailure | StatObjectFailure): Response {
+export function objectStoreFailureResponse(
+  f: StoreUploadFailure | FetchObjectFailure | StatObjectFailure,
+): Response {
   switch (f.errorCode) {
     case 'storage_not_configured':
-      return jsonResponse({ error: f.errorMessage ?? 'object storage is not configured', code: f.errorCode }, 503);
+      return jsonResponse(
+        { error: f.errorMessage ?? 'object storage is not configured', code: f.errorCode },
+        503,
+      );
     case 'object_not_found':
       return jsonResponse({ error: 'no such file', code: f.errorCode }, 404);
     case 'range_not_satisfiable': {
       // RFC 9110 §15.5.17: say how big the file is, so a client can recover.
       const size = f.data?.objectSize ?? null;
       return jsonResponse({ error: 'range not satisfiable', code: f.errorCode }, 416, {
-        'Accept-Ranges': 'bytes', ...(size === null ? {} : { 'Content-Range': `bytes */${size}` }),
+        'Accept-Ranges': 'bytes',
+        ...(size === null ? {} : { 'Content-Range': `bytes */${size}` }),
       });
     }
     case 'storage_error': {
-      const error = f.resultType === 'store_upload' ? 'could not store the file' : 'could not read the file';
+      const error =
+        f.resultType === 'store_upload' ? 'could not store the file' : 'could not read the file';
       return jsonResponse({ error, detail: f.errorMessage ?? null, code: f.errorCode }, 502);
     }
     default:
@@ -254,9 +330,13 @@ export function invalidObjectKeyResponse(): Response {
 function downloadHeaders(info: ObjectInfo): Record<string, string> {
   const allowed: readonly string[] = UPLOAD_ALLOWED_MIME_TYPES;
   const headers: Record<string, string> = {
-    'Content-Type': info.contentType !== null && allowed.includes(info.contentType)
-      ? info.contentType : 'application/octet-stream',
-    'Content-Disposition': info.contentDisposition?.startsWith('attachment') ? info.contentDisposition : 'attachment',
+    'Content-Type':
+      info.contentType !== null && allowed.includes(info.contentType)
+        ? info.contentType
+        : 'application/octet-stream',
+    'Content-Disposition': info.contentDisposition?.startsWith('attachment')
+      ? info.contentDisposition
+      : 'attachment',
     'Content-Security-Policy': "sandbox; default-src 'none'",
     'X-Content-Type-Options': 'nosniff',
     'Cache-Control': 'private, no-store',
@@ -297,7 +377,9 @@ export function piUpdateStatus(f: PiUpdateFailure): number {
 /** The wire shape POST /api/update-pi answers with (and /settings reads). */
 export function updateResultBody(r: PiUpdateResult): UpdateResult {
   const data = r.data ?? { dryRun: false, command: '', before: null, after: null, output: '' };
-  return r.ok ? { ok: true, ...data } : { ok: false, ...data, error: r.errorMessage ?? 'update failed' };
+  return r.ok
+    ? { ok: true, ...data }
+    : { ok: false, ...data, error: r.errorMessage ?? 'update failed' };
 }
 
 export function piUpdateResponse(r: PiUpdateResult): Response {
@@ -331,7 +413,11 @@ export function databaseUpdateFailureResponse(f: DatabaseUpdateFailure, error: s
 // { error, code } body the /management element reads (statuses:
 // docs/management-page.md §5).
 export type ManagementFailure =
-  | ManagementStateFailure | ListCommitsFailure | EnforcementFailure | RequestBuildFailure | ActivateFailure;
+  | ManagementStateFailure
+  | ListCommitsFailure
+  | EnforcementFailure
+  | RequestBuildFailure
+  | ActivateFailure;
 
 export function managementFailureResponse(f: ManagementFailure): Response {
   const body = (status: number, extra: Record<string, unknown> = {}): Response =>
@@ -339,27 +425,27 @@ export function managementFailureResponse(f: ManagementFailure): Response {
   switch (f.errorCode) {
     case 'invalid_credentials': // the password re-confirmation failed
       return body(401);
-    case 'reauth_limited':     // too many password confirmations in the window
+    case 'reauth_limited': // too many password confirmations in the window
       return body(429);
-    case 'checkout_missing':    // no checkout configured/present
+    case 'checkout_missing': // no checkout configured/present
       return body(404);
-    case 'base_unknown':        // no trustworthy diff base — operator must rebuild the image
+    case 'base_unknown': // no trustworthy diff base — operator must rebuild the image
     case 'base_not_in_checkout':
       return body(409);
-    case 'target_not_found':    // the picked sha does not resolve
+    case 'target_not_found': // the picked sha does not resolve
       return body(404);
-    case 'git_error':           // git failed (incl. an unparseable diff — fail closed)
-    case 'marker_error':        // could not write the builder request
+    case 'git_error': // git failed (incl. an unparseable diff — fail closed)
+    case 'marker_error': // could not write the builder request
     case 'database_error':
       return body(500);
     case 'enforcement_rejected': // the protected set changed — THE refusal
       return body(422);
     case 'releases_not_configured': // no WEB_PI_RELEASES_DIR volume
       return body(503);
-    case 'build_active':        // another build is in flight
-    case 'release_invalid':     // manifest mismatch / bad layout
+    case 'build_active': // another build is in flight
+    case 'release_invalid': // manifest mismatch / bad layout
       return body(409);
-    case 'release_not_built':   // nothing built for that sha
+    case 'release_not_built': // nothing built for that sha
       return body(404);
     default:
       return f satisfies never;

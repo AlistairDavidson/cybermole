@@ -28,7 +28,9 @@ import { pathToFileURL } from 'node:url';
 /** @param {http.ServerResponse} res @param {number} status @param {string} code */
 function s3Error(res, status, code) {
   res.writeHead(status, { 'Content-Type': 'application/xml' });
-  res.end(`<?xml version="1.0" encoding="UTF-8"?><Error><Code>${code}</Code><Message>${code}</Message></Error>`);
+  res.end(
+    `<?xml version="1.0" encoding="UTF-8"?><Error><Code>${code}</Code><Message>${code}</Message></Error>`,
+  );
 }
 
 /** @param {FakeObject} object @param {number} length */
@@ -62,7 +64,13 @@ export function startFakeS3({ port = 0, accessKey }) {
   // Test-set misbehaviour: the next N object/part puts fail 500; gets fail
   // 500; HeadBucket answers this status; CreateBucket creates but answers
   // BucketAlreadyOwnedByYou (a lost race); CreateBucket is refused.
-  const faults = { failPuts: 0, failGets: false, headStatus: null, createAnswersOwned: false, denyCreate: false };
+  const faults = {
+    failPuts: 0,
+    failGets: false,
+    headStatus: null,
+    createAnswersOwned: false,
+    denyCreate: false,
+  };
   let nextUploadId = 1;
 
   const server = http.createServer((req, res) => {
@@ -74,22 +82,37 @@ export function startFakeS3({ port = 0, accessKey }) {
       const segments = url.pathname.split('/').slice(1).map(decodeURIComponent);
 
       if (segments[0] === '__fake') {
-        if (segments[1] === 'health') { res.end('ok'); return; }
-        const object = segments[1] === 'objects' ? buckets.get(segments[2] ?? '')?.get(segments.slice(3).join('/')) : undefined;
-        if (!object) { res.writeHead(404).end(); return; }
+        if (segments[1] === 'health') {
+          res.end('ok');
+          return;
+        }
+        const object =
+          segments[1] === 'objects'
+            ? buckets.get(segments[2] ?? '')?.get(segments.slice(3).join('/'))
+            : undefined;
+        if (!object) {
+          res.writeHead(404).end();
+          return;
+        }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ...object, body: object.body.toString('base64') }));
         return;
       }
 
       const auth = req.headers.authorization ?? '';
-      if (!auth.startsWith(`AWS4-HMAC-SHA256 Credential=${accessKey}/`)) { s3Error(res, 403, 'InvalidAccessKeyId'); return; }
+      if (!auth.startsWith(`AWS4-HMAC-SHA256 Credential=${accessKey}/`)) {
+        s3Error(res, 403, 'InvalidAccessKeyId');
+        return;
+      }
 
       const [bucket = '', ...keyParts] = segments;
       const key = keyParts.join('/');
       const objects = buckets.get(bucket);
       const uploadId = url.searchParams.get('uploadId');
-      const meta = () => ({ contentType: req.headers['content-type'], contentDisposition: req.headers['content-disposition'] });
+      const meta = () => ({
+        contentType: req.headers['content-type'],
+        contentDisposition: req.headers['content-disposition'],
+      });
 
       // ---- bucket calls
       if (key === '' && req.method === 'HEAD') {
@@ -97,28 +120,50 @@ export function startFakeS3({ port = 0, accessKey }) {
         return;
       }
       if (key === '' && req.method === 'PUT') {
-        if (faults.denyCreate) { s3Error(res, 403, 'AccessDenied'); return; }
+        if (faults.denyCreate) {
+          s3Error(res, 403, 'AccessDenied');
+          return;
+        }
         stats.creates++;
         if (!objects) buckets.set(bucket, new Map());
-        if (objects || faults.createAnswersOwned) { s3Error(res, 409, 'BucketAlreadyOwnedByYou'); return; }
+        if (objects || faults.createAnswersOwned) {
+          s3Error(res, 409, 'BucketAlreadyOwnedByYou');
+          return;
+        }
         res.writeHead(200).end();
         return;
       }
 
       // ---- object calls
-      if (req.method === 'HEAD') { // HeadObject: no error body, like S3
+      if (req.method === 'HEAD') {
+        // HeadObject: no error body, like S3
         stats.heads++;
         const object = objects?.get(key);
-        if (faults.failGets) { res.writeHead(500).end(); return; }
-        if (!object) { res.writeHead(404).end(); return; }
+        if (faults.failGets) {
+          res.writeHead(500).end();
+          return;
+        }
+        if (!object) {
+          res.writeHead(404).end();
+          return;
+        }
         res.writeHead(200, objectHeaders(object, object.body.length)).end();
         return;
       }
-      if (!objects) { s3Error(res, 404, 'NoSuchBucket'); return; }
+      if (!objects) {
+        s3Error(res, 404, 'NoSuchBucket');
+        return;
+      }
       if (req.method === 'GET') {
-        if (faults.failGets) { s3Error(res, 500, 'InternalError'); return; }
+        if (faults.failGets) {
+          s3Error(res, 500, 'InternalError');
+          return;
+        }
         const object = objects.get(key);
-        if (!object) { s3Error(res, 404, 'NoSuchKey'); return; }
+        if (!object) {
+          s3Error(res, 404, 'NoSuchKey');
+          return;
+        }
         const range = req.headers.range;
         if (range) {
           stats.ranges.push(range);
@@ -126,8 +171,14 @@ export function startFakeS3({ port = 0, accessKey }) {
           const [, first, last] = /^bytes=(\d*)-(\d*)$/.exec(range) ?? [];
           const start = first ? Number(first) : Math.max(0, size - Number(last));
           const end = first ? Math.min(size - 1, last ? Number(last) : size - 1) : size - 1;
-          if (start >= size || (!first && Number(last) === 0)) { s3Error(res, 416, 'InvalidRange'); return; }
-          res.writeHead(206, { ...objectHeaders(object, end - start + 1), 'Content-Range': `bytes ${start}-${end}/${size}` });
+          if (start >= size || (!first && Number(last) === 0)) {
+            s3Error(res, 416, 'InvalidRange');
+            return;
+          }
+          res.writeHead(206, {
+            ...objectHeaders(object, end - start + 1),
+            'Content-Range': `bytes ${start}-${end}/${size}`,
+          });
           res.end(object.body.subarray(start, end + 1));
           return;
         }
@@ -135,17 +186,29 @@ export function startFakeS3({ port = 0, accessKey }) {
         res.end(object.body);
         return;
       }
-      if (req.method === 'POST' && url.searchParams.has('uploads')) { // CreateMultipartUpload
+      if (req.method === 'POST' && url.searchParams.has('uploads')) {
+        // CreateMultipartUpload
         const id = `upload-${nextUploadId++}`;
         multipart.set(id, { bucket, key, ...meta(), parts: new Map() });
-        xmlOk(res, `<InitiateMultipartUploadResult><Bucket>${bucket}</Bucket><Key>${key}</Key><UploadId>${id}</UploadId></InitiateMultipartUploadResult>`);
+        xmlOk(
+          res,
+          `<InitiateMultipartUploadResult><Bucket>${bucket}</Bucket><Key>${key}</Key><UploadId>${id}</UploadId></InitiateMultipartUploadResult>`,
+        );
         return;
       }
-      if (req.method === 'PUT') { // PutObject or UploadPart
-        if (faults.failPuts > 0) { faults.failPuts--; s3Error(res, 500, 'InternalError'); return; }
+      if (req.method === 'PUT') {
+        // PutObject or UploadPart
+        if (faults.failPuts > 0) {
+          faults.failPuts--;
+          s3Error(res, 500, 'InternalError');
+          return;
+        }
         if (uploadId) {
           const upload = multipart.get(uploadId);
-          if (!upload) { s3Error(res, 404, 'NoSuchUpload'); return; }
+          if (!upload) {
+            s3Error(res, 404, 'NoSuchUpload');
+            return;
+          }
           const partNumber = Number(url.searchParams.get('partNumber'));
           upload.parts.set(partNumber, Buffer.concat(chunks));
           res.writeHead(200, { ETag: `"part-${partNumber}"` }).end();
@@ -155,20 +218,32 @@ export function startFakeS3({ port = 0, accessKey }) {
         res.writeHead(200, { ETag: '"fake"' }).end();
         return;
       }
-      if (req.method === 'POST' && uploadId) { // CompleteMultipartUpload
+      if (req.method === 'POST' && uploadId) {
+        // CompleteMultipartUpload
         const upload = multipart.get(uploadId);
-        if (!upload) { s3Error(res, 404, 'NoSuchUpload'); return; }
+        if (!upload) {
+          s3Error(res, 404, 'NoSuchUpload');
+          return;
+        }
         multipart.delete(uploadId);
-        const ordered = [...upload.parts.entries()].sort(([a], [b]) => a - b).map(([, part]) => part);
+        const ordered = [...upload.parts.entries()]
+          .sort(([a], [b]) => a - b)
+          .map(([, part]) => part);
         objects.set(key, {
-          body: Buffer.concat(ordered), contentType: upload.contentType,
-          contentDisposition: upload.contentDisposition, lastModified: new Date(),
+          body: Buffer.concat(ordered),
+          contentType: upload.contentType,
+          contentDisposition: upload.contentDisposition,
+          lastModified: new Date(),
         });
         stats.completed++;
-        xmlOk(res, `<CompleteMultipartUploadResult><Bucket>${bucket}</Bucket><Key>${key}</Key><ETag>"fake"</ETag></CompleteMultipartUploadResult>`);
+        xmlOk(
+          res,
+          `<CompleteMultipartUploadResult><Bucket>${bucket}</Bucket><Key>${key}</Key><ETag>"fake"</ETag></CompleteMultipartUploadResult>`,
+        );
         return;
       }
-      if (req.method === 'DELETE' && uploadId) { // AbortMultipartUpload
+      if (req.method === 'DELETE' && uploadId) {
+        // AbortMultipartUpload
         multipart.delete(uploadId);
         stats.aborted++;
         res.writeHead(204).end();

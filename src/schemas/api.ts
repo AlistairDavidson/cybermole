@@ -40,7 +40,9 @@ export const jobValidateBody = z.object({ schedule: z.string() });
 export const updatePiBody = z.object({ dryRun: z.boolean().default(false) });
 
 /** POST /api/auto-update-pi — the toggle's one boolean. */
-export const autoUpdateBody = z.object({ enabled: z.boolean({ error: 'enabled must be a boolean' }) });
+export const autoUpdateBody = z.object({
+  enabled: z.boolean({ error: 'enabled must be a boolean' }),
+});
 
 // ---------- workspaces-plan §6: apps / workspaces / terminals bodies ----------
 // (docs/workspaces-plan.md, branch task/ws-schema.) The name checks are
@@ -87,7 +89,12 @@ export const workspacePatchBody = z.object({
 /** POST /api/workspaces/:id/terminals — a title for the new tab, or none
  *  (the UI then labels it "term N"). */
 export const terminalCreateBody = z.object({
-  title: z.string().trim().min(1, 'title is required').max(120, 'title is too long (max 120)').optional(),
+  title: z
+    .string()
+    .trim()
+    .min(1, 'title is required')
+    .max(120, 'title is too long (max 120)')
+    .optional(),
 });
 
 /** PATCH /api/terminals/:id — rename the tab: a non-empty string sets the
@@ -95,7 +102,13 @@ export const terminalCreateBody = z.object({
  *  that returns the row (the plan's {title?} — same convention as the
  *  app/workspace patches; an empty string is a 400, not a clear). */
 export const terminalPatchBody = z.object({
-  title: z.string().trim().min(1, 'title is required').max(120, 'title is too long (max 120)').nullable().optional(),
+  title: z
+    .string()
+    .trim()
+    .min(1, 'title is required')
+    .max(120, 'title is too long (max 120)')
+    .nullable()
+    .optional(),
 });
 
 // ---------- the console dialogs' forms (task/ws-console, plan §8) ----------

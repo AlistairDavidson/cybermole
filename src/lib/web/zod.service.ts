@@ -59,7 +59,10 @@ function attrsFromNode(node: JsonSchemaNode, required: boolean, field: string): 
     // console.warn on purpose, not src/lib/logger.ts: this module is
     // Astro-bundled (frontmatter imports it) and the winston logger must
     // stay out of the Vite bundle (docs/CODE_STYLE.md §6).
-    else console.warn(`zodSchemaToHTMLAttributes: ${field}: pattern /${n.pattern}/ is not valid under the HTML v flag — omitted`);
+    else
+      console.warn(
+        `zodSchemaToHTMLAttributes: ${field}: pattern /${n.pattern}/ is not valid under the HTML v flag — omitted`,
+      );
   }
   return attrs;
 }

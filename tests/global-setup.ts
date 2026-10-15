@@ -32,11 +32,17 @@ export default async function globalSetup(): Promise<void> {
   // one app, two console workspaces, one app workspace, terminals under
   // them. Rows only — no eager spawns; which fixture tabs read as LIVE is
   // decided by the tmux sessions below (the live diff is tmux-derived).
-  const username = (): DatabaseReadResult<string | null> =>
-    ({ ok: true, resultType: 'database_read', data: { value: USERNAME } });
+  const username = (): DatabaseReadResult<string | null> => ({
+    ok: true,
+    resultType: 'database_read',
+    data: { value: USERNAME },
+  });
   const apps = new Apps({ db, username, killSession: async () => true });
   const workspaces = new Workspaces({
-    db, username, killSession: async () => true, defaultCwd: WORKSPACE,
+    db,
+    username,
+    killSession: async () => true,
+    defaultCwd: WORKSPACE,
     spawnSession: async name => ({ ok: true, resultType: 'tmux_session', data: { name } }),
     liveSessionNames: async () => new Set(),
   });
@@ -47,9 +53,15 @@ export default async function globalSetup(): Promise<void> {
   };
   const app = await apps.saveApp('alpha app');
   if (!app.ok) throw new Error(`global-setup: ${app.errorMessage}`);
-  const seeded = async (name: string, cwd: string, appId: string | null, titles: string[]):
-    Promise<{ cwd: string; terminals: string[] }> => {
-    const ws = await workspaces.saveWorkspace(appId === null ? { name, cwd } : { appId: asAppId(appId), name, cwd });
+  const seeded = async (
+    name: string,
+    cwd: string,
+    appId: string | null,
+    titles: string[],
+  ): Promise<{ cwd: string; terminals: string[] }> => {
+    const ws = await workspaces.saveWorkspace(
+      appId === null ? { name, cwd } : { appId: asAppId(appId), name, cwd },
+    );
     if (!ws.ok) throw new Error(`global-setup: ${ws.errorMessage}`);
     const terminals: string[] = [];
     for (const title of titles) {
@@ -72,8 +84,11 @@ export default async function globalSetup(): Promise<void> {
   // still answering means alive, "server exited unexpectedly" means
   // dying, and anything else ("no server running", no socket file) is
   // gone. It never forks a server of its own.
-  try { execFileSync('tmux', ['-L', TMUX_SOCKET, 'kill-server'], { stdio: 'ignore' }); }
-  catch { /* no server running — fine */ }
+  try {
+    execFileSync('tmux', ['-L', TMUX_SOCKET, 'kill-server'], { stdio: 'ignore' });
+  } catch {
+    /* no server running — fine */
+  }
   const serverGone = (): boolean => {
     try {
       execFileSync('tmux', ['-L', TMUX_SOCKET, 'list-sessions'], { stdio: 'ignore' });
@@ -101,13 +116,25 @@ export default async function globalSetup(): Promise<void> {
   // in the normal buffer so scrollback survives, which the backfill tests
   // rely on and production always runs with).
   let first = true;
-  for (const [group, index] of [[scratch, 0], [deploy, 0], [proj, 0]] as const) {
+  for (const [group, index] of [
+    [scratch, 0],
+    [deploy, 0],
+    [proj, 0],
+  ] as const) {
     const id = group.terminals[index];
     if (!id) throw new Error('global-setup: fixture terminal missing');
     execFileSync('tmux', [
-      '-L', TMUX_SOCKET,
+      '-L',
+      TMUX_SOCKET,
       ...(first ? ['-f', path.resolve(__dirname, '..', 'tmux.conf')] : []),
-      'new-session', '-d', '-s', terminalSessionName(asTerminalId(id)), '-c', group.cwd, '--', cmd,
+      'new-session',
+      '-d',
+      '-s',
+      terminalSessionName(asTerminalId(id)),
+      '-c',
+      group.cwd,
+      '--',
+      cmd,
     ]);
     first = false;
   }

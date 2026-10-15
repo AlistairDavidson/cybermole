@@ -12,8 +12,15 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 const {
-  Releases, markerPaths, readBuildMarker, writeBuildRequest, anyBuildActive,
-  validateReleaseDir, resolveServingDirs, readPointer, writePointer,
+  Releases,
+  markerPaths,
+  readBuildMarker,
+  writeBuildRequest,
+  anyBuildActive,
+  validateReleaseDir,
+  resolveServingDirs,
+  readPointer,
+  writePointer,
 } = await import('../../dist-server/src/lib/releases.js');
 const { StateDb } = await import('../../dist-server/src/lib/db.js');
 const { BuildDoneMarkerSchema } = await import('../../dist-server/src/schemas/management.js');
@@ -25,14 +32,17 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-releases-'));
 /** A minimal app root with a version.json recording `git`. */
 function fakeAppRoot(git = 'unknown') {
   const root = fs.mkdtempSync(path.join(tmp, 'app-'));
-  fs.writeFileSync(path.join(root, 'version.json'), JSON.stringify({ git, builtAt: '2026-10-10T00:00:00Z' }));
+  fs.writeFileSync(
+    path.join(root, 'version.json'),
+    JSON.stringify({ git, builtAt: '2026-10-10T00:00:00Z' }),
+  );
   return root;
 }
 
 /** A tiny git repo: base commit with README + one follow-up commit. */
 function gitRepo() {
   const root = fs.mkdtempSync(path.join(tmp, 'repo-'));
-  const run = (cmd) => execFileSync('git', cmd, { cwd: root, stdio: 'ignore' });
+  const run = cmd => execFileSync('git', cmd, { cwd: root, stdio: 'ignore' });
   run(['init', '-q', '-b', 'main']);
   run(['config', 'user.email', 't@t']);
   run(['config', 'user.name', 't']);
@@ -61,14 +71,21 @@ function harness(opts = {}) {
     // (null must survive: it means "no releases volume mounted")
     releasesDir: opts.releasesDir !== undefined ? opts.releasesDir : releasesDir,
     appRoot: opts.appRoot ?? fakeAppRoot(opts.baseSha ?? 'unknown'),
-    bootServing: opts.bootServing === undefined
-      ? () => ({ kind: 'image', sha: null })
-      : () => opts.bootServing,
+    bootServing:
+      opts.bootServing === undefined
+        ? () => ({ kind: 'image', sha: null })
+        : () => opts.bootServing,
     requestRestart: () => restarts.push(Date.now()),
     verify: async (username, password) =>
       username === 'tester' && password === 'pw'
         ? { ok: true, resultType: 'verify_login', data: { username } }
-        : { ok: false, resultType: 'verify_login', data: { username }, errorCode: 'invalid_credentials', errorMessage: 'invalid credentials' },
+        : {
+            ok: false,
+            resultType: 'verify_login',
+            data: { username },
+            errorCode: 'invalid_credentials',
+            errorMessage: 'invalid credentials',
+          },
   };
   return { db, service: new Releases(deps), releasesDir, restarts, deps };
 }
@@ -82,8 +99,10 @@ function fakeBuilder(releasesDir, sha, status, log = '') {
     fs.renameSync(p.pending, p.building);
   }
   fs.rmSync(p.building, { force: true });
-  fs.writeFileSync(p.done, JSON.stringify(
-    BuildDoneMarkerSchema.parse({ sha, status, builtAt: Date.now(), log })));
+  fs.writeFileSync(
+    p.done,
+    JSON.stringify(BuildDoneMarkerSchema.parse({ sha, status, builtAt: Date.now(), log })),
+  );
   if (status === 'built') makeRelease(releasesDir, sha);
 }
 
@@ -100,15 +119,22 @@ function claimBuilder(releasesDir, sha) {
 /** A valid release dir for `sha` (the builder's layout: dist + manifest
  *  + a node_modules link at the root — a real dir stands in for the
  *  image-link; only its existence matters to the validator). */
-function makeRelease(releasesDir, sha, manifestSha = sha, entry = 'export const handler = () => {};') {
+function makeRelease(
+  releasesDir,
+  sha,
+  manifestSha = sha,
+  entry = 'export const handler = () => {};',
+) {
   const p = markerPaths(releasesDir, sha);
   fs.mkdirSync(path.join(p.releaseDir, 'dist', 'server'), { recursive: true });
   fs.mkdirSync(path.join(p.releaseDir, 'dist', 'client', '_astro'), { recursive: true });
   fs.writeFileSync(path.join(p.releaseDir, 'dist', 'server', 'entry.mjs'), entry);
   fs.writeFileSync(path.join(p.releaseDir, 'dist', 'client', '_astro', 'x.js'), 'x');
   fs.mkdirSync(path.join(p.releaseDir, 'node_modules'), { recursive: true });
-  fs.writeFileSync(path.join(p.releaseDir, 'manifest.json'),
-    JSON.stringify({ sha: manifestSha, builtAt: 1234, builder: 'test' }));
+  fs.writeFileSync(
+    path.join(p.releaseDir, 'manifest.json'),
+    JSON.stringify({ sha: manifestSha, builtAt: 1234, builder: 'test' }),
+  );
 }
 
 const PW = { username: 'tester', password: 'pw' };
@@ -225,7 +251,9 @@ test('applied_at survives a re-build; a re-activation keeps the FIRST activation
 test('writeBuildRequest: the marker is schema-valid and atomic (tmp+rename)', () => {
   const dir = fs.mkdtempSync(path.join(tmp, 'req-'));
   writeBuildRequest(dir, 'a'.repeat(40), 'b'.repeat(40));
-  const body = JSON.parse(fs.readFileSync(path.join(dir, 'pending', `${'a'.repeat(40)}.json`), 'utf8'));
+  const body = JSON.parse(
+    fs.readFileSync(path.join(dir, 'pending', `${'a'.repeat(40)}.json`), 'utf8'),
+  );
   assert.deepEqual(Object.keys(body).sort(), ['base', 'requestedAt', 'sha']);
   assert.equal(fs.readdirSync(path.join(dir, 'pending')).length, 1); // no tmp leftovers
 });
@@ -260,10 +288,17 @@ test('validateReleaseDir: layout + manifest must match the sha', () => {
 
 test('resolveServingDirs: image copy when no pointer; release when valid; fallback when not', () => {
   const dir = fs.mkdtempSync(path.join(tmp, 'serve-'));
-  const image = { imageClientDir: '/opt/web-pi/dist/client', imageAstroEntry: '/opt/web-pi/dist/server/entry.mjs' };
+  const image = {
+    imageClientDir: '/opt/web-pi/dist/client',
+    imageAstroEntry: '/opt/web-pi/dist/server/entry.mjs',
+  };
   // no releases dir at all
-  assert.deepEqual(resolveServingDirs({ ...image, releasesDir: null }).dirs,
-    { clientDir: image.imageClientDir, astroEntry: image.imageAstroEntry, releaseDir: null, sha: null });
+  assert.deepEqual(resolveServingDirs({ ...image, releasesDir: null }).dirs, {
+    clientDir: image.imageClientDir,
+    astroEntry: image.imageAstroEntry,
+    releaseDir: null,
+    sha: null,
+  });
   // pointer set but release missing → image fallback, loudly
   const sha = 'e'.repeat(40);
   writePointer(dir, sha);
@@ -300,18 +335,31 @@ test('reauth_limited: past 10 attempts in the window the verbs refuse — one bu
   const repo = gitRepo();
   const { service } = harness({ baseSha: repo.base, checkout: repo.root });
   for (let i = 0; i < 10; i++) {
-    const r = await service.requestBuild({ sha: repo.target, username: 'tester', password: 'nope' });
+    const r = await service.requestBuild({
+      sha: repo.target,
+      username: 'tester',
+      password: 'nope',
+    });
     assert.equal(r.errorCode, 'invalid_credentials', `attempt ${i + 1}`);
   }
   // the 11th attempt — and the budget is one PER PROCESS, shared across the
   // dangerous verbs (one password, one oracle to close)
-  assert.equal((await service.requestBuild({ sha: repo.target, username: 'tester', password: 'nope' })).errorCode,
-    'reauth_limited');
-  assert.equal((await service.activate({ target: repo.target, username: 'tester', password: 'nope' })).errorCode,
-    'reauth_limited');
+  assert.equal(
+    (await service.requestBuild({ sha: repo.target, username: 'tester', password: 'nope' }))
+      .errorCode,
+    'reauth_limited',
+  );
+  assert.equal(
+    (await service.activate({ target: repo.target, username: 'tester', password: 'nope' }))
+      .errorCode,
+    'reauth_limited',
+  );
   // attempts, like login's budget: even the correct password is refused
   // while the window is spent
-  assert.equal((await service.requestBuild({ sha: repo.target, ...PW })).errorCode, 'reauth_limited');
+  assert.equal(
+    (await service.requestBuild({ sha: repo.target, ...PW })).errorCode,
+    'reauth_limited',
+  );
 });
 
 test('requestBuild: releases_not_configured (no volume mounted)', async () => {
@@ -378,7 +426,11 @@ test('requestBuild: build_active while another build is in flight', async () => 
 test('activate: image target with no releases volume is a no-op success (already serving the image)', async () => {
   const { service, restarts } = harness({ releasesDir: null });
   const r = await service.activate({ target: 'image', ...PW });
-  assert.deepEqual(r, { ok: true, resultType: 'activate_release', data: { target: 'image', status: 'activating' } });
+  assert.deepEqual(r, {
+    ok: true,
+    resultType: 'activate_release',
+    data: { target: 'image', status: 'activating' },
+  });
   assert.equal(restarts.length, 0);
 });
 
@@ -400,13 +452,22 @@ test('activate: the happy path — pointer written, history recorded, restart tr
 test('activate: invalid_credentials; release_not_built; release_invalid', async () => {
   const repo = gitRepo();
   const { service, releasesDir } = harness({ baseSha: repo.base, checkout: repo.root });
-  assert.equal((await service.activate({ target: repo.target, username: 'x', password: 'y' })).errorCode, 'invalid_credentials');
-  assert.equal((await service.activate({ target: repo.target, ...PW })).errorCode, 'release_not_built');
+  assert.equal(
+    (await service.activate({ target: repo.target, username: 'x', password: 'y' })).errorCode,
+    'invalid_credentials',
+  );
+  assert.equal(
+    (await service.activate({ target: repo.target, ...PW })).errorCode,
+    'release_not_built',
+  );
   // a release whose manifest names another sha — the builder cannot mislabel
   await service.requestBuild({ sha: repo.target, ...PW });
   fakeBuilder(releasesDir, repo.target, 'built');
   makeRelease(releasesDir, repo.target, '0'.repeat(40));
-  assert.equal((await service.activate({ target: repo.target, ...PW })).errorCode, 'release_invalid');
+  assert.equal(
+    (await service.activate({ target: repo.target, ...PW })).errorCode,
+    'release_invalid',
+  );
 });
 
 test('activate: a release whose SSR entry will not LOAD is release_invalid (the probe)', async () => {
@@ -417,8 +478,12 @@ test('activate: a release whose SSR entry will not LOAD is release_invalid (the 
   // a layout-valid release (manifest + entry + client + node_modules) whose
   // entry imports a package that resolves nowhere — the layout checks
   // cannot see imports; the activate-time probe must refuse it
-  makeRelease(releasesDir, repo.target, repo.target,
-    "import 'definitely-not-a-real-package-webpi';\nexport const handler = () => {};\n");
+  makeRelease(
+    releasesDir,
+    repo.target,
+    repo.target,
+    "import 'definitely-not-a-real-package-webpi';\nexport const handler = () => {};\n",
+  );
   const r = await service.activate({ target: repo.target, ...PW });
   assert.equal(r.errorCode, 'release_invalid');
   assert.match(r.errorMessage, /failed to load/);
@@ -478,7 +543,10 @@ test('state: serving is the BOOT snapshot; nextBoot shows a written-but-unrestar
   assert.deepEqual(state.data.nextBoot, { kind: 'release', sha: repo.target });
   // after the reboot: main.ts resolves the pointer BEFORE building the
   // service, so the new process reports the release with nothing pending
-  const booted = new Releases({ ...deps, bootServing: () => ({ kind: 'release', sha: repo.target }) });
+  const booted = new Releases({
+    ...deps,
+    bootServing: () => ({ kind: 'release', sha: repo.target }),
+  });
   const after = await booted.state();
   assert.equal(after.data.serving.kind, 'release');
   assert.equal(after.data.serving.release?.sha, repo.target);

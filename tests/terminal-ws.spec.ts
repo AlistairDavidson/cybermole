@@ -35,7 +35,10 @@ function bareEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
 /** Boot one private server. Resolves with its login cookie once it
  *  listens; stop() SIGTERMs it (never the shared webServer) and cleans
  *  up its tmux server + dir. */
-async function bootServer(dir: string, socket: string): Promise<{
+async function bootServer(
+  dir: string,
+  socket: string,
+): Promise<{
   cookie: string;
   stop(): Promise<void>;
 }> {
@@ -44,7 +47,8 @@ async function bootServer(dir: string, socket: string): Promise<{
   fs.chmodSync(cmd, 0o755);
 
   const pw = spawnSync('node', ['dist-server/server/set-password.js'], {
-    cwd: ROOT, input: `${USERNAME}\n${PASSWORD}\n${PASSWORD}\n`,
+    cwd: ROOT,
+    input: `${USERNAME}\n${PASSWORD}\n${PASSWORD}\n`,
     env: bareEnv({ WEB_PI_PORT: '0', WEB_PI_STATE_DIR: dir }),
   });
   expect(pw.status, pw.stderr?.toString()).toBe(0);
@@ -52,7 +56,8 @@ async function bootServer(dir: string, socket: string): Promise<{
   const child = spawn('node', ['dist-server/server/main.js'], {
     cwd: ROOT,
     env: bareEnv({
-      WEB_PI_PORT: String(PORT), WEB_PI_HOST: '127.0.0.1',
+      WEB_PI_PORT: String(PORT),
+      WEB_PI_HOST: '127.0.0.1',
       WEB_PI_STATE_DIR: dir,
       WEB_PI_TMUX_SOCKET: socket,
       WEB_PI_NEW_SESSION_CWD: os.tmpdir(), // deliberately NOT the workspace cwd
@@ -61,16 +66,29 @@ async function bootServer(dir: string, socket: string): Promise<{
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let boot = '';
-  child.stdout!.on('data', (d: Buffer) => { boot += d.toString(); });
-  child.stderr!.on('data', (d: Buffer) => { boot += d.toString(); });
+  child.stdout!.on('data', (d: Buffer) => {
+    boot += d.toString();
+  });
+  child.stderr!.on('data', (d: Buffer) => {
+    boot += d.toString();
+  });
   await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`server did not boot; output: ${boot}`)), 15_000);
-    child.stdout!.on('data', () => { if (boot.includes('web-pi listening')) { clearTimeout(timer); resolve(); } });
+    const timer = setTimeout(
+      () => reject(new Error(`server did not boot; output: ${boot}`)),
+      15_000,
+    );
+    child.stdout!.on('data', () => {
+      if (boot.includes('web-pi listening')) {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
     child.on('error', reject);
   });
 
   const login = await fetch(`${BASE}/login`, {
-    method: 'POST', body: JSON.stringify({ username: USERNAME, password: PASSWORD }),
+    method: 'POST',
+    body: JSON.stringify({ username: USERNAME, password: PASSWORD }),
   });
   expect(login.status).toBe(200);
   const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
@@ -87,7 +105,11 @@ async function bootServer(dir: string, socket: string): Promise<{
         child.once('exit', () => resolve());
         setTimeout(() => child.kill('SIGKILL'), 5_000).unref();
       });
-      try { spawnSync('tmux', tmuxArgs(['kill-server']), { stdio: 'ignore' }); } catch { /* gone */ }
+      try {
+        spawnSync('tmux', tmuxArgs(['kill-server']), { stdio: 'ignore' });
+      } catch {
+        /* gone */
+      }
       fs.rmSync(dir, { recursive: true, force: true });
     },
   };
@@ -95,14 +117,21 @@ async function bootServer(dir: string, socket: string): Promise<{
 
 /** tmux CLI against the spec's socket (status: 0 = ok, 1 = refused). */
 function tmux(socket: string, args: string[]): { status: number | null; stdout: string } {
-  const r = spawnSync('tmux', (socket.startsWith('/') ? ['-S', socket] : ['-L', socket]).concat(args));
+  const r = spawnSync(
+    'tmux',
+    (socket.startsWith('/') ? ['-S', socket] : ['-L', socket]).concat(args),
+  );
   return { status: r.status, stdout: (r.stdout ?? '').toString() };
 }
 
 /** One JSON call against the private server. */
-async function api(cookie: string, method: string, url: string, body?: unknown):
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- the parsed body, callers narrow it
-  Promise<{ status: number; json: any }> {
+async function api(
+  cookie: string,
+  method: string,
+  url: string,
+  body?: unknown,
+): // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the parsed body, callers narrow it
+Promise<{ status: number; json: any }> {
   const r = await fetch(`${BASE}${url}`, {
     method,
     headers: { cookie, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
@@ -115,30 +144,46 @@ async function api(cookie: string, method: string, url: string, body?: unknown):
 // object (its `origin` option is not the Origin header) — the terminal WS
 // is browser-only and demands a same-origin Origin. (The DOM lib's
 // WebSocket type doesn't know undici's options form.)
-const UndiciWebSocket = WebSocket as unknown as
-  new (url: string, init: { headers: Record<string, string> }) => WebSocket;
+const UndiciWebSocket = WebSocket as unknown as new (
+  url: string,
+  init: { headers: Record<string, string> },
+) => WebSocket;
 
 /** Open the terminal WS, send one attach frame, resolve on the first
  *  'attached' or 'error' answer. The returned socket stays live (output
  *  keeps accumulating into out()) for input round-trips. */
-function attachWs(cookie: string, frame: Record<string, unknown>): Promise<{
+function attachWs(
+  cookie: string,
+  frame: Record<string, unknown>,
+): Promise<{
   ws: WebSocket;
   outcome: { type: 'attached'; target: string } | { type: 'error'; message: string };
   out(): string;
 }> {
-  const ws = new UndiciWebSocket(`ws://127.0.0.1:${PORT}/ws`, { headers: { origin: BASE, cookie } });
+  const ws = new UndiciWebSocket(`ws://127.0.0.1:${PORT}/ws`, {
+    headers: { origin: BASE, cookie },
+  });
   const output: string[] = [];
   return new Promise((resolve, reject) => {
     ws.onopen = () => ws.send(JSON.stringify(frame));
     ws.onmessage = (ev: MessageEvent) => {
-      const m = JSON.parse(String(ev.data)) as { type: string; target?: string; message?: string; data?: string };
-      if (m.type === 'output') { output.push(m.data ?? ''); return; }
+      const m = JSON.parse(String(ev.data)) as {
+        type: string;
+        target?: string;
+        message?: string;
+        data?: string;
+      };
+      if (m.type === 'output') {
+        output.push(m.data ?? '');
+        return;
+      }
       if (m.type === 'attached' || m.type === 'error') {
         resolve({
           ws,
-          outcome: m.type === 'attached'
-            ? { type: 'attached', target: m.target ?? '' }
-            : { type: 'error', message: m.message ?? '' },
+          outcome:
+            m.type === 'attached'
+              ? { type: 'attached', target: m.target ?? '' }
+              : { type: 'error', message: m.message ?? '' },
           out: () => output.join(''),
         });
       }
@@ -149,7 +194,13 @@ function attachWs(cookie: string, frame: Record<string, unknown>): Promise<{
   });
 }
 
-const closeWs = (ws: WebSocket | undefined): void => { try { ws?.close(); } catch { /* closing */ } };
+const closeWs = (ws: WebSocket | undefined): void => {
+  try {
+    ws?.close();
+  } catch {
+    /* closing */
+  }
+};
 
 test('terminal route spawns; WS terminal mode attaches, round-trips input, RESPAWNS after an out-of-band kill', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-tws-'));
@@ -163,9 +214,16 @@ test('terminal route spawns; WS terminal mode attaches, round-trips input, RESPA
     // must land at.
     const wsMade = await api(server.cookie, 'POST', '/api/workspaces', { name: 'scratch' });
     expect(wsMade.status).toBe(200);
-    const patched = await api(server.cookie, 'PATCH', `/api/workspaces/${wsMade.json.id}`, { cwd: dir });
+    const patched = await api(server.cookie, 'PATCH', `/api/workspaces/${wsMade.json.id}`, {
+      cwd: dir,
+    });
     expect(patched.status, JSON.stringify(patched.json)).toBe(200);
-    const termMade = await api(server.cookie, 'POST', `/api/workspaces/${wsMade.json.id}/terminals`, {});
+    const termMade = await api(
+      server.cookie,
+      'POST',
+      `/api/workspaces/${wsMade.json.id}/terminals`,
+      {},
+    );
     expect(termMade.status).toBe(200);
     expect(termMade.json.live).toBe(true);
     const termId: string = termMade.json.id;
@@ -173,9 +231,12 @@ test('terminal route spawns; WS terminal mode attaches, round-trips input, RESPA
 
     // The spawn really ran the configured command, on this socket.
     const session = `t-${termId}`;
-    await expect.poll(() => tmux(socket, ['has-session', '-t', session]).status, { timeout: 5000 }).toBe(0);
-    await expect.poll(() => tmux(socket, ['capture-pane', '-p', '-t', session]).stdout,
-      { timeout: 5000 }).toContain(MARKER);
+    await expect
+      .poll(() => tmux(socket, ['has-session', '-t', session]).status, { timeout: 5000 })
+      .toBe(0);
+    await expect
+      .poll(() => tmux(socket, ['capture-pane', '-p', '-t', session]).stdout, { timeout: 5000 })
+      .toContain(MARKER);
 
     // WS attach, terminal mode: 'attached' carries the derived tmux name
     // and the pane's content arrives.
@@ -185,7 +246,9 @@ test('terminal route spawns; WS terminal mode attaches, round-trips input, RESPA
 
     // Input round-trips through the attached pty.
     const proof = path.join(dir, 'typed.txt');
-    first.ws.send(JSON.stringify({ type: 'input', data: `echo round-trip > ${JSON.stringify(proof)}\r` }));
+    first.ws.send(
+      JSON.stringify({ type: 'input', data: `echo round-trip > ${JSON.stringify(proof)}\r` }),
+    );
     await expect.poll(() => fs.existsSync(proof), { timeout: 5000 }).toBe(true);
     closeWs(first.ws);
 
@@ -194,22 +257,37 @@ test('terminal route spawns; WS terminal mode attaches, round-trips input, RESPA
     // WORKSPACE cwd (not WEB_PI_NEW_SESSION_CWD, deliberately different).
     expect(tmux(socket, ['kill-session', '-t', session]).status).toBe(0);
     expect(tmux(socket, ['has-session', '-t', session]).status).not.toBe(0);
-    const respawned = await attachWs(server.cookie, { type: 'attach', mode: 'terminal', id: termId });
+    const respawned = await attachWs(server.cookie, {
+      type: 'attach',
+      mode: 'terminal',
+      id: termId,
+    });
     expect(respawned.outcome).toEqual({ type: 'attached', target: session });
     const pwd = path.join(dir, 'pwd.txt');
     respawned.ws.send(JSON.stringify({ type: 'input', data: `pwd > ${JSON.stringify(pwd)}\r` }));
-    await expect.poll(() => (fs.existsSync(pwd) ? fs.readFileSync(pwd, 'utf8').trim() : ''), { timeout: 5000 })
+    await expect
+      .poll(() => (fs.existsSync(pwd) ? fs.readFileSync(pwd, 'utf8').trim() : ''), {
+        timeout: 5000,
+      })
       .toBe(dir);
     closeWs(respawned.ws);
 
     // 'run' mode NEVER respawns: a session that died answers an error,
     // not a fresh one (job runs are the session — a re-run is a new one).
     expect(tmux(socket, ['new-session', '-d', '-s', 'webpi-probe', '-c', dir]).status).toBe(0);
-    const run = await attachWs(server.cookie, { type: 'attach', mode: 'run', target: 'webpi-probe' });
+    const run = await attachWs(server.cookie, {
+      type: 'attach',
+      mode: 'run',
+      target: 'webpi-probe',
+    });
     expect(run.outcome).toEqual({ type: 'attached', target: 'webpi-probe' });
     closeWs(run.ws);
     expect(tmux(socket, ['kill-session', '-t', 'webpi-probe']).status).toBe(0);
-    const runDead = await attachWs(server.cookie, { type: 'attach', mode: 'run', target: 'webpi-probe' });
+    const runDead = await attachWs(server.cookie, {
+      type: 'attach',
+      mode: 'run',
+      target: 'webpi-probe',
+    });
     expect(runDead.outcome).toEqual({ type: 'error', message: 'no such run session' });
     closeWs(runDead.ws);
     // and no session got respawned under that name
@@ -218,7 +296,9 @@ test('terminal route spawns; WS terminal mode attaches, round-trips input, RESPA
     // Close the tab: row + session both gone.
     const closed = await api(server.cookie, 'DELETE', `/api/terminals/${termId}`);
     expect(closed.status).toBe(200);
-    await expect.poll(() => tmux(socket, ['has-session', '-t', session]).status, { timeout: 5000 }).not.toBe(0);
+    await expect
+      .poll(() => tmux(socket, ['has-session', '-t', session]).status, { timeout: 5000 })
+      .not.toBe(0);
   } finally {
     await server.stop();
   }
@@ -232,13 +312,20 @@ test('split shape (absolute socket, no server): the create still returns its row
     // No cwd on the create (task/app-cwd): the dir rides the PATCH route.
     const wsMade = await api(server.cookie, 'POST', '/api/workspaces', { name: 'split' });
     expect(wsMade.status).toBe(200);
-    const patched = await api(server.cookie, 'PATCH', `/api/workspaces/${wsMade.json.id}`, { cwd: dir });
+    const patched = await api(server.cookie, 'PATCH', `/api/workspaces/${wsMade.json.id}`, {
+      cwd: dir,
+    });
     expect(patched.status, JSON.stringify(patched.json)).toBe(200);
 
     // Workspace server down: the spawn's never-fork guard refuses — 503
     // with the row attached (plan §4: a dead tab, not a missing one) —
     // and no tmux server gets forked as the web uid.
-    const refused = await api(server.cookie, 'POST', `/api/workspaces/${wsMade.json.id}/terminals`, {});
+    const refused = await api(
+      server.cookie,
+      'POST',
+      `/api/workspaces/${wsMade.json.id}/terminals`,
+      {},
+    );
     expect(refused.status).toBe(503);
     expect(refused.json.code).toBe('server_not_running');
     expect(refused.json.error).toContain('workspace tmux server not running');
@@ -258,12 +345,19 @@ test('split shape (absolute socket, no server): the create still returns its row
     // pattern): umask 0007, exit-empty off on the server conf, chmod 0660.
     const conf = path.join(dir, 'conf-src');
     fs.writeFileSync(conf, 'set -g exit-empty off\n');
-    spawnSync('sh', ['-c', `umask 0007; tmux -S ${socket} -f ${conf} start-server && chmod 0660 ${socket}`]);
+    spawnSync('sh', [
+      '-c',
+      `umask 0007; tmux -S ${socket} -f ${conf} start-server && chmod 0660 ${socket}`,
+    ]);
     expect(fs.statSync(socket).mode & 0o777).toBe(0o660);
 
     // The SAME terminal tab now attaches — the deferred respawn ran the
     // configured command at the workspace cwd on the shared socket.
-    const attached = await attachWs(server.cookie, { type: 'attach', mode: 'terminal', id: termId });
+    const attached = await attachWs(server.cookie, {
+      type: 'attach',
+      mode: 'terminal',
+      id: termId,
+    });
     expect(attached.outcome).toEqual({ type: 'attached', target: `t-${termId}` });
     await expect.poll(attached.out, { timeout: 5000 }).toContain(MARKER);
     closeWs(attached.ws);

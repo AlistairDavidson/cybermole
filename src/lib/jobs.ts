@@ -25,7 +25,14 @@
 import { CronExpressionParser } from 'cron-parser';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { databaseRead, databaseUpdate, qb, type DatabaseUpdateFailure, type JobRunOrigin, type StateDb } from './db';
+import {
+  databaseRead,
+  databaseUpdate,
+  qb,
+  type DatabaseUpdateFailure,
+  type JobRunOrigin,
+  type StateDb,
+} from './db';
 import { componentLogger } from './logger';
 import type { CalendarCheck, JobsState, ScheduledJob } from './types';
 import { hasSession, jobSessionName, liveSessionNames, newSession } from './tmux';
@@ -74,10 +81,10 @@ export interface JobRunView {
   firedAt: number;
   origin: JobRunOrigin;
   /** the command's exit code, filled when the finish was observed and
- *  the exit file was readable; null = not (yet) known */
+   *  the exit file was readable; null = not (yet) known */
   exitCode: number | null;
   /** epoch ms the finish was observed (tick granularity); null while
- *  the run lives (or if it ended unseen) */
+   *  the run lives (or if it ended unseen) */
   finishedAt: number | null;
   hasLog: boolean;
 }
@@ -92,7 +99,8 @@ export type RunLogData = { text: string; truncated: boolean };
 /** log_missing: the run was fired without logging (pre-v6 row) or the
  *  wrapper never created the file. read_error: the file is there but
  *  could not be read (perms, vanished mid-read). */
-export type RunLogErrorCode = 'job_not_found' | 'run_not_found' | 'log_missing' | 'read_error' | 'database_error';
+export type RunLogErrorCode =
+  'job_not_found' | 'run_not_found' | 'log_missing' | 'read_error' | 'database_error';
 export type RunLogSuccess = ResultSuccess<'run_log', RunLogData>;
 export type RunLogFailure = ResultFailure<'run_log', RunLogData, RunLogErrorCode>;
 export type RunLogResult = RunLogSuccess | RunLogFailure;
@@ -116,12 +124,19 @@ export type NextFireResult = NextFireSuccess | NextFireFailure;
  *  is 5-field cron only. The boundary for cron-parser's throws. */
 export function nextFireMs(schedule: string, afterMs: number) {
   const fail = (errorMessage: string) =>
-    ({ ok: false, resultType: 'next_fire', errorCode: 'invalid_schedule', errorMessage }) satisfies NextFireFailure;
+    ({
+      ok: false,
+      resultType: 'next_fire',
+      errorCode: 'invalid_schedule',
+      errorMessage,
+    }) satisfies NextFireFailure;
   const fields = schedule.trim().split(/\s+/).filter(Boolean);
-  if (fields.length !== 5) return fail('schedule must be 5 cron fields: minute hour day-of-month month day-of-week');
+  if (fields.length !== 5)
+    return fail('schedule must be 5 cron fields: minute hour day-of-month month day-of-week');
   try {
     const at = CronExpressionParser.parse(fields.join(' '), { currentDate: new Date(afterMs) })
-      .next().getTime();
+      .next()
+      .getTime();
     return { ok: true, resultType: 'next_fire', data: { at } } satisfies NextFireSuccess;
   } catch (err) {
     return fail(cronError(err));
@@ -152,8 +167,10 @@ function cronError(err: unknown): string {
 function formatFire(ms: number): string {
   const d = new Date(ms);
   const p = (n: number): string => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
-    `${p(d.getHours())}:${p(d.getMinutes())}`;
+  return (
+    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
+    `${p(d.getHours())}:${p(d.getMinutes())}`
+  );
 }
 
 /** Validate a 5-field cron schedule (the old checkCalendar, now without
@@ -164,7 +181,12 @@ export function checkCron(spec: string, nowMs: number = Date.now()): CalendarChe
   const s = spec.trim();
   if (!s) return { valid: false, next: null, error: 'schedule is required', validatedBy: by };
   if (s.length > MAX_SCHEDULE || /[\r\n]/.test(s)) {
-    return { valid: false, next: null, error: 'invalid schedule (too long or multi-line)', validatedBy: by };
+    return {
+      valid: false,
+      next: null,
+      error: 'invalid schedule (too long or multi-line)',
+      validatedBy: by,
+    };
   }
   const next = nextFireMs(s, nowMs);
   if (!next.ok) return { valid: false, next: null, error: next.errorMessage, validatedBy: by };
@@ -182,7 +204,11 @@ const LOG_TAIL_BYTES = 1024 * 1024;
  *  the finish observation (exit file), the log route and pruning — so
  *  the pair is always consistent: nothing but `log` is persisted, and
  *  `firedAt` is unique per job (recordRun keeps it monotonic). */
-export function runLogPaths(logDir: string, job: JobName, firedAt: number): { log: string; exit: string } {
+export function runLogPaths(
+  logDir: string,
+  job: JobName,
+  firedAt: number,
+): { log: string; exit: string } {
   return {
     log: path.join(logDir, job, `${firedAt}.log`),
     exit: path.join(logDir, job, `${firedAt}.exit`),
@@ -201,9 +227,13 @@ export function runLogPaths(logDir: string, job: JobName, firedAt: number): { lo
  *  lost, the exit file never appears, the run's result stays 'unknown'. */
 export function runCommandArgv(command: string, logPath: string, exitPath: string): string[] {
   return [
-    '/bin/sh', '-c',
+    '/bin/sh',
+    '-c',
     'mkdir -p "$(dirname "$2")"; { /bin/sh -c "$1" 2>&1; echo $? > "$3"; } | tee "$2"',
-    'sh', command, logPath, exitPath,
+    'sh',
+    command,
+    logPath,
+    exitPath,
   ];
 }
 
@@ -221,23 +251,30 @@ export interface JobContext {
   cwd: string;
   env: Record<string, string>;
   /** Run-log root (WEB_PI_JOB_LOG_DIR; /workspace/.webpi/job-logs in the
- *  compose split — a path that exists in BOTH containers, plan §9). */
+   *  compose split — a path that exists in BOTH containers, plan §9). */
   logDir: string;
 }
 
 const log = componentLogger('scheduler');
 
 interface JobRow {
-  name: JobName; schedule: string; command: string; created_at: number;
+  name: JobName;
+  schedule: string;
+  command: string;
+  created_at: number;
   /** the optional app tag + its display name (listJobs' LEFT JOIN) */
-  appId: AppId | null; appName: string | null;
+  appId: AppId | null;
+  appName: string | null;
 }
 
 /** A run whose finish the tick is armed to observe: the job plus the
  *  fire's fired_at when this process opened the run (exact row), null
  *  when it armed a session it found already live (boot / out-of-band —
  *  the newest row of that job at finish time). */
-interface ArmedRun { job: JobName; firedAt: number | null }
+interface ArmedRun {
+  job: JobName;
+  firedAt: number | null;
+}
 
 /** The in-process scheduler: owns the jobs tables in the state db, fires
  *  due jobs into tmux, and serves the /api/jobs operations. */
@@ -259,7 +296,10 @@ export class Scheduler {
    *  see it — while the server is down — is only counted as fired. */
   private running = new Map<TmuxSessionName, ArmedRun>();
 
-  constructor(private db: StateDb, private ctx: JobContext) {}
+  constructor(
+    private db: StateDb,
+    private ctx: JobContext,
+  ) {}
 
   /** Start the tick loop. No immediate first tick on purpose: the state db
    *  opens lazily (src/lib/db.ts — the e2e webServer boots before
@@ -269,13 +309,18 @@ export class Scheduler {
    *  missed while the server was down as due. */
   start(): void {
     if (this.timer) return;
-    this.timer = setInterval(() => { void this.tick(); }, TICK_MS);
+    this.timer = setInterval(() => {
+      void this.tick();
+    }, TICK_MS);
   }
 
   /** Stop the tick loop. Runs already open in tmux are left alone — they
    *  outlive the scheduler (and, apart from the process, the server). */
   stop(): void {
-    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
   }
 
   // The db boundary: every sqlite call the scheduler makes goes through
@@ -284,48 +329,86 @@ export class Scheduler {
   // Rows come back typed (and names branded) by the StateSchema in db.ts.
   private rows() {
     return databaseRead('could not read jobs', (): JobRow[] =>
-      this.db.all(qb.selectFrom('jobs')
-        .leftJoin('apps', join => join.onRef('apps.id', '=', 'jobs.app_id'))
-        .select([
-          'jobs.name as name', 'jobs.schedule as schedule', 'jobs.command as command',
-          'jobs.created_at as created_at', 'jobs.app_id as appId', 'apps.name as appName',
-        ])
-        .orderBy('jobs.name')));
+      this.db.all(
+        qb
+          .selectFrom('jobs')
+          .leftJoin('apps', join => join.onRef('apps.id', '=', 'jobs.app_id'))
+          .select([
+            'jobs.name as name',
+            'jobs.schedule as schedule',
+            'jobs.command as command',
+            'jobs.created_at as created_at',
+            'jobs.app_id as appId',
+            'apps.name as appName',
+          ])
+          .orderBy('jobs.name'),
+      ),
+    );
   }
 
   private row(name: JobName) {
     return databaseRead('could not read job', (): JobRow | undefined =>
-      this.db.get(qb.selectFrom('jobs')
-        .leftJoin('apps', join => join.onRef('apps.id', '=', 'jobs.app_id'))
-        .select([
-          'jobs.name as name', 'jobs.schedule as schedule', 'jobs.command as command',
-          'jobs.created_at as created_at', 'jobs.app_id as appId', 'apps.name as appName',
-        ])
-        .where('jobs.name', '=', name)));
+      this.db.get(
+        qb
+          .selectFrom('jobs')
+          .leftJoin('apps', join => join.onRef('apps.id', '=', 'jobs.app_id'))
+          .select([
+            'jobs.name as name',
+            'jobs.schedule as schedule',
+            'jobs.command as command',
+            'jobs.created_at as created_at',
+            'jobs.app_id as appId',
+            'apps.name as appName',
+          ])
+          .where('jobs.name', '=', name),
+      ),
+    );
   }
 
   /** The newest run row of a job (fired_at + exit_code) — listJobs'
- *  last-fired/lastResult source; MAX(fired_at) via the (job, fired_at)
- *  index, order+limit instead of the aggregate so the code comes along. */
+   *  last-fired/lastResult source; MAX(fired_at) via the (job, fired_at)
+   *  index, order+limit instead of the aggregate so the code comes along. */
   private lastRun(name: JobName) {
-    return databaseRead('could not read job runs', () =>
-      this.db.get(qb.selectFrom('job_runs').select(['fired_at', 'exit_code'])
-        .where('job', '=', name).orderBy('fired_at', 'desc').limit(1)) ?? null);
+    return databaseRead(
+      'could not read job runs',
+      () =>
+        this.db.get(
+          qb
+            .selectFrom('job_runs')
+            .select(['fired_at', 'exit_code'])
+            .where('job', '=', name)
+            .orderBy('fired_at', 'desc')
+            .limit(1),
+        ) ?? null,
+    );
   }
 
   /** Record a fire and prune the run history. fired_at is kept monotonic
- *  per job (never the last row's value): it is the run's identity — the
- *  log file's name and the /runs/:fired_at path param. Returns the
- *  fired_at + the run's file paths so the fire can build the wrapper
- *  argv with exactly what was persisted. */
-  private recordRun(name: JobName, origin: JobRunOrigin):
-    { ok: true; firedAt: number; paths: { log: string; exit: string } } | { ok: false; errorMessage: string } {
+   *  per job (never the last row's value): it is the run's identity — the
+   *  log file's name and the /runs/:fired_at path param. Returns the
+   *  fired_at + the run's file paths so the fire can build the wrapper
+   *  argv with exactly what was persisted. */
+  private recordRun(
+    name: JobName,
+    origin: JobRunOrigin,
+  ):
+    | { ok: true; firedAt: number; paths: { log: string; exit: string } }
+    | { ok: false; errorMessage: string } {
     try {
-      const last = this.db.get(qb.selectFrom('job_runs').select('fired_at')
-        .where('job', '=', name).orderBy('fired_at', 'desc').limit(1))?.fired_at ?? 0;
+      const last =
+        this.db.get(
+          qb
+            .selectFrom('job_runs')
+            .select('fired_at')
+            .where('job', '=', name)
+            .orderBy('fired_at', 'desc')
+            .limit(1),
+        )?.fired_at ?? 0;
       const firedAt = Math.max(Date.now(), last + 1);
       const paths = runLogPaths(this.ctx.logDir, name, firedAt);
-      this.db.run(qb.insertInto('job_runs').values({ job: name, fired_at: firedAt, origin, log: paths.log }));
+      this.db.run(
+        qb.insertInto('job_runs').values({ job: name, fired_at: firedAt, origin, log: paths.log }),
+      );
       this.pruneRuns(name);
       return { ok: true, firedAt, paths };
     } catch (err) {
@@ -334,27 +417,41 @@ export class Scheduler {
   }
 
   /** RUN_HISTORY pruning, files first: the doomed rows' paths are
- *  SELECTed BEFORE the DELETE (they are gone after), the log + exit
- *  files unlinked best-effort (a read-only mount or a perms failure is
- *  logged and swallowed — the rows are pruned regardless), then the
- *  rows deleted (plan §9). */
+   *  SELECTed BEFORE the DELETE (they are gone after), the log + exit
+   *  files unlinked best-effort (a read-only mount or a perms failure is
+   *  logged and swallowed — the rows are pruned regardless), then the
+   *  rows deleted (plan §9). */
   private pruneRuns(name: JobName): void {
-    const keep = () => qb.selectFrom('job_runs').select('fired_at').where('job', '=', name)
-      .orderBy('fired_at', 'desc').limit(RUN_HISTORY);
-    for (const row of this.db.all(qb.selectFrom('job_runs').select(['fired_at', 'log'])
-      .where('job', '=', name).where('fired_at', 'not in', keep()))) {
+    const keep = () =>
+      qb
+        .selectFrom('job_runs')
+        .select('fired_at')
+        .where('job', '=', name)
+        .orderBy('fired_at', 'desc')
+        .limit(RUN_HISTORY);
+    for (const row of this.db.all(
+      qb
+        .selectFrom('job_runs')
+        .select(['fired_at', 'log'])
+        .where('job', '=', name)
+        .where('fired_at', 'not in', keep()),
+    )) {
       if (row.log === null) continue;
       this.unlinkRunFiles(name, row.fired_at);
     }
-    this.db.run(qb.deleteFrom('job_runs').where('job', '=', name).where('fired_at', 'not in', keep()));
+    this.db.run(
+      qb.deleteFrom('job_runs').where('job', '=', name).where('fired_at', 'not in', keep()),
+    );
   }
 
   /** Best-effort unlink of one run's log + exit files (pruning, and a
- *  deleted job's whole history). */
+   *  deleted job's whole history). */
   private unlinkRunFiles(name: JobName, firedAt: number): void {
     const paths = runLogPaths(this.ctx.logDir, name, firedAt);
     for (const file of [paths.log, paths.exit]) {
-      try { fs.rmSync(file, { force: true }); } catch (err) {
+      try {
+        fs.rmSync(file, { force: true });
+      } catch (err) {
         log.warn(`could not prune run file ${file}: ${(err as Error).message}`);
       }
     }
@@ -364,10 +461,15 @@ export class Scheduler {
     if (this.ticking) return; // a slow tmux call must not stack ticks
     this.ticking = true;
     // A db failure ends the tick — the next one retries.
-    const failed = (errorMessage: string): void => { log.error(`scheduler tick failed: ${errorMessage}`); };
+    const failed = (errorMessage: string): void => {
+      log.error(`scheduler tick failed: ${errorMessage}`);
+    };
     try {
       const rows = this.rows();
-      if (!rows.ok) { failed(rows.errorMessage); return; }
+      if (!rows.ok) {
+        failed(rows.errorMessage);
+        return;
+      }
       const live = await liveSessionNames();
       // Run-finish observation (this.running): an armed run session that
       // is no longer live has ended. Map deletion during iteration is
@@ -389,17 +491,23 @@ export class Scheduler {
         // spawn must not steal the finish); the skip-point arm is for
         // sessions opened outside the tick ("run now", alive at boot).
         if (live.has(session)) {
-          if (!this.running.has(session)) this.running.set(session, { job: row.name, firedAt: null });
+          if (!this.running.has(session))
+            this.running.set(session, { job: row.name, firedAt: null });
           continue;
         }
         const last = this.lastRun(row.name);
-        if (!last.ok) { failed(last.errorMessage); return; }
+        if (!last.ok) {
+          failed(last.errorMessage);
+          return;
+        }
         const reference = last.data.value?.fired_at ?? row.created_at;
         const next = nextFireMs(row.schedule, reference);
         if (!next.ok) {
           if (!this.warned.has(row.name)) {
             this.warned.add(row.name);
-            log.warn(`job ${row.name}: stored schedule "${row.schedule}" does not parse — skipped until re-saved`);
+            log.warn(
+              `job ${row.name}: stored schedule "${row.schedule}" does not parse — skipped until re-saved`,
+            );
           }
           continue;
         }
@@ -408,13 +516,20 @@ export class Scheduler {
           // Boot catch-up equivalent of Persistent=true: whatever windows
           // were missed, this fires ONCE — the recorded fire below resets
           // the reference past all of them.
-          const fired = await this.fire(row, now - dueAt > CATCHUP_LATENESS_MS ? 'catchup' : 'schedule');
+          const fired = await this.fire(
+            row,
+            now - dueAt > CATCHUP_LATENESS_MS ? 'catchup' : 'schedule',
+          );
           if (!fired.ok) {
             switch (fired.errorCode) {
-              case 'database_error': failed(fired.errorMessage); return;
+              case 'database_error':
+                failed(fired.errorMessage);
+                return;
               case 'server_not_running':
-              case 'tmux_error': break; // logged by fire(); the fire is spent
-              default: fired satisfies never;
+              case 'tmux_error':
+                break; // logged by fire(); the fire is spent
+              default:
+                fired satisfies never;
             }
           }
         }
@@ -436,12 +551,26 @@ export class Scheduler {
    *  run's result stays 'unknown' (never guessed). finished_at is the
    *  observation time (tick granularity, ≤ TICK_MS after the end). */
   private observeFinish(session: TmuxSessionName, armed: ArmedRun): void {
-    const read = databaseRead('could not read job runs', () =>
-      (armed.firedAt === null
-        ? this.db.get(qb.selectFrom('job_runs').select(['fired_at', 'log'])
-          .where('job', '=', armed.job).orderBy('fired_at', 'desc').limit(1))
-        : this.db.get(qb.selectFrom('job_runs').select(['fired_at', 'log'])
-          .where('job', '=', armed.job).where('fired_at', '=', armed.firedAt))) ?? null);
+    const read = databaseRead(
+      'could not read job runs',
+      () =>
+        (armed.firedAt === null
+          ? this.db.get(
+              qb
+                .selectFrom('job_runs')
+                .select(['fired_at', 'log'])
+                .where('job', '=', armed.job)
+                .orderBy('fired_at', 'desc')
+                .limit(1),
+            )
+          : this.db.get(
+              qb
+                .selectFrom('job_runs')
+                .select(['fired_at', 'log'])
+                .where('job', '=', armed.job)
+                .where('fired_at', '=', armed.firedAt),
+            )) ?? null,
+    );
     if (!read.ok) log.error(`job ${armed.job}: ${read.errorMessage}`);
     const run = read.ok ? read.data.value : null;
     let exitCode: number | null = null;
@@ -452,16 +581,26 @@ export class Scheduler {
         // `echo $?`: 0–255, three digits max — anything else (truncated
         // write, garbage) reads as unknown.
         if (/^\d{1,3}$/.test(raw)) exitCode = Number(raw);
-      } catch { /* no exit file → unknown, by design */ }
+      } catch {
+        /* no exit file → unknown, by design */
+      }
     }
     if (run !== null) {
       const updated = databaseUpdate('could not record the run finish', () =>
-        this.db.run(qb.updateTable('job_runs').set({ exit_code: exitCode, finished_at: Date.now() })
-          .where('job', '=', armed.job).where('fired_at', '=', run.fired_at)));
+        this.db.run(
+          qb
+            .updateTable('job_runs')
+            .set({ exit_code: exitCode, finished_at: Date.now() })
+            .where('job', '=', armed.job)
+            .where('fired_at', '=', run.fired_at),
+        ),
+      );
       if (!updated.ok) log.error(`job ${armed.job}: ${updated.errorMessage}`);
     }
-    log.info(`job ${armed.job} run finished (run session ${session} gone, ` +
-      `exit ${exitCode === null ? 'unknown' : exitCode})`);
+    log.info(
+      `job ${armed.job} run finished (run session ${session} gone, ` +
+        `exit ${exitCode === null ? 'unknown' : exitCode})`,
+    );
   }
 
   /** Record the fire, then open the run's tmux session. The run is
@@ -474,14 +613,22 @@ export class Scheduler {
     const recorded = this.recordRun(row.name, origin);
     if (!recorded.ok) {
       return {
-        ok: false, resultType: 'database_update', errorCode: 'database_error', errorMessage: recorded.errorMessage,
+        ok: false,
+        resultType: 'database_update',
+        errorCode: 'database_error',
+        errorMessage: recorded.errorMessage,
       } satisfies DatabaseUpdateFailure;
     }
     const session = jobSessionName(row.name);
     log.info(`job ${row.name} fired (${origin}) — opening run session ${session}`);
-    const opened = await newSession(session, this.ctx.cwd,
-      runCommandArgv(row.command, recorded.paths.log, recorded.paths.exit), this.ctx.env);
-    if (!opened.ok) log.error(`job ${row.name}: could not open run session ${session} (${opened.errorMessage})`);
+    const opened = await newSession(
+      session,
+      this.ctx.cwd,
+      runCommandArgv(row.command, recorded.paths.log, recorded.paths.exit),
+      this.ctx.env,
+    );
+    if (!opened.ok)
+      log.error(`job ${row.name}: could not open run session ${session} (${opened.errorMessage})`);
     else this.running.set(session, { job: row.name, firedAt: recorded.firedAt }); // armed — its end gets the finish line
     return opened;
   }
@@ -491,7 +638,12 @@ export class Scheduler {
    *  makes no second fetch). */
   async listJobs() {
     const fail = (errorMessage: string) =>
-      ({ ok: false, resultType: 'list_jobs', errorCode: 'database_error', errorMessage }) satisfies ListJobsFailure;
+      ({
+        ok: false,
+        resultType: 'list_jobs',
+        errorCode: 'database_error',
+        errorMessage,
+      }) satisfies ListJobsFailure;
     const rows = this.rows();
     if (!rows.ok) return fail(rows.errorMessage);
     const live = await liveSessionNames();
@@ -516,10 +668,19 @@ export class Scheduler {
         last: last === null ? null : formatFire(last.fired_at),
         // The last run's outcome, from the observed exit code — unknown
         // until the finish was observed AND the exit file was readable.
-        lastResult: last === null || last.exit_code === null ? 'unknown' : last.exit_code === 0 ? 'success' : 'failed',
+        lastResult:
+          last === null || last.exit_code === null
+            ? 'unknown'
+            : last.exit_code === 0
+              ? 'success'
+              : 'failed',
       });
     }
-    return { ok: true, resultType: 'list_jobs', data: { available: true, detail: null, jobs } } satisfies ListJobsSuccess;
+    return {
+      ok: true,
+      resultType: 'list_jobs',
+      data: { available: true, detail: null, jobs },
+    } satisfies ListJobsSuccess;
   }
 
   /** Create or update a job: cron check, optional app-tag check, then
@@ -534,21 +695,36 @@ export class Scheduler {
   async saveJob(input: SaveInput) {
     const { name, schedule, command, appId } = input;
     const fail = (errorCode: SaveJobErrorCode, errorMessage: string) =>
-      ({ ok: false, resultType: 'save_job', data: { name }, errorCode, errorMessage }) satisfies SaveJobFailure;
+      ({
+        ok: false,
+        resultType: 'save_job',
+        data: { name },
+        errorCode,
+        errorMessage,
+      }) satisfies SaveJobFailure;
     const check = checkCron(schedule);
     if (!check.valid) return fail('invalid_schedule', check.error ?? 'invalid schedule');
     if (appId != null) {
-      const app = databaseRead('could not read the app tag', () =>
-        this.db.get(qb.selectFrom('apps').select('id').where('id', '=', appId)) ?? null);
+      const app = databaseRead(
+        'could not read the app tag',
+        () => this.db.get(qb.selectFrom('apps').select('id').where('id', '=', appId)) ?? null,
+      );
       if (!app.ok) return fail('database_error', app.errorMessage);
       if (app.data.value === null) return fail('app_not_found', 'the tagged app does not exist');
     }
     try {
-      this.db.run(qb.insertInto('jobs').values({ name, schedule, command, created_at: Date.now(), app_id: appId ?? null })
-        .onConflict(oc => oc.column('name').doUpdateSet(eb => ({
-          schedule: eb.ref('excluded.schedule'), command: eb.ref('excluded.command'),
-          app_id: eb.ref('excluded.app_id'),
-        }))));
+      this.db.run(
+        qb
+          .insertInto('jobs')
+          .values({ name, schedule, command, created_at: Date.now(), app_id: appId ?? null })
+          .onConflict(oc =>
+            oc.column('name').doUpdateSet(eb => ({
+              schedule: eb.ref('excluded.schedule'),
+              command: eb.ref('excluded.command'),
+              app_id: eb.ref('excluded.app_id'),
+            })),
+          ),
+      );
     } catch (err) {
       return fail('database_error', `could not save job: ${(err as Error).message}`);
     }
@@ -567,13 +743,20 @@ export class Scheduler {
       this.db.run(qb.deleteFrom('job_runs').where('job', '=', name));
     } catch (err) {
       return {
-        ok: false, resultType: 'delete_job', data: { name }, errorCode: 'database_error',
+        ok: false,
+        resultType: 'delete_job',
+        data: { name },
+        errorCode: 'database_error',
         errorMessage: `could not delete job: ${(err as Error).message}`,
       } satisfies DeleteJobFailure;
     }
     if (changed === 0) {
       return {
-        ok: false, resultType: 'delete_job', data: { name }, errorCode: 'job_not_found', errorMessage: 'no such job',
+        ok: false,
+        resultType: 'delete_job',
+        data: { name },
+        errorCode: 'job_not_found',
+        errorMessage: 'no such job',
       } satisfies DeleteJobFailure;
     }
     try {
@@ -596,18 +779,27 @@ export class Scheduler {
     if (!found.ok) return fail('database_error', found.errorMessage);
     if (found.data.value === undefined) return fail('job_not_found', 'no such job');
     const rows = databaseRead('could not read job runs', () =>
-      this.db.all(qb.selectFrom('job_runs').select(['fired_at', 'origin', 'exit_code', 'finished_at', 'log'])
-        .where('job', '=', name).orderBy('fired_at', 'desc').limit(RUN_HISTORY)));
+      this.db.all(
+        qb
+          .selectFrom('job_runs')
+          .select(['fired_at', 'origin', 'exit_code', 'finished_at', 'log'])
+          .where('job', '=', name)
+          .orderBy('fired_at', 'desc')
+          .limit(RUN_HISTORY),
+      ),
+    );
     if (!rows.ok) return fail('database_error', rows.errorMessage);
     return {
-      ok: true, resultType: 'list_runs',
+      ok: true,
+      resultType: 'list_runs',
       data: {
         runs: rows.data.value.map(r => ({
           firedAt: r.fired_at,
           origin: r.origin,
           exitCode: r.exit_code,
           finishedAt: r.finished_at,
-          hasLog: r.log !== null && fs.existsSync(runLogPaths(this.ctx.logDir, name, r.fired_at).log),
+          hasLog:
+            r.log !== null && fs.existsSync(runLogPaths(this.ctx.logDir, name, r.fired_at).log),
         })),
       },
     } satisfies ListRunsSuccess;
@@ -623,9 +815,17 @@ export class Scheduler {
     const found = this.row(name);
     if (!found.ok) return fail('database_error', found.errorMessage);
     if (found.data.value === undefined) return fail('job_not_found', 'no such job');
-    const row = databaseRead('could not read job runs', () =>
-      this.db.get(qb.selectFrom('job_runs').select(['fired_at', 'log'])
-        .where('job', '=', name).where('fired_at', '=', firedAt)) ?? null);
+    const row = databaseRead(
+      'could not read job runs',
+      () =>
+        this.db.get(
+          qb
+            .selectFrom('job_runs')
+            .select(['fired_at', 'log'])
+            .where('job', '=', name)
+            .where('fired_at', '=', firedAt),
+        ) ?? null,
+    );
     if (!row.ok) return fail('database_error', row.errorMessage);
     if (row.data.value === null) return fail('run_not_found', 'no such run');
     if (row.data.value.log === null) return fail('log_missing', 'the run left no log');
@@ -641,7 +841,8 @@ export class Scheduler {
         // U+FFFD — cosmetic, and only in a >1 MiB log's first char.
         fs.readSync(fd, buf, 0, len, size - len);
         return {
-          ok: true, resultType: 'run_log',
+          ok: true,
+          resultType: 'run_log',
           data: { text: buf.toString('utf8'), truncated: size > len },
         } satisfies RunLogSuccess;
       } finally {
@@ -658,21 +859,33 @@ export class Scheduler {
   async runJob(name: JobName) {
     const session = jobSessionName(name);
     const fail = (errorCode: RunJobErrorCode, errorMessage: string) =>
-      ({ ok: false, resultType: 'run_job', data: { name, session }, errorCode, errorMessage }) satisfies RunJobFailure;
+      ({
+        ok: false,
+        resultType: 'run_job',
+        data: { name, session },
+        errorCode,
+        errorMessage,
+      }) satisfies RunJobFailure;
     const found = this.row(name);
     if (!found.ok) return fail('database_error', found.errorMessage);
     const row = found.data.value;
     if (!row) return fail('job_not_found', 'no such job');
     if (await hasSession(session)) {
-      return fail('run_active', 'previous run is still active — view it from the console, or kill it first');
+      return fail(
+        'run_active',
+        'previous run is still active — view it from the console, or kill it first',
+      );
     }
     const fired = await this.fire(row, 'manual');
     if (!fired.ok) {
       switch (fired.errorCode) {
-        case 'database_error': return fail('database_error', fired.errorMessage);
+        case 'database_error':
+          return fail('database_error', fired.errorMessage);
         case 'server_not_running':
-        case 'tmux_error': return fail('tmux_error', fired.errorMessage);
-        default: return fired satisfies never;
+        case 'tmux_error':
+          return fail('tmux_error', fired.errorMessage);
+        default:
+          return fired satisfies never;
       }
     }
     return { ok: true, resultType: 'run_job', data: { name, session } } satisfies RunJobSuccess;

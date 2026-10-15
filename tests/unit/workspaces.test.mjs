@@ -18,7 +18,10 @@ import { WorkspaceIdSchema, TerminalIdSchema } from '../../dist-server/src/schem
 
 const USERNAME = { ok: true, resultType: 'database_read', data: { value: 'tester' } };
 const USERNAME_FAIL = {
-  ok: false, resultType: 'database_read', errorCode: 'database_error', errorMessage: 'could not read the credential',
+  ok: false,
+  resultType: 'database_read',
+  errorCode: 'database_error',
+  errorMessage: 'could not read the credential',
 };
 const MISSING_WS = '99999999-9999-4999-8999-999999999999'; // a well-formed uuid v4 that is not ours
 
@@ -52,8 +55,15 @@ function spawner() {
 }
 
 /** A spawn dep that fails with the given tmux family code. */
-const spawnFail = (errorCode, errorMessage = 'tmux new-session failed: boom') =>
-  async name => ({ ok: false, resultType: 'tmux_session', data: { name }, errorCode, errorMessage });
+const spawnFail =
+  (errorCode, errorMessage = 'tmux new-session failed: boom') =>
+  async name => ({
+    ok: false,
+    resultType: 'tmux_session',
+    data: { name },
+    errorCode,
+    errorMessage,
+  });
 
 const spawnOk = async name => ({ ok: true, resultType: 'tmux_session', data: { name } });
 
@@ -63,19 +73,39 @@ function liveNames(set = new Set()) {
   return { names: set, liveSessionNames: async () => set };
 }
 
-function domain(db, username = USERNAME, killSession = async () => true, defaultCwd = os.tmpdir(),
-  spawnSession = spawnOk, live = liveNames()) {
+function domain(
+  db,
+  username = USERNAME,
+  killSession = async () => true,
+  defaultCwd = os.tmpdir(),
+  spawnSession = spawnOk,
+  live = liveNames(),
+) {
   return new Workspaces({
-    db, username: () => username, killSession, defaultCwd, spawnSession,
+    db,
+    username: () => username,
+    killSession,
+    defaultCwd,
+    spawnSession,
     liveSessionNames: live.liveSessionNames,
   });
 }
 
 const wsRow = (db, id) =>
-  db.get(qb.selectFrom('workspaces').select(['id', 'app_id', 'name', 'cwd', 'sort_order']).where('id', '=', id));
+  db.get(
+    qb
+      .selectFrom('workspaces')
+      .select(['id', 'app_id', 'name', 'cwd', 'sort_order'])
+      .where('id', '=', id),
+  );
 const termRows = (db, workspaceId) =>
-  db.all(qb.selectFrom('terminals').select(['id', 'title', 'sort_order']).where('workspace_id', '=', workspaceId)
-    .orderBy('sort_order'));
+  db.all(
+    qb
+      .selectFrom('terminals')
+      .select(['id', 'title', 'sort_order'])
+      .where('workspace_id', '=', workspaceId)
+      .orderBy('sort_order'),
+  );
 
 async function appless(db) {
   // an app row is only needed for the parent tests; make it through the domain
@@ -90,7 +120,15 @@ test('WorkspaceIdSchema / TerminalIdSchema: lowercase uuid v4 in, everything els
   assert.equal(WorkspaceIdSchema.parse(id), id);
   assert.equal(TerminalIdSchema.parse(id), id);
   for (const schema of [WorkspaceIdSchema, TerminalIdSchema]) {
-    for (const bad of ['', 'nope', id.toUpperCase(), '123e4567-e89b-72d3-a456-426614174000', '../x', 5, null]) {
+    for (const bad of [
+      '',
+      'nope',
+      id.toUpperCase(),
+      '123e4567-e89b-72d3-a456-426614174000',
+      '../x',
+      5,
+      null,
+    ]) {
       assert.equal(schema.safeParse(bad).success, false, String(bad));
     }
   }
@@ -142,7 +180,7 @@ test('save_workspace: invalid_cwd — relative, missing, a file; absolute + exis
   assert.equal(good.data.cwd, os.tmpdir());
 });
 
-test('save_workspace: the cwd DERIVES — the parent app\'s cwd (task/app-cwd), else the configured default', async () => {
+test("save_workspace: the cwd DERIVES — the parent app's cwd (task/app-cwd), else the configured default", async () => {
   const db = freshDb();
   const defaultDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-ws-default-'));
   const w = domain(db, USERNAME, async () => true, defaultDir);
@@ -216,7 +254,10 @@ test('update_workspace: invalid_name, invalid_cwd, workspace_not_found, database
   const missing = await w.updateWorkspace(MISSING_WS, { name: 'y' });
   assert.equal(missing.errorCode, 'workspace_not_found');
   assert.equal(missing.resultType, 'save_workspace');
-  assert.equal((await domain(brokenDb()).updateWorkspace(MISSING_WS, { name: 'y' })).errorCode, 'database_error');
+  assert.equal(
+    (await domain(brokenDb()).updateWorkspace(MISSING_WS, { name: 'y' })).errorCode,
+    'database_error',
+  );
 });
 
 // ---------- delete_workspace ----------
@@ -239,7 +280,10 @@ test('delete_workspace: cascades its terminals, kills their sessions best-effort
   assert.deepEqual(termRows(db, doomed.id), []);
   assert.deepEqual(killed.sort(), [terminalSessionName(t1.id), terminalSessionName(t2.id)].sort());
   assert.equal(killed.includes(terminalSessionName(otherTerm.id)), false);
-  assert.deepEqual(termRows(db, other.id).map(r => r.id), [otherTerm.id]);
+  assert.deepEqual(
+    termRows(db, other.id).map(r => r.id),
+    [otherTerm.id],
+  );
 
   const again = await w.deleteWorkspace(doomed.id);
   assert.equal(again.errorCode, 'workspace_not_found');
@@ -269,15 +313,23 @@ test('new_terminal: inserts the row (title optional, order max+10), spawns t-<uu
   assert.equal(first.data.title, 'main');
   assert.equal(first.data.live, true); // the spawn succeeded
   assert.match(first.data.id, UUID_RE);
-  assert.deepEqual(spawned, [{ name: terminalSessionName(first.data.id), cwd: os.tmpdir() }],
-    'the derived name + the workspace cwd, exactly once');
+  assert.deepEqual(
+    spawned,
+    [{ name: terminalSessionName(first.data.id), cwd: os.tmpdir() }],
+    'the derived name + the workspace cwd, exactly once',
+  );
   const second = await w.newTerminal(ws.id, undefined);
   assert.equal(second.data.title, null);
   assert.equal(second.data.live, true);
   const third = await w.newTerminal(ws.id, 'extra');
-  assert.deepEqual(termRows(db, ws.id).map(r => r.sort_order), [10, 20, 30]);
+  assert.deepEqual(
+    termRows(db, ws.id).map(r => r.sort_order),
+    [10, 20, 30],
+  );
   // created_by stamps the credential username
-  const row = db.get(qb.selectFrom('terminals').select('created_by').where('id', '=', third.data.id));
+  const row = db.get(
+    qb.selectFrom('terminals').select('created_by').where('id', '=', third.data.id),
+  );
   assert.equal(row.created_by, 'tester');
 });
 
@@ -286,15 +338,24 @@ test('new_terminal: the row exists even when the spawn fails — server_not_runn
   const ws = (await domain(db).saveWorkspace({ name: 'x', cwd: os.tmpdir() })).data;
   // The never-fork guard's refusal (the split shape, no server behind
   // the absolute socket) — the row is still created and returned.
-  const w = domain(db, USERNAME, async () => true, os.tmpdir(),
-    spawnFail('server_not_running', SERVER_NOT_RUNNING_MSG));
+  const w = domain(
+    db,
+    USERNAME,
+    async () => true,
+    os.tmpdir(),
+    spawnFail('server_not_running', SERVER_NOT_RUNNING_MSG),
+  );
   const refused = await w.newTerminal(ws.id, undefined);
   assert.equal(refused.ok, false, 'the spawn failure must report');
   assert.equal(refused.resultType, 'new_terminal');
   assert.equal(refused.errorCode, 'server_not_running');
   assert.equal(refused.data.workspaceId, ws.id);
   assert.equal(refused.data.live, false); // a dead tab, not a missing one
-  assert.deepEqual(termRows(db, ws.id).map(r => r.id), [refused.data.id], 'the row EXISTS despite the failure');
+  assert.deepEqual(
+    termRows(db, ws.id).map(r => r.id),
+    [refused.data.id],
+    'the row EXISTS despite the failure',
+  );
   // tmux's own failure (a taken name, a bad cwd) — same contract.
   const w2 = domain(db, USERNAME, async () => true, os.tmpdir(), spawnFail('tmux_error'));
   const failed = await w2.newTerminal(ws.id, 'two');
@@ -363,12 +424,15 @@ test('rename_terminal: sets the title, null clears it; terminal_not_found / data
   const missing = await w.renameTerminal(MISSING_WS, 'x');
   assert.equal(missing.errorCode, 'terminal_not_found');
   assert.equal(missing.resultType, 'rename_terminal');
-  assert.equal((await domain(brokenDb()).renameTerminal(MISSING_WS, 'x')).errorCode, 'database_error');
+  assert.equal(
+    (await domain(brokenDb()).renameTerminal(MISSING_WS, 'x')).errorCode,
+    'database_error',
+  );
 });
 
 // ---------- terminalForAttach (main.ts's WS path lookup — task/ws-terminal) ----------
 
-test('terminalForAttach: the row + its workspace\'s cwd; terminal_not_found / database_error', async () => {
+test("terminalForAttach: the row + its workspace's cwd; terminal_not_found / database_error", async () => {
   const db = freshDb();
   const w = domain(db);
   const app = await appless(db);
@@ -380,7 +444,10 @@ test('terminalForAttach: the row + its workspace\'s cwd; terminal_not_found / da
   assert.deepEqual(found.data, { id: t.id, workspaceId: ws.id, title: 'main', cwd: os.tmpdir() });
   const missing = await w.terminalForAttach(MISSING_WS);
   assert.equal(missing.errorCode, 'terminal_not_found');
-  assert.equal((await domain(brokenDb()).terminalForAttach(MISSING_WS)).errorCode, 'database_error');
+  assert.equal(
+    (await domain(brokenDb()).terminalForAttach(MISSING_WS)).errorCode,
+    'database_error',
+  );
 });
 
 // ---------- workspaceTree (GET /api/state's half — plan §5) ----------
@@ -391,7 +458,7 @@ test('workspaceTree: flat with appId, terminals in order, live from the tmux nam
   const names = new Set();
   const w = domain(db, USERNAME, async () => true, os.tmpdir(), spawnOk, liveNames(names));
 
-  const consoleWs = await w.saveWorkspace({ name: 'scratch' });       // appId null
+  const consoleWs = await w.saveWorkspace({ name: 'scratch' }); // appId null
   const appWs = await w.saveWorkspace({ appId: parent.id, name: 'proj' });
   const orphan = await w.saveWorkspace({ name: 'other' });
   const t1 = await w.newTerminal(consoleWs.data.id, undefined);
@@ -403,23 +470,35 @@ test('workspaceTree: flat with appId, terminals in order, live from the tmux nam
   let tree = await w.workspaceTree();
   assert.equal(tree.ok, true, tree.errorMessage);
   assert.equal(tree.resultType, 'workspace_tree');
-  assert.deepEqual(tree.data.workspaces.map(x => [x.id, x.appId]), [
-    [consoleWs.data.id, null], [appWs.data.id, parent.id], [orphan.data.id, null],
-  ]);
+  assert.deepEqual(
+    tree.data.workspaces.map(x => [x.id, x.appId]),
+    [
+      [consoleWs.data.id, null],
+      [appWs.data.id, parent.id],
+      [orphan.data.id, null],
+    ],
+  );
   // flat rows carry name/cwd/order + their terminals in sort_order
   const scratch = tree.data.workspaces.find(x => x.id === consoleWs.data.id);
   assert.equal(scratch.name, 'scratch');
   assert.equal(scratch.cwd, os.tmpdir());
-  assert.deepEqual(scratch.terminals.map(t => [t.title, t.order, t.live]),
-    [[null, 10, false], ['build', 20, false]]);
+  assert.deepEqual(
+    scratch.terminals.map(t => [t.title, t.order, t.live]),
+    [
+      [null, 10, false],
+      ['build', 20, false],
+    ],
+  );
   assert.equal(scratch.terminals[0].id, t1.data.id);
   assert.equal(tree.data.workspaces.find(x => x.id === appWs.data.id).terminals.length, 1);
 
   // the live diff: t-<uuid> present in the tmux set flips exactly that tab
   names.add(terminalSessionName(t2.data.id));
   tree = await w.workspaceTree();
-  assert.deepEqual(tree.data.workspaces.find(x => x.id === consoleWs.data.id)
-    .terminals.map(t => t.live), [false, true]);
+  assert.deepEqual(
+    tree.data.workspaces.find(x => x.id === consoleWs.data.id).terminals.map(t => t.live),
+    [false, true],
+  );
 
   // rows deleted out-of-band leave the tree (no orphans, no phantom tabs)
   await w.closeTerminal(t1.data.id);

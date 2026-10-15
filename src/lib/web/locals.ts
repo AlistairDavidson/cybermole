@@ -8,11 +8,15 @@
 import type { WebPiLocals, WebPiServices } from '../services';
 import type { SessionToken } from '../../types/branded';
 
-export function assertWebPiLocals(locals: WebPiLocals): { webpi: WebPiServices; session: SessionToken } {
+export function assertWebPiLocals(locals: WebPiLocals): {
+  webpi: WebPiServices;
+  session: SessionToken;
+} {
   if (!locals.webpi || !locals.session) {
     throw new Error(
       'Expected web-pi services in locals — check src/middleware.ts and server/main.ts' +
-      ' (in dev, astro dev renders pages without them: browse the npm run dev:server process instead)');
+        ' (in dev, astro dev renders pages without them: browse the npm run dev:server process instead)',
+    );
   }
   return { webpi: locals.webpi, session: locals.session };
 }

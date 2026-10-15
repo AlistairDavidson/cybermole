@@ -119,12 +119,15 @@ function resolveFindDecorations(): ISearchDecorationOptions | undefined {
     const active = pick('--webpi-find-match-active');
     const overview = pick('--webpi-find-overview');
     const activeOverview = pick('--webpi-find-overview-active');
-    findDecorations = match !== '' && active !== '' && overview !== '' && activeOverview !== ''
-      ? {
-        matchBackground: match, activeMatchBackground: active,
-        matchOverviewRuler: overview, activeMatchColorOverviewRuler: activeOverview,
-      }
-      : null;
+    findDecorations =
+      match !== '' && active !== '' && overview !== '' && activeOverview !== ''
+        ? {
+            matchBackground: match,
+            activeMatchBackground: active,
+            matchOverviewRuler: overview,
+            activeMatchColorOverviewRuler: activeOverview,
+          }
+        : null;
   }
   return findDecorations ?? undefined;
 }
@@ -186,7 +189,7 @@ export class AgentTerminal extends HTMLElement {
    *  ensureToolbar). */
   toolbar: HTMLElement | null = null;
   private findBar: HTMLElement | null = null;
-  private findInput: HTMLElement & { value: string | null; focus(): void } | null = null;
+  private findInput: (HTMLElement & { value: string | null; focus(): void }) | null = null;
   private findDebounce: ReturnType<typeof setTimeout> | null = null;
   /** Has anything been written into the buffer since the last reset?
    *  Gates the 'backfill' write: a reconnect's terminal already holds
@@ -233,10 +236,13 @@ export class AgentTerminal extends HTMLElement {
 
     const terminalContainer = this.querySelector('.terminal-container') as HTMLElement;
 
-    const surfaceColor = getComputedStyle(this).getPropertyValue('--wa-color-surface-default').trim() || '#11131a';
+    const surfaceColor =
+      getComputedStyle(this).getPropertyValue('--wa-color-surface-default').trim() || '#11131a';
 
     this.terminal = new Terminal({
-      cursorBlink: true, fontSize: 13, fontFamily: 'monospace',
+      cursorBlink: true,
+      fontSize: 13,
+      fontFamily: 'monospace',
       scrollback: 5000,
       // @xterm/addon-search's highlight decorations ride xterm's proposed
       // API (registerDecoration), which xterm 6 gates behind this flag —
@@ -244,7 +250,7 @@ export class AgentTerminal extends HTMLElement {
       // every find otherwise.
       allowProposedApi: true,
       theme: {
-        background: surfaceColor
+        background: surfaceColor,
       },
     });
 
@@ -264,8 +270,13 @@ export class AgentTerminal extends HTMLElement {
     // source instead. The shared document listener (armSharedFind) still
     // preventDefaults the BROWSER's native find and opens the bar.
     this.terminal.attachCustomKeyEventHandler(e => {
-      if (e.type === 'keydown' && (e.ctrlKey || e.metaKey) && !e.altKey
-        && e.key.toLowerCase() === 'f') return false;
+      if (
+        e.type === 'keydown' &&
+        (e.ctrlKey || e.metaKey) &&
+        !e.altKey &&
+        e.key.toLowerCase() === 'f'
+      )
+        return false;
       return true;
     });
 
@@ -281,13 +292,9 @@ export class AgentTerminal extends HTMLElement {
       for (const data of chunkInput(d)) this.send({ type: 'input', data });
     });
 
-    this.terminal.onResize(
-      () => this.sendSize()
-    );
+    this.terminal.onResize(() => this.sendSize());
 
-    this.resizeObserver = new ResizeObserver(
-      () => this.fitNow()
-    );
+    this.resizeObserver = new ResizeObserver(() => this.fitNow());
     this.resizeObserver.observe(terminalContainer);
 
     this.ensureToolbar();
@@ -331,10 +338,13 @@ export class AgentTerminal extends HTMLElement {
     const el = this.querySelector('.terminal-status');
     if (!el) return;
     const indicator =
-      kind === 'busy' ? '<wa-spinner></wa-spinner>' :
-      kind === 'ok' ? '<wa-icon name="circle-check"></wa-icon>' :
-      kind === 'err' ? '<wa-icon name="triangle-exclamation"></wa-icon>' :
-      '<wa-icon name="circle-info"></wa-icon>';
+      kind === 'busy'
+        ? '<wa-spinner></wa-spinner>'
+        : kind === 'ok'
+          ? '<wa-icon name="circle-check"></wa-icon>'
+          : kind === 'err'
+            ? '<wa-icon name="triangle-exclamation"></wa-icon>'
+            : '<wa-icon name="circle-info"></wa-icon>';
     el.className = `terminal-status ${kind}`;
     el.innerHTML = `${indicator}<span></span>`;
     (el.lastElementChild as HTMLElement).textContent = text;
@@ -377,8 +387,13 @@ export class AgentTerminal extends HTMLElement {
           title="download the transcript — scrollback included, ANSI colors preserved">
         <wa-icon slot="start" name="download" aria-hidden="true"></wa-icon>download
       </wa-button>`;
-    (bar.querySelector('.tb-copy-output') as HTMLElement).addEventListener('click', () => void this.copyOutput());
-    (bar.querySelector('.tb-download-transcript') as HTMLElement).addEventListener('click', () => this.downloadTranscript());
+    (bar.querySelector('.tb-copy-output') as HTMLElement).addEventListener(
+      'click',
+      () => void this.copyOutput(),
+    );
+    (bar.querySelector('.tb-download-transcript') as HTMLElement).addEventListener('click', () =>
+      this.downloadTranscript(),
+    );
     bar.insertBefore(find, bar.firstChild);
     this.toolbar = bar;
     this.findBar = find;
@@ -401,12 +416,15 @@ export class AgentTerminal extends HTMLElement {
         }
       });
     }
-    (find.querySelector('.find-next') as HTMLElement | null)?.addEventListener('click',
-      () => this.runFind(this.findQuery(), false));
-    (find.querySelector('.find-prev') as HTMLElement | null)?.addEventListener('click',
-      () => this.runFind(this.findQuery(), true));
-    (find.querySelector('.find-close') as HTMLElement | null)?.addEventListener('click',
-      () => this.closeFind());
+    (find.querySelector('.find-next') as HTMLElement | null)?.addEventListener('click', () =>
+      this.runFind(this.findQuery(), false),
+    );
+    (find.querySelector('.find-prev') as HTMLElement | null)?.addEventListener('click', () =>
+      this.runFind(this.findQuery(), true),
+    );
+    (find.querySelector('.find-close') as HTMLElement | null)?.addEventListener('click', () =>
+      this.closeFind(),
+    );
     const status = this.querySelector('.terminal-status');
     if (status) status.before(bar);
     else this.appendChild(bar);
@@ -424,7 +442,8 @@ export class AgentTerminal extends HTMLElement {
    *  (Base.astro renders one on every page). */
   private toast(message: string, options?: Record<string, unknown>): void {
     const host = (this.closest('console-app') ?? document).querySelector('wa-toast') as
-      (HTMLElement & { create?: (message: string, options?: Record<string, unknown>) => unknown }) | null;
+      | (HTMLElement & { create?: (message: string, options?: Record<string, unknown>) => unknown })
+      | null;
     if (host?.create) host.create(message, options);
   }
 
@@ -434,10 +453,17 @@ export class AgentTerminal extends HTMLElement {
   private async copyOutput(): Promise<void> {
     try {
       await navigator.clipboard.writeText(this.transcriptText());
-      this.toast('copied the terminal output', { variant: 'neutral', icon: 'circle-check', duration: 4000 });
+      this.toast('copied the terminal output', {
+        variant: 'neutral',
+        icon: 'circle-check',
+        duration: 4000,
+      });
     } catch {
-      this.toast('could not copy — clipboard unavailable or denied',
-        { variant: 'danger', icon: 'triangle-exclamation', duration: 6000 });
+      this.toast('could not copy — clipboard unavailable or denied', {
+        variant: 'danger',
+        icon: 'triangle-exclamation',
+        duration: 6000,
+      });
     }
     this.terminal?.focus();
   }
@@ -479,12 +505,14 @@ export class AgentTerminal extends HTMLElement {
   openFind(): void {
     if (!this.terminal || !this.findBar || !this.findInput) return;
     this.findBar.classList.remove('hidden');
-    const saved = (this.activeKey !== undefined ? findQueries.get(this.activeKey) : undefined)
-      ?? lastFindQuery;
+    const saved =
+      (this.activeKey !== undefined ? findQueries.get(this.activeKey) : undefined) ?? lastFindQuery;
     this.findInput.value = saved;
     this.findInput.focus();
-    const native = (this.findInput as unknown as { input?: HTMLInputElement }).input
-      ?? this.findInput.shadowRoot?.querySelector('input') ?? null;
+    const native =
+      (this.findInput as unknown as { input?: HTMLInputElement }).input ??
+      this.findInput.shadowRoot?.querySelector('input') ??
+      null;
     if (native) native.select(); // typing replaces, like the browser's find
     if (saved) this.runFind(saved, false);
   }
@@ -530,8 +558,7 @@ export class AgentTerminal extends HTMLElement {
     else addon.findNext(query, { decorations: resolveFindDecorations() });
   }
 
-  attach(mode: 'terminal' | 'run',
-    target: TerminalId | TmuxSessionName, key: ActiveKey): void {
+  attach(mode: 'terminal' | 'run', target: TerminalId | TmuxSessionName, key: ActiveKey): void {
     this.cancelReconnect();
     this.closeSocket();
     this.terminal?.reset();
@@ -543,9 +570,8 @@ export class AgentTerminal extends HTMLElement {
     // 'terminal' carries the tab's uuid (the server derives t-<uuid>,
     // respawning if dead — plan §4); 'run' a live job run's session name
     // (never respawned).
-    const msg: ClientMsg = mode === 'run'
-      ? { type: 'attach', mode, target }
-      : { type: 'attach', mode, id: target };
+    const msg: ClientMsg =
+      mode === 'run' ? { type: 'attach', mode, target } : { type: 'attach', mode, id: target };
     this.attachMsg = msg;
     this.connect(msg, target, key);
   }
@@ -570,7 +596,12 @@ export class AgentTerminal extends HTMLElement {
     };
 
     websocket.onmessage = ev => {
-      let m: ServerMsg; try { m = JSON.parse(ev.data as string) as ServerMsg; } catch { return; }
+      let m: ServerMsg;
+      try {
+        m = JSON.parse(ev.data as string) as ServerMsg;
+      } catch {
+        return;
+      }
       if (m.type === 'output') {
         this.bufferPrimed = true;
         this.terminal?.write(m.data);
@@ -590,15 +621,21 @@ export class AgentTerminal extends HTMLElement {
         this.bufferPrimed = true;
         this.terminal.write(b.data);
         if (this.terminal.rows > 1) this.terminal.write('\n'.repeat(this.terminal.rows - 1));
-      }
-      else if (m.type === 'attached') {
+      } else if (m.type === 'attached') {
         this.ended = false;
         this.attachedTarget = m.target;
         this.reconnectDelay = RECONNECT_MIN_MS;
         this.status(`attached: ${m.target} (${m.socket} socket)`, 'ok');
+      } else if (m.type === 'error') {
+        ended = true;
+        this.ended = true;
+        this.status(m.message, 'err');
+        this.terminal?.write(`\r\n\u001b[31m${m.message}\u001b[0m\r\n`);
+      } else if (m.type === 'exit') {
+        ended = true;
+        this.ended = true;
+        this.status(`detached: ${m.target}`, 'info');
       }
-      else if (m.type === 'error') { ended = true; this.ended = true; this.status(m.message, 'err'); this.terminal?.write(`\r\n\u001b[31m${m.message}\u001b[0m\r\n`); }
-      else if (m.type === 'exit') { ended = true; this.ended = true; this.status(`detached: ${m.target}`, 'info'); }
       // The token this socket used was dropped (logout / log out
       // everywhere): final — like 'exit', never reconnected.
       else if (m.type === 'signed-out') {
@@ -624,12 +661,18 @@ export class AgentTerminal extends HTMLElement {
       this.websocket = undefined;
       if (this.activeKey !== key) return;
       if (!ended) {
-        if (this.attachedTarget) this.scheduleReconnect(restarting ? 'server restarting' : 'disconnected');
-        else { this.ended = true; this.status(`could not connect: ${label}`, 'err'); }
+        if (this.attachedTarget)
+          this.scheduleReconnect(restarting ? 'server restarting' : 'disconnected');
+        else {
+          this.ended = true;
+          this.status(`could not connect: ${label}`, 'err');
+        }
       }
       // The console re-polls state on every close — which also sends an
       // expired login back to the sign-in page instead of retrying forever.
-      this.dispatchEvent(new CustomEvent('terminal-closed', { detail: key, bubbles: true, composed: true }));
+      this.dispatchEvent(
+        new CustomEvent('terminal-closed', { detail: key, bubbles: true, composed: true }),
+      );
     };
   }
 
@@ -645,7 +688,13 @@ export class AgentTerminal extends HTMLElement {
   private closeSocket(): void {
     const ws = this.websocket;
     this.websocket = undefined; // its onclose now sees it was superseded
-    if (ws) { try { ws.close(); } catch { /* already closed */ } }
+    if (ws) {
+      try {
+        ws.close();
+      } catch {
+        /* already closed */
+      }
+    }
   }
 
   private scheduleReconnect(reason = 'disconnected'): void {
@@ -706,9 +755,13 @@ export class AgentTerminal extends HTMLElement {
           const webgl = new WebglAddon();
           webgl.onContextLoss(() => webgl.dispose());
           this.terminal.loadAddon(webgl);
-        } catch { /* no WebGL: stay on the DOM renderer */ }
+        } catch {
+          /* no WebGL: stay on the DOM renderer */
+        }
       })
-      .catch(() => { /* chunk failed to load: stay on the DOM renderer */ });
+      .catch(() => {
+        /* chunk failed to load: stay on the DOM renderer */
+      });
   }
 }
 

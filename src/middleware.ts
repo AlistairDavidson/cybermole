@@ -16,10 +16,13 @@ const GUARDED = [`${base}/api/`, `${base}/partials/`];
 export const onRequest = defineMiddleware((context, next) => {
   const guarded = GUARDED.some(prefix => context.url.pathname.startsWith(prefix));
   if (guarded && (!context.locals.webpi || !context.locals.session)) {
-    return jsonResponse({
-      error: 'this route only runs inside the web-pi server (server/main.ts)',
-      code: 'api_unavailable',
-    }, 503);
+    return jsonResponse(
+      {
+        error: 'this route only runs inside the web-pi server (server/main.ts)',
+        code: 'api_unavailable',
+      },
+      503,
+    );
   }
   return next();
 });

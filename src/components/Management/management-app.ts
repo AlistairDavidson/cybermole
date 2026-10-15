@@ -34,11 +34,9 @@ type WaToast = HTMLElement & {
 type WaInput = HTMLElement & { value: string | null; setCustomValidity(m: string): void };
 
 /** What the confirm dialog will do once the password checks out. */
-type Pending =
-  | { kind: 'build'; sha: string }
-  | { kind: 'activate'; target: 'image' | string };
+type Pending = { kind: 'build'; sha: string } | { kind: 'activate'; target: 'image' | string };
 
-const POLL_FAST_MS = 5_000;   // while a build is pending/running
+const POLL_FAST_MS = 5_000; // while a build is pending/running
 const POLL_SLOW_MS = 20_000;
 const RESTART_WAIT_MS = 90_000;
 
@@ -53,9 +51,13 @@ export class ManagementApp extends HTMLElement {
 
   connectedCallback(): void {
     this.addEventListener('click', e => {
-      const el = (e.target as HTMLElement).closest<HTMLElement>('[data-pick], [data-build], [data-activate]');
+      const el = (e.target as HTMLElement).closest<HTMLElement>(
+        '[data-pick], [data-build], [data-activate]',
+      );
       if (!el) return;
-      const pick = el.dataset.pick, build = el.dataset.build, activate = el.dataset.activate;
+      const pick = el.dataset.pick,
+        build = el.dataset.build,
+        activate = el.dataset.activate;
       if (pick) void this.pick(pick);
       else if (build) this.confirm({ kind: 'build', sha: build });
       else if (activate !== undefined) this.confirm({ kind: 'activate', target: activate });
@@ -63,12 +65,19 @@ export class ManagementApp extends HTMLElement {
     // The footer button lives outside the form (dialog footer slot), and
     // validation runs first: the submit listener sits ABOVE the enhancer,
     // so it only fires for a form the schema let through.
-    this.addEventListener('submit', e => { e.preventDefault(); void this.submit(); });
+    this.addEventListener('submit', e => {
+      e.preventDefault();
+      void this.submit();
+    });
     this.$<HTMLElement>('mgmt-confirm-ok').onclick = () =>
       this.$<HTMLFormElement>('mgmt-form').requestSubmit();
-    void customElements.whenDefined('validation-enhancer-zod').then(() =>
-      (this.querySelector('validation-enhancer-zod') as ValidationEnhancerZod)
-        .setZodSchema(ManagementConfirmFormSchema));
+    void customElements
+      .whenDefined('validation-enhancer-zod')
+      .then(() =>
+        (this.querySelector('validation-enhancer-zod') as ValidationEnhancerZod).setZodSchema(
+          ManagementConfirmFormSchema,
+        ),
+      );
 
     this.localizeTimes();
     this.armPoll();
@@ -96,9 +105,13 @@ export class ManagementApp extends HTMLElement {
 
   private notAnswered(failure: SignedInFetchFailure, fallback: string): void {
     switch (failure.errorCode) {
-      case 'signed_out': return; // the page is already on its way to /login
-      case 'network_error': this.errorToast(fallback, { error: failure.errorMessage ?? 'network error' }); return;
-      default: return failure satisfies never;
+      case 'signed_out':
+        return; // the page is already on its way to /login
+      case 'network_error':
+        this.errorToast(fallback, { error: failure.errorMessage ?? 'network error' });
+        return;
+      default:
+        return failure satisfies never;
     }
   }
 
@@ -118,7 +131,10 @@ export class ManagementApp extends HTMLElement {
    *  click/poll, and picking is this page's primary interaction). */
   private queuedPick: { sha: string | null } | null = null;
   private async refresh(sha: string | null = this.selected()): Promise<void> {
-    if (this.refreshInflight) { this.queuedPick = { sha }; return; }
+    if (this.refreshInflight) {
+      this.queuedPick = { sha };
+      return;
+    }
     this.refreshInflight = true;
     try {
       const q = sha ? `?sha=${encodeURIComponent(sha)}` : '';
@@ -130,7 +146,9 @@ export class ManagementApp extends HTMLElement {
       const box = document.createElement('div');
       for (const node of fresh) box.append(node);
       box.querySelectorAll<HTMLElement>('[data-refresh][id]').forEach(region => {
-        this.querySelector(`#${CSS.escape(region.id)}`)?.replaceWith(document.importNode(region, true));
+        this.querySelector(`#${CSS.escape(region.id)}`)?.replaceWith(
+          document.importNode(region, true),
+        );
       });
     } finally {
       this.refreshInflight = false;
@@ -159,7 +177,10 @@ export class ManagementApp extends HTMLElement {
 
   /** Is a build in flight, per the (just-rendered) history table? */
   private buildActive(): boolean {
-    return this.$('mgmt-releases').querySelector('.mgmt-status.st-pending, .mgmt-status.st-building') !== null;
+    return (
+      this.$('mgmt-releases').querySelector('.mgmt-status.st-pending, .mgmt-status.st-building') !==
+      null
+    );
   }
 
   private async pick(sha: string): Promise<void> {
@@ -170,11 +191,12 @@ export class ManagementApp extends HTMLElement {
 
   private confirm(pending: Pending): void {
     this.pending = pending;
-    const label = pending.kind === 'build'
-      ? `build ${pending.sha.slice(0, 12)}… from the workspace checkout`
-      : pending.target === 'image'
-        ? 'roll back to the image copy'
-        : `activate release ${pending.target.slice(0, 12)}…`;
+    const label =
+      pending.kind === 'build'
+        ? `build ${pending.sha.slice(0, 12)}… from the workspace checkout`
+        : pending.target === 'image'
+          ? 'roll back to the image copy'
+          : `activate release ${pending.target.slice(0, 12)}…`;
     this.$('mgmt-dialog').setAttribute('label', label);
     this.$('mgmt-dialog-text').textContent =
       `${label}? The server re-checks the protected set first; wrong credentials change nothing.`;
@@ -199,16 +221,20 @@ export class ManagementApp extends HTMLElement {
   private async submit(): Promise<void> {
     if (this.inflight || this.pending === null) return;
     if (!this.$<WaCheckbox>('mgmt-confirm-box').checked) {
-      this.$('mgmt-confirm-error').textContent = 'tick the checkbox — this restarts the web server.';
+      this.$('mgmt-confirm-error').textContent =
+        'tick the checkbox — this restarts the web server.';
       return;
     }
     const body = {
       confirm: true,
       username: this.$<WaInput>('mgmt-username').value ?? '',
       password: this.$<WaInput>('mgmt-password').value ?? '',
-      ...(this.pending.kind === 'build' ? { sha: this.pending.sha } : { target: this.pending.target }),
+      ...(this.pending.kind === 'build'
+        ? { sha: this.pending.sha }
+        : { target: this.pending.target }),
     };
-    const url = this.pending.kind === 'build' ? '/api/management/build' : '/api/management/activate';
+    const url =
+      this.pending.kind === 'build' ? '/api/management/build' : '/api/management/activate';
     const pending = this.pending;
     this.inflight = true;
     try {
@@ -218,13 +244,21 @@ export class ManagementApp extends HTMLElement {
       // would throw the page to /login (bouncing back signed-in) instead
       // of toasting. First ran for real on the merge host — the worker's
       // sandbox had no browser.
-      const sent = await signedInFetch(`${BASE}${url}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      }, 'return');
-      if (!sent.ok) { this.notAnswered(sent, 'no answer'); return; }
+      const sent = await signedInFetch(
+        `${BASE}${url}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        },
+        'return',
+      );
+      if (!sent.ok) {
+        this.notAnswered(sent, 'no answer');
+        return;
+      }
       const r = sent.data.response;
-      const answered = await r.json().catch(() => ({})) as { error?: string };
+      const answered = (await r.json().catch(() => ({}))) as { error?: string };
       if (!r.ok) {
         this.errorToast(r.status === 401 ? 'wrong username or password' : 'refused', answered);
         if (r.status === 401) this.$<WaInput>('mgmt-password').focus();
@@ -232,7 +266,11 @@ export class ManagementApp extends HTMLElement {
       }
       this.$<WaDialog>('mgmt-dialog').open = false;
       if (pending.kind === 'build') {
-        this.toast(`build of ${pending.sha.slice(0, 12)}… requested — watching the builder`, 'success', 'circle-check');
+        this.toast(
+          `build of ${pending.sha.slice(0, 12)}… requested — watching the builder`,
+          'success',
+          'circle-check',
+        );
         void this.refresh(this.selected());
       } else {
         this.awaitRestart();
@@ -259,13 +297,18 @@ export class ManagementApp extends HTMLElement {
       if (Date.now() - started < 4_000) return;
       if (Date.now() - started > RESTART_WAIT_MS) {
         clearInterval(watch);
-        text.textContent = 'still no answer — check the container (docker compose ps / logs webpi), then reload.';
+        text.textContent =
+          'still no answer — check the container (docker compose ps / logs webpi), then reload.';
         return;
       }
-      fetch(`${BASE}/api/management`, { cache: 'no-store' }).then(() => {
-        clearInterval(watch);
-        location.reload();
-      }).catch(() => { /* still down — keep watching */ });
+      fetch(`${BASE}/api/management`, { cache: 'no-store' })
+        .then(() => {
+          clearInterval(watch);
+          location.reload();
+        })
+        .catch(() => {
+          /* still down — keep watching */
+        });
     }, 1000);
   }
 }

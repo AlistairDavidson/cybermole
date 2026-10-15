@@ -4,9 +4,17 @@
  *  innerHTML renders — the server-rendered pages need none of this:
  *  Astro escapes). */
 export function esc(s: string): string {
-  return s.replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c] as string));
+  return s.replace(
+    /[&<>"']/g,
+    c =>
+      ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      })[c] as string,
+  );
 }
 
 /** Parse a server-rendered fragment (a /partials/* answer) into nodes.

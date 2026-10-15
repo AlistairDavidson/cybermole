@@ -4,7 +4,12 @@
 import type { APIRoute } from 'astro';
 import { assertWebPiLocals } from '../../../lib/web/locals';
 import { parseAndValidateAPIRequest } from '../../../lib/web/parsing.service';
-import { failureResponse, invalidWorkspaceIdResponse, jsonResponse, workspaceFailureResponse } from '../../../lib/web/responses.service';
+import {
+  failureResponse,
+  invalidWorkspaceIdResponse,
+  jsonResponse,
+  workspaceFailureResponse,
+} from '../../../lib/web/responses.service';
 import { workspacePatchBody } from '../../../schemas/api';
 import { WorkspaceIdSchema } from '../../../schemas/ids';
 

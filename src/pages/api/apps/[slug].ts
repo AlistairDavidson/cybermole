@@ -5,7 +5,12 @@
 import type { APIRoute } from 'astro';
 import { assertWebPiLocals } from '../../../lib/web/locals';
 import { parseAndValidateAPIRequest } from '../../../lib/web/parsing.service';
-import { appFailureResponse, failureResponse, invalidAppSlugResponse, jsonResponse } from '../../../lib/web/responses.service';
+import {
+  appFailureResponse,
+  failureResponse,
+  invalidAppSlugResponse,
+  jsonResponse,
+} from '../../../lib/web/responses.service';
 import { appPatchBody } from '../../../schemas/api';
 import { AppSlugSchema } from '../../../schemas/ids';
 

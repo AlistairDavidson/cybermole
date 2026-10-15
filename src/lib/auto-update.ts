@@ -54,8 +54,7 @@ export function autoUpdateSpec(declared: string): string | null {
 function parseSemver(v: string): [number, number, number, string[]] | null {
   const m = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(v.trim());
   if (!m) return null;
-  return [Number(m[1]), Number(m[2]), Number(m[3]),
-    m[4] === undefined ? [] : m[4].split('.')];
+  return [Number(m[1]), Number(m[2]), Number(m[3]), m[4] === undefined ? [] : m[4].split('.')];
 }
 
 /** A string that parses as a plain semver version. */
@@ -66,7 +65,8 @@ export function isPlainVersion(v: string): boolean {
 /** semver precedence: <0 when a<b, 0 when equal or UNPARSEABLE (an
  *  unparseable side never wins — the caller fails safe, no install). */
 export function compareVersions(a: string, b: string): number {
-  const pa = parseSemver(a), pb = parseSemver(b);
+  const pa = parseSemver(a),
+    pb = parseSemver(b);
   if (!pa || !pb) return 0;
   for (let i = 0; i < 3; i++) {
     if (pa[i] !== pb[i]) return (pa[i] as number) - (pb[i] as number);
@@ -74,14 +74,16 @@ export function compareVersions(a: string, b: string): number {
   // no prerelease > any prerelease (1.0.0 > 1.0.0-beta)
   if (pa[3].length === 0 || pb[3].length === 0) return pb[3].length - pa[3].length;
   for (let i = 0; i < Math.max(pa[3].length, pb[3].length); i++) {
-    const x = pa[3][i], y = pb[3][i];
-    if (x === undefined) return -1;            // shorter set of ids = lower
+    const x = pa[3][i],
+      y = pb[3][i];
+    if (x === undefined) return -1; // shorter set of ids = lower
     if (y === undefined) return 1;
-    const xn = /^\d+$/.test(x), yn = /^\d+$/.test(y);
+    const xn = /^\d+$/.test(x),
+      yn = /^\d+$/.test(y);
     if (xn && yn) {
       if (Number(x) !== Number(y)) return Number(x) - Number(y);
     } else if (xn !== yn) {
-      return xn ? -1 : 1;                       // numeric ids sort lower
+      return xn ? -1 : 1; // numeric ids sort lower
     } else if (x !== y) {
       return x < y ? -1 : 1;
     }
@@ -105,13 +107,21 @@ export function shouldAutoUpdate(installed: string | null, latestInRange: string
 export function parseNpmViewVersion(out: string): string | null {
   const t = out.trim();
   let v: unknown;
-  try { v = JSON.parse(t); } catch { v = t; } // not json — try the plain form
+  try {
+    v = JSON.parse(t);
+  } catch {
+    v = t;
+  } // not json — try the plain form
   if (typeof v === 'string') return parseSemver(v) ? v : null;
   if (Array.isArray(v)) {
     let newest: string | null = null;
     for (const e of v) {
-      if (typeof e === 'string' && parseSemver(e)
-        && (newest === null || compareVersions(e, newest) > 0)) newest = e;
+      if (
+        typeof e === 'string' &&
+        parseSemver(e) &&
+        (newest === null || compareVersions(e, newest) > 0)
+      )
+        newest = e;
     }
     return newest;
   }
@@ -125,8 +135,12 @@ export function parseNpmViewVersion(out: string): string | null {
 function parseJsonSetting<T>(raw: string | null): T | null {
   if (raw === null) return null;
   let v: unknown;
-  try { v = JSON.parse(raw); } catch { return null; }
-  return v && typeof v === 'object' ? v as T : null;
+  try {
+    v = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  return v && typeof v === 'object' ? (v as T) : null;
 }
 
 /** An unreadable db is a database_error — never read as "never". */
@@ -139,7 +153,8 @@ function readJsonSetting<T>(db: StateDb, key: string) {
  *  writes again. */
 function writeJsonSetting(db: StateDb, key: string, value: unknown): void {
   const saved = databaseUpdate(`pi auto-update: could not persist ${key}`, () =>
-    db.setSetting(key, JSON.stringify(value)));
+    db.setSetting(key, JSON.stringify(value)),
+  );
   if (!saved.ok) log.error(saved.errorMessage ?? key);
 }
 
@@ -147,11 +162,16 @@ function writeJsonSetting(db: StateDb, key: string, value: unknown): void {
  *  OFF — a missing row is OFF; an unreadable db is a database_error, not
  *  OFF. */
 export function autoUpdateEnabled(db: StateDb) {
-  return databaseRead('could not read the auto-update setting', () => db.getSetting(KEY_ENABLED) === '1');
+  return databaseRead(
+    'could not read the auto-update setting',
+    () => db.getSetting(KEY_ENABLED) === '1',
+  );
 }
 
 export function setAutoUpdateEnabled(db: StateDb, on: boolean) {
-  return databaseUpdate('could not save the setting', () => db.setSetting(KEY_ENABLED, on ? '1' : '0'));
+  return databaseUpdate('could not save the setting', () =>
+    db.setSetting(KEY_ENABLED, on ? '1' : '0'),
+  );
 }
 
 export function lastCheck(db: StateDb) {
@@ -163,7 +183,11 @@ export function lastUpdate(db: StateDb) {
 }
 
 function saveCheck(db: StateDb, outcome: AutoUpdateCheck['outcome'], detail: string): void {
-  writeJsonSetting(db, KEY_LAST_CHECK, { at: Date.now(), outcome, detail } satisfies AutoUpdateCheck);
+  writeJsonSetting(db, KEY_LAST_CHECK, {
+    at: Date.now(),
+    outcome,
+    detail,
+  } satisfies AutoUpdateCheck);
 }
 
 // ---------- the check itself ----------
@@ -183,16 +207,22 @@ export async function performAutoUpdateCheck(deps: CheckDeps): Promise<void> {
 
   const declared = piDeclared(appRoot);
   const spec = autoUpdateSpec(declared);
-  if (!spec) return fail(`declared range "${declared}" cannot drive auto-update — leaving pi alone`);
+  if (!spec)
+    return fail(`declared range "${declared}" cannot drive auto-update — leaving pi alone`);
   const npm = npmPath();
   if (!npm) return fail('npm was not found on the server PATH — cannot check');
 
   // Registry query only — nothing is installed by `npm view`.
   const latest = await new Promise<string | null>(resolve =>
-    execFile(npm, ['view', spec, 'version', '--json'],
+    execFile(
+      npm,
+      ['view', spec, 'version', '--json'],
       { timeout: VIEW_TIMEOUT_MS, maxBuffer: 1024 * 1024 },
-      (err, stdout) => resolve(err || !stdout ? null : parseNpmViewVersion(stdout))));
-  if (!latest) return fail(`could not determine the newest pi within ${declared} (npm view failed)`);
+      (err, stdout) => resolve(err || !stdout ? null : parseNpmViewVersion(stdout)),
+    ),
+  );
+  if (!latest)
+    return fail(`could not determine the newest pi within ${declared} (npm view failed)`);
 
   const installed = piInstalled(appRoot);
   if (!shouldAutoUpdate(installed, latest)) {
@@ -215,7 +245,9 @@ export async function performAutoUpdateCheck(deps: CheckDeps): Promise<void> {
   // replaces exactly this runPiUpdate call — e.g. forward the spec to the
   // workspace container and relay its PiUpdateResult back. Not implemented:
   // single-process today; see also the sibling note in settings.ts.
-  log.info(`pi auto-update: ${latest} is newer than ${installed ?? 'nothing'} — installing within ${declared}`);
+  log.info(
+    `pi auto-update: ${latest} is newer than ${installed ?? 'nothing'} — installing within ${declared}`,
+  );
   const r = await runPiUpdate(appRoot, false, spec);
   writeJsonSetting(db, KEY_LAST_UPDATE, {
     at: Date.now(),
@@ -227,9 +259,13 @@ export async function performAutoUpdateCheck(deps: CheckDeps): Promise<void> {
       : r.errorMessage,
     output: r.data.output.slice(-OUTPUT_CAP),
   } satisfies AutoUpdateResult);
-  saveCheck(db, r.ok ? 'installed' : 'failed', r.ok
-    ? `installed pi ${r.data.after ?? '?'} (within ${declared})`
-    : `install of ${latest} failed: ${r.errorMessage}`);
+  saveCheck(
+    db,
+    r.ok ? 'installed' : 'failed',
+    r.ok
+      ? `installed pi ${r.data.after ?? '?'} (within ${declared})`
+      : `install of ${latest} failed: ${r.errorMessage}`,
+  );
 }
 
 // ---------- the periodic wiring ----------
@@ -281,8 +317,14 @@ export class AutoUpdater {
   }
 
   stop(): void {
-    if (this.probe) { clearTimeout(this.probe); this.probe = null; }
-    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    if (this.probe) {
+      clearTimeout(this.probe);
+      this.probe = null;
+    }
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
   }
 
   /** The toggle endpoint: persist, then rewire. ON arms the probe (a
@@ -309,7 +351,9 @@ export class AutoUpdater {
         return;
       }
       if (!enabled.data.value) return;
-      this.timer = setInterval(() => { void this.runCheck(); }, this.intervalMs);
+      this.timer = setInterval(() => {
+        void this.runCheck();
+      }, this.intervalMs);
       void this.runCheck();
     }, this.firstDelayMs);
   }
@@ -320,8 +364,12 @@ export class AutoUpdater {
   private async runCheck(): Promise<void> {
     if (this.checking) return;
     this.checking = true;
-    try { await this.check(); }
-    catch (err) { log.error(`pi auto-update check failed: ${(err as Error)?.message ?? err}`); }
-    finally { this.checking = false; }
+    try {
+      await this.check();
+    } catch (err) {
+      log.error(`pi auto-update check failed: ${(err as Error)?.message ?? err}`);
+    } finally {
+      this.checking = false;
+    }
   }
 }

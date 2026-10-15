@@ -100,7 +100,13 @@ export class TerminalTabs extends HTMLElement {
           </wa-button>
         </div>`;
       (this.querySelector('.empty-new-workspace') as HTMLElement).onclick = () =>
-        this.dispatchEvent(new CustomEvent('new-workspace', { detail: { appId: null }, bubbles: true, composed: true }));
+        this.dispatchEvent(
+          new CustomEvent('new-workspace', {
+            detail: { appId: null },
+            bubbles: true,
+            composed: true,
+          }),
+        );
       return;
     }
     this.body.innerHTML = '';
@@ -113,8 +119,8 @@ export class TerminalTabs extends HTMLElement {
     this.appendEditorTab();
     this.appendPlusButton();
     this.body.appendChild(this.runPaneHost());
-    const initial = initialTab !== undefined && ws.terminals.some(t => t.id === initialTab)
-      ? initialTab : null;
+    const initial =
+      initialTab !== undefined && ws.terminals.some(t => t.id === initialTab) ? initialTab : null;
     if (initial !== null) this.selectTerminal(initial);
     else if (!this.selectFirstTerminal()) this.renderNoTerminals();
   }
@@ -168,16 +174,23 @@ export class TerminalTabs extends HTMLElement {
     if (!this.ws || !this.ws.terminals.some(t => t.id === id)) return;
     const existing = this.popped.get(id);
     if (existing) {
-      if (!existing.closed) { existing.focus(); return; } // already popped: the click focuses its window
+      if (!existing.closed) {
+        existing.focus();
+        return;
+      } // already popped: the click focuses its window
       this.unpop(id); // its window died without a pagehide (crash): stale mark
     }
     // Open BEFORE tearing down: a blocked popup (this is the user-gesture
     // call) must leave the pane exactly as it was.
     const win = window.open(`${BASE}/?t=${id}`, '_blank', 'popup=true,width=1100,height=720');
     if (!win) {
-      this.dispatchEvent(new CustomEvent('pop-blocked', {
-        detail: { id }, bubbles: true, composed: true,
-      }));
+      this.dispatchEvent(
+        new CustomEvent('pop-blocked', {
+          detail: { id },
+          bubbles: true,
+          composed: true,
+        }),
+      );
       return;
     }
     this.popped.set(id, win);
@@ -196,7 +209,9 @@ export class TerminalTabs extends HTMLElement {
     // really gone (a swap leaves it open; a close flips `closed`), checked
     // after a beat to let the close settle.
     win.addEventListener('pagehide', () => {
-      setTimeout(() => { if (win.closed) this.popupClosed(id, win); }, POPUP_GONE_MS);
+      setTimeout(() => {
+        if (win.closed) this.popupClosed(id, win);
+      }, POPUP_GONE_MS);
     });
   }
 
@@ -362,9 +377,13 @@ export class TerminalTabs extends HTMLElement {
       }
       if ((e.target as HTMLElement).closest('.tab-close')) {
         e.stopPropagation();
-        this.dispatchEvent(new CustomEvent('close-terminal', {
-          detail: { id: t.id }, bubbles: true, composed: true,
-        }));
+        this.dispatchEvent(
+          new CustomEvent('close-terminal', {
+            detail: { id: t.id },
+            bubbles: true,
+            composed: true,
+          }),
+        );
         return;
       }
       this.selectTerminal(t.id);
@@ -386,7 +405,10 @@ export class TerminalTabs extends HTMLElement {
     const label = this.tabLabel(t, index);
     const labelEl = tab.querySelector('.tab-label') as HTMLElement;
     if (labelEl.textContent !== label) labelEl.textContent = label;
-    tab.setAttribute('aria-label', `${label}${t.live ? ' (live)' : ''}${this.popped.has(t.id) ? ' (popped out)' : ''}`);
+    tab.setAttribute(
+      'aria-label',
+      `${label}${t.live ? ' (live)' : ''}${this.popped.has(t.id) ? ' (popped out)' : ''}`,
+    );
   }
 
   private appendEditorTab(): void {
@@ -411,9 +433,15 @@ export class TerminalTabs extends HTMLElement {
     plus.title = 'new terminal tab';
     plus.setAttribute('aria-label', 'new terminal tab');
     plus.innerHTML = `<wa-icon name="plus" aria-hidden="true"></wa-icon>`;
-    plus.addEventListener('click', () => this.dispatchEvent(new CustomEvent('new-terminal', {
-      detail: { workspaceId: this.ws?.id }, bubbles: true, composed: true,
-    })));
+    plus.addEventListener('click', () =>
+      this.dispatchEvent(
+        new CustomEvent('new-terminal', {
+          detail: { workspaceId: this.ws?.id },
+          bubbles: true,
+          composed: true,
+        }),
+      ),
+    );
     this.bar.appendChild(plus);
     this.plusButton = plus;
   }
@@ -501,9 +529,13 @@ export class TerminalTabs extends HTMLElement {
       </wa-button>`;
     this.body.appendChild(empty);
     (empty.querySelector('.empty-new-terminal') as HTMLElement).onclick = () =>
-      this.dispatchEvent(new CustomEvent('new-terminal', {
-        detail: { workspaceId: this.ws?.id }, bubbles: true, composed: true,
-      }));
+      this.dispatchEvent(
+        new CustomEvent('new-terminal', {
+          detail: { workspaceId: this.ws?.id },
+          bubbles: true,
+          composed: true,
+        }),
+      );
   }
 
   private clearNoTerminals(): void {

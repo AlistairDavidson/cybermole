@@ -15,10 +15,13 @@ import { parse } from 'yaml';
 const root = path.join(import.meta.dirname, '..', '..');
 const compose = parse(readFileSync(path.join(root, 'compose.yaml'), 'utf8'));
 const loki = parse(readFileSync(path.join(root, 'deploy', 'loki', 'config.yaml'), 'utf8'));
-const dsFile = readFileSync(path.join(root, 'deploy', 'grafana', 'provisioning', 'datasources', 'loki.yaml'), 'utf8');
+const dsFile = readFileSync(
+  path.join(root, 'deploy', 'grafana', 'provisioning', 'datasources', 'loki.yaml'),
+  'utf8',
+);
 const datasource = parse(dsFile);
 
-const hours = (spec) => {
+const hours = spec => {
   const m = /^(\d+)h$/.exec(String(spec));
   assert.ok(m, `${spec} is not an <n>h duration`);
   return Number(m[1]);
@@ -58,10 +61,13 @@ test('the loki volume follows the explicit-naming pattern; loki-init owns it', (
   assert.equal(init.user, '0:0');
   assert.match(init.entrypoint.join(' '), /chown -R 10001:10001 \/loki/);
   assert.deepEqual(init.volumes, ['webpi-loki:/loki']);
-  assert.equal(compose.services.loki.depends_on['loki-init'].condition, 'service_completed_successfully');
+  assert.equal(
+    compose.services.loki.depends_on['loki-init'].condition,
+    'service_completed_successfully',
+  );
 });
 
-test('grafana is loopback-published on a port that is not web-pi or dev\'s', () => {
+test("grafana is loopback-published on a port that is not web-pi or dev's", () => {
   const ports = compose.services.grafana.ports;
   assert.deepEqual(ports, ['127.0.0.1:3300:3000']);
   const host = Number(ports[0].split(':')[1]);
@@ -127,11 +133,18 @@ const { envSchema } = await import('../../dist-server/src/lib/env-schema.js');
  *  same pattern as the WEB_PI_S3_* boot checks in storage.test.mjs), or
  *  its error. */
 function bootConfig(env) {
-  const clean = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('WEB_PI_LOKI_')));
+  const clean = Object.fromEntries(
+    Object.entries(process.env).filter(([k]) => !k.startsWith('WEB_PI_LOKI_')),
+  );
   try {
-    const out = execFileSync(process.execPath, ['-e',
-      "process.stdout.write(JSON.stringify(require('./dist-server/src/lib/env.js').readLokiConfig()))"],
-      { env: { ...clean, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+    const out = execFileSync(
+      process.execPath,
+      [
+        '-e',
+        "process.stdout.write(JSON.stringify(require('./dist-server/src/lib/env.js').readLokiConfig()))",
+      ],
+      { env: { ...clean, ...env }, stdio: ['ignore', 'pipe', 'pipe'] },
+    );
     return { config: JSON.parse(out.toString()) };
   } catch (err) {
     return { error: err.stderr.toString() };
@@ -140,26 +153,42 @@ function bootConfig(env) {
 
 test('the WEB_PI_LOKI_* env contract is declared in the shared schema', () => {
   assert.deepEqual(envSchema.WEB_PI_LOKI_URL, {
-    type: 'string', context: 'server', access: 'secret', optional: true,
+    type: 'string',
+    context: 'server',
+    access: 'secret',
+    optional: true,
   });
   assert.deepEqual(envSchema.WEB_PI_LOKI_JOB, {
-    type: 'string', context: 'server', access: 'secret', optional: true,
+    type: 'string',
+    context: 'server',
+    access: 'secret',
+    optional: true,
   });
 });
 
 test('readLokiConfig: unset/empty is null; url+job configure the transport', () => {
   assert.deepEqual(bootConfig({}), { config: null });
-  assert.deepEqual(bootConfig({ WEB_PI_LOKI_URL: '' }), { config: null }, 'empty counts as unset (compose VAR: "")');
-  assert.deepEqual(bootConfig({ WEB_PI_LOKI_URL: 'http://loki:3100' }),
-    { config: { url: 'http://loki:3100', job: 'webpi' } });
-  assert.deepEqual(bootConfig({ WEB_PI_LOKI_URL: 'http://loki:3100/', WEB_PI_LOKI_JOB: 'webpi-box' }),
-    { config: { url: 'http://loki:3100', job: 'webpi-box' } }, 'trailing slash normalised, job label override');
+  assert.deepEqual(
+    bootConfig({ WEB_PI_LOKI_URL: '' }),
+    { config: null },
+    'empty counts as unset (compose VAR: "")',
+  );
+  assert.deepEqual(bootConfig({ WEB_PI_LOKI_URL: 'http://loki:3100' }), {
+    config: { url: 'http://loki:3100', job: 'webpi' },
+  });
+  assert.deepEqual(
+    bootConfig({ WEB_PI_LOKI_URL: 'http://loki:3100/', WEB_PI_LOKI_JOB: 'webpi-box' }),
+    { config: { url: 'http://loki:3100', job: 'webpi-box' } },
+    'trailing slash normalised, job label override',
+  );
 });
 
 test('readLokiConfig: malformed values stop the boot', () => {
   assert.match(bootConfig({ WEB_PI_LOKI_JOB: 'webpi' }).error, /without WEB_PI_LOKI_URL/);
   assert.match(bootConfig({ WEB_PI_LOKI_URL: 'ftp://x' }).error, /is not an http\(s\) URL/);
   assert.match(bootConfig({ WEB_PI_LOKI_URL: 'not a url' }).error, /is not an http\(s\) URL/);
-  assert.match(bootConfig({ WEB_PI_LOKI_URL: 'http://loki:3100', WEB_PI_LOKI_JOB: 'my box' }).error,
-    /is not a valid job label/);
+  assert.match(
+    bootConfig({ WEB_PI_LOKI_URL: 'http://loki:3100', WEB_PI_LOKI_JOB: 'my box' }).error,
+    /is not a valid job label/,
+  );
 });

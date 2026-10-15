@@ -18,16 +18,26 @@ export const JobSaveSchema = z.object({
   // what the user typed is fine as long as it slugs to a valid name. The
   // length cap is on the typed value (it becomes the field's maxlength),
   // so normalizeJobName never has to cut a name short.
-  name: z.string().max(MAX_JOB_NAME, `name is too long (max ${MAX_JOB_NAME})`).transform(normalizeJobName).pipe(
-    z.string()
-      .min(1, 'name is required')
-      .regex(JOB_NAME_RE, 'use letters, digits, - and _ (and not webpi-…)')
-      .transform(asJobName)),
-  schedule: z.string().trim()
+  name: z
+    .string()
+    .max(MAX_JOB_NAME, `name is too long (max ${MAX_JOB_NAME})`)
+    .transform(normalizeJobName)
+    .pipe(
+      z
+        .string()
+        .min(1, 'name is required')
+        .regex(JOB_NAME_RE, 'use letters, digits, - and _ (and not webpi-…)')
+        .transform(asJobName),
+    ),
+  schedule: z
+    .string()
+    .trim()
     .min(1, 'schedule is required')
     .max(MAX_SCHEDULE, `schedule is too long (max ${MAX_SCHEDULE})`)
     .regex(SINGLE_LINE, 'schedule must be one line'),
-  command: z.string().trim()
+  command: z
+    .string()
+    .trim()
     .min(1, 'command is required')
     .max(MAX_COMMAND, `command is too long (max ${MAX_COMMAND})`)
     .regex(SINGLE_LINE, 'command must be one line'),
@@ -41,7 +51,8 @@ export const JobSaveSchema = z.object({
  *  is a safe integer), never negative, never a float. Validated at the
  *  request boundary like every other path param (docs/CODE_STYLE.md §4);
  *  malformed → 400. */
-export const FiredAtSchema = z.string()
+export const FiredAtSchema = z
+  .string()
   .regex(/^\d{1,15}$/, 'invalid fired_at (integer epoch ms)')
   .transform(Number);
 

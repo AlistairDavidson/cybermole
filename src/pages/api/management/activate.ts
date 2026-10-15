@@ -6,7 +6,11 @@
 // (docs/management-page.md §3).
 import type { APIRoute } from 'astro';
 import { assertWebPiLocals } from '../../../lib/web/locals';
-import { failureResponse, jsonResponse, managementFailureResponse } from '../../../lib/web/responses.service';
+import {
+  failureResponse,
+  jsonResponse,
+  managementFailureResponse,
+} from '../../../lib/web/responses.service';
 import { parseAndValidateAPIRequest } from '../../../lib/web/parsing.service';
 import { ManagementActivateSchema } from '../../../schemas/management';
 

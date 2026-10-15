@@ -12,7 +12,13 @@ import * as path from 'node:path';
 import * as vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
-const SW_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'public', 'sw.js');
+const SW_PATH = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  'public',
+  'sw.js',
+);
 
 /** The registered listeners of sw.js run in a sandboxed realm. */
 function loadServiceWorker(scopeUrl) {
@@ -27,12 +33,18 @@ function loadServiceWorker(scopeUrl) {
   const self = {
     registration: { scope: scopeUrl },
     location: { origin: new URL(scopeUrl).origin },
-    addEventListener: (name, fn) => { (listeners[name] ??= []).push(fn); },
+    addEventListener: (name, fn) => {
+      (listeners[name] ??= []).push(fn);
+    },
     skipWaiting: () => {},
     clients: { claim: async () => {} },
   };
   const context = vm.createContext({
-    self, caches, URL, Response, location: self.location,
+    self,
+    caches,
+    URL,
+    Response,
+    location: self.location,
     fetch: async () => new Response('', { status: 504, statusText: 'offline' }),
   });
   vm.runInContext(readFileSync(SW_PATH, 'utf8'), context, { filename: 'sw.js' });
@@ -45,7 +57,9 @@ async function swHandles(listeners, url, method = 'GET') {
   const claims = [];
   const event = {
     request: { method, url, mode: 'same-origin' },
-    respondWith: p => { claims.push(p); },
+    respondWith: p => {
+      claims.push(p);
+    },
     waitUntil: () => {},
   };
   for (const fn of listeners.fetch ?? []) fn(event);
@@ -57,12 +71,35 @@ test('sw.js: editor/ is never served from the cache (mixed-version assets, authe
   const sw = loadServiceWorker('http://127.0.0.1:4000/');
   // the workbench HTML and its unhashed assets, under the app's base
   assert.equal(await swHandles(sw, 'http://127.0.0.1:4000/editor/'), false, 'workbench HTML');
-  assert.equal(await swHandles(sw, 'http://127.0.0.1:4000/editor/?folder=%2Fworkspace'), false, 'folder URL');
-  assert.equal(await swHandles(sw, 'http://127.0.0.1:4000/editor/stable-8072/out/vs/code/browser/workbench/workbench.js'), false, 'workbench bundle');
-  assert.equal(await swHandles(sw, 'http://127.0.0.1:4000/editor/stable-8072/out/vs/workbench/api/nodeProxy.js'), false);
+  assert.equal(
+    await swHandles(sw, 'http://127.0.0.1:4000/editor/?folder=%2Fworkspace'),
+    false,
+    'folder URL',
+  );
+  assert.equal(
+    await swHandles(
+      sw,
+      'http://127.0.0.1:4000/editor/stable-8072/out/vs/code/browser/workbench/workbench.js',
+    ),
+    false,
+    'workbench bundle',
+  );
+  assert.equal(
+    await swHandles(
+      sw,
+      'http://127.0.0.1:4000/editor/stable-8072/out/vs/workbench/api/nodeProxy.js',
+    ),
+    false,
+  );
   // the bypass holds under a WEB_PI_BASE mount too
   const swBase = loadServiceWorker('http://127.0.0.1:4000/foo/');
-  assert.equal(await swHandles(swBase, 'http://127.0.0.1:4000/foo/editor/stable-8072/out/vs/base/worker/workerMain.js'), false);
+  assert.equal(
+    await swHandles(
+      swBase,
+      'http://127.0.0.1:4000/foo/editor/stable-8072/out/vs/base/worker/workerMain.js',
+    ),
+    false,
+  );
 });
 
 test('sw.js: the other paths keep their established behavior', async () => {
@@ -70,7 +107,11 @@ test('sw.js: the other paths keep their established behavior', async () => {
   // still bypassed: live data routes
   assert.equal(await swHandles(sw, 'http://127.0.0.1:4000/api/state'), false);
   assert.equal(await swHandles(sw, 'http://127.0.0.1:4000/partials/jobs-list'), false);
-  assert.equal(await swHandles(sw, 'http://127.0.0.1:4000/api/anything'), false, 'path outside bypass shape but api/');
+  assert.equal(
+    await swHandles(sw, 'http://127.0.0.1:4000/api/anything'),
+    false,
+    'path outside bypass shape but api/',
+  );
   // still handled: hashed assets (cache-first) and navigations (network-first)
   assert.equal(await swHandles(sw, 'http://127.0.0.1:4000/_astro/chunk-abc123.js'), true);
   assert.equal(await swHandles(sw, 'http://127.0.0.1:4000/jobs', 'GET'), true, 'navigate');

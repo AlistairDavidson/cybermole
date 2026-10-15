@@ -101,9 +101,13 @@ test('runCommandArgv: the exact wrapper argv — command as $1, never string-emb
   // braces or quotes in the command can't break the wrapper.
   const tricky = 'echo "hi there" # not a comment-start for the wrapper; } | pipe &';
   assert.deepEqual(runCommandArgv(tricky, '/logs/j/1.log', '/logs/j/1.exit'), [
-    '/bin/sh', '-c',
+    '/bin/sh',
+    '-c',
     'mkdir -p "$(dirname "$2")"; { /bin/sh -c "$1" 2>&1; echo $? > "$3"; } | tee "$2"',
-    'sh', tricky, '/logs/j/1.log', '/logs/j/1.exit',
+    'sh',
+    tricky,
+    '/logs/j/1.log',
+    '/logs/j/1.exit',
   ]);
   // The user command rides as its OWN argv element — it is not inside
   // the script string, and the script mentions $1/$2/$3 only.

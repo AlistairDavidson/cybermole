@@ -16,7 +16,10 @@ import { AppIdSchema, AppSlugSchema } from '../../dist-server/src/schemas/ids.js
 
 const USERNAME = { ok: true, resultType: 'database_read', data: { value: 'tester' } };
 const USERNAME_FAIL = {
-  ok: false, resultType: 'database_read', errorCode: 'database_error', errorMessage: 'could not read the credential',
+  ok: false,
+  resultType: 'database_read',
+  errorCode: 'database_error',
+  errorMessage: 'could not read the credential',
 };
 
 function freshDb() {
@@ -41,7 +44,12 @@ function apps(db, username = USERNAME, killSession = async () => true) {
 }
 
 const appRow = (db, slug) =>
-  db.get(qb.selectFrom('apps').select(['id', 'name', 'slug', 'cwd', 'sort_order', 'created_by', 'updated_by']).where('slug', '=', slug));
+  db.get(
+    qb
+      .selectFrom('apps')
+      .select(['id', 'name', 'slug', 'cwd', 'sort_order', 'created_by', 'updated_by'])
+      .where('slug', '=', slug),
+  );
 const rows = (db, table) => db.all(qb.selectFrom(table).selectAll());
 
 // ---------- slug rules ----------
@@ -56,22 +64,33 @@ test('normalizeSlug: lowercase, collapse junk (underscores included) to -, strip
   assert.equal(normalizeSlug('   '), '');
 });
 
-test('normalizeSlug\'s output always satisfies APP_SLUG_RE or is empty', () => {
-  for (const raw of ['A', '9lives', 'My App!', 'a_b', '  x  ', 'ümlaut app', 'x'.repeat(80), '-x-', '42']) {
+test("normalizeSlug's output always satisfies APP_SLUG_RE or is empty", () => {
+  for (const raw of [
+    'A',
+    '9lives',
+    'My App!',
+    'a_b',
+    '  x  ',
+    'ümlaut app',
+    'x'.repeat(80),
+    '-x-',
+    '42',
+  ]) {
     const slug = normalizeSlug(raw);
     assert.ok(slug === '' || APP_SLUG_RE.test(slug), `${raw} → ${slug}`);
   }
 });
 
 test('APP_SLUG_RE: lowercase start, then lowercase/digits/dashes, up to 40; UUID_RE: lowercase v4 pinned', () => {
-  for (const good of ['a', 'my-app', 'a'.repeat(40), '9lives', 'a-1']) assert.equal(APP_SLUG_RE.test(good), true, good);
+  for (const good of ['a', 'my-app', 'a'.repeat(40), '9lives', 'a-1'])
+    assert.equal(APP_SLUG_RE.test(good), true, good);
   for (const bad of ['', 'A', '-a', '_a', 'a_b', 'a'.repeat(41), 'a B', 'ä']) {
     assert.equal(APP_SLUG_RE.test(bad), false, bad);
   }
   const v4 = '123e4567-e89b-42d3-a456-426614174000';
   assert.equal(UUID_RE.test(v4), true);
   assert.equal(UUID_RE.test('123e4567-e89b-72d3-a456-426614174000'), false); // v7: version nibble
-  assert.equal(UUID_RE.test(v4.toUpperCase()), false);                        // lowercase only
+  assert.equal(UUID_RE.test(v4.toUpperCase()), false); // lowercase only
   assert.equal(UUID_RE.test('123e4567-e89b-42d3-c456-426614174000'), false); // bad variant nibble
   assert.equal(UUID_RE.test('019f4706-0000-7000-8000-00000000000a'), false); // a pi session id shape
 });
@@ -84,7 +103,14 @@ test('AppSlugSchema / AppIdSchema: pass unchanged (brand is type-only), reject j
   assert.equal(AppSlugSchema.safeParse('Nope').error.issues[0].message, 'invalid app slug');
   const id = '123e4567-e89b-42d3-a456-426614174000';
   assert.equal(AppIdSchema.parse(id), id);
-  for (const bad of ['', 'nope', id.toUpperCase(), '123e4567-e89b-72d3-a456-426614174000', 5, null]) {
+  for (const bad of [
+    '',
+    'nope',
+    id.toUpperCase(),
+    '123e4567-e89b-72d3-a456-426614174000',
+    5,
+    null,
+  ]) {
     assert.equal(AppIdSchema.safeParse(bad).success, false, String(bad));
   }
   assert.equal(AppIdSchema.safeParse('nope').error.issues[0].message, 'invalid app id');
@@ -186,7 +212,12 @@ test('rename: changes the display name, never the slug; absent fields are a no-o
   assert.equal(appRow(db, 'old-name').name, 'New Name');
   const noop = await a.renameApp('old-name', undefined);
   assert.equal(noop.ok, true);
-  assert.deepEqual(noop.data, { id: renamed.data.id, name: 'New Name', slug: 'old-name', cwd: null });
+  assert.deepEqual(noop.data, {
+    id: renamed.data.id,
+    name: 'New Name',
+    slug: 'old-name',
+    cwd: null,
+  });
 });
 
 test('rename: invalid_name on an empty name; app_not_found on a slug that does not resolve', async () => {
@@ -233,12 +264,15 @@ test('rename: the cwd patch — a string sets it (validated), absent keeps, null
 
 // ---------- delete_app ----------
 
-test('delete_app: cascades workspaces and terminals, un-tags jobs, best-effort-kills the terminals\' sessions', async () => {
+test("delete_app: cascades workspaces and terminals, un-tags jobs, best-effort-kills the terminals' sessions", async () => {
   const db = freshDb();
   const { killed, killSession } = recorder();
   const a = apps(db, USERNAME, killSession);
   const w = new Workspaces({
-    db, username: () => USERNAME, killSession, defaultCwd: os.tmpdir(),
+    db,
+    username: () => USERNAME,
+    killSession,
+    defaultCwd: os.tmpdir(),
     spawnSession: async name => ({ ok: true, resultType: 'tmux_session', data: { name } }),
   });
   const app = (await a.saveApp('gone')).data;
@@ -248,8 +282,17 @@ test('delete_app: cascades workspaces and terminals, un-tags jobs, best-effort-k
   const consoleWs = (await w.saveWorkspace({ name: 'console one' })).data;
   const consoleTerm = (await w.newTerminal(consoleWs.id, undefined)).data;
   // a job tagged with the app (raw: the tag picker is task/ws-jobs)
-  db.run(qb.insertInto('jobs')
-    .values({ name: 'nightly', schedule: '* * * * *', command: 'true', created_at: 1, app_id: app.id }));
+  db.run(
+    qb
+      .insertInto('jobs')
+      .values({
+        name: 'nightly',
+        schedule: '* * * * *',
+        command: 'true',
+        created_at: 1,
+        app_id: app.id,
+      }),
+  );
 
   const deleted = await a.deleteApp('gone');
   assert.equal(deleted.ok, true, deleted.errorMessage);
@@ -257,11 +300,19 @@ test('delete_app: cascades workspaces and terminals, un-tags jobs, best-effort-k
   assert.deepEqual(deleted.data, { id: app.id });
   // the cascade: app gone, its workspace and terminals with it
   assert.equal(appRow(db, 'gone'), undefined);
-  assert.deepEqual(rows(db, 'workspaces').map(r => r.id), [consoleWs.id]);
-  assert.deepEqual(rows(db, 'terminals').map(r => r.id), [consoleTerm.id]);
+  assert.deepEqual(
+    rows(db, 'workspaces').map(r => r.id),
+    [consoleWs.id],
+  );
+  assert.deepEqual(
+    rows(db, 'terminals').map(r => r.id),
+    [consoleTerm.id],
+  );
   // jobs are un-tagged, never deleted (spread: node:sqlite rows carry a
   // null prototype, which deepEqual treats as a different object)
-  const job = db.get(qb.selectFrom('jobs').select(['name', 'app_id']).where('name', '=', 'nightly'));
+  const job = db.get(
+    qb.selectFrom('jobs').select(['name', 'app_id']).where('name', '=', 'nightly'),
+  );
   assert.deepEqual({ ...job }, { name: 'nightly', app_id: null });
   // exactly the deleted terminals' derived session names were killed
   assert.deepEqual(killed.sort(), [terminalSessionName(t1.id), terminalSessionName(t2.id)].sort());
@@ -280,7 +331,10 @@ test('delete_app: database_error on an unwritable db — and a failed kill never
   const failingKill = apps(db, USERNAME, async () => false);
   const app = (await failingKill.saveApp('doomed')).data;
   const w = new Workspaces({
-    db, username: () => USERNAME, killSession: async () => false, defaultCwd: os.tmpdir(),
+    db,
+    username: () => USERNAME,
+    killSession: async () => false,
+    defaultCwd: os.tmpdir(),
     spawnSession: async name => ({ ok: true, resultType: 'tmux_session', data: { name } }),
   });
   const ws = (await w.saveWorkspace({ appId: app.id, name: 'x' })).data;
@@ -302,13 +356,25 @@ test('list_apps: every app, sort_order asc (+ created_at tiebreak); empty; datab
   assert.equal(listed.ok, true, listed.errorMessage);
   assert.equal(listed.resultType, 'list_apps');
   // save_app allocates order by insertion; the read is by (order, created_at).
-  assert.deepEqual(listed.data.apps.map(x => [x.id, x.name, x.slug, x.cwd, x.order]),
-    [[b.id, 'beta app', 'beta-app', null, 10], [c.id, 'alpha app', 'alpha-app', null, 20], [d.id, 'gamma', 'gamma', null, 30]]);
+  assert.deepEqual(
+    listed.data.apps.map(x => [x.id, x.name, x.slug, x.cwd, x.order]),
+    [
+      [b.id, 'beta app', 'beta-app', null, 10],
+      [c.id, 'alpha app', 'alpha-app', null, 20],
+      [d.id, 'gamma', 'gamma', null, 30],
+    ],
+  );
   for (const app of listed.data.apps) assert.match(app.id, UUID_RE);
   // the app cwd rides the read (task/app-cwd: the dialog's start-path hint)
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-app-cwd-'));
   const e = (await a.saveApp('with dir', dir)).data;
-  assert.deepEqual(a.listApps().data.apps.at(-1), { id: e.id, name: 'with dir', slug: 'with-dir', cwd: dir, order: 40 });
+  assert.deepEqual(a.listApps().data.apps.at(-1), {
+    id: e.id,
+    name: 'with dir',
+    slug: 'with-dir',
+    cwd: dir,
+    order: 40,
+  });
   assert.equal(a.listApps().data.apps.length, 4); // stable across calls
 
   const empty = apps(freshDb()).listApps();

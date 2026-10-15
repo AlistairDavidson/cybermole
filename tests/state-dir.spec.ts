@@ -44,8 +44,7 @@ test('set-password with only WEB_PI_HOME defaults the db into ~/.local/state/web
   expect(fs.existsSync(db)).toBe(true);
   expect(fs.statSync(db).mode & 0o777).toBe(0o600); // it holds the password hash
   const row = new DatabaseSync(db).prepare('SELECT username FROM credential').get() as
-    | { username: string }
-    | undefined;
+    { username: string } | undefined;
   expect(row?.username).toBe('tester');
 });
 
@@ -68,12 +67,20 @@ async function bootServer(env: Record<string, string>): Promise<void> {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let out = '';
-  child.stdout!.on('data', (d: Buffer) => { out += d.toString(); });
+  child.stdout!.on('data', (d: Buffer) => {
+    out += d.toString();
+  });
   try {
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`server did not boot; stdout: ${out}`)), 15_000);
+      const timer = setTimeout(
+        () => reject(new Error(`server did not boot; stdout: ${out}`)),
+        15_000,
+      );
       child.stdout!.on('data', () => {
-        if (out.includes('web-pi listening')) { clearTimeout(timer); resolve(); }
+        if (out.includes('web-pi listening')) {
+          clearTimeout(timer);
+          resolve();
+        }
       });
       child.on('error', reject);
     });

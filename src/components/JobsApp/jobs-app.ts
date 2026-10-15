@@ -27,7 +27,9 @@ type WaDialog = HTMLElement & { open: boolean };
 /** wa-input / wa-textarea / wa-select surface used here. An empty
  *  wa-input's value is null, not ''; an unselected wa-select's is ''. */
 type WaFormControl = HTMLElement & {
-  value: string | null; disabled: boolean; setCustomValidity(message: string): void;
+  value: string | null;
+  disabled: boolean;
+  setCustomValidity(message: string): void;
 };
 type WaSelect = HTMLElement & { value: string };
 type WaToast = HTMLElement & {
@@ -36,24 +38,36 @@ type WaToast = HTMLElement & {
 
 /** What the dialog edits — read off a card's edit button (the app tag
  *  as the tagged app's id, '' when the job is untagged). */
-interface JobFields { name: string; schedule: string; command: string; app: string }
+interface JobFields {
+  name: string;
+  schedule: string;
+  command: string;
+  app: string;
+}
 
 /** The picker's options, from the swapped-in list's data-apps (the same
  *  server render that listed the jobs — refreshed by the 15 s poll). */
-interface AppChoice { id: string; name: string }
+interface AppChoice {
+  id: string;
+  name: string;
+}
 
 /** One history row's display fields. */
 const fmtRunTime = (ms: number): string => {
   const d = new Date(ms);
   const p = (n: number): string => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
-    `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  return (
+    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
+    `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  );
 };
 
 /** A run's duration, finish-observed minus fired (tick granularity). */
 const fmtDuration = (from: number, to: number): string => {
   const s = Math.max(0, (to - from) / 1000);
-  return s < 60 ? `${s.toFixed(1)}s` : `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, '0')}s`;
+  return s < 60
+    ? `${s.toFixed(1)}s`
+    : `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, '0')}s`;
 };
 
 export class JobsApp extends HTMLElement {
@@ -68,11 +82,19 @@ export class JobsApp extends HTMLElement {
     (this.querySelector('#jobs-new') as HTMLElement).onclick = () => this.openDialog(null);
     // Card actions, delegated: refreshed cards need no rewiring.
     this.addEventListener('click', e => {
-      const button = (e.target as HTMLElement).closest<HTMLElement>('[data-run], [data-edit], [data-del], [data-runs], [data-log]');
+      const button = (e.target as HTMLElement).closest<HTMLElement>(
+        '[data-run], [data-edit], [data-del], [data-runs], [data-log]',
+      );
       if (!button) return;
       const { run, edit, del, runs, log, schedule, command, app } = button.dataset;
       if (run) void this.run(run);
-      else if (edit) this.openDialog({ name: edit, schedule: schedule ?? '', command: command ?? '', app: app ?? '' });
+      else if (edit)
+        this.openDialog({
+          name: edit,
+          schedule: schedule ?? '',
+          command: command ?? '',
+          app: app ?? '',
+        });
       else if (del) this.confirmDelete(del);
       else if (runs) void this.openRuns(runs);
       else if (log) void this.showLog(log);
@@ -82,20 +104,31 @@ export class JobsApp extends HTMLElement {
     (this.querySelector('#job-save') as HTMLElement).onclick = () => this.jobForm().requestSubmit();
     (this.querySelector('#job-delete-confirm') as HTMLElement).onclick = () => this.deleteJob();
     (this.querySelector('#run-log-close') as HTMLElement).onclick = () => this.hideLog();
-    (this.querySelector('#job-schedule') as WaFormControl)
-      .addEventListener('input', () => this.queueValidate());
+    (this.querySelector('#job-schedule') as WaFormControl).addEventListener('input', () =>
+      this.queueValidate(),
+    );
     // Valid submits only: the enhancer stops an invalid one from
     // propagating, so the save listener sits ABOVE it — a listener on the
     // form itself would fire (target phase) before validation ran.
-    this.addEventListener('submit', e => { e.preventDefault(); void this.save(); });
+    this.addEventListener('submit', e => {
+      e.preventDefault();
+      void this.save();
+    });
     // The dialog validates against the same schema POST /api/jobs parses with.
-    void customElements.whenDefined('validation-enhancer-zod').then(() =>
-      (this.querySelector('validation-enhancer-zod') as ValidationEnhancerZod).setZodSchema(JobSaveSchema));
+    void customElements
+      .whenDefined('validation-enhancer-zod')
+      .then(() =>
+        (this.querySelector('validation-enhancer-zod') as ValidationEnhancerZod).setZodSchema(
+          JobSaveSchema,
+        ),
+      );
 
     // The list is server-rendered; the 15 s poll keeps it fresh (and
     // retries a failed listing — the partial answers 500 with no fragment
     // then, so what is shown stays until a good one lands).
-    this.pollTimer = setInterval(() => { void this.load(); }, 15000);
+    this.pollTimer = setInterval(() => {
+      void this.load();
+    }, 15000);
   }
 
   disconnectedCallback(): void {
@@ -105,24 +138,36 @@ export class JobsApp extends HTMLElement {
 
   private toast(message: string, variant: string, icon: string): void {
     void (this.querySelector('wa-toast') as WaToast | null)?.create(message, {
-      variant, icon, duration: 6000,
+      variant,
+      icon,
+      duration: 6000,
     });
   }
 
   /** A failed action's toast: the server's error (and detail) when it
    *  answered with one, else `fallback`. */
-  private errorToast(fallback: string, body: { error?: string; detail?: string | null } = {}): void {
-    this.toast(`${body.error ?? fallback}${body.detail ? ` — ${body.detail}` : ''}`,
-      'danger', 'triangle-exclamation');
+  private errorToast(
+    fallback: string,
+    body: { error?: string; detail?: string | null } = {},
+  ): void {
+    this.toast(
+      `${body.error ?? fallback}${body.detail ? ` — ${body.detail}` : ''}`,
+      'danger',
+      'triangle-exclamation',
+    );
   }
 
   /** An action whose request got no answer. Signed out needs no toast:
    *  the page is already on its way to /login. */
   private notAnswered(failure: SignedInFetchFailure, fallback: string): void {
     switch (failure.errorCode) {
-      case 'signed_out': return;
-      case 'network_error': this.errorToast(fallback, { detail: failure.errorMessage ?? 'network error' }); return;
-      default: return failure satisfies never;
+      case 'signed_out':
+        return;
+      case 'network_error':
+        this.errorToast(fallback, { detail: failure.errorMessage ?? 'network error' });
+        return;
+      default:
+        return failure satisfies never;
     }
   }
 
@@ -204,8 +249,13 @@ export class JobsApp extends HTMLElement {
     const select = this.querySelector('#job-app') as WaSelect | null;
     if (!select) return;
     let apps: AppChoice[] = [];
-    try { apps = JSON.parse(this.querySelector('#jobs-list')?.getAttribute('data-apps') ?? '[]') as AppChoice[]; }
-    catch { /* a bad payload must not break the dialog — the picker just offers nothing */ }
+    try {
+      apps = JSON.parse(
+        this.querySelector('#jobs-list')?.getAttribute('data-apps') ?? '[]',
+      ) as AppChoice[];
+    } catch {
+      /* a bad payload must not break the dialog — the picker just offers nothing */
+    }
     select.textContent = ''; // options are rebuilt, never appended to
     for (const app of apps) {
       const option = document.createElement('wa-option');
@@ -218,7 +268,9 @@ export class JobsApp extends HTMLElement {
 
   private queueValidate(): void {
     if (this.validateTimer) clearTimeout(this.validateTimer);
-    this.validateTimer = setTimeout(() => { void this.validate(); }, 350);
+    this.validateTimer = setTimeout(() => {
+      void this.validate();
+    }, 350);
   }
 
   private setFeedback(c: CalendarCheck | null): void {
@@ -237,14 +289,18 @@ export class JobsApp extends HTMLElement {
 
   private async validate(): Promise<void> {
     const schedule = ((this.querySelector('#job-schedule') as WaFormControl).value ?? '').trim();
-    if (!schedule) { this.setFeedback(null); return; }
+    if (!schedule) {
+      this.setFeedback(null);
+      return;
+    }
     const sent = await signedInFetch(`${BASE}/api/jobs/validate`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ schedule }),
     });
     // No answer is transient — the save path re-validates server-side.
     if (!sent.ok || !sent.data.response.ok) return;
-    const check = await sent.data.response.json().catch(() => null) as CalendarCheck | null;
+    const check = (await sent.data.response.json().catch(() => null)) as CalendarCheck | null;
     if (check) this.setFeedback(check);
   }
 
@@ -262,13 +318,21 @@ export class JobsApp extends HTMLElement {
     this.inflight = true;
     try {
       const sent = await signedInFetch(`${BASE}/api/jobs`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, schedule, command, appId: app === '' ? null : app }),
       });
-      if (!sent.ok) { this.notAnswered(sent, 'could not save job'); return; }
+      if (!sent.ok) {
+        this.notAnswered(sent, 'could not save job');
+        return;
+      }
       const r = sent.data.response;
-      const body = await r.json().catch(() => ({})) as {
-        name?: string; session?: string; error?: string; detail?: string | null; issues?: Record<string, string>;
+      const body = (await r.json().catch(() => ({}))) as {
+        name?: string;
+        session?: string;
+        error?: string;
+        detail?: string | null;
+        issues?: Record<string, string>;
       };
       if (!r.ok) {
         if (body.issues) this.showFieldErrors(body.issues);
@@ -286,12 +350,25 @@ export class JobsApp extends HTMLElement {
   // ---- run / delete ----
 
   private async run(name: string): Promise<void> {
-    const sent = await signedInFetch(`${BASE}/api/jobs/${encodeURIComponent(name)}/run`, { method: 'POST' });
-    if (!sent.ok) { this.notAnswered(sent, 'could not run job'); return; }
+    const sent = await signedInFetch(`${BASE}/api/jobs/${encodeURIComponent(name)}/run`, {
+      method: 'POST',
+    });
+    if (!sent.ok) {
+      this.notAnswered(sent, 'could not run job');
+      return;
+    }
     const r = sent.data.response;
-    const body = await r.json().catch(() => ({})) as { session?: string; error?: string; detail?: string | null };
+    const body = (await r.json().catch(() => ({}))) as {
+      session?: string;
+      error?: string;
+      detail?: string | null;
+    };
     if (r.ok) {
-      this.toast(`run started — view it from this card (session ${body.session ?? `webpi-${name}`})`, 'success', 'circle-check');
+      this.toast(
+        `run started — view it from this card (session ${body.session ?? `webpi-${name}`})`,
+        'success',
+        'circle-check',
+      );
     } else if (r.status === 409) {
       this.toast(body.error ?? 'previous run still active', 'warning', 'triangle-exclamation');
     } else {
@@ -311,12 +388,17 @@ export class JobsApp extends HTMLElement {
   private async deleteJob(): Promise<void> {
     if (!this.deleting) return;
     const name = this.deleting;
-    const sent = await signedInFetch(`${BASE}/api/jobs/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    const sent = await signedInFetch(`${BASE}/api/jobs/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    });
     (this.querySelector('#job-delete-dialog') as WaDialog).open = false;
     this.deleting = null;
-    if (!sent.ok) { this.notAnswered(sent, 'could not delete job'); return; }
+    if (!sent.ok) {
+      this.notAnswered(sent, 'could not delete job');
+      return;
+    }
     const r = sent.data.response;
-    const body = await r.json().catch(() => ({})) as { error?: string; detail?: string | null };
+    const body = (await r.json().catch(() => ({}))) as { error?: string; detail?: string | null };
     if (r.ok) {
       this.toast(`job ${name} deleted`, 'success', 'circle-check');
     } else {
@@ -339,9 +421,14 @@ export class JobsApp extends HTMLElement {
     body.innerHTML = '<p class="runs-empty">loading…</p>';
     dlg.open = true;
     const sent = await signedInFetch(`${BASE}/api/jobs/${encodeURIComponent(name)}/runs`);
-    if (!sent.ok) { this.notAnswered(sent, 'could not load run history'); return; }
+    if (!sent.ok) {
+      this.notAnswered(sent, 'could not load run history');
+      return;
+    }
     const r = sent.data.response;
-    const payload = r.ok ? await r.json().catch(() => null) as { runs?: JobRunView[] } | null : null;
+    const payload = r.ok
+      ? ((await r.json().catch(() => null)) as { runs?: JobRunView[] } | null)
+      : null;
     if (!payload) {
       body.innerHTML = '<p class="runs-empty">the run history could not be read</p>';
       return;
@@ -352,24 +439,33 @@ export class JobsApp extends HTMLElement {
       return;
     }
     const row = (u: JobRunView): string => {
-      const exit = u.exitCode === null
-        ? '<span class="run-exit unknown">—</span>'
-        : `<span class="run-exit ${u.exitCode === 0 ? 'ok' : 'failed'}">exit ${u.exitCode}</span>`;
-      const duration = u.finishedAt === null ? '<span class="run-duration">—</span>'
-        : `<span class="run-duration">${fmtDuration(u.firedAt, u.finishedAt)}</span>`;
-      return `<div class="run-row">` +
+      const exit =
+        u.exitCode === null
+          ? '<span class="run-exit unknown">—</span>'
+          : `<span class="run-exit ${u.exitCode === 0 ? 'ok' : 'failed'}">exit ${u.exitCode}</span>`;
+      const duration =
+        u.finishedAt === null
+          ? '<span class="run-duration">—</span>'
+          : `<span class="run-duration">${fmtDuration(u.firedAt, u.finishedAt)}</span>`;
+      return (
+        `<div class="run-row">` +
         `<span class="run-when">${fmtRunTime(u.firedAt)}</span>` +
         `<span class="run-origin">${u.origin}</span>` +
         `${duration}${exit}` +
-        `<span class="run-log-cell">${u.hasLog
-          ? `<wa-button size="xs" appearance="plain" data-log="${u.firedAt}">log</wa-button>`
-          : ''}</span>` +
-        `</div>`;
+        `<span class="run-log-cell">${
+          u.hasLog
+            ? `<wa-button size="xs" appearance="plain" data-log="${u.firedAt}">log</wa-button>`
+            : ''
+        }</span>` +
+        `</div>`
+      );
     };
-    body.innerHTML = '<div class="run-row run-head">' +
+    body.innerHTML =
+      '<div class="run-row run-head">' +
       '<span class="run-when">fired</span><span class="run-origin">origin</span>' +
       '<span class="run-duration">duration</span><span class="run-exit">exit</span>' +
-      '<span class="run-log-cell"></span></div>' + runs.map(row).join('');
+      '<span class="run-log-cell"></span></div>' +
+      runs.map(row).join('');
   }
 
   /** Fetch and show one run's log tail (GET …/runs/:fired_at/log,
@@ -383,11 +479,16 @@ export class JobsApp extends HTMLElement {
     pre.textContent = 'loading…';
     title.textContent = `log tail — run at ${fmtRunTime(Number(firedAt))}`;
     box.classList.remove('hidden');
-    const sent = await signedInFetch(`${BASE}/api/jobs/${encodeURIComponent(name)}/runs/${encodeURIComponent(firedAt)}/log`);
-    if (!sent.ok) { this.notAnswered(sent, 'could not load the run log'); return; }
+    const sent = await signedInFetch(
+      `${BASE}/api/jobs/${encodeURIComponent(name)}/runs/${encodeURIComponent(firedAt)}/log`,
+    );
+    if (!sent.ok) {
+      this.notAnswered(sent, 'could not load the run log');
+      return;
+    }
     const r = sent.data.response;
     if (!r.ok) {
-      const body = await r.json().catch(() => ({})) as { error?: string; detail?: string | null };
+      const body = (await r.json().catch(() => ({}))) as { error?: string; detail?: string | null };
       this.errorToast('could not load the run log', body);
       return;
     }

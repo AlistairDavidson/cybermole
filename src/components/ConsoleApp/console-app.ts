@@ -105,15 +105,23 @@ export class ConsoleApp extends HTMLElement {
     this.addEventListener('close-terminal', e => {
       const d = (e as CustomEvent<{ id: string }>).detail;
       const t = this.selectedWorkspace()?.terminals.find(x => x.id === d.id);
-      this.confirmDelete({ kind: 'terminal', id: asTerminalId(d.id), name: t?.title ?? d.id.slice(0, 8) });
+      this.confirmDelete({
+        kind: 'terminal',
+        id: asTerminalId(d.id),
+        name: t?.title ?? d.id.slice(0, 8),
+      });
     });
     // Any pane's socket closing (server restart, a drop) → refresh dots.
     this.addEventListener('terminal-closed', () => void this.loadState());
     // A pop-out the browser refused (popup blocker): the pane never
     // moved — say so, it looks like a dead button otherwise.
     this.addEventListener('pop-blocked', () =>
-      this.toast('pop-up blocked — allow pop-ups to pop a tab out',
-        { variant: 'danger', icon: 'triangle-exclamation', duration: 6000 }));
+      this.toast('pop-up blocked — allow pop-ups to pop a tab out', {
+        variant: 'danger',
+        icon: 'triangle-exclamation',
+        duration: 6000,
+      }),
+    );
 
     // The dialogs' footer buttons live outside their forms (dialog footer
     // slot): submit the form so <validation-enhancer-zod> validates first.
@@ -133,14 +141,18 @@ export class ConsoleApp extends HTMLElement {
     });
     // The forms validate against the same schemas the routes parse with.
     void customElements.whenDefined('validation-enhancer-zod').then(() => {
-      (this.querySelector('#app-dialog validation-enhancer-zod') as ValidationEnhancerZod)
-        ?.setZodSchema(appForm);
-      (this.querySelector('#workspace-dialog validation-enhancer-zod') as ValidationEnhancerZod)
-        ?.setZodSchema(workspaceForm);
+      (
+        this.querySelector('#app-dialog validation-enhancer-zod') as ValidationEnhancerZod
+      )?.setZodSchema(appForm);
+      (
+        this.querySelector('#workspace-dialog validation-enhancer-zod') as ValidationEnhancerZod
+      )?.setZodSchema(workspaceForm);
     });
 
     void this.loadState();
-    this.pollTimer = setInterval(() => { void this.loadState(); }, 15000);
+    this.pollTimer = setInterval(() => {
+      void this.loadState();
+    }, 15000);
   }
 
   disconnectedCallback(): void {
@@ -171,30 +183,47 @@ export class ConsoleApp extends HTMLElement {
    *  already on its way to /login. */
   private notAnswered(failure: SignedInFetchFailure): void {
     switch (failure.errorCode) {
-      case 'signed_out': return;
-      case 'network_error':
-        this.toast('network error — try again', { variant: 'danger', icon: 'triangle-exclamation', duration: 6000 });
+      case 'signed_out':
         return;
-      default: return failure satisfies never;
+      case 'network_error':
+        this.toast('network error — try again', {
+          variant: 'danger',
+          icon: 'triangle-exclamation',
+          duration: 6000,
+        });
+        return;
+      default:
+        return failure satisfies never;
     }
   }
 
   /** One JSON call; the parsed body (error bodies included) comes back. */
-  private async call(method: string, path: string, body?: Record<string, unknown>):
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the parsed body, callers narrow it (errorToast: { error?: string })
-    Promise<{ ok: boolean; status: number; json: any } | null> {
+  private async call(
+    method: string,
+    path: string,
+    body?: Record<string, unknown>,
+  ): // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the parsed body, callers narrow it (errorToast: { error?: string })
+  Promise<{ ok: boolean; status: number; json: any } | null> {
     const sent = await signedInFetch(`${BASE}${path}`, {
-      method, headers: { 'Content-Type': 'application/json' },
+      method,
+      headers: { 'Content-Type': 'application/json' },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-    if (!sent.ok) { this.notAnswered(sent); return null; }
+    if (!sent.ok) {
+      this.notAnswered(sent);
+      return null;
+    }
     const r = sent.data.response;
     const json = await r.json().catch(() => null);
     return { ok: r.ok, status: r.status, json };
   }
 
   private errorToast(fallback: string, json: { error?: string } | null): void {
-    this.toast(json?.error ?? fallback, { variant: 'danger', icon: 'triangle-exclamation', duration: 6000 });
+    this.toast(json?.error ?? fallback, {
+      variant: 'danger',
+      icon: 'triangle-exclamation',
+      duration: 6000,
+    });
   }
 
   // ---- state poll ----
@@ -204,7 +233,7 @@ export class ConsoleApp extends HTMLElement {
     if (!sent.ok) return;
     const r = sent.data.response;
     if (!r.ok) return;
-    const st = await r.json() as ConsoleState;
+    const st = (await r.json()) as ConsoleState;
     this.state = st;
     // Deep links (/?t=…, /?run=…): consumed in ONE pass, on the first
     // state load — a ?t= hit must not leave a ?run= armed to hijack the
@@ -279,11 +308,14 @@ export class ConsoleApp extends HTMLElement {
     // app's cwd when it has one, else the server default. Mirrors the
     // server's own create-side derivation (Workspaces.saveWorkspace).
     const note = this.querySelector('#workspace-start') as HTMLElement | null;
-    const app = this.newWorkspaceAppId === null
-      ? null
-      : (this.state?.apps ?? []).find(a => a.id === this.newWorkspaceAppId) ?? null;
+    const app =
+      this.newWorkspaceAppId === null
+        ? null
+        : ((this.state?.apps ?? []).find(a => a.id === this.newWorkspaceAppId) ?? null);
     const start = app?.cwd ?? this.state?.defaultCwd;
-    if (note) note.textContent = start === undefined ? 'starts at the server default' : `starts at ${start}`;
+    if (note)
+      note.textContent =
+        start === undefined ? 'starts at the server default' : `starts at ${start}`;
     this.dialog('#workspace-dialog').show();
     this.focusField('#workspace-name');
   }
@@ -293,8 +325,12 @@ export class ConsoleApp extends HTMLElement {
   private resetForm(sel: string): void {
     const form = this.querySelector(sel) as HTMLFormElement | null;
     if (!form) return;
-    form.querySelectorAll('.field-error').forEach(el => { el.textContent = ''; });
-    form.querySelectorAll<WaInput>('wa-input').forEach(el => { el.value = null; });
+    form.querySelectorAll('.field-error').forEach(el => {
+      el.textContent = '';
+    });
+    form.querySelectorAll<WaInput>('wa-input').forEach(el => {
+      el.value = null;
+    });
   }
 
   /** Focus after <wa-input>'s first render (its .focus() forwards to the
@@ -310,10 +346,17 @@ export class ConsoleApp extends HTMLElement {
     const cwd = ((this.querySelector('#app-cwd') as WaInput | null)?.value ?? '').trim();
     const done = await this.call('POST', '/api/apps', cwd === '' ? { name } : { name, cwd });
     if (!done) return;
-    if (!done.ok) { this.errorToast('could not create the app — try again', done.json); return; }
+    if (!done.ok) {
+      this.errorToast('could not create the app — try again', done.json);
+      return;
+    }
     this.dialog('#app-dialog').open = false;
     await this.loadState();
-    this.toast(`app “${done.json.name}” created`, { variant: 'neutral', icon: 'circle-check', duration: 4000 });
+    this.toast(`app “${done.json.name}” created`, {
+      variant: 'neutral',
+      icon: 'circle-check',
+      duration: 4000,
+    });
   }
 
   private async createWorkspace(): Promise<void> {
@@ -321,14 +364,24 @@ export class ConsoleApp extends HTMLElement {
     // No cwd in the body (task/app-cwd): the server derives it — the
     // parent app's cwd, else WEB_PI_NEW_SESSION_CWD.
     const appId = this.newWorkspaceAppId;
-    const done = await this.call('POST', '/api/workspaces',
-      appId === null ? { name } : { appId, name });
+    const done = await this.call(
+      'POST',
+      '/api/workspaces',
+      appId === null ? { name } : { appId, name },
+    );
     if (!done) return;
-    if (!done.ok) { this.errorToast('could not create the workspace — try again', done.json); return; }
+    if (!done.ok) {
+      this.errorToast('could not create the workspace — try again', done.json);
+      return;
+    }
     this.dialog('#workspace-dialog').open = false;
     this.selected = asWorkspaceId(done.json.id);
     await this.loadState();
-    this.toast(`workspace “${done.json.name}” created`, { variant: 'neutral', icon: 'circle-check', duration: 4000 });
+    this.toast(`workspace “${done.json.name}” created`, {
+      variant: 'neutral',
+      icon: 'circle-check',
+      duration: 4000,
+    });
   }
 
   // ---- terminal tabs ----
@@ -340,7 +393,10 @@ export class ConsoleApp extends HTMLElement {
     const done = await this.call('POST', `/api/workspaces/${workspaceId}/terminals`, {});
     if (!done) return;
     const row = done.ok ? done.json : done.json?.terminal;
-    if (!row?.id) { this.errorToast('could not open a terminal — try again', done.json); return; }
+    if (!row?.id) {
+      this.errorToast('could not open a terminal — try again', done.json);
+      return;
+    }
     await this.loadState();
     this.tabs()?.selectTerminal(asTerminalId(row.id));
   }
@@ -349,11 +405,12 @@ export class ConsoleApp extends HTMLElement {
 
   private confirmDelete(pending: PendingDelete): void {
     this.pendingDelete = pending;
-    const what = pending.kind === 'workspace'
-      ? `the workspace “${pending.name}”`
-      : pending.kind === 'app'
-        ? `the app “${pending.name}” and every workspace in it`
-        : `the terminal “${pending.name}”`;
+    const what =
+      pending.kind === 'workspace'
+        ? `the workspace “${pending.name}”`
+        : pending.kind === 'app'
+          ? `the app “${pending.name}” and every workspace in it`
+          : `the terminal “${pending.name}”`;
     (this.querySelector('#confirm-delete-text') as HTMLElement).textContent = `Delete ${what}?`;
     (this.querySelector('#confirm-delete-note') as HTMLElement).textContent =
       pending.kind === 'terminal'
@@ -365,11 +422,12 @@ export class ConsoleApp extends HTMLElement {
   private async runDelete(): Promise<void> {
     const pending = this.pendingDelete;
     if (!pending) return;
-    const path = pending.kind === 'workspace'
-      ? `/api/workspaces/${pending.id}`
-      : pending.kind === 'app'
-        ? `/api/apps/${pending.slug}`
-        : `/api/terminals/${pending.id}`;
+    const path =
+      pending.kind === 'workspace'
+        ? `/api/workspaces/${pending.id}`
+        : pending.kind === 'app'
+          ? `/api/apps/${pending.slug}`
+          : `/api/terminals/${pending.id}`;
     this.pendingDelete = null;
     this.dialog('#confirm-delete').open = false;
     const done = await this.call('DELETE', path);

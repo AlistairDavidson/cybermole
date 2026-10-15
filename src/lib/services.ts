@@ -22,7 +22,13 @@ import { Workspaces } from './workspaces';
 import { Releases } from './releases';
 import type { ObjectStore } from './storage';
 import {
-  PI_PACKAGE, appVersion, npmPath, piDeclared, piInstalled, runPiUpdate, type PiUpdateResult,
+  PI_PACKAGE,
+  appVersion,
+  npmPath,
+  piDeclared,
+  piInstalled,
+  runPiUpdate,
+  type PiUpdateResult,
 } from './settings';
 import * as tmux from './tmux';
 import type { EditorUpstream } from './editor';
@@ -35,14 +41,22 @@ import type { TmuxSessionFailure, TmuxSessionSuccess } from './tmux';
  *  workspace tree or the credential row) could not be served. */
 export type ConsoleStateErrorCode = 'database_error';
 export type ConsoleStateSuccess = ResultSuccess<'console_state', ConsoleState>;
-export type ConsoleStateFailure = ResultFailure<'console_state', ConsoleState, ConsoleStateErrorCode>;
+export type ConsoleStateFailure = ResultFailure<
+  'console_state',
+  ConsoleState,
+  ConsoleStateErrorCode
+>;
 export type ConsoleStateResult = ConsoleStateSuccess | ConsoleStateFailure;
 
 /** database_error: the auto-update setting or its last outcomes could not
  *  be read (shown as an error, never as "off" / "never checked"). */
 export type SettingsStateErrorCode = 'database_error';
 export type SettingsStateSuccess = ResultSuccess<'settings_state', SettingsState>;
-export type SettingsStateFailure = ResultFailure<'settings_state', SettingsState, SettingsStateErrorCode>;
+export type SettingsStateFailure = ResultFailure<
+  'settings_state',
+  SettingsState,
+  SettingsStateErrorCode
+>;
 export type SettingsStateResult = SettingsStateSuccess | SettingsStateFailure;
 
 /** The resolved server configuration (server/main.ts's CFG). */
@@ -58,7 +72,7 @@ export interface ServerConfig {
   astroEntry: string;
   newSessionCwd: string;
   /** task/ws-jobs (plan §9): job runs' persisted-log root
- *  (WEB_PI_JOB_LOG_DIR; /workspace/.webpi/job-logs by default). */
+   *  (WEB_PI_JOB_LOG_DIR; /workspace/.webpi/job-logs by default). */
   jobLogDir: string;
   /** whitespace-split session command line */
   command: string[];
@@ -122,8 +136,10 @@ export interface ServiceDeps {
   /** Start a terminal tab's tmux session (tmux.newSession with the
    *  configured command + sessionEnv — plan §4); injected into the
    *  workspaces domain for the same testability reason as killSession. */
-  spawnSession: (name: TmuxSessionName, cwd: string) =>
-    Promise<TmuxSessionSuccess | TmuxSessionFailure>;
+  spawnSession: (
+    name: TmuxSessionName,
+    cwd: string,
+  ) => Promise<TmuxSessionSuccess | TmuxSessionFailure>;
   /** Live tmux session names (tmux.liveSessionNames) — /api/state's live
    *  diff, injected into the workspaces domain like its siblings. */
   liveSessionNames: () => Promise<Set<TmuxSessionName>>;
@@ -154,14 +170,28 @@ export function createServices(deps: ServiceDeps): WebPiServices {
   // the credential row through Auth (created_by/updated_by — plan §2);
   // killSession is main.ts's tmux.killSession; defaultCwd is
   // WEB_PI_NEW_SESSION_CWD (POST /api/workspaces' cwd default — plan §6).
-  const apps = new Apps({ db: stateDb, username: () => auth.username(), killSession: deps.killSession });
+  const apps = new Apps({
+    db: stateDb,
+    username: () => auth.username(),
+    killSession: deps.killSession,
+  });
   const workspaces = new Workspaces({
-    db: stateDb, username: () => auth.username(), killSession: deps.killSession,
-    defaultCwd: cfg.newSessionCwd, spawnSession: deps.spawnSession,
+    db: stateDb,
+    username: () => auth.username(),
+    killSession: deps.killSession,
+    defaultCwd: cfg.newSessionCwd,
+    spawnSession: deps.spawnSession,
     liveSessionNames: deps.liveSessionNames,
   });
   return {
-    cfg, auth, scheduler, autoUpdater, objectStore, management, apps, workspaces,
+    cfg,
+    auth,
+    scheduler,
+    autoUpdater,
+    objectStore,
+    management,
+    apps,
+    workspaces,
 
     async consoleState() {
       // The workspace tree (plan §5): apps + workspaces + terminals, the
@@ -169,7 +199,12 @@ export function createServices(deps: ServiceDeps): WebPiServices {
       // workspaces domain. Grouping is client-side — the reads stay one
       // query per table.
       const fail = (errorMessage: string) =>
-        ({ ok: false, resultType: 'console_state', errorCode: 'database_error', errorMessage }) satisfies ConsoleStateFailure;
+        ({
+          ok: false,
+          resultType: 'console_state',
+          errorCode: 'database_error',
+          errorMessage,
+        }) satisfies ConsoleStateFailure;
       const configured = auth.configured();
       if (!configured.ok) return fail(configured.errorMessage ?? 'could not read the credential');
       const listed = apps.listApps();
@@ -177,7 +212,8 @@ export function createServices(deps: ServiceDeps): WebPiServices {
       const tree = await workspaces.workspaceTree();
       if (!tree.ok) return fail(tree.errorMessage ?? 'could not read workspaces');
       return {
-        ok: true, resultType: 'console_state',
+        ok: true,
+        resultType: 'console_state',
         data: {
           me: 'ok',
           configured: configured.data.value,
@@ -193,37 +229,46 @@ export function createServices(deps: ServiceDeps): WebPiServices {
 
     settingsState() {
       const fail = (errorMessage: string) =>
-        ({ ok: false, resultType: 'settings_state', errorCode: 'database_error', errorMessage }) satisfies SettingsStateFailure;
+        ({
+          ok: false,
+          resultType: 'settings_state',
+          errorCode: 'database_error',
+          errorMessage,
+        }) satisfies SettingsStateFailure;
       const enabled = autoUpdateEnabled(stateDb);
       if (!enabled.ok) return fail(enabled.errorMessage);
       const checked = lastCheck(stateDb);
       if (!checked.ok) return fail(checked.errorMessage);
       const updated = lastUpdate(stateDb);
       if (!updated.ok) return fail(updated.errorMessage);
-      return { ok: true, resultType: 'settings_state', data: {
-        me: 'ok',
-        appVersion: appVersion(APP_ROOT),
-        nodeVersion: process.version,
-        host: cfg.host,
-        port: cfg.port,
-        base: cfg.base,
-        command: cfg.command.join(' '),
-        newSessionCwd: cfg.newSessionCwd,
-        agentDir: cfg.agentDir,
-        stateDb: cfg.dbFile,
-        tmuxSocket: tmux.SOCKET,
-        tmuxConf: fs.existsSync(tmux.CONF) ? tmux.CONF : null,
-        appRoot: APP_ROOT,
-        piPackage: PI_PACKAGE,
-        piDeclared: piDeclared(APP_ROOT),
-        piInstalled: piInstalled(APP_ROOT),
-        npmAvailable: npmPath() !== null,
-        piAutoUpdate: {
-          enabled: enabled.data.value,
-          lastCheck: checked.data.value,
-          lastUpdate: updated.data.value,
+      return {
+        ok: true,
+        resultType: 'settings_state',
+        data: {
+          me: 'ok',
+          appVersion: appVersion(APP_ROOT),
+          nodeVersion: process.version,
+          host: cfg.host,
+          port: cfg.port,
+          base: cfg.base,
+          command: cfg.command.join(' '),
+          newSessionCwd: cfg.newSessionCwd,
+          agentDir: cfg.agentDir,
+          stateDb: cfg.dbFile,
+          tmuxSocket: tmux.SOCKET,
+          tmuxConf: fs.existsSync(tmux.CONF) ? tmux.CONF : null,
+          appRoot: APP_ROOT,
+          piPackage: PI_PACKAGE,
+          piDeclared: piDeclared(APP_ROOT),
+          piInstalled: piInstalled(APP_ROOT),
+          npmAvailable: npmPath() !== null,
+          piAutoUpdate: {
+            enabled: enabled.data.value,
+            lastCheck: checked.data.value,
+            lastUpdate: updated.data.value,
+          },
         },
-      } } satisfies SettingsStateSuccess;
+      } satisfies SettingsStateSuccess;
     },
 
     runPiUpdate: dryRun => runPiUpdate(APP_ROOT, dryRun),

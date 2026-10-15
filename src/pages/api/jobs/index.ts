@@ -3,7 +3,11 @@
 import type { APIRoute } from 'astro';
 import { assertWebPiLocals } from '../../../lib/web/locals';
 import { parseAndValidateAPIRequest } from '../../../lib/web/parsing.service';
-import { failureResponse, jobFailureResponse, jsonResponse } from '../../../lib/web/responses.service';
+import {
+  failureResponse,
+  jobFailureResponse,
+  jsonResponse,
+} from '../../../lib/web/responses.service';
 import { JobSaveSchema } from '../../../schemas/jobs';
 
 export const GET: APIRoute = async ({ locals }) => {

@@ -86,20 +86,22 @@ export function createLogger(loki: LokiConfig | null): winston.Logger {
     new winston.transports.Console({ level: CONSOLE_LEVEL, format: consolePrintf }),
   ];
   if (loki) {
-    transports.push(new LokiTransport({
-      level: LOKI_LEVEL,
-      host: loki.url,
-      // static stream label; level + component join it per line
-      labels: { job: loki.job },
-      interval: LOKI_INTERVAL_S,
-      timeout: LOKI_TIMEOUT_MS,
-      json: true,               // plain JSON push — pulls in no snappy build
-      batching: true,           // buffer and send per interval, not per line
-      clearOnError: true,       // a failed batch is dropped: bounded memory while loki is down
-      replaceTimestamp: false,  // keep the event time the format stamped below
-      gracefulShutdown: false,  // server/main.ts's own SIGTERM path closes the transport — no second exit hook
-      onConnectionError: lokiDownWarner(),
-    }) as winston.transport);
+    transports.push(
+      new LokiTransport({
+        level: LOKI_LEVEL,
+        host: loki.url,
+        // static stream label; level + component join it per line
+        labels: { job: loki.job },
+        interval: LOKI_INTERVAL_S,
+        timeout: LOKI_TIMEOUT_MS,
+        json: true, // plain JSON push — pulls in no snappy build
+        batching: true, // buffer and send per interval, not per line
+        clearOnError: true, // a failed batch is dropped: bounded memory while loki is down
+        replaceTimestamp: false, // keep the event time the format stamped below
+        gracefulShutdown: false, // server/main.ts's own SIGTERM path closes the transport — no second exit hook
+        onConnectionError: lokiDownWarner(),
+      }) as winston.transport,
+    );
   }
   return winston.createLogger({
     level: LOKI_LEVEL,
@@ -126,7 +128,11 @@ export function componentLogger(component: string): winston.Logger {
  *  batch). Capped: a hanging loki must not stall the shutdown past its
  *  deadline — main.ts's process-exit backstop stays authoritative. */
 export async function closeLogger(target: winston.Logger = logger): Promise<void> {
-  const closed = Promise.allSettled(target.transports.map(t => Promise.resolve().then(() => t.close?.())));
-  const cap = new Promise<void>(resolve => { setTimeout(resolve, 1_500).unref(); });
+  const closed = Promise.allSettled(
+    target.transports.map(t => Promise.resolve().then(() => t.close?.())),
+  );
+  const cap = new Promise<void>(resolve => {
+    setTimeout(resolve, 1_500).unref();
+  });
   await Promise.race([closed, cap]);
 }

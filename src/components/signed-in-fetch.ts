@@ -15,7 +15,11 @@ export type SignedInFetchData = { response: Response };
  *  down); errorMessage says why. */
 export type SignedInFetchErrorCode = 'signed_out' | 'network_error';
 export type SignedInFetchSuccess = ResultSuccess<'signed_in_fetch', SignedInFetchData>;
-export type SignedInFetchFailure = ResultFailure<'signed_in_fetch', SignedInFetchData, SignedInFetchErrorCode>;
+export type SignedInFetchFailure = ResultFailure<
+  'signed_in_fetch',
+  SignedInFetchData,
+  SignedInFetchErrorCode
+>;
 export type SignedInFetchResult = SignedInFetchSuccess | SignedInFetchFailure;
 
 /** 401 handling: 'navigate' (default) — the page goes to /login, once
@@ -29,18 +33,34 @@ export type SignedInFetchOn401 = 'navigate' | 'return';
 
 /** Every status but 401 is a success: the caller reads the response
  *  (an error answer usually carries a body worth showing). */
-export async function signedInFetch(url: string, init?: RequestInit, on401: SignedInFetchOn401 = 'navigate') {
+export async function signedInFetch(
+  url: string,
+  init?: RequestInit,
+  on401: SignedInFetchOn401 = 'navigate',
+) {
   let response: Response;
   try {
     response = await fetch(url, init);
   } catch (e) {
-    return { ok: false, resultType: 'signed_in_fetch', errorCode: 'network_error',
-      errorMessage: (e as Error).message } satisfies SignedInFetchFailure;
+    return {
+      ok: false,
+      resultType: 'signed_in_fetch',
+      errorCode: 'network_error',
+      errorMessage: (e as Error).message,
+    } satisfies SignedInFetchFailure;
   }
   if (response.status === 401 && on401 === 'navigate') {
     location.href = `${BASE}/login`;
-    return { ok: false, resultType: 'signed_in_fetch', errorCode: 'signed_out',
-      errorMessage: 'signed out' } satisfies SignedInFetchFailure;
+    return {
+      ok: false,
+      resultType: 'signed_in_fetch',
+      errorCode: 'signed_out',
+      errorMessage: 'signed out',
+    } satisfies SignedInFetchFailure;
   }
-  return { ok: true, resultType: 'signed_in_fetch', data: { response } } satisfies SignedInFetchSuccess;
+  return {
+    ok: true,
+    resultType: 'signed_in_fetch',
+    data: { response },
+  } satisfies SignedInFetchSuccess;
 }

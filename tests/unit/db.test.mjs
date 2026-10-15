@@ -19,8 +19,13 @@ function freshFile(prefix) {
   return path.join(fs.mkdtempSync(path.join(os.tmpdir(), prefix)), 'webpi.db');
 }
 
-const columns = (sdb, table) => sdb.db().prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
-const userVersion = (file) => {
+const columns = (sdb, table) =>
+  sdb
+    .db()
+    .prepare(`PRAGMA table_info(${table})`)
+    .all()
+    .map(c => c.name);
+const userVersion = file => {
   const raw = new DatabaseSync(file);
   const v = raw.prepare('PRAGMA user_version').get().user_version;
   raw.close();
@@ -87,7 +92,12 @@ test('a fresh file (user_version 0) gets the v6 shape at CREATE — no ALTER eve
     assert.ok(columns(db, 'job_runs').includes(c), c);
   }
   // the pi-session overlay is never created (plan §11)
-  assert.ok(db.db().prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sessions'").get() == null);
+  assert.ok(
+    db
+      .db()
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sessions'")
+      .get() == null,
+  );
   // reopening runs the same guards and skips every ALTER (ADD COLUMN twice
   // would throw "duplicate column name") — and the DROP re-runs harmlessly
   const reopened = new StateDb(file);
@@ -100,9 +110,14 @@ test('a v5-shaped file upgrades to v6 with the ALTERs applied and its data intac
   const raw = new DatabaseSync(file);
   raw.exec(V5_SCHEMA);
   raw.exec('PRAGMA user_version = 5');
-  raw.prepare("INSERT INTO jobs (name, schedule, command, created_at) VALUES ('nightly', '* * * * *', 'true', 123)")
+  raw
+    .prepare(
+      "INSERT INTO jobs (name, schedule, command, created_at) VALUES ('nightly', '* * * * *', 'true', 123)",
+    )
     .run();
-  raw.prepare("INSERT INTO job_runs (job, fired_at, origin) VALUES ('nightly', 456, 'schedule')").run();
+  raw
+    .prepare("INSERT INTO job_runs (job, fired_at, origin) VALUES ('nightly', 456, 'schedule')")
+    .run();
   raw.prepare("INSERT INTO settings (key, value) VALUES ('k', '\"v\"')").run();
   raw.close();
 
@@ -117,29 +132,69 @@ test('a v5-shaped file upgrades to v6 with the ALTERs applied and its data intac
   // the v5 data survived, and the new columns read as NULL (spread: node:sqlite
   // rows carry a null prototype, which deepEqual treats as a different object)
   assert.deepEqual(
-    { ...db.get(qb.selectFrom('jobs').select(['name', 'schedule', 'command', 'created_at', 'app_id']).where('name', '=', 'nightly')) },
-    { name: 'nightly', schedule: '* * * * *', command: 'true', created_at: 123, app_id: null });
+    {
+      ...db.get(
+        qb
+          .selectFrom('jobs')
+          .select(['name', 'schedule', 'command', 'created_at', 'app_id'])
+          .where('name', '=', 'nightly'),
+      ),
+    },
+    { name: 'nightly', schedule: '* * * * *', command: 'true', created_at: 123, app_id: null },
+  );
   assert.deepEqual(
-    { ...db.get(qb.selectFrom('job_runs').select(['job', 'fired_at', 'origin', 'log', 'exit_code', 'finished_at'])) },
-    { job: 'nightly', fired_at: 456, origin: 'schedule', log: null, exit_code: null, finished_at: null });
+    {
+      ...db.get(
+        qb
+          .selectFrom('job_runs')
+          .select(['job', 'fired_at', 'origin', 'log', 'exit_code', 'finished_at']),
+      ),
+    },
+    {
+      job: 'nightly',
+      fired_at: 456,
+      origin: 'schedule',
+      log: null,
+      exit_code: null,
+      finished_at: null,
+    },
+  );
   assert.equal(db.getSetting('k'), '"v"');
   // the pi-session overlay is GONE (plan §11): the DROP ran at open, runs
   // again on every reopen, and user_version stays 6 — no bookkeeping.
-  const tableExists = (name) =>
-    db.db().prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) != null;
+  const tableExists = name =>
+    db.db().prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !=
+    null;
   assert.equal(tableExists('sessions'), false);
   assert.equal(userVersion(file), 6);
   new StateDb(file).db(); // reopen: the DROP is idempotent
   assert.equal(tableExists('sessions'), false);
   // and the upgraded file takes the new tables' rows (FKs resolve)
-  db.run(qb.insertInto('apps').values({
-    id: '123e4567-e89b-42d3-a456-426614174000', name: 'a', slug: 'a', sort_order: 10,
-    created_at: 1, updated_at: 1, created_by: 't', updated_by: 't',
-  }));
-  db.run(qb.insertInto('workspaces').values({
-    id: '123e4567-e89b-42d3-a456-426614174001', app_id: '123e4567-e89b-42d3-a456-426614174000',
-    name: 'w', cwd: '/', sort_order: 10, created_at: 1, updated_at: 1, created_by: 't', updated_by: 't',
-  }));
+  db.run(
+    qb.insertInto('apps').values({
+      id: '123e4567-e89b-42d3-a456-426614174000',
+      name: 'a',
+      slug: 'a',
+      sort_order: 10,
+      created_at: 1,
+      updated_at: 1,
+      created_by: 't',
+      updated_by: 't',
+    }),
+  );
+  db.run(
+    qb.insertInto('workspaces').values({
+      id: '123e4567-e89b-42d3-a456-426614174001',
+      app_id: '123e4567-e89b-42d3-a456-426614174000',
+      name: 'w',
+      cwd: '/',
+      sort_order: 10,
+      created_at: 1,
+      updated_at: 1,
+      created_by: 't',
+      updated_by: 't',
+    }),
+  );
   assert.ok(db.get(qb.selectFrom('workspaces').select('id')));
 });
 
@@ -162,8 +217,12 @@ test('a v6 file whose apps table predates apps.cwd (task/app-cwd) gains the colu
     );
   `);
   raw.exec('PRAGMA user_version = 6');
-  raw.prepare("INSERT INTO apps (id, name, slug, sort_order, created_at, updated_at, created_by, updated_by) " +
-    "VALUES ('123e4567-e89b-42d3-a456-426614174000', 'alpha app', 'alpha-app', 10, 1, 1, 't', 't')").run();
+  raw
+    .prepare(
+      'INSERT INTO apps (id, name, slug, sort_order, created_at, updated_at, created_by, updated_by) ' +
+        "VALUES ('123e4567-e89b-42d3-a456-426614174000', 'alpha app', 'alpha-app', 10, 1, 1, 't', 't')",
+    )
+    .run();
   raw.close();
 
   const db = new StateDb(file);
@@ -172,8 +231,13 @@ test('a v6 file whose apps table predates apps.cwd (task/app-cwd) gains the colu
   // the pre-existing row survived, the new column reads NULL (spread: the
   // null prototype rows again)
   assert.deepEqual(
-    { ...db.get(qb.selectFrom('apps').select(['name', 'slug', 'cwd']).where('slug', '=', 'alpha-app')) },
-    { name: 'alpha app', slug: 'alpha-app', cwd: null });
+    {
+      ...db.get(
+        qb.selectFrom('apps').select(['name', 'slug', 'cwd']).where('slug', '=', 'alpha-app'),
+      ),
+    },
+    { name: 'alpha app', slug: 'alpha-app', cwd: null },
+  );
   assert.equal(userVersion(file), 6); // no version bump — the column check, not the number
   // reopening skips the ALTER (ADD COLUMN twice would throw "duplicate column name")
   const reopened = new StateDb(file);
@@ -198,8 +262,21 @@ test('foreign keys are enforced: the pragma is ON, so a dangling parent is rejec
   db.db();
   const pragma = db.db().prepare('PRAGMA foreign_keys').get();
   assert.equal(pragma.foreign_keys, 1);
-  assert.throws(() => db.run(qb.insertInto('workspaces').values({
-    id: '123e4567-e89b-42d3-a456-426614174002', app_id: MISSING, name: 'x', cwd: '/',
-    sort_order: 10, created_at: 1, updated_at: 1, created_by: 't', updated_by: 't',
-  })), /FOREIGN KEY constraint failed/);
+  assert.throws(
+    () =>
+      db.run(
+        qb.insertInto('workspaces').values({
+          id: '123e4567-e89b-42d3-a456-426614174002',
+          app_id: MISSING,
+          name: 'x',
+          cwd: '/',
+          sort_order: 10,
+          created_at: 1,
+          updated_at: 1,
+          created_by: 't',
+          updated_by: 't',
+        }),
+      ),
+    /FOREIGN KEY constraint failed/,
+  );
 });

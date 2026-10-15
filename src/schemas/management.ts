@@ -10,8 +10,10 @@ import { asCommitSha } from '../types/branded';
 /** Full git commit sha (40 hex). Branded at the request boundary. */
 export const SHA_RE = /^[0-9a-f]{40}$/;
 
-export const CommitShaSchema = z.string()
-  .regex(SHA_RE, 'a full 40-hex commit sha is required').transform(asCommitSha);
+export const CommitShaSchema = z
+  .string()
+  .regex(SHA_RE, 'a full 40-hex commit sha is required')
+  .transform(asCommitSha);
 
 /** GET /api/management/preview's query string (?sha=…). */
 export const PreviewQuerySchema = z.object({ sha: CommitShaSchema });

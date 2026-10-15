@@ -6,9 +6,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  loginBody, loginForm, jobValidateBody, updatePiBody, autoUpdateBody,
-  appCreateBody, appPatchBody, workspaceCreateBody, workspacePatchBody,
-  terminalCreateBody, terminalPatchBody, appForm, workspaceForm,
+  loginBody,
+  loginForm,
+  jobValidateBody,
+  updatePiBody,
+  autoUpdateBody,
+  appCreateBody,
+  appPatchBody,
+  workspaceCreateBody,
+  workspacePatchBody,
+  terminalCreateBody,
+  terminalPatchBody,
+  appForm,
+  workspaceForm,
 } from '../../dist-server/src/schemas/api.js';
 import { JobSaveSchema } from '../../dist-server/src/schemas/jobs.js';
 import { parseZod } from '../../dist-server/src/lib/web/parsing.service.js';
@@ -29,21 +39,40 @@ const parse = (schema, v) => {
 };
 
 test('loginBody: string username + password, extra keys stripped', () => {
-  assert.deepEqual(parse(loginBody, { username: 'u', password: 'p', junk: 1 }),
-    { username: 'u', password: 'p' });
+  assert.deepEqual(parse(loginBody, { username: 'u', password: 'p', junk: 1 }), {
+    username: 'u',
+    password: 'p',
+  });
   // empty strings are strings — verify() decides those, not the schema
   assert.equal(ok(loginBody, { username: '', password: '' }), true);
-  for (const bad of [{}, { username: 'u' }, { password: 'p' },
-    { username: 5, password: 'p' }, { username: 'u', password: null }, null, []]) {
+  for (const bad of [
+    {},
+    { username: 'u' },
+    { password: 'p' },
+    { username: 5, password: 'p' },
+    { username: 'u', password: null },
+    null,
+    [],
+  ]) {
     assert.equal(ok(loginBody, bad), false, JSON.stringify(bad));
   }
 });
 
 test('JobSaveSchema: normalizes the name, trims, and names each failing field', () => {
-  assert.deepEqual(parse(JobSaveSchema, { name: '  Nightly Check ', schedule: ' */5 * * * * ', command: ' true ', extra: 1 }),
-    { name: 'nightly-check', schedule: '*/5 * * * *', command: 'true' });
+  assert.deepEqual(
+    parse(JobSaveSchema, {
+      name: '  Nightly Check ',
+      schedule: ' */5 * * * * ',
+      command: ' true ',
+      extra: 1,
+    }),
+    { name: 'nightly-check', schedule: '*/5 * * * *', command: 'true' },
+  );
   // exactly 40 as typed passes
-  assert.equal(parse(JobSaveSchema, { name: 'x'.repeat(40), schedule: 's', command: 'c' }).name, 'x'.repeat(40));
+  assert.equal(
+    parse(JobSaveSchema, { name: 'x'.repeat(40), schedule: 's', command: 'c' }).name,
+    'x'.repeat(40),
+  );
   // the cron *validity* is saveJob's (cron-parser stays server-side)
   assert.equal(ok(JobSaveSchema, { name: 'n', schedule: 'daily 08:00', command: 'true' }), true);
   const cases = [
@@ -75,8 +104,14 @@ test('jobValidateBody: one string', () => {
 
 test('loginForm: stricter than loginBody — empty fields fail in the browser', () => {
   assert.equal(ok(loginForm, { username: 'u', password: 'p' }), true);
-  assert.equal(issueText(loginForm, { username: '', password: 'p' }), 'username: enter your username');
-  assert.equal(issueText(loginForm, { username: 'u', password: '' }), 'password: enter your password');
+  assert.equal(
+    issueText(loginForm, { username: '', password: 'p' }),
+    'username: enter your username',
+  );
+  assert.equal(
+    issueText(loginForm, { username: 'u', password: '' }),
+    'password: enter your password',
+  );
   assert.equal(ok(loginBody, { username: '', password: '' }), true); // the server stays permissive
 });
 
@@ -107,7 +142,10 @@ test('a failed body renders "field: message" (the 400 text)', () => {
 test('appForm: trimmed non-empty name capped at 80; optional cwd — empty passes (an empty wa-input is null, parsed as "")', () => {
   assert.deepEqual(parse(appForm, { name: '  My App! ' }), { name: 'My App!' });
   assert.deepEqual(parse(appForm, { name: 'My App! ', cwd: '' }), { name: 'My App!', cwd: '' }); // unset
-  assert.deepEqual(parse(appForm, { name: 'My App!', cwd: ' /srv/app ' }), { name: 'My App!', cwd: '/srv/app' });
+  assert.deepEqual(parse(appForm, { name: 'My App!', cwd: ' /srv/app ' }), {
+    name: 'My App!',
+    cwd: '/srv/app',
+  });
   assert.equal(issueText(appForm, { name: '   ' }), 'name: name is required');
   assert.equal(issueText(appForm, { name: 'x'.repeat(81) }), 'name: name is too long (max 80)');
   assert.equal(issueText(appForm, { name: 'w', cwd: 'x'.repeat(4097) }), 'cwd: cwd is too long');
@@ -119,9 +157,14 @@ test('appForm: trimmed non-empty name capped at 80; optional cwd — empty passe
 test('workspaceForm: name only (task/app-cwd — no folder setting; the dialog shows the derived start dir as a hint)', () => {
   assert.deepEqual(parse(workspaceForm, { name: ' scratch ' }), { name: 'scratch' });
   // a cwd key is stripped, never honored — the server derives the dir
-  assert.deepEqual(parse(workspaceForm, { name: 'scratch', cwd: '/workspace' }), { name: 'scratch' });
+  assert.deepEqual(parse(workspaceForm, { name: 'scratch', cwd: '/workspace' }), {
+    name: 'scratch',
+  });
   assert.equal(issueText(workspaceForm, { name: '' }), 'name: name is required');
-  assert.equal(issueText(workspaceForm, { name: 'x'.repeat(121) }), 'name: name is too long (max 120)');
+  assert.equal(
+    issueText(workspaceForm, { name: 'x'.repeat(121) }),
+    'name: name is too long (max 120)',
+  );
   for (const bad of [null, {}, { name: 5 }, { name: '' }, { name: '   ' }]) {
     assert.equal(ok(workspaceForm, bad), false, JSON.stringify(bad));
   }
@@ -132,15 +175,28 @@ test('workspaceForm: name only (task/app-cwd — no folder setting; the dialog s
 test('appCreateBody: any string name (the domain slugs it); cwd optional (task/app-cwd); over-longs are named 400s', () => {
   assert.deepEqual(parse(appCreateBody, { name: '  My App!' }), { name: '  My App!' });
   assert.deepEqual(parse(appCreateBody, { name: '' }), { name: '' }); // emptiness is the domain's call
-  assert.deepEqual(parse(appCreateBody, { name: 'x', cwd: '/srv/app' }), { name: 'x', cwd: '/srv/app' });
+  assert.deepEqual(parse(appCreateBody, { name: 'x', cwd: '/srv/app' }), {
+    name: 'x',
+    cwd: '/srv/app',
+  });
   for (const bad of [
-    {}, { name: 5 }, null, { name: null },
-    { name: 'x', cwd: 5 }, { name: 'x', cwd: 'x'.repeat(4097) },
+    {},
+    { name: 5 },
+    null,
+    { name: null },
+    { name: 'x', cwd: 5 },
+    { name: 'x', cwd: 'x'.repeat(4097) },
   ]) {
     assert.equal(ok(appCreateBody, bad), false, JSON.stringify(bad));
   }
-  assert.equal(issueText(appCreateBody, { name: 'x'.repeat(81) }), 'name: name is too long (max 80)');
-  assert.equal(issueText(appCreateBody, { name: 'x', cwd: 'x'.repeat(4097) }), 'cwd: cwd is too long');
+  assert.equal(
+    issueText(appCreateBody, { name: 'x'.repeat(81) }),
+    'name: name is too long (max 80)',
+  );
+  assert.equal(
+    issueText(appCreateBody, { name: 'x', cwd: 'x'.repeat(4097) }),
+    'cwd: cwd is too long',
+  );
 });
 
 test('appPatchBody: name optional; cwd per terminalPatchBody (absent keeps, null clears, string sets)', () => {
@@ -150,7 +206,10 @@ test('appPatchBody: name optional; cwd per terminalPatchBody (absent keeps, null
   assert.deepEqual(parse(appPatchBody, { cwd: null }), { cwd: null }); // null clears (task/app-cwd)
   assert.equal(ok(appPatchBody, { name: 5 }), false);
   assert.equal(ok(appPatchBody, { cwd: 5 }), false);
-  assert.equal(issueText(appPatchBody, { name: 'x'.repeat(81) }), 'name: name is too long (max 80)');
+  assert.equal(
+    issueText(appPatchBody, { name: 'x'.repeat(81) }),
+    'name: name is too long (max 80)',
+  );
   assert.equal(issueText(appPatchBody, { cwd: 'x'.repeat(4097) }), 'cwd: cwd is too long');
 });
 
@@ -158,16 +217,19 @@ test('workspaceCreateBody: appId null/absent/uuid v4; name required; NO cwd (tas
   const ID = '123e4567-e89b-42d3-a456-426614174000';
   assert.deepEqual(parse(workspaceCreateBody, { name: 'scratch' }), { name: 'scratch' });
   // a cwd on the wire is stripped, never honored — the create derives it
-  assert.deepEqual(parse(workspaceCreateBody, { appId: null, name: 'x', cwd: '/tmp', junk: 1 }),
-    { appId: null, name: 'x' });
+  assert.deepEqual(parse(workspaceCreateBody, { appId: null, name: 'x', cwd: '/tmp', junk: 1 }), {
+    appId: null,
+    name: 'x',
+  });
   assert.deepEqual(parse(workspaceCreateBody, { appId: ID, name: 'x' }), { appId: ID, name: 'x' });
-  for (const bad of [
-    {}, { name: 5 }, { appId: 'nope', name: 'x' }, { appId: 7, name: 'x' },
-  ]) {
+  for (const bad of [{}, { name: 5 }, { appId: 'nope', name: 'x' }, { appId: 7, name: 'x' }]) {
     assert.equal(ok(workspaceCreateBody, bad), false, JSON.stringify(bad));
   }
   assert.deepEqual(parse(workspaceCreateBody, { name: '' }), { name: '' }); // emptiness is the domain's call
-  assert.equal(issueText(workspaceCreateBody, { appId: 'nope', name: 'x' }), 'appId: invalid app id');
+  assert.equal(
+    issueText(workspaceCreateBody, { appId: 'nope', name: 'x' }),
+    'appId: invalid app id',
+  );
 });
 
 test('workspacePatchBody: either field alone, both optional', () => {
@@ -197,8 +259,17 @@ test('terminalPatchBody: non-empty string, null (clear), or absent (no-op); empt
 
 test('JobSaveSchema now accepts an optional appId tag (stored by task/ws-jobs)', () => {
   const ID = '123e4567-e89b-42d3-a456-426614174000';
-  assert.deepEqual(parse(JobSaveSchema, { name: 'n', schedule: 's', command: 'c' }).appId, undefined);
-  assert.deepEqual(parse(JobSaveSchema, { name: 'n', schedule: 's', command: 'c', appId: null }).appId, null);
-  assert.deepEqual(parse(JobSaveSchema, { name: 'n', schedule: 's', command: 'c', appId: ID }).appId, ID);
+  assert.deepEqual(
+    parse(JobSaveSchema, { name: 'n', schedule: 's', command: 'c' }).appId,
+    undefined,
+  );
+  assert.deepEqual(
+    parse(JobSaveSchema, { name: 'n', schedule: 's', command: 'c', appId: null }).appId,
+    null,
+  );
+  assert.deepEqual(
+    parse(JobSaveSchema, { name: 'n', schedule: 's', command: 'c', appId: ID }).appId,
+    ID,
+  );
   assert.equal(ok(JobSaveSchema, { name: 'n', schedule: 's', command: 'c', appId: 'nope' }), false);
 });

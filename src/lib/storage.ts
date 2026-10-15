@@ -16,7 +16,12 @@
 import { randomUUID } from 'node:crypto';
 import { Readable, Transform, pipeline } from 'node:stream';
 import {
-  CreateBucketCommand, GetObjectCommand, HeadBucketCommand, HeadObjectCommand, S3Client, S3ServiceException,
+  CreateBucketCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  HeadObjectCommand,
+  S3Client,
+  S3ServiceException,
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { componentLogger } from './logger';
@@ -49,7 +54,11 @@ export type StoreUploadData = { key: ObjectKey; name: string; size: number; cont
  *  failed while streaming (nothing is stored then). */
 export type StoreUploadErrorCode = 'storage_not_configured' | 'storage_error';
 export type StoreUploadSuccess = ResultSuccess<'store_upload', StoreUploadData>;
-export type StoreUploadFailure = ResultFailure<'store_upload', StoreUploadData, StoreUploadErrorCode>;
+export type StoreUploadFailure = ResultFailure<
+  'store_upload',
+  StoreUploadData,
+  StoreUploadErrorCode
+>;
 export type StoreUploadResult = StoreUploadSuccess | StoreUploadFailure;
 
 /** A stored object's metadata (HeadObject). */
@@ -86,10 +95,15 @@ export interface FetchedObject extends ObjectInfo {
 }
 /** range_not_satisfiable: the range starts past the end (or the object is
  *  empty); data.objectSize says how big it is, when that could be read. */
-export type FetchObjectErrorCode = 'storage_not_configured' | 'object_not_found' | 'range_not_satisfiable' | 'storage_error';
+export type FetchObjectErrorCode =
+  'storage_not_configured' | 'object_not_found' | 'range_not_satisfiable' | 'storage_error';
 export type FetchObjectFailureData = { objectSize: number | null };
 export type FetchObjectSuccess = ResultSuccess<'fetch_object', FetchedObject>;
-export type FetchObjectFailure = ResultFailure<'fetch_object', FetchObjectFailureData, FetchObjectErrorCode>;
+export type FetchObjectFailure = ResultFailure<
+  'fetch_object',
+  FetchObjectFailureData,
+  FetchObjectErrorCode
+>;
 export type FetchObjectResult = FetchObjectSuccess | FetchObjectFailure;
 
 type EnsureBucketResult =
@@ -101,7 +115,10 @@ const NOT_CONFIGURED = 'object storage is not configured (WEB_PI_S3_ENDPOINT)';
 /** RFC 5987 ext-value: percent-encode everything outside attr-char
  *  (encodeURIComponent leaves ' ( ) * alone). */
 function rfc5987(value: string): string {
-  return encodeURIComponent(value).replace(/['()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  return encodeURIComponent(value).replace(
+    /['()*]/g,
+    c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
 }
 
 function describe(err: unknown): string {
@@ -127,8 +144,11 @@ function ifRangeMatches(validator: string, info: ObjectInfo): boolean {
   if (v.startsWith('W/')) return false;
   if (v.startsWith('"')) return info.etag !== null && v === info.etag;
   const date = Date.parse(v);
-  return !Number.isNaN(date) && info.lastModified !== null
-    && Math.floor(info.lastModified.getTime() / 1000) === Math.floor(date / 1000);
+  return (
+    !Number.isNaN(date) &&
+    info.lastModified !== null &&
+    Math.floor(info.lastModified.getTime() / 1000) === Math.floor(date / 1000)
+  );
 }
 
 export class ObjectStore {
@@ -137,24 +157,26 @@ export class ObjectStore {
   private bucketReady = false;
 
   constructor(private readonly config: ObjectStoreConfig | null) {
-    this.client = config && new S3Client({
-      endpoint: config.endpoint,
-      region: config.region,
-      credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
-      // bucket in the path, not the hostname: self-hosted servers have no
-      // per-bucket DNS.
-      forcePathStyle: true,
-      // Checksums only where S3 requires them. The SDK's default
-      // (WHEN_SUPPORTED) adds CRC32 trailers to every put, which several
-      // S3-compatible servers reject or don't return.
-      requestChecksumCalculation: 'WHEN_REQUIRED',
-      responseChecksumValidation: 'WHEN_REQUIRED',
-      // The SDK's default is no timeout: a hung server would hold a request
-      // open forever. requestTimeout is per-socket inactivity, not a total —
-      // a long download that keeps flowing is fine; 2 min leaves room for a
-      // slow browser stalling the stream it reads from.
-      requestHandler: { connectionTimeout: 5_000, requestTimeout: 120_000 },
-    });
+    this.client =
+      config &&
+      new S3Client({
+        endpoint: config.endpoint,
+        region: config.region,
+        credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
+        // bucket in the path, not the hostname: self-hosted servers have no
+        // per-bucket DNS.
+        forcePathStyle: true,
+        // Checksums only where S3 requires them. The SDK's default
+        // (WHEN_SUPPORTED) adds CRC32 trailers to every put, which several
+        // S3-compatible servers reject or don't return.
+        requestChecksumCalculation: 'WHEN_REQUIRED',
+        responseChecksumValidation: 'WHEN_REQUIRED',
+        // The SDK's default is no timeout: a hung server would hold a request
+        // open forever. requestTimeout is per-socket inactivity, not a total —
+        // a long download that keeps flowing is fine; 2 min leaves room for a
+        // slow browser stalling the stream it reads from.
+        requestHandler: { connectionTimeout: 5_000, requestTimeout: 120_000 },
+      });
   }
 
   /** endpoint + bucket for the boot log, or null when not configured. */
@@ -166,15 +188,25 @@ export class ObjectStore {
    *  credentials scoped to an existing bucket (no ListBucket) — carry on
    *  and let the write itself say. */
   private async ensureBucket(client: S3Client, bucket: string): Promise<EnsureBucketResult> {
-    const ok = { ok: true, resultType: 'ensure_bucket', data: { bucket } } satisfies EnsureBucketResult;
+    const ok = {
+      ok: true,
+      resultType: 'ensure_bucket',
+      data: { bucket },
+    } satisfies EnsureBucketResult;
     const fail = (errorMessage: string) =>
-      ({ ok: false, resultType: 'ensure_bucket', errorCode: 'storage_error', errorMessage }) satisfies EnsureBucketResult;
+      ({
+        ok: false,
+        resultType: 'ensure_bucket',
+        errorCode: 'storage_error',
+        errorMessage,
+      }) satisfies EnsureBucketResult;
     if (this.bucketReady) return ok;
     try {
       await client.send(new HeadBucketCommand({ Bucket: bucket }));
     } catch (err) {
       if (httpStatus(err) === 403) return ok;
-      if (httpStatus(err) !== 404) return fail(`could not check bucket ${bucket}: ${describe(err)}`);
+      if (httpStatus(err) !== 404)
+        return fail(`could not check bucket ${bucket}: ${describe(err)}`);
       try {
         await client.send(new CreateBucketCommand({ Bucket: bucket }));
       } catch (createErr) {
@@ -191,20 +223,39 @@ export class ObjectStore {
   /** Store one uploaded file under a fresh key (uploads/<uuid>). */
   async storeUpload(upload: UploadInput) {
     const fail = (errorCode: StoreUploadErrorCode, errorMessage: string) =>
-      ({ ok: false, resultType: 'store_upload', errorCode, errorMessage }) satisfies StoreUploadFailure;
+      ({
+        ok: false,
+        resultType: 'store_upload',
+        errorCode,
+        errorMessage,
+      }) satisfies StoreUploadFailure;
     if (!this.client || !this.config) return fail('storage_not_configured', NOT_CONFIGURED);
     const { client, config } = this;
 
     const bucket = await this.ensureBucket(client, config.bucket);
-    if (!bucket.ok) return fail('storage_error', bucket.errorMessage ?? `could not check bucket ${config.bucket}`);
+    if (!bucket.ok)
+      return fail(
+        'storage_error',
+        bucket.errorMessage ?? `could not check bucket ${config.bucket}`,
+      );
 
     // A stream's size is known only once it's read: count it on the way through.
     let size = upload.body instanceof Uint8Array ? upload.body.byteLength : 0;
-    const body = upload.body instanceof Uint8Array ? upload.body : pipeline(
-      upload.body,
-      new Transform({ transform(chunk: Buffer, _encoding, done) { size += chunk.length; done(null, chunk); } }),
-      () => { /* errors reach the Upload through the destroyed Transform */ },
-    );
+    const body =
+      upload.body instanceof Uint8Array
+        ? upload.body
+        : pipeline(
+            upload.body,
+            new Transform({
+              transform(chunk: Buffer, _encoding, done) {
+                size += chunk.length;
+                done(null, chunk);
+              },
+            }),
+            () => {
+              /* errors reach the Upload through the destroyed Transform */
+            },
+          );
 
     const key = asObjectKey(`uploads/${randomUUID()}`);
     try {
@@ -238,7 +289,8 @@ export class ObjectStore {
     // stream body has no byteLength; the Transform above counted it.
     log.info(`stored upload ${key} (${upload.name}, ${size} bytes)`);
     return {
-      ok: true, resultType: 'store_upload',
+      ok: true,
+      resultType: 'store_upload',
       data: { key, name: upload.name, size, contentType: upload.contentType },
     } satisfies StoreUploadSuccess;
   }
@@ -246,13 +298,21 @@ export class ObjectStore {
   /** A stored object's metadata, without its body (HEAD of a download). */
   async statObject(key: ObjectKey) {
     const fail = (errorCode: StatObjectErrorCode, errorMessage: string) =>
-      ({ ok: false, resultType: 'stat_object', errorCode, errorMessage }) satisfies StatObjectFailure;
+      ({
+        ok: false,
+        resultType: 'stat_object',
+        errorCode,
+        errorMessage,
+      }) satisfies StatObjectFailure;
     if (!this.client || !this.config) return fail('storage_not_configured', NOT_CONFIGURED);
 
     try {
-      const head = await this.client.send(new HeadObjectCommand({ Bucket: this.config.bucket, Key: key }));
+      const head = await this.client.send(
+        new HeadObjectCommand({ Bucket: this.config.bucket, Key: key }),
+      );
       return {
-        ok: true, resultType: 'stat_object',
+        ok: true,
+        resultType: 'stat_object',
         data: {
           contentType: head.ContentType ?? null,
           contentLength: head.ContentLength ?? null,
@@ -274,8 +334,18 @@ export class ObjectStore {
   /** Open a stored object — or one byte range of it — for download (its
    *  body streams from S3). */
   async fetchObject(key: ObjectKey, range: ObjectRange | null = null) {
-    const fail = (errorCode: FetchObjectErrorCode, errorMessage: string, objectSize: number | null = null) =>
-      ({ ok: false, resultType: 'fetch_object', errorCode, errorMessage, data: { objectSize } }) satisfies FetchObjectFailure;
+    const fail = (
+      errorCode: FetchObjectErrorCode,
+      errorMessage: string,
+      objectSize: number | null = null,
+    ) =>
+      ({
+        ok: false,
+        resultType: 'fetch_object',
+        errorCode,
+        errorMessage,
+        data: { objectSize },
+      }) satisfies FetchObjectFailure;
     if (!this.client || !this.config) return fail('storage_not_configured', NOT_CONFIGURED);
     const { client, config } = this;
 
@@ -289,12 +359,17 @@ export class ObjectStore {
     }
 
     try {
-      const object = await client.send(new GetObjectCommand({
-        Bucket: config.bucket, Key: key, ...(bytes === null ? {} : { Range: bytes }),
-      }));
+      const object = await client.send(
+        new GetObjectCommand({
+          Bucket: config.bucket,
+          Key: key,
+          ...(bytes === null ? {} : { Range: bytes }),
+        }),
+      );
       if (!object.Body) return fail('storage_error', `no body for ${key}`);
       return {
-        ok: true, resultType: 'fetch_object',
+        ok: true,
+        resultType: 'fetch_object',
         data: {
           body: object.Body.transformToWebStream() as ReadableStream<Uint8Array>,
           contentType: object.ContentType ?? null,
@@ -307,11 +382,16 @@ export class ObjectStore {
       } satisfies FetchObjectSuccess;
     } catch (err) {
       // A missing bucket means nothing was ever uploaded: not found either.
-      if (isS3Error(err, 'NoSuchKey') || isS3Error(err, 'NoSuchBucket')) return fail('object_not_found', `no object ${key}`);
+      if (isS3Error(err, 'NoSuchKey') || isS3Error(err, 'NoSuchBucket'))
+        return fail('object_not_found', `no object ${key}`);
       if (isS3Error(err, 'InvalidRange')) {
         // For the 416's Content-Range: bytes */<size>.
         const info = await this.statObject(key);
-        return fail('range_not_satisfiable', `${bytes} is outside ${key}`, info.ok ? info.data.contentLength : null);
+        return fail(
+          'range_not_satisfiable',
+          `${bytes} is outside ${key}`,
+          info.ok ? info.data.contentLength : null,
+        );
       }
       log.warn(`download of ${key} failed: ${describe(err)}`);
       return fail('storage_error', `could not read ${key}: ${describe(err)}`);

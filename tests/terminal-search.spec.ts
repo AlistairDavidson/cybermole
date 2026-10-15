@@ -46,26 +46,42 @@ function bareEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
 let server: { cookie: string; dir: string } | null = null;
 let child: ReturnType<typeof spawn> | null = null;
 const SOCKET = 'webpi-itest-tsearch';
-const childEnv = () => bareEnv({
-  WEB_PI_PORT: String(PORT), WEB_PI_HOST: '127.0.0.1',
-  WEB_PI_STATE_DIR: server!.dir,
-  WEB_PI_TMUX_SOCKET: SOCKET,
-  WEB_PI_NEW_SESSION_CWD: os.tmpdir(),
-  WEB_PI_COMMAND: path.join(server!.dir, 'cmd.sh'),
-});
+const childEnv = () =>
+  bareEnv({
+    WEB_PI_PORT: String(PORT),
+    WEB_PI_HOST: '127.0.0.1',
+    WEB_PI_STATE_DIR: server!.dir,
+    WEB_PI_TMUX_SOCKET: SOCKET,
+    WEB_PI_NEW_SESSION_CWD: os.tmpdir(),
+    WEB_PI_COMMAND: path.join(server!.dir, 'cmd.sh'),
+  });
 
 /** Boot the server child (beforeAll, and again by the restart test) —
  *  resolves once it listens. */
 async function spawnServer(): Promise<void> {
   const next = spawn('node', ['dist-server/server/main.js'], {
-    cwd: ROOT, env: childEnv(), stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: ROOT,
+    env: childEnv(),
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
   let boot = '';
-  next.stdout!.on('data', (d: Buffer) => { boot += d.toString(); });
-  next.stderr!.on('data', (d: Buffer) => { boot += d.toString(); });
+  next.stdout!.on('data', (d: Buffer) => {
+    boot += d.toString();
+  });
+  next.stderr!.on('data', (d: Buffer) => {
+    boot += d.toString();
+  });
   await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`server did not boot; output: ${boot}`)), 15_000);
-    next.stdout!.on('data', () => { if (boot.includes('web-pi listening')) { clearTimeout(timer); resolve(); } });
+    const timer = setTimeout(
+      () => reject(new Error(`server did not boot; output: ${boot}`)),
+      15_000,
+    );
+    next.stdout!.on('data', () => {
+      if (boot.includes('web-pi listening')) {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
     next.on('error', reject);
   });
   child = next;
@@ -86,7 +102,11 @@ async function stopServer(): Promise<void> {
 
 test.afterAll(async () => {
   await stopServer();
-  try { spawnSync('tmux', ['-L', SOCKET, 'kill-server'], { stdio: 'ignore' }); } catch { /* gone */ }
+  try {
+    spawnSync('tmux', ['-L', SOCKET, 'kill-server'], { stdio: 'ignore' });
+  } catch {
+    /* gone */
+  }
   if (server) fs.rmSync(server.dir, { recursive: true, force: true });
 });
 
@@ -102,7 +122,8 @@ test.beforeAll(async () => {
   server = { cookie: '', dir };
 
   const pw = spawnSync('node', ['dist-server/server/set-password.js'], {
-    cwd: ROOT, input: `${USERNAME}\n${PASSWORD}\n${PASSWORD}\n`,
+    cwd: ROOT,
+    input: `${USERNAME}\n${PASSWORD}\n${PASSWORD}\n`,
     env: bareEnv({ WEB_PI_PORT: '0', WEB_PI_STATE_DIR: dir }),
   });
   expect(pw.status, pw.stderr?.toString()).toBe(0);
@@ -110,7 +131,8 @@ test.beforeAll(async () => {
   await spawnServer();
 
   const login = await fetch(`${BASE}/login`, {
-    method: 'POST', body: JSON.stringify({ username: USERNAME, password: PASSWORD }),
+    method: 'POST',
+    body: JSON.stringify({ username: USERNAME, password: PASSWORD }),
   });
   expect(login.status).toBe(200);
   const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
@@ -120,10 +142,18 @@ test.beforeAll(async () => {
 
 /** One JSON call against the private server (node fetch + cookie: this
  *  spec's pages are on this origin anyway). */
-async function api(method: string, url: string, body?: unknown): Promise<{ status: number; json: any }> {
+async function api(
+  method: string,
+  url: string,
+  body?: unknown,
+): // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the parsed body, callers narrow it
+Promise<{ status: number; json: any }> {
   const r = await fetch(`${BASE}${url}`, {
     method,
-    headers: { cookie: server!.cookie, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+    headers: {
+      cookie: server!.cookie,
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return { status: r.status, json: await r.json().catch(() => null) };
@@ -144,7 +174,14 @@ async function makeTerminal(name: string): Promise<{ ws: string; id: string }> {
 function bufferLines(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
-      terminal?: { buffer: { active: { length: number; getLine(i: number): { translateToString(trimRight?: boolean): string } | undefined } } };
+      terminal?: {
+        buffer: {
+          active: {
+            length: number;
+            getLine(i: number): { translateToString(trimRight?: boolean): string } | undefined;
+          };
+        };
+      };
     };
     const buf = el?.terminal?.buffer.active;
     if (!buf) return [];
@@ -165,7 +202,14 @@ async function waitForTermLine(page: Page, line: string, timeout = 10_000): Prom
   await page.waitForFunction(
     want => {
       const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
-        terminal?: { buffer: { active: { length: number; getLine(i: number): { translateToString(trimRight?: boolean): string } | undefined } } };
+        terminal?: {
+          buffer: {
+            active: {
+              length: number;
+              getLine(i: number): { translateToString(trimRight?: boolean): string } | undefined;
+            };
+          };
+        };
       };
       const buf = el?.terminal?.buffer.active;
       if (!buf) return false;
@@ -185,7 +229,11 @@ function bufferShape(page: Page): Promise<{ len: number; rows: number; type: str
     const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
       terminal: { rows: number; buffer: { active: { length: number; type: string } } };
     };
-    return { len: el.terminal.buffer.active.length, rows: el.terminal.rows, type: el.terminal.buffer.active.type };
+    return {
+      len: el.terminal.buffer.active.length,
+      rows: el.terminal.rows,
+      type: el.terminal.buffer.active.type,
+    };
   });
 }
 
@@ -208,7 +256,10 @@ async function openTerminal(page: Page, id: string): Promise<void> {
   }
   await page.goto(`${BASE}/?t=${id}`);
   await page.waitForSelector('agent-terminal:not(.hidden) .terminal-container .xterm');
-  await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText('attached', { timeout: 15_000 });
+  await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText(
+    'attached',
+    { timeout: 15_000 },
+  );
 }
 
 /** Every n of `seq 1 60` appears exactly once as a whole line — the
@@ -225,7 +276,9 @@ async function expectSeqOnceEach(page: Page): Promise<void> {
   expect(markers, 'the cmd.sh banner must appear exactly once').toBe(1);
 }
 
-test('backfill: reload brings the scrollback back under the redraw — nothing doubled, nothing lost', async ({ page }) => {
+test('backfill: reload brings the scrollback back under the redraw — nothing doubled, nothing lost', async ({
+  page,
+}) => {
   const { id } = await makeTerminal('backfill');
   await openTerminal(page, id);
   await waitForTermLine(page, MARKER);
@@ -250,7 +303,10 @@ test('backfill: reload brings the scrollback back under the redraw — nothing d
   // tmux's own history, which is complete.
   await page.reload();
   await page.waitForSelector('agent-terminal:not(.hidden) .terminal-container .xterm');
-  await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText('attached', { timeout: 15_000 });
+  await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText(
+    'attached',
+    { timeout: 15_000 },
+  );
   await waitForTermLine(page, '1');
   await expectSeqOnceEach(page);
 
@@ -258,12 +314,17 @@ test('backfill: reload brings the scrollback back under the redraw — nothing d
   // everything — still exactly one copy of each line.
   await page.reload();
   await page.waitForSelector('agent-terminal:not(.hidden) .terminal-container .xterm');
-  await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText('attached', { timeout: 15_000 });
+  await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText(
+    'attached',
+    { timeout: 15_000 },
+  );
   await waitForTermLine(page, '1');
   await expectSeqOnceEach(page);
 });
 
-test('backfill is skipped on reconnect (buffer already holds the session) — no duplicate history', async ({ page }) => {
+test('backfill is skipped on reconnect (buffer already holds the session) — no duplicate history', async ({
+  page,
+}) => {
   const { id } = await makeTerminal('reconnect');
   await openTerminal(page, id);
   await waitForTermLine(page, MARKER);
@@ -284,19 +345,28 @@ test('backfill is skipped on reconnect (buffer already holds the session) — no
   // backfill frame must be ignored (a second copy of the history would
   // double every line).
   await stopServer();
-  await expect(page.locator('agent-terminal:not(.hidden) .terminal-status'))
-    .toContainText('reconnect', { timeout: 10_000 });
+  await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText(
+    'reconnect',
+    { timeout: 10_000 },
+  );
   await spawnServer();
-  await expect(page.locator('agent-terminal:not(.hidden) .terminal-status'))
-    .toContainText('attached', { timeout: 30_000 });
+  await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText(
+    'attached',
+    { timeout: 30_000 },
+  );
   await waitForTermLine(page, 'RELINE_1');
   for (let n = 1; n <= 20; n++) {
-    expect(await countExactLine(page, `RELINE_${n}`), `RELINE_${n} still exactly once after the reattach`).toBe(1);
+    expect(
+      await countExactLine(page, `RELINE_${n}`),
+      `RELINE_${n} still exactly once after the reattach`,
+    ).toBe(1);
   }
   expect(await countExactLine(page, MARKER), 'the banner must not double either').toBe(1);
 });
 
-test('find bar: ctrl+F searches the (backfilled) scrollback, Esc refocuses the terminal, the query survives pane switches', async ({ page }) => {
+test('find bar: ctrl+F searches the (backfilled) scrollback, Esc refocuses the terminal, the query survives pane switches', async ({
+  page,
+}) => {
   const { ws, id } = await makeTerminal('findbar');
   await openTerminal(page, id);
   await waitForTermLine(page, MARKER);
@@ -308,7 +378,10 @@ test('find bar: ctrl+F searches the (backfilled) scrollback, Esc refocuses the t
   await waitForTermLine(page, '60');
   await page.reload();
   await page.waitForSelector('agent-terminal:not(.hidden) .terminal-container .xterm');
-  await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText('attached', { timeout: 15_000 });
+  await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText(
+    'attached',
+    { timeout: 15_000 },
+  );
   await waitForTermLine(page, 'alpha_one');
 
   // The toolbar + find bar exist and stay hidden until Ctrl+F.
@@ -326,16 +399,28 @@ test('find bar: ctrl+F searches the (backfilled) scrollback, Esc refocuses the t
 
   // Live search: typing a query whose matches are in the BACKFILLED
   // history (alpha_* is above the screen) must scroll the viewport up.
-  const viewportBefore = await page.evaluate(() =>
-    (document.querySelector('agent-terminal:not(.hidden)') as unknown as {
-      terminal: { buffer: { active: { viewportY: number } } };
-    }).terminal.buffer.active.viewportY);
+  const viewportBefore = await page.evaluate(
+    () =>
+      (
+        document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+          terminal: { buffer: { active: { viewportY: number } } };
+        }
+      ).terminal.buffer.active.viewportY,
+  );
   await page.keyboard.type('alpha');
   await expect
-    .poll(async () => page.evaluate(() =>
-      (document.querySelector('agent-terminal:not(.hidden)') as unknown as {
-        terminal: { buffer: { active: { viewportY: number } } };
-      }).terminal.buffer.active.viewportY), { timeout: 5000 })
+    .poll(
+      async () =>
+        page.evaluate(
+          () =>
+            (
+              document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+                terminal: { buffer: { active: { viewportY: number } } };
+              }
+            ).terminal.buffer.active.viewportY,
+        ),
+      { timeout: 5000 },
+    )
     .toBeLessThan(viewportBefore);
 
   // Enter steps to the next match, Shift+Enter back — no crash, focus
@@ -343,8 +428,11 @@ test('find bar: ctrl+F searches the (backfilled) scrollback, Esc refocuses the t
   await page.keyboard.press('Enter');
   await page.keyboard.press('Shift+Enter');
   await expect(input).toBeFocused();
-  expect(await findBar.locator('wa-input').evaluate(el => (el as unknown as { value: string | null }).value))
-    .toBe('alpha');
+  expect(
+    await findBar
+      .locator('wa-input')
+      .evaluate(el => (el as unknown as { value: string | null }).value),
+  ).toBe('alpha');
 
   // Esc closes the bar and hands focus back to the terminal.
   await page.keyboard.press('Escape');
@@ -364,13 +452,25 @@ test('find bar: ctrl+F searches the (backfilled) scrollback, Esc refocuses the t
   expect(second.status).toBe(200);
   // the console's own state-refresh path (the 15 s poll, forced)
   await page.evaluate(async () => {
-    await (document.querySelector('console-app') as unknown as { loadState(): Promise<void> }).loadState();
+    await (
+      document.querySelector('console-app') as unknown as { loadState(): Promise<void> }
+    ).loadState();
   });
-  await page.waitForSelector(`terminal-tabs .tab[data-term="${second.json.id}"]`, { timeout: 10_000 });
+  await page.waitForSelector(`terminal-tabs .tab[data-term="${second.json.id}"]`, {
+    timeout: 10_000,
+  });
   await page.click(`terminal-tabs .tab[data-term="${second.json.id}"]`);
-  await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText('attached', { timeout: 15_000 });
+  await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText(
+    'attached',
+    { timeout: 15_000 },
+  );
   await page.keyboard.press('Control+f');
-  await expect(page.locator('agent-terminal:not(.hidden) .terminal-find')).not.toHaveClass(/hidden/);
-  expect(await page.locator('agent-terminal:not(.hidden) .terminal-find wa-input')
-    .evaluate(el => (el as unknown as { value: string | null }).value)).toBe('alpha');
+  await expect(page.locator('agent-terminal:not(.hidden) .terminal-find')).not.toHaveClass(
+    /hidden/,
+  );
+  expect(
+    await page
+      .locator('agent-terminal:not(.hidden) .terminal-find wa-input')
+      .evaluate(el => (el as unknown as { value: string | null }).value),
+  ).toBe('alpha');
 });

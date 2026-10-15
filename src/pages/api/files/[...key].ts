@@ -9,7 +9,10 @@ import type { APIRoute } from 'astro';
 import { assertWebPiLocals } from '../../../lib/web/locals';
 import { parseRangeRequest } from '../../../lib/web/parsing.service';
 import {
-  fileDownloadResponse, fileHeadResponse, invalidObjectKeyResponse, objectStoreFailureResponse,
+  fileDownloadResponse,
+  fileHeadResponse,
+  invalidObjectKeyResponse,
+  objectStoreFailureResponse,
 } from '../../../lib/web/responses.service';
 import { ObjectKeySchema } from '../../../schemas/ids';
 

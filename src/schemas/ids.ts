@@ -4,29 +4,38 @@
 // too (docs/CODE_STYLE.md §5).
 import { z } from 'zod';
 import {
-  asAppId, asAppSlug, asJobName, asObjectKey, asTerminalId, asTmuxSessionName, asWorkspaceId,
+  asAppId,
+  asAppSlug,
+  asJobName,
+  asObjectKey,
+  asTerminalId,
+  asTmuxSessionName,
+  asWorkspaceId,
 } from '../types/branded';
-import {
-  APP_SLUG_RE, JOB_NAME_RE, OBJECT_KEY_RE, TMUX_SESSION_NAME_RE, UUID_RE,
-} from './patterns';
+import { APP_SLUG_RE, JOB_NAME_RE, OBJECT_KEY_RE, TMUX_SESSION_NAME_RE, UUID_RE } from './patterns';
 
-export const TmuxSessionNameSchema = z.string()
-  .regex(TMUX_SESSION_NAME_RE, 'invalid session name').transform(asTmuxSessionName);
+export const TmuxSessionNameSchema = z
+  .string()
+  .regex(TMUX_SESSION_NAME_RE, 'invalid session name')
+  .transform(asTmuxSessionName);
 
-export const JobNameSchema = z.string()
-  .regex(JOB_NAME_RE, 'invalid job name').transform(asJobName);
+export const JobNameSchema = z.string().regex(JOB_NAME_RE, 'invalid job name').transform(asJobName);
 
-export const ObjectKeySchema = z.string()
-  .regex(OBJECT_KEY_RE, 'invalid file key').transform(asObjectKey);
+export const ObjectKeySchema = z
+  .string()
+  .regex(OBJECT_KEY_RE, 'invalid file key')
+  .transform(asObjectKey);
 
-export const AppIdSchema = z.string()
-  .regex(UUID_RE, 'invalid app id').transform(asAppId);
+export const AppIdSchema = z.string().regex(UUID_RE, 'invalid app id').transform(asAppId);
 
-export const WorkspaceIdSchema = z.string()
-  .regex(UUID_RE, 'invalid workspace id').transform(asWorkspaceId);
+export const WorkspaceIdSchema = z
+  .string()
+  .regex(UUID_RE, 'invalid workspace id')
+  .transform(asWorkspaceId);
 
-export const TerminalIdSchema = z.string()
-  .regex(UUID_RE, 'invalid terminal id').transform(asTerminalId);
+export const TerminalIdSchema = z
+  .string()
+  .regex(UUID_RE, 'invalid terminal id')
+  .transform(asTerminalId);
 
-export const AppSlugSchema = z.string()
-  .regex(APP_SLUG_RE, 'invalid app slug').transform(asAppSlug);
+export const AppSlugSchema = z.string().regex(APP_SLUG_RE, 'invalid app slug').transform(asAppSlug);

@@ -42,41 +42,60 @@ const PORT = '3001';
 const ROOT = path.resolve(import.meta.dirname, '..');
 const DIST = path.join(ROOT, 'dist');
 const STAGE = path.join(ROOT, '.dist-watch'); // gitignored, like dist/
-const WATCH = ['src', 'server', 'public', 'astro.config.mjs', 'tsconfig.json', 'tsconfig.server.json'];
+const WATCH = [
+  'src',
+  'server',
+  'public',
+  'astro.config.mjs',
+  'tsconfig.json',
+  'tsconfig.server.json',
+];
 const QUIET_MS = 250;
 const KILL_AFTER_MS = 10_000;
 
-const log = (message) => console.log(`[dev:server] ${message}`);
-const bin = (name) => path.join(ROOT, 'node_modules', '.bin', name);
-const rm = (p) => fs.rmSync(p, { recursive: true, force: true });
+const log = message => console.log(`[dev:server] ${message}`);
+const bin = name => path.join(ROOT, 'node_modules', '.bin', name);
+const rm = p => fs.rmSync(p, { recursive: true, force: true });
 
 /** A noise event (editor scratch): dotfiles, lock files, vim's 4913, swap. */
-const noise = (basename) =>
-  basename.startsWith('.') || basename.startsWith('#') || basename === '4913'
-  || basename.endsWith('~') || basename.endsWith('.swp') || basename.endsWith('.swo');
+const noise = basename =>
+  basename.startsWith('.') ||
+  basename.startsWith('#') ||
+  basename === '4913' ||
+  basename.endsWith('~') ||
+  basename.endsWith('.swp') ||
+  basename.endsWith('.swo');
 
 /** Resolve when the process exits — SIGKILL after `killAfterMs` if it hangs. */
-const exited = (proc, killAfterMs = KILL_AFTER_MS) => new Promise((resolve) => {
-  if (proc.exitCode !== null || proc.signalCode !== null) return resolve();
-  const kill = setTimeout(() => proc.kill('SIGKILL'), killAfterMs);
-  proc.once('exit', () => { clearTimeout(kill); resolve(); });
-});
+const exited = (proc, killAfterMs = KILL_AFTER_MS) =>
+  new Promise(resolve => {
+    if (proc.exitCode !== null || proc.signalCode !== null) return resolve();
+    const kill = setTimeout(() => proc.kill('SIGKILL'), killAfterMs);
+    proc.once('exit', () => {
+      clearTimeout(kill);
+      resolve();
+    });
+  });
 
 /** A build step's exit code (0 on success), with its output streamed.
  *  cwd: ROOT — astro and tsc resolve the project from the cwd. */
-const run = (command, args) => new Promise((resolve) => {
-  spawn(command, args, { stdio: 'inherit', cwd: ROOT }).once('exit', (code) => resolve(code ?? 1));
-});
+const run = (command, args) =>
+  new Promise(resolve => {
+    spawn(command, args, { stdio: 'inherit', cwd: ROOT }).once('exit', code => resolve(code ?? 1));
+  });
 
 /** Build, staged: astro into .dist-watch (clean first — a crashed run
  *  may have left a partial), tsc into dist-server. */
 async function build() {
   rm(STAGE);
   const astro = await run(bin('astro'), ['build', '--outDir', STAGE]);
-  if (astro !== 0) { rm(STAGE); return astro; }
+  if (astro !== 0) {
+    rm(STAGE);
+    return astro;
+  }
   const tsc = await run(bin('tsc'), ['-p', 'tsconfig.server.json']);
   if (tsc !== 0) rm(STAGE); // dist-server re-emitted despite the error: the
-  return tsc;               // running server is unaffected; the next good build re-emits
+  return tsc; // running server is unaffected; the next good build re-emits
 }
 
 /** Move the staged build in as dist. Only called with the old server
@@ -88,8 +107,8 @@ function swap() {
 
 let server = null;
 let stopping = false; // the restart path owns the child's death
-let busy = false;     // a build/restart cycle is running
-let queued = false;  // a change landed mid-cycle — run another
+let busy = false; // a build/restart cycle is running
+let queued = false; // a change landed mid-cycle — run another
 let timer = null;
 
 /** Boot the fresh build (the child logs its own 'web-pi listening' line). */
@@ -141,13 +160,21 @@ async function cycle(fatal) {
   } finally {
     busy = false;
   }
-  if (queued) { queued = false; void cycle(false); }
+  if (queued) {
+    queued = false;
+    void cycle(false);
+  }
 }
 
 function schedule() {
-  if (busy) { queued = true; return; }
+  if (busy) {
+    queued = true;
+    return;
+  }
   clearTimeout(timer);
-  timer = setTimeout(() => { void cycle(false); }, QUIET_MS);
+  timer = setTimeout(() => {
+    void cycle(false);
+  }, QUIET_MS);
 }
 
 // Ctrl-C / TERM: take the server down with us. A terminal sends the

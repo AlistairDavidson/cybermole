@@ -17,11 +17,14 @@ const log = componentLogger('update');
 export const PI_PACKAGE = '@earendil-works/pi-coding-agent';
 
 const UPDATE_TIMEOUT_MS = 10 * 60 * 1000; // npm can be slow; one try, no retry
-const OUTPUT_CAP = 64 * 1024;             // keep the tail for the UI
+const OUTPUT_CAP = 64 * 1024; // keep the tail for the UI
 
 function readJson(file: string): Record<string, unknown> | null {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>; }
-  catch { return null; }
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
 
 /** web-pi's own package.json version (app identity on the dashboard). */
@@ -35,8 +38,8 @@ export function appVersion(appRoot: string): string {
 export function piDeclared(appRoot: string): string {
   const pkg = readJson(path.join(appRoot, 'package.json'));
   const deps = pkg?.dependencies;
-  const range = deps && typeof deps === 'object'
-    ? (deps as Record<string, unknown>)[PI_PACKAGE] : undefined;
+  const range =
+    deps && typeof deps === 'object' ? (deps as Record<string, unknown>)[PI_PACKAGE] : undefined;
   return typeof range === 'string' ? range : 'unknown';
 }
 
@@ -53,7 +56,12 @@ export function npmPath(): string | null {
   for (const dir of (process.env.PATH ?? '').split(path.delimiter)) {
     if (!dir) continue;
     const p = path.join(dir, 'npm');
-    try { fs.accessSync(p, fs.constants.X_OK); return p; } catch { /* keep looking */ }
+    try {
+      fs.accessSync(p, fs.constants.X_OK);
+      return p;
+    } catch {
+      /* keep looking */
+    }
   }
   return null;
 }
@@ -85,15 +93,34 @@ export type PiUpdateResult = PiUpdateSuccess | PiUpdateFailure;
  *  result. The install spec defaults to @latest (the manual button); the
  *  auto-updater passes the declared-range spec instead — same machinery,
  *  same busy guard, same output capture. */
-export async function runPiUpdate(appRoot: string, dryRun: boolean,
-  spec: string = `${PI_PACKAGE}@latest`) {
+export async function runPiUpdate(
+  appRoot: string,
+  dryRun: boolean,
+  spec: string = `${PI_PACKAGE}@latest`,
+) {
   const args = ['install', spec];
   const command = `npm ${args.join(' ')}`;
   const before = piInstalled(appRoot);
-  const data = (extra: Partial<PiUpdateData> = {}): PiUpdateData =>
-    ({ dryRun, command, before, after: before, output: '', ...extra });
-  const fail = (errorCode: PiUpdateErrorCode, errorMessage: string, extra: Partial<PiUpdateData> = {}) =>
-    ({ ok: false, resultType: 'pi_update', data: data(extra), errorCode, errorMessage }) satisfies PiUpdateFailure;
+  const data = (extra: Partial<PiUpdateData> = {}): PiUpdateData => ({
+    dryRun,
+    command,
+    before,
+    after: before,
+    output: '',
+    ...extra,
+  });
+  const fail = (
+    errorCode: PiUpdateErrorCode,
+    errorMessage: string,
+    extra: Partial<PiUpdateData> = {},
+  ) =>
+    ({
+      ok: false,
+      resultType: 'pi_update',
+      data: data(extra),
+      errorCode,
+      errorMessage,
+    }) satisfies PiUpdateFailure;
   const npmMissing = 'npm was not found on the server PATH — cannot update from here';
 
   if (dryRun) {
@@ -102,11 +129,17 @@ export async function runPiUpdate(appRoot: string, dryRun: boolean,
     const npm = npmPath();
     if (!npm) return fail('npm_missing', npmMissing);
     const checked = await new Promise<{ err: Error | null; stdout: string }>(resolve =>
-      execFile(npm, ['--version'], { timeout: 15_000 }, (err, stdout) => resolve({ err, stdout: String(stdout) })));
+      execFile(npm, ['--version'], { timeout: 15_000 }, (err, stdout) =>
+        resolve({ err, stdout: String(stdout) }),
+      ),
+    );
     if (checked.err) return fail('npm_check_failed', `npm check failed: ${checked.err.message}`);
     return {
-      ok: true, resultType: 'pi_update',
-      data: data({ output: `would run \`${command}\` in ${appRoot} (npm ${checked.stdout.trim()} is available)` }),
+      ok: true,
+      resultType: 'pi_update',
+      data: data({
+        output: `would run \`${command}\` in ${appRoot} (npm ${checked.stdout.trim()} is available)`,
+      }),
     } satisfies PiUpdateSuccess;
   }
 
@@ -120,9 +153,17 @@ export async function runPiUpdate(appRoot: string, dryRun: boolean,
   // delegate site is marked in src/lib/auto-update.ts, next to the
   // auto-update call into this function.
   log.info(`pi update: running \`${command}\` in ${appRoot}`);
-  const installed = await new Promise<{ err: (Error & { killed?: boolean; code?: unknown }) | null; out: string }>(
-    resolve => execFile(npm, args, { cwd: appRoot, timeout: UPDATE_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 },
-      (err, stdout, stderr) => resolve({ err, out: `${stdout}${stderr ? '\n' + stderr : ''}` })));
+  const installed = await new Promise<{
+    err: (Error & { killed?: boolean; code?: unknown }) | null;
+    out: string;
+  }>(resolve =>
+    execFile(
+      npm,
+      args,
+      { cwd: appRoot, timeout: UPDATE_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 },
+      (err, stdout, stderr) => resolve({ err, out: `${stdout}${stderr ? '\n' + stderr : ''}` }),
+    ),
+  );
   updateBusy = false;
   const after = piInstalled(appRoot);
   const output = installed.out.trim().slice(-OUTPUT_CAP);
@@ -133,7 +174,13 @@ export async function runPiUpdate(appRoot: string, dryRun: boolean,
     log.warn(`pi update failed: ${reason}`);
     return fail('npm_failed', reason, { after, output });
   }
-  log.info(`pi update: ${before ?? 'not installed'} → ${after ?? 'not installed'} ` +
-    `(new sessions use it)`);
-  return { ok: true, resultType: 'pi_update', data: data({ after, output }) } satisfies PiUpdateSuccess;
+  log.info(
+    `pi update: ${before ?? 'not installed'} → ${after ?? 'not installed'} ` +
+      `(new sessions use it)`,
+  );
+  return {
+    ok: true,
+    resultType: 'pi_update',
+    data: data({ after, output }),
+  } satisfies PiUpdateSuccess;
 }

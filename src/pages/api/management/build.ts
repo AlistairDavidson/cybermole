@@ -5,7 +5,11 @@
 // sidecar (workspace-side); this only writes the request marker.
 import type { APIRoute } from 'astro';
 import { assertWebPiLocals } from '../../../lib/web/locals';
-import { failureResponse, jsonResponse, managementFailureResponse } from '../../../lib/web/responses.service';
+import {
+  failureResponse,
+  jsonResponse,
+  managementFailureResponse,
+} from '../../../lib/web/responses.service';
 import { parseAndValidateAPIRequest } from '../../../lib/web/parsing.service';
 import { ManagementBuildSchema } from '../../../schemas/management';
 

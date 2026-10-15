@@ -10,7 +10,11 @@
 import type { APIRoute } from 'astro';
 import { assertWebPiLocals } from '../../../lib/web/locals';
 import { streamFileUpload } from '../../../lib/web/parsing.service';
-import { failureResponse, jsonResponse, objectStoreFailureResponse } from '../../../lib/web/responses.service';
+import {
+  failureResponse,
+  jsonResponse,
+  objectStoreFailureResponse,
+} from '../../../lib/web/responses.service';
 import { UPLOAD_ALLOWED_MIME_TYPES, UPLOAD_MAX_FILE_BYTES } from '../../../schemas/uploads';
 
 export const POST: APIRoute = async ({ locals, request }) => {
@@ -18,8 +22,16 @@ export const POST: APIRoute = async ({ locals, request }) => {
   const stored = await streamFileUpload(
     request,
     { maxSize: UPLOAD_MAX_FILE_BYTES, allowedMimeTypes: UPLOAD_ALLOWED_MIME_TYPES },
-    file => webpi.objectStore.storeUpload({ name: file.name, contentType: file.contentType, body: file.stream }),
+    file =>
+      webpi.objectStore.storeUpload({
+        name: file.name,
+        contentType: file.contentType,
+        body: file.stream,
+      }),
   );
-  if (!stored.ok) return stored.resultType === 'file_upload' ? failureResponse(stored) : objectStoreFailureResponse(stored);
+  if (!stored.ok)
+    return stored.resultType === 'file_upload'
+      ? failureResponse(stored)
+      : objectStoreFailureResponse(stored);
   return jsonResponse(stored.data, 201);
 };

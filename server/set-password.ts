@@ -15,14 +15,28 @@ const stateDb = new StateDb(ENV.WEB_PI_DB_FILE);
 
 // Interactive prompt (TTY): prompt printed BEFORE muting output (else the
 // prompt itself is swallowed and it looks hung — fixed 2026-09-30).
-function askInteractive(out: NodeJS.WriteStream, rl: readline.Interface,
-  q: string, mute: boolean): Promise<string> {
+function askInteractive(
+  out: NodeJS.WriteStream,
+  rl: readline.Interface,
+  q: string,
+  mute: boolean,
+): Promise<string> {
   return new Promise(resolve => {
-    if (!mute) { rl.question(q, a => resolve(a)); return; }
+    if (!mute) {
+      rl.question(q, a => resolve(a));
+      return;
+    }
     const write = out.write.bind(out);
     write(q);
-    out.write = (s: string) => { if (s === '\r\n' || s === '\n') write(s); return true; };
-    rl.question('', a => { out.write = write; out.write('\n'); resolve(a); });
+    out.write = (s: string) => {
+      if (s === '\r\n' || s === '\n') write(s);
+      return true;
+    };
+    rl.question('', a => {
+      out.write = write;
+      out.write('\n');
+      resolve(a);
+    });
   });
 }
 
@@ -30,12 +44,14 @@ function askInteractive(out: NodeJS.WriteStream, rl: readline.Interface,
 // when a pipe delivers every line in one chunk).
 function readPiped(): Promise<string[]> {
   return new Promise(resolve => {
-    const lines: string[] = []; let buf = '';
+    const lines: string[] = [];
+    let buf = '';
     process.stdin.on('data', (d: Buffer) => {
       buf += d.toString('utf8');
       let i: number;
       while ((i = buf.indexOf('\n')) >= 0) {
-        lines.push(buf.slice(0, i).replace(/\r$/, '')); buf = buf.slice(i + 1);
+        lines.push(buf.slice(0, i).replace(/\r$/, ''));
+        buf = buf.slice(i + 1);
       }
     });
     process.stdin.on('end', () => {
@@ -59,10 +75,22 @@ void (async (): Promise<void> => {
     pw = lines[1] ?? '';
     pw2 = lines[2] ?? '';
   }
-  if (!username) { console.error('username required'); process.exit(1); }
-  if (!pw || pw.length < 8) { console.error('password must be >= 8 chars'); process.exit(1); }
-  if (pw !== pw2) { console.error('passwords do not match'); process.exit(1); }
+  if (!username) {
+    console.error('username required');
+    process.exit(1);
+  }
+  if (!pw || pw.length < 8) {
+    console.error('password must be >= 8 chars');
+    process.exit(1);
+  }
+  if (pw !== pw2) {
+    console.error('passwords do not match');
+    process.exit(1);
+  }
   const saved = setCredential(stateDb, username, pw);
-  if (!saved.ok) { console.error(saved.errorMessage); process.exit(1); }
+  if (!saved.ok) {
+    console.error(saved.errorMessage);
+    process.exit(1);
+  }
   console.log('written:', ENV.WEB_PI_DB_FILE);
 })();

@@ -67,7 +67,7 @@ esac
 `;
 fs.writeFileSync(path.join(fakeBin, 'tmux'), FAKE_TMUX, { mode: 0o755 });
 
-const parse = (o) => JobSaveSchema.parse(o);
+const parse = o => JobSaveSchema.parse(o);
 /** Never due within a test run: Dec 31 — the tick must not fire extras. */
 const NOT_DUE = '0 0 31 12 *';
 
@@ -82,7 +82,10 @@ function fresh() {
  *  return its id. */
 function seedApp(db, name) {
   const id = randomUUID();
-  db.db().prepare('INSERT INTO apps (id, name, slug, sort_order, created_at, updated_at, created_by, updated_by) VALUES (?, ?, ?, 10, 0, 0, ?, ?)')
+  db.db()
+    .prepare(
+      'INSERT INTO apps (id, name, slug, sort_order, created_at, updated_at, created_by, updated_by) VALUES (?, ?, ?, 10, 0, 0, ?, ?)',
+    )
     .run(id, name, name.toLowerCase(), 'tester', 'tester');
   return id;
 }
@@ -99,11 +102,12 @@ function seedRun(logDir, job, firedAt, files) {
   return paths;
 }
 
-const tmuxUp = (up) => {
+const tmuxUp = up => {
   if (up) fs.writeFileSync(path.join(dir, 'up'), '');
   else fs.rmSync(path.join(dir, 'up'), { force: true });
 };
-const liveSessions = (names) => fs.writeFileSync(path.join(dir, 'sessions'), names.join('\n') + (names.length ? '\n' : ''));
+const liveSessions = names =>
+  fs.writeFileSync(path.join(dir, 'sessions'), names.join('\n') + (names.length ? '\n' : ''));
 
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
@@ -119,14 +123,16 @@ test('finish observation: exit files fill exit_code/finished_at; a missing file 
     for (const name of ['ok', 'boom', 'nolog']) assert.equal((await s.runJob(name)).ok, true, name);
     // What the real wrapper would have written by the time the session
     // dies (the exit file is sequenced before the pipeline drains).
-    const fired = (job) => db.db().prepare('SELECT fired_at FROM job_runs WHERE job = ?').get(job).fired_at;
+    const fired = job =>
+      db.db().prepare('SELECT fired_at FROM job_runs WHERE job = ?').get(job).fired_at;
     seedRun(logDir, 'ok', fired('ok'), { log: 'all good\n', exit: '0\n' });
     seedRun(logDir, 'boom', fired('boom'), { log: 'it broke\n', exit: '7\n' });
     seedRun(logDir, 'nolog', fired('nolog'), null); // wrapper never created the files
     liveSessions([]); // every run session ended
     await s.tick();
 
-    const row = (job) => db.db().prepare('SELECT exit_code, finished_at FROM job_runs WHERE job = ?').get(job);
+    const row = job =>
+      db.db().prepare('SELECT exit_code, finished_at FROM job_runs WHERE job = ?').get(job);
     assert.equal(row('ok').exit_code, 0);
     assert.ok(row('ok').finished_at >= fired('ok'));
     assert.equal(row('boom').exit_code, 7);
@@ -135,8 +141,11 @@ test('finish observation: exit files fill exit_code/finished_at; a missing file 
     assert.ok(row('nolog').finished_at, 'the finish itself was still observed');
 
     const jobs = (await s.listJobs()).data.jobs;
-    assert.deepEqual(Object.fromEntries(jobs.map(j => [j.name, j.lastResult])),
-      { boom: 'failed', nolog: 'unknown', ok: 'success' });
+    assert.deepEqual(Object.fromEntries(jobs.map(j => [j.name, j.lastResult])), {
+      boom: 'failed',
+      nolog: 'unknown',
+      ok: 'success',
+    });
   } finally {
     tmuxUp(false);
   }
@@ -147,7 +156,8 @@ test('finish observation: a session found already live (boot shape) resolves its
   await s.saveJob(parse({ name: 'bootrun', schedule: NOT_DUE, command: 'true' }));
   // The run fired while "the server was down": row on disk, session live.
   const firedAt = Date.now() - 60_000;
-  db.db().prepare('INSERT INTO job_runs (job, fired_at, origin, log) VALUES (?, ?, ?, ?)')
+  db.db()
+    .prepare('INSERT INTO job_runs (job, fired_at, origin, log) VALUES (?, ?, ?, ?)')
     .run('bootrun', firedAt, 'schedule', runLogPaths(logDir, 'bootrun', firedAt).log);
   seedRun(logDir, 'bootrun', firedAt, { log: 'from before the restart\n', exit: '0\n' });
   tmuxUp(true);
@@ -156,7 +166,10 @@ test('finish observation: a session found already live (boot shape) resolves its
     await s.tick(); // arms the live session (no fired_at of its own)
     liveSessions([]);
     await s.tick(); // observes the finish on the newest row
-    const row = db.db().prepare('SELECT exit_code, finished_at FROM job_runs WHERE job = ?').get('bootrun');
+    const row = db
+      .db()
+      .prepare('SELECT exit_code, finished_at FROM job_runs WHERE job = ?')
+      .get('bootrun');
     assert.equal(row.exit_code, 0);
     assert.ok(row.finished_at);
   } finally {
@@ -174,7 +187,8 @@ test('RUN_HISTORY pruning unlinks the doomed runs’ files before deleting their
   for (let i = 0; i < 20; i++) {
     const at = base + i;
     const p = seedRun(logDir, 'busy', at, { log: `run ${i}\n`, exit: '0\n' });
-    db.db().prepare('INSERT INTO job_runs (job, fired_at, origin, log) VALUES (?, ?, ?, ?)')
+    db.db()
+      .prepare('INSERT INTO job_runs (job, fired_at, origin, log) VALUES (?, ?, ?, ?)')
       .run('busy', at, 'schedule', p.log);
     paths.push(p);
   }
@@ -184,7 +198,10 @@ test('RUN_HISTORY pruning unlinks the doomed runs’ files before deleting their
   assert.equal((await s.runJob('busy')).errorCode, 'tmux_error');
 
   // The 21st run kept the newest 20: the OLDEST row (and it alone) went.
-  const rows = db.db().prepare('SELECT fired_at FROM job_runs WHERE job = ? ORDER BY fired_at').all('busy');
+  const rows = db
+    .db()
+    .prepare('SELECT fired_at FROM job_runs WHERE job = ? ORDER BY fired_at')
+    .all('busy');
   assert.equal(rows.length, 20);
   assert.equal(rows[0].fired_at, base + 1, 'the oldest run was pruned');
   assert.equal(fs.existsSync(paths[0].log), false, 'its log file was unlinked');
@@ -197,7 +214,8 @@ test('deleteJob removes the job’s whole log dir with the rows', async () => {
   await s.saveJob(parse({ name: 'gone', schedule: NOT_DUE, command: 'true' }));
   const at = Date.now();
   const p = seedRun(logDir, 'gone', at, { log: 'x\n' });
-  db.db().prepare('INSERT INTO job_runs (job, fired_at, origin, log) VALUES (?, ?, ?, ?)')
+  db.db()
+    .prepare('INSERT INTO job_runs (job, fired_at, origin, log) VALUES (?, ?, ?, ?)')
     .run('gone', at, 'manual', p.log);
   assert.ok(await s.deleteJob('gone'));
   assert.equal(fs.existsSync(path.join(logDir, 'gone')), false);
@@ -214,21 +232,27 @@ test('listRuns: newest first, exit/finish passthrough, hasLog honest about the f
   // base+1: the fire recorded a log path, but the wrapper never created
   // the file (log dir unwritable) — hasLog must say false.
   const rows = [
-    { at: base, exit: 0, fin: base + 1000, log: withFile.log },          // file exists
+    { at: base, exit: 0, fin: base + 1000, log: withFile.log }, // file exists
     { at: base + 1, exit: null, fin: null, log: runLogPaths(logDir, 'hist', base + 1).log },
-    { at: base + 2, exit: 3, fin: base + 3000, log: null },              // pre-v6 shape: no log at all
+    { at: base + 2, exit: 3, fin: base + 3000, log: null }, // pre-v6 shape: no log at all
   ];
   for (const r of rows) {
-    db.db().prepare('INSERT INTO job_runs (job, fired_at, origin, exit_code, finished_at, log) VALUES (?, ?, ?, ?, ?, ?)')
+    db.db()
+      .prepare(
+        'INSERT INTO job_runs (job, fired_at, origin, exit_code, finished_at, log) VALUES (?, ?, ?, ?, ?, ?)',
+      )
       .run('hist', r.at, 'manual', r.exit, r.fin, r.log);
   }
   const listed = s.listRuns('hist');
   assert.equal(listed.ok, true);
-  assert.deepEqual(listed.data.runs.map(r => [r.firedAt, r.origin, r.exitCode, r.finishedAt, r.hasLog]), [
-    [base + 2, 'manual', 3, base + 3000, false],
-    [base + 1, 'manual', null, null, false],
-    [base, 'manual', 0, base + 1000, true],
-  ]);
+  assert.deepEqual(
+    listed.data.runs.map(r => [r.firedAt, r.origin, r.exitCode, r.finishedAt, r.hasLog]),
+    [
+      [base + 2, 'manual', 3, base + 3000, false],
+      [base + 1, 'manual', null, null, false],
+      [base, 'manual', 0, base + 1000, true],
+    ],
+  );
 });
 
 test('listRuns: job_not_found, database_error', async () => {
@@ -236,8 +260,14 @@ test('listRuns: job_not_found, database_error', async () => {
   assert.equal(s.listRuns('nope').errorCode, 'job_not_found');
   const broken = path.join(fs.mkdtempSync(path.join(dir, 'broken-')), 'x');
   fs.writeFileSync(broken, '');
-  assert.equal(new Scheduler(new StateDb(path.join(broken, 'db')), { cwd: dir, env: {}, logDir: dir }).listRuns('x').errorCode,
-    'database_error');
+  assert.equal(
+    new Scheduler(new StateDb(path.join(broken, 'db')), {
+      cwd: dir,
+      env: {},
+      logDir: dir,
+    }).listRuns('x').errorCode,
+    'database_error',
+  );
 });
 
 test('readRunLog: the tail — content, 1 MiB cap on the NEWEST bytes, truncation flag', async () => {
@@ -245,7 +275,8 @@ test('readRunLog: the tail — content, 1 MiB cap on the NEWEST bytes, truncatio
   await s.saveJob(parse({ name: 'logs', schedule: NOT_DUE, command: 'true' }));
   const small = Date.now();
   seedRun(logDir, 'logs', small, { log: 'hello log\nsecond line\n' });
-  db.db().prepare('INSERT INTO job_runs (job, fired_at, origin, log) VALUES (?, ?, ?, ?)')
+  db.db()
+    .prepare('INSERT INTO job_runs (job, fired_at, origin, log) VALUES (?, ?, ?, ?)')
     .run('logs', small, 'manual', runLogPaths(logDir, 'logs', small).log);
 
   const read = s.readRunLog('logs', small);
@@ -255,8 +286,12 @@ test('readRunLog: the tail — content, 1 MiB cap on the NEWEST bytes, truncatio
   // 1.5 MiB: exactly the last 1 MiB, flagged truncated.
   const big = small + 1;
   const paths = seedRun(logDir, 'logs', big, null);
-  fs.writeFileSync(paths.log, 'A'.repeat(512 * 1024) + 'B'.repeat(512 * 1024) + 'T'.repeat(512 * 1024));
-  db.db().prepare('INSERT INTO job_runs (job, fired_at, origin, log) VALUES (?, ?, ?, ?)')
+  fs.writeFileSync(
+    paths.log,
+    'A'.repeat(512 * 1024) + 'B'.repeat(512 * 1024) + 'T'.repeat(512 * 1024),
+  );
+  db.db()
+    .prepare('INSERT INTO job_runs (job, fired_at, origin, log) VALUES (?, ?, ?, ?)')
     .run('logs', big, 'manual', paths.log);
   const tail = s.readRunLog('logs', big);
   assert.equal(tail.ok, true);
@@ -272,14 +307,18 @@ test('readRunLog: every error code — job/run/log_missing/read_error', async ()
   const at = Date.now();
   const paths = runLogPaths(logDir, 'errs', at);
   // A row with no log at all (pre-v6 shape).
-  db.db().prepare('INSERT INTO job_runs (job, fired_at, origin) VALUES (?, ?, ?)').run('errs', at, 'manual');
+  db.db()
+    .prepare('INSERT INTO job_runs (job, fired_at, origin) VALUES (?, ?, ?)')
+    .run('errs', at, 'manual');
   // A row whose wrapper never created the file.
-  db.db().prepare('INSERT INTO job_runs (job, fired_at, origin, log) VALUES (?, ?, ?, ?)')
+  db.db()
+    .prepare('INSERT INTO job_runs (job, fired_at, origin, log) VALUES (?, ?, ?, ?)')
     .run('errs', at + 1, 'manual', paths.log);
   // A row with a log file this process cannot read (root ignores 000).
   const unreadableAt = at + 2;
   const unreadable = seedRun(logDir, 'errs', unreadableAt, { log: 'secret\n' });
-  db.db().prepare('INSERT INTO job_runs (job, fired_at, origin, log) VALUES (?, ?, ?, ?)')
+  db.db()
+    .prepare('INSERT INTO job_runs (job, fired_at, origin, log) VALUES (?, ?, ?, ?)')
     .run('errs', unreadableAt, 'manual', unreadable.log);
 
   assert.equal(s.readRunLog('nope', at).errorCode, 'job_not_found');
@@ -293,8 +332,14 @@ test('readRunLog: every error code — job/run/log_missing/read_error', async ()
   // database_error: a db that cannot open fails the row read.
   const broken = path.join(fs.mkdtempSync(path.join(dir, 'broken-')), 'x');
   fs.writeFileSync(broken, '');
-  assert.equal(new Scheduler(new StateDb(path.join(broken, 'db')), { cwd: dir, env: {}, logDir: dir })
-    .readRunLog('errs', at).errorCode, 'database_error');
+  assert.equal(
+    new Scheduler(new StateDb(path.join(broken, 'db')), {
+      cwd: dir,
+      env: {},
+      logDir: dir,
+    }).readRunLog('errs', at).errorCode,
+    'database_error',
+  );
 });
 
 // ---------- the app tag ----------
@@ -311,8 +356,14 @@ test('saveJob/listJobs: the optional app tag — save, JOIN name, clear, unknown
   });
 
   // A valid uuid that names no app row: a closed code, not an FK crash.
-  assert.equal((await s.saveJob(parse({ name: 'ghost', schedule: NOT_DUE, command: 'true', appId: randomUUID() }))).errorCode,
-    'app_not_found');
+  assert.equal(
+    (
+      await s.saveJob(
+        parse({ name: 'ghost', schedule: NOT_DUE, command: 'true', appId: randomUUID() }),
+      )
+    ).errorCode,
+    'app_not_found',
+  );
 
   // Re-saving with null clears the tag (PUT semantics).
   await s.saveJob(parse({ name: 'tagged', schedule: NOT_DUE, command: 'true', appId: null }));

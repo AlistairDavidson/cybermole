@@ -30,7 +30,7 @@ const base = process.env.WEB_PI_BASE ?? '/';
 // dev server; prod is dist-server/server/main.js), and Astro has no
 // command-conditional config form — so it is simply always declared.
 const devApiTarget = process.env.WEB_PI_DEV_API ?? 'http://127.0.0.1:3001';
-const pageMethodsOnly = (req) =>
+const pageMethodsOnly = req =>
   req.method === 'GET' || req.method === 'HEAD' ? req.url : undefined;
 const devProxy = {
   [`${base}api`]: { target: devApiTarget },

@@ -32,8 +32,10 @@ interface WaInputLike extends HTMLElement {
 
 /** Caret offset inside a <wa-input>'s native input (null if unavailable). */
 function caretOf(el: WaInputLike): number | null {
-  const native = (el as unknown as { input?: HTMLInputElement }).input
-    ?? (el.shadowRoot?.querySelector('input') ?? null);
+  const native =
+    (el as unknown as { input?: HTMLInputElement }).input ??
+    el.shadowRoot?.querySelector('input') ??
+    null;
   return native ? native.selectionStart : null;
 }
 
@@ -63,7 +65,7 @@ function navCollapsed(): Set<string> {
   } catch {
     stored = {};
   }
-  const map = stored && typeof stored === 'object' ? stored as Record<string, unknown> : {};
+  const map = stored && typeof stored === 'object' ? (stored as Record<string, unknown>) : {};
   collapsedGroups = new Set(Object.keys(map).filter(k => map[k] === true));
   return collapsedGroups;
 }
@@ -75,7 +77,9 @@ function setGroupCollapsed(key: string, collapsed: boolean): void {
   else groups.delete(key);
   try {
     const stored: Record<string, true> = {};
-    groups.forEach(k => { stored[k] = true; });
+    groups.forEach(k => {
+      stored[k] = true;
+    });
     localStorage.setItem(NAV_COLLAPSED_KEY, JSON.stringify(stored));
   } catch {
     /* storage unavailable — the session still collapses */
@@ -139,10 +143,21 @@ export class WorkspaceSidebar extends HTMLElement {
     const st = this.state;
     if (!st) return '';
     const groups: string[] = [
-      this.group(CONSOLE_GROUP_KEY, 'console', st.workspaces.filter(w => w.appId === null)),
+      this.group(
+        CONSOLE_GROUP_KEY,
+        'console',
+        st.workspaces.filter(w => w.appId === null),
+      ),
     ];
     for (const app of st.apps) {
-      groups.push(this.group(app.slug, app.name, st.workspaces.filter(w => w.appId === app.id), app));
+      groups.push(
+        this.group(
+          app.slug,
+          app.name,
+          st.workspaces.filter(w => w.appId === app.id),
+          app,
+        ),
+      );
     }
     return groups.join('');
   }
@@ -174,9 +189,12 @@ export class WorkspaceSidebar extends HTMLElement {
     // discoverable without opening the dialog), on top of the collapse
     // chevron + actions.
     const title = app
-      ? (app.cwd ? `${app.name} — workspaces start at ${app.cwd}` : app.name)
+      ? app.cwd
+        ? `${app.name} — workspaces start at ${app.cwd}`
+        : app.name
       : 'console';
-    return `<section class="ws-group" data-group="${esc(key)}">` +
+    return (
+      `<section class="ws-group" data-group="${esc(key)}">` +
       `<h2>` +
       `<button type="button" class="g-collapse" data-toggle-group="${esc(key)}" ` +
       `aria-expanded="${collapsed ? 'false' : 'true'}" aria-controls="${rowsId}" ` +
@@ -187,27 +205,33 @@ export class WorkspaceSidebar extends HTMLElement {
       `<wa-button class="new-ws-btn" data-new-ws="${app ? esc(app.id) : ''}" size="xs" appearance="plain" ` +
       `title="new workspace in ${esc(name)}"><wa-icon name="plus" label="new workspace"></wa-icon></wa-button>` +
       del +
-      `</span></h2>${rows}</section>`;
+      `</span></h2>${rows}</section>`
+    );
   }
 
   private row(w: WorkspaceState): string {
     const cls = w.id === this.selected ? ' class="active"' : '';
     const live = w.terminals.filter(t => t.live).length;
-    const badge = live > 0
-      ? `<wa-badge pill variant="success" title="${live} live terminal${live === 1 ? '' : 's'}">${live}</wa-badge>`
-      : '';
-    return `<li${cls} data-ws="${esc(w.id)}" data-drawer="close" title="${esc(w.cwd)}">` +
+    const badge =
+      live > 0
+        ? `<wa-badge pill variant="success" title="${live} live terminal${live === 1 ? '' : 's'}">${live}</wa-badge>`
+        : '';
+    return (
+      `<li${cls} data-ws="${esc(w.id)}" data-drawer="close" title="${esc(w.cwd)}">` +
       `<span class="row-main">` +
       `<span class="t"><wa-icon name="folder"></wa-icon><span class="t-name">${esc(w.name)}</span></span>` +
       `<span class="d">${esc(w.cwd)}</span>` +
       `</span>` +
       `<span class="row-actions">` +
-      (w.terminals.length ? `<span class="ws-count" title="${w.terminals.length} terminal tab${w.terminals.length === 1 ? '' : 's'}">${w.terminals.length}</span>` : '') +
+      (w.terminals.length
+        ? `<span class="ws-count" title="${w.terminals.length} terminal tab${w.terminals.length === 1 ? '' : 's'}">${w.terminals.length}</span>`
+        : '') +
       badge +
       `<wa-button class="del-ws-btn" data-del-ws="${esc(w.id)}" size="xs" appearance="plain" ` +
       `title="delete the workspace ${esc(w.name)} (and its terminals)">` +
       `<wa-icon name="trash-can" label="delete workspace"></wa-icon></wa-button>` +
-      `</span></li>`;
+      `</span></li>`
+    );
   }
 
   /** The plan's locked filter shape (§1/§8): workspace NAME only — a cwd
@@ -250,35 +274,55 @@ export class WorkspaceSidebar extends HTMLElement {
     this.querySelectorAll<HTMLElement>('[data-new-ws]').forEach(el => {
       el.onclick = e => {
         e.stopPropagation();
-        this.dispatchEvent(new CustomEvent('new-workspace', {
-          detail: { appId: el.dataset.newWs || null }, bubbles: true, composed: true,
-        }));
+        this.dispatchEvent(
+          new CustomEvent('new-workspace', {
+            detail: { appId: el.dataset.newWs || null },
+            bubbles: true,
+            composed: true,
+          }),
+        );
       };
     });
     this.querySelectorAll<HTMLElement>('[data-ws]').forEach(el => {
-      el.onclick = () => this.dispatchEvent(new CustomEvent('select-workspace', {
-        detail: { id: el.dataset.ws }, bubbles: true, composed: true,
-      }));
+      el.onclick = () =>
+        this.dispatchEvent(
+          new CustomEvent('select-workspace', {
+            detail: { id: el.dataset.ws },
+            bubbles: true,
+            composed: true,
+          }),
+        );
     });
     this.querySelectorAll<HTMLElement>('[data-del-ws]').forEach(el => {
       el.onclick = e => {
         e.stopPropagation(); // the row itself selects; the button deletes
         const w = (this.state?.workspaces ?? []).find(x => x.id === el.dataset.delWs);
-        if (w) this.dispatchEvent(new CustomEvent('delete-workspace', {
-          detail: { id: w.id, name: w.name }, bubbles: true, composed: true,
-        }));
+        if (w)
+          this.dispatchEvent(
+            new CustomEvent('delete-workspace', {
+              detail: { id: w.id, name: w.name },
+              bubbles: true,
+              composed: true,
+            }),
+          );
       };
     });
     this.querySelectorAll<HTMLElement>('[data-del-app]').forEach(el => {
       el.onclick = e => {
         e.stopPropagation();
         const app = (this.state?.apps ?? []).find(a => a.slug === el.dataset.delApp);
-        if (app) this.dispatchEvent(new CustomEvent('delete-app', {
-          detail: { slug: app.slug, name: app.name }, bubbles: true, composed: true,
-        }));
+        if (app)
+          this.dispatchEvent(
+            new CustomEvent('delete-app', {
+              detail: { slug: app.slug, name: app.name },
+              bubbles: true,
+              composed: true,
+            }),
+          );
       };
     });
   }
 }
 
-if (!customElements.get('workspace-sidebar')) customElements.define('workspace-sidebar', WorkspaceSidebar);
+if (!customElements.get('workspace-sidebar'))
+  customElements.define('workspace-sidebar', WorkspaceSidebar);

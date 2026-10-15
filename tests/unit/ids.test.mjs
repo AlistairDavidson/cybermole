@@ -6,11 +6,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  JOB_NAME_RE, TMUX_SESSION_NAME_RE, APP_SLUG_RE, OBJECT_KEY_RE, UUID_RE, normalizeJobName,
+  JOB_NAME_RE,
+  TMUX_SESSION_NAME_RE,
+  APP_SLUG_RE,
+  OBJECT_KEY_RE,
+  UUID_RE,
+  normalizeJobName,
 } from '../../dist-server/src/schemas/patterns.js';
-import {
-  JobNameSchema, TmuxSessionNameSchema,
-} from '../../dist-server/src/schemas/ids.js';
+import { JobNameSchema, TmuxSessionNameSchema } from '../../dist-server/src/schemas/ids.js';
 
 const ok = (schema, v) => schema.safeParse(v).success;
 
@@ -21,7 +24,12 @@ test('every ID pattern compiles under the v flag (HTML pattern attributes)', () 
 });
 
 test('TmuxSessionNameSchema: tmux-safe charset, 1..64', () => {
-  for (const good of ['dev', 'r-019f4706-0000-7000-8000-000000000001', 'webpi-' + 'x'.repeat(40), 'A_b-9']) {
+  for (const good of [
+    'dev',
+    'r-019f4706-0000-7000-8000-000000000001',
+    'webpi-' + 'x'.repeat(40),
+    'A_b-9',
+  ]) {
     assert.equal(ok(TmuxSessionNameSchema, good), true, good);
   }
   for (const bad of ['', 'x'.repeat(65), 'a:b', 'a.b', 'a b', 'ä']) {

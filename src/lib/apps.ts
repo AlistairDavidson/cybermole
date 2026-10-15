@@ -38,7 +38,8 @@ export type SaveAppData = { id: AppId; name: string; slug: AppSlug; cwd: string 
  *  list predates the PATCH route; the code is added so a missing app is a
  *  404, not a 500). database_error: the state db failed (also the residual
  *  pre-check/insert race's answer). */
-export type SaveAppErrorCode = 'invalid_name' | 'invalid_cwd' | 'duplicate_slug' | 'app_not_found' | 'database_error';
+export type SaveAppErrorCode =
+  'invalid_name' | 'invalid_cwd' | 'duplicate_slug' | 'app_not_found' | 'database_error';
 export type SaveAppSuccess = ResultSuccess<'save_app', SaveAppData>;
 export type SaveAppFailure = ResultFailure<'save_app', SaveAppData, SaveAppErrorCode>;
 export type SaveAppResult = SaveAppSuccess | SaveAppFailure;
@@ -88,13 +89,23 @@ export class Apps {
 
   /** max(sort_order) + 10 — order allocation in steps of 10 (plan §2). */
   private nextOrder() {
-    return databaseRead('could not read app order', () =>
-      (this.deps.db.get(qb.selectFrom('apps').select(eb => eb.fn.max<number | null>('sort_order').as('max')))?.max ?? 0) + 10);
+    return databaseRead(
+      'could not read app order',
+      () =>
+        (this.deps.db.get(
+          qb.selectFrom('apps').select(eb => eb.fn.max<number | null>('sort_order').as('max')),
+        )?.max ?? 0) + 10,
+    );
   }
 
   private bySlug(slug: AppSlug) {
-    return databaseRead('could not read app', () =>
-      this.deps.db.get(qb.selectFrom('apps').select(['id', 'name', 'cwd']).where('slug', '=', slug)) ?? null);
+    return databaseRead(
+      'could not read app',
+      () =>
+        this.deps.db.get(
+          qb.selectFrom('apps').select(['id', 'name', 'cwd']).where('slug', '=', slug),
+        ) ?? null,
+    );
   }
 
   /** Create an app: the slug is DERIVED (normalizeSlug) and checked
@@ -110,7 +121,8 @@ export class Apps {
     const trimmed = name.trim();
     if (!trimmed) return fail('invalid_name', 'name is required');
     const slug = normalizeSlug(trimmed);
-    if (!slug || !APP_SLUG_RE.test(slug)) return fail('invalid_name', 'name must contain letters or digits');
+    if (!slug || !APP_SLUG_RE.test(slug))
+      return fail('invalid_name', 'name must contain letters or digits');
     const wanted = cwd === undefined ? '' : cwd.trim();
     let dir: string | null = null;
     if (wanted !== '') {
@@ -122,19 +134,34 @@ export class Apps {
     if (!actor.ok) return fail('database_error', actor.errorMessage);
     const taken = this.bySlug(asAppSlug(slug));
     if (!taken.ok) return fail('database_error', taken.errorMessage);
-    if (taken.data.value) return fail('duplicate_slug', `an app with the slug "${slug}" already exists`);
+    if (taken.data.value)
+      return fail('duplicate_slug', `an app with the slug "${slug}" already exists`);
     const order = this.nextOrder();
     if (!order.ok) return fail('database_error', order.errorMessage);
     const id = asAppId(randomUUID());
     const now = Date.now();
     const inserted = databaseUpdate('could not save the app', () =>
-      this.deps.db.run(qb.insertInto('apps').values({
-        id, name: trimmed, slug: asAppSlug(slug), cwd: dir, sort_order: order.data.value,
-        created_at: now, updated_at: now, created_by: actor.username, updated_by: actor.username,
-      })));
+      this.deps.db.run(
+        qb.insertInto('apps').values({
+          id,
+          name: trimmed,
+          slug: asAppSlug(slug),
+          cwd: dir,
+          sort_order: order.data.value,
+          created_at: now,
+          updated_at: now,
+          created_by: actor.username,
+          updated_by: actor.username,
+        }),
+      ),
+    );
     if (!inserted.ok) return fail('database_error', inserted.errorMessage);
     log.info(`app "${trimmed}" (${slug}) created${dir === null ? '' : `, cwd ${dir}`}`);
-    return { ok: true, resultType: 'save_app', data: { id, name: trimmed, slug: asAppSlug(slug), cwd: dir } } satisfies SaveAppSuccess;
+    return {
+      ok: true,
+      resultType: 'save_app',
+      data: { id, name: trimmed, slug: asAppSlug(slug), cwd: dir },
+    } satisfies SaveAppSuccess;
   }
 
   /** Patch an app: name and/or cwd, absent fields keep (the {title?}
@@ -143,7 +170,11 @@ export class Apps {
    *  the row as it stands. cwd null CLEARS it back to unset — the app's
    *  workspaces then start at the server default (terminalPatchBody's
    *  title convention); a string passes workspaces.ts's checkedCwd. */
-  async renameApp(slug: AppSlug, name: string | undefined, cwd: string | null | undefined): Promise<SaveAppResult> {
+  async renameApp(
+    slug: AppSlug,
+    name: string | undefined,
+    cwd: string | null | undefined,
+  ): Promise<SaveAppResult> {
     const fail = (errorCode: SaveAppErrorCode, errorMessage: string) =>
       ({ ok: false, resultType: 'save_app', errorCode, errorMessage }) satisfies SaveAppFailure;
     const found = this.bySlug(slug);
@@ -151,12 +182,17 @@ export class Apps {
     const row = found.data.value;
     if (!row) return fail('app_not_found', 'no such app');
     if (name === undefined && cwd === undefined) {
-      return { ok: true, resultType: 'save_app', data: { id: row.id, name: row.name, slug, cwd: row.cwd } } satisfies SaveAppSuccess;
+      return {
+        ok: true,
+        resultType: 'save_app',
+        data: { id: row.id, name: row.name, slug, cwd: row.cwd },
+      } satisfies SaveAppSuccess;
     }
     const trimmed = name === undefined ? undefined : name.trim();
     if (trimmed === '') return fail('invalid_name', 'name is required');
     let dir: string | null | undefined;
-    if (cwd === null) dir = null; // null CLEARS it; an empty string is a 400, not a clear
+    if (cwd === null)
+      dir = null; // null CLEARS it; an empty string is a 400, not a clear
     else if (cwd !== undefined) {
       const checked = checkedCwd(cwd.trim());
       if (!checked.ok) return fail('invalid_cwd', checked.reason);
@@ -165,16 +201,22 @@ export class Apps {
     const actor = this.actor();
     if (!actor.ok) return fail('database_error', actor.errorMessage);
     const updated = databaseUpdate('could not save the app', () =>
-      this.deps.db.run(qb.updateTable('apps')
-        .set({
-          ...(trimmed === undefined ? {} : { name: trimmed }),
-          ...(dir === undefined ? {} : { cwd: dir }),
-          updated_at: Date.now(), updated_by: actor.username,
-        })
-        .where('id', '=', row.id)));
+      this.deps.db.run(
+        qb
+          .updateTable('apps')
+          .set({
+            ...(trimmed === undefined ? {} : { name: trimmed }),
+            ...(dir === undefined ? {} : { cwd: dir }),
+            updated_at: Date.now(),
+            updated_by: actor.username,
+          })
+          .where('id', '=', row.id),
+      ),
+    );
     if (!updated.ok) return fail('database_error', updated.errorMessage);
     return {
-      ok: true, resultType: 'save_app',
+      ok: true,
+      resultType: 'save_app',
       data: { id: row.id, name: trimmed ?? row.name, slug, cwd: dir === undefined ? row.cwd : dir },
     } satisfies SaveAppSuccess;
   }
@@ -193,18 +235,26 @@ export class Apps {
     // Collected before the cascade removes them: the ids name the tmux
     // sessions to kill (terminalSessionName derives them — never stored).
     const terminals = databaseRead('could not read terminals', () =>
-      this.deps.db.all(qb.selectFrom('terminals').select(['terminals.id'])
-        .innerJoin('workspaces', 'workspaces.id', 'terminals.workspace_id')
-        .where('workspaces.app_id', '=', row.id)));
+      this.deps.db.all(
+        qb
+          .selectFrom('terminals')
+          .select(['terminals.id'])
+          .innerJoin('workspaces', 'workspaces.id', 'terminals.workspace_id')
+          .where('workspaces.app_id', '=', row.id),
+      ),
+    );
     if (!terminals.ok) return fail('database_error', terminals.errorMessage);
     const deleted = databaseUpdate('could not delete the app', () =>
-      this.deps.db.run(qb.deleteFrom('apps').where('id', '=', row.id)));
+      this.deps.db.run(qb.deleteFrom('apps').where('id', '=', row.id)),
+    );
     if (!deleted.ok) return fail('database_error', deleted.errorMessage);
     // These kills are best-effort and logged either way (plan §4): a
     // terminal whose spawn failed (dead tab) or whose workspace side is
     // down simply has no session to kill — the kill is then a no-op.
     for (const t of terminals.data.value) await this.deps.killSession(terminalSessionName(t.id));
-    log.info(`app ${slug} deleted (${terminals.data.value.length} terminal sessions killed best-effort)`);
+    log.info(
+      `app ${slug} deleted (${terminals.data.value.length} terminal sessions killed best-effort)`,
+    );
     return { ok: true, resultType: 'delete_app', data: { id: row.id } } satisfies DeleteAppSuccess;
   }
 
@@ -214,21 +264,43 @@ export class Apps {
    *  tag picker (plan §9) and the new-workspace dialog's start-path hint
    *  (task/app-cwd: the app cwd vs the server default). */
   listApps(): ListAppsResult {
-    const read = databaseRead('could not read apps', (): Array<{
-      id: AppId; name: string; slug: AppSlug; cwd: string | null; sort_order: number; created_at: number;
-    }> => this.deps.db.all(qb.selectFrom('apps')
-      .select(['id', 'name', 'slug', 'cwd', 'sort_order', 'created_at'])
-      .orderBy('sort_order', 'asc').orderBy('created_at', 'asc')));
+    const read = databaseRead(
+      'could not read apps',
+      (): Array<{
+        id: AppId;
+        name: string;
+        slug: AppSlug;
+        cwd: string | null;
+        sort_order: number;
+        created_at: number;
+      }> =>
+        this.deps.db.all(
+          qb
+            .selectFrom('apps')
+            .select(['id', 'name', 'slug', 'cwd', 'sort_order', 'created_at'])
+            .orderBy('sort_order', 'asc')
+            .orderBy('created_at', 'asc'),
+        ),
+    );
     if (!read.ok) {
       return {
-        ok: false, resultType: 'list_apps', errorCode: 'database_error', errorMessage: read.errorMessage,
+        ok: false,
+        resultType: 'list_apps',
+        errorCode: 'database_error',
+        errorMessage: read.errorMessage,
       } satisfies ListAppsFailure;
     }
     return {
-      ok: true, resultType: 'list_apps',
+      ok: true,
+      resultType: 'list_apps',
       data: {
-        apps: read.data.value.map(a =>
-          ({ id: a.id, name: a.name, slug: a.slug, cwd: a.cwd, order: a.sort_order })),
+        apps: read.data.value.map(a => ({
+          id: a.id,
+          name: a.name,
+          slug: a.slug,
+          cwd: a.cwd,
+          order: a.sort_order,
+        })),
       },
     } satisfies ListAppsSuccess;
   }

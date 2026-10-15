@@ -18,7 +18,7 @@ export type ResultFailure<
   ResultType extends string,
   DataType extends object,
   ErrorCodeType extends string,
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- bare `any` is the distribution trick: it forces ErrorCodeType to distribute over the union
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- bare `any` is the distribution trick: it forces ErrorCodeType to distribute over the union
 > = ErrorCodeType extends any
   ? {
       ok: false;
@@ -30,6 +30,8 @@ export type ResultFailure<
     }
   : never;
 
-export type Result<ResultType extends string, DataType extends object, ErrorCodeType extends string> =
-  | ResultSuccess<ResultType, DataType>
-  | ResultFailure<ResultType, DataType, ErrorCodeType>;
+export type Result<
+  ResultType extends string,
+  DataType extends object,
+  ErrorCodeType extends string,
+> = ResultSuccess<ResultType, DataType> | ResultFailure<ResultType, DataType, ErrorCodeType>;

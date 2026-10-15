@@ -23,7 +23,7 @@ const { createLogger, logger, CONSOLE_LEVEL, LOKI_LEVEL, closeLogger } =
   await import('../../dist-server/src/lib/logger.js');
 
 const transportOf = (log, i) => log.transports[i];
-const names = (log) => log.transports.map(t => t.constructor?.name);
+const names = log => log.transports.map(t => t.constructor?.name);
 
 test('without loki env: exactly one transport, the console', () => {
   const log = createLogger(null);
@@ -38,9 +38,21 @@ test('with loki env: console + winston-loki, batched JSON push, static job label
   assert.equal(consoleT.constructor.name, 'Console');
   assert.equal(lokiT.constructor.name, 'LokiTransport');
   assert.equal(lokiT.level, LOKI_LEVEL, 'loki sees everything the root logger passes it');
-  assert.deepEqual(lokiT.labels, { job: 'webpi-test' }, 'only the static label; level/component join per line');
-  assert.equal(lokiT.batcher.options.batching, true, 'batched: a dead loki is one failed request per interval');
-  assert.equal(lokiT.batcher.options.clearOnError, true, 'a failed batch is dropped — bounded memory');
+  assert.deepEqual(
+    lokiT.labels,
+    { job: 'webpi-test' },
+    'only the static label; level/component join per line',
+  );
+  assert.equal(
+    lokiT.batcher.options.batching,
+    true,
+    'batched: a dead loki is one failed request per interval',
+  );
+  assert.equal(
+    lokiT.batcher.options.clearOnError,
+    true,
+    'a failed batch is dropped — bounded memory',
+  );
   assert.equal(lokiT.batcher.options.gracefulShutdown, false, 'the server owns the SIGTERM path');
   assert.equal(lokiT.batcher.url.toString(), 'http://loki:3100/loki/api/v1/push');
   closeLogger(log);
@@ -65,18 +77,31 @@ log.error('boom', { error: new Error('kaboom') });
 closeLogger().then(() => process.exit(0));
 `;
 
-test('console output: http access lines show, debug polls stay silent, errors carry their stack', { timeout: 15_000 }, async () => {
-  const { stdout, stderr } = await new Promise((resolve, reject) => {
-    const script = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-logger-')), 'vis.js');
-    fs.writeFileSync(script, VISIBILITY_CHILD);
-    execFile(process.execPath, [script], { env: { ...process.env } },
-      (err, stdout, stderr) => (err ? reject(err) : resolve({ stdout, stderr })));
-  });
-  const out = `${stdout}${stderr}`;
-  assert.match(out, /http +\[http\] GET \/api\/jobs 200 in 12ms \{"ms":12\}/, 'access lines show with component + meta');
-  assert.ok(!out.includes('/api/state'), 'the debug poll line does not reach the console');
-  assert.match(out, /error +\[server\] boom \{"error":"Error: kaboom/, 'error meta is the stack, not {}');
-});
+test(
+  'console output: http access lines show, debug polls stay silent, errors carry their stack',
+  { timeout: 15_000 },
+  async () => {
+    const { stdout, stderr } = await new Promise((resolve, reject) => {
+      const script = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-logger-')), 'vis.js');
+      fs.writeFileSync(script, VISIBILITY_CHILD);
+      execFile(process.execPath, [script], { env: { ...process.env } }, (err, stdout, stderr) =>
+        err ? reject(err) : resolve({ stdout, stderr }),
+      );
+    });
+    const out = `${stdout}${stderr}`;
+    assert.match(
+      out,
+      /http +\[http\] GET \/api\/jobs 200 in 12ms \{"ms":12\}/,
+      'access lines show with component + meta',
+    );
+    assert.ok(!out.includes('/api/state'), 'the debug poll line does not reach the console');
+    assert.match(
+      out,
+      /error +\[server\] boom \{"error":"Error: kaboom/,
+      'error meta is the stack, not {}',
+    );
+  },
+);
 
 // ---------- a configured-but-down loki (child process) ----------
 //
@@ -99,20 +124,29 @@ setTimeout(() => {
 }, 6200);                                 // past the 5s interval: one push has failed by now
 `;
 
-test('a configured-but-down loki degrades silently: alive, no crash, one throttled warn', { timeout: 20_000 }, async () => {
-  const script = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-logger-')), 'down.js');
-  fs.writeFileSync(script, DOWN_CHILD);
-  const { stdout, stderr } = await new Promise((resolve, reject) => {
-    execFile(process.execPath, [script], { env: { ...process.env, WEB_PI_LOKI_URL: 'http://127.0.0.1:1' } },
-      (err, stdout, stderr) => (err ? reject({ err, stdout, stderr }) : resolve({ stdout, stderr })));
-  });
-  const out = `${stdout}${stderr}`;
-  assert.ok(!out.includes('CHILD-FAIL'), `child was taken down by loki being down: ${out}`);
-  assert.match(out, /line 1/, 'console logging keeps working while loki is down');
-  assert.match(out, /loki: push failed/, 'the outage is reported (once, throttled)');
-  const warns = out.split('\n').filter(l => l.includes('loki: push failed'));
-  assert.equal(warns.length, 1, `exactly one warn while down (got ${warns.length})`);
-});
+test(
+  'a configured-but-down loki degrades silently: alive, no crash, one throttled warn',
+  { timeout: 20_000 },
+  async () => {
+    const script = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-logger-')), 'down.js');
+    fs.writeFileSync(script, DOWN_CHILD);
+    const { stdout, stderr } = await new Promise((resolve, reject) => {
+      execFile(
+        process.execPath,
+        [script],
+        { env: { ...process.env, WEB_PI_LOKI_URL: 'http://127.0.0.1:1' } },
+        (err, stdout, stderr) =>
+          err ? reject({ err, stdout, stderr }) : resolve({ stdout, stderr }),
+      );
+    });
+    const out = `${stdout}${stderr}`;
+    assert.ok(!out.includes('CHILD-FAIL'), `child was taken down by loki being down: ${out}`);
+    assert.match(out, /line 1/, 'console logging keeps working while loki is down');
+    assert.match(out, /loki: push failed/, 'the outage is reported (once, throttled)');
+    const warns = out.split('\n').filter(l => l.includes('loki: push failed'));
+    assert.equal(warns.length, 1, `exactly one warn while down (got ${warns.length})`);
+  },
+);
 
 // ---------- the configured loki transport actually pushes (child) ----------
 //
@@ -130,44 +164,62 @@ boot.debug('quiet on the console');
 closeLogger();  // flush: the batch leaves without waiting out the interval
 `;
 
-test('the loki transport pushes structured JSON with the label scheme', { timeout: 15_000 }, async () => {
-  const pushes = [];
-  const server = http.createServer((req, res) => {
-    let body = '';
-    req.on('data', c => { body += c; });
-    req.on('end', () => { pushes.push({ url: req.url, body }); res.writeHead(204).end(); });
-  });
-  await new Promise(r => server.listen(0, '127.0.0.1', r));
-  const port = server.address().port;
-  try {
-    const script = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-logger-')), 'push.js');
-    fs.writeFileSync(script, PUSH_CHILD);
-    const { stdout, stderr } = await new Promise((resolve, reject) => {
-      execFile(process.execPath, [script],
-        { env: { ...process.env, WEB_PI_LOKI_URL: `http://127.0.0.1:${port}`, WEB_PI_LOKI_JOB: 'webpi-test' } },
-        (err, stdout, stderr) => (err ? reject(err) : resolve({ stdout, stderr })));
+test(
+  'the loki transport pushes structured JSON with the label scheme',
+  { timeout: 15_000 },
+  async () => {
+    const pushes = [];
+    const server = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', c => {
+        body += c;
+      });
+      req.on('end', () => {
+        pushes.push({ url: req.url, body });
+        res.writeHead(204).end();
+      });
     });
-    assert.equal(pushes.length, 1, `one batched push (got ${pushes.length})`);
-    const { url, body } = pushes[0];
-    assert.equal(url, '/loki/api/v1/push');
-    const batch = JSON.parse(body);
-    const byLabel = (component) => batch.streams.find(s => s.stream.component === component);
-    const httpStream = byLabel('http');
-    assert.ok(httpStream, `an http stream exists: ${body}`);
-    assert.equal(httpStream.stream.job, 'webpi-test');
-    assert.equal(httpStream.stream.level, 'info');
-    const [ts, line] = httpStream.values[0];
-    assert.ok(Number(ts) > 0, 'entry carries a timestamp');
-    const parsed = JSON.parse(line.slice(line.indexOf('{')));
-    assert.equal(parsed.status, 200);
-    assert.equal(parsed.ms, 7);
-    assert.match(line, /hello from web-pi/);
-    const bootStream = byLabel('boot');
-    assert.ok(bootStream, 'one stream per label set — component is a stream label');
-    assert.equal(bootStream.stream.level, 'debug', 'debug lines reach loki');
-    assert.match(bootStream.values[0][1], /quiet on the console/);
-    assert.ok(!`${stdout}${stderr}`.includes('quiet on the console'), '...but not the console');
-  } finally {
-    server.close();
-  }
-});
+    await new Promise(r => server.listen(0, '127.0.0.1', r));
+    const port = server.address().port;
+    try {
+      const script = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-logger-')), 'push.js');
+      fs.writeFileSync(script, PUSH_CHILD);
+      const { stdout, stderr } = await new Promise((resolve, reject) => {
+        execFile(
+          process.execPath,
+          [script],
+          {
+            env: {
+              ...process.env,
+              WEB_PI_LOKI_URL: `http://127.0.0.1:${port}`,
+              WEB_PI_LOKI_JOB: 'webpi-test',
+            },
+          },
+          (err, stdout, stderr) => (err ? reject(err) : resolve({ stdout, stderr })),
+        );
+      });
+      assert.equal(pushes.length, 1, `one batched push (got ${pushes.length})`);
+      const { url, body } = pushes[0];
+      assert.equal(url, '/loki/api/v1/push');
+      const batch = JSON.parse(body);
+      const byLabel = component => batch.streams.find(s => s.stream.component === component);
+      const httpStream = byLabel('http');
+      assert.ok(httpStream, `an http stream exists: ${body}`);
+      assert.equal(httpStream.stream.job, 'webpi-test');
+      assert.equal(httpStream.stream.level, 'info');
+      const [ts, line] = httpStream.values[0];
+      assert.ok(Number(ts) > 0, 'entry carries a timestamp');
+      const parsed = JSON.parse(line.slice(line.indexOf('{')));
+      assert.equal(parsed.status, 200);
+      assert.equal(parsed.ms, 7);
+      assert.match(line, /hello from web-pi/);
+      const bootStream = byLabel('boot');
+      assert.ok(bootStream, 'one stream per label set — component is a stream label');
+      assert.equal(bootStream.stream.level, 'debug', 'debug lines reach loki');
+      assert.match(bootStream.values[0][1], /quiet on the console/);
+      assert.ok(!`${stdout}${stderr}`.includes('quiet on the console'), '...but not the console');
+    } finally {
+      server.close();
+    }
+  },
+);

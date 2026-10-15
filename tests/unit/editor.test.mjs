@@ -11,19 +11,33 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
-  EditorTunnelTracker, EDITOR_MAX_BODY_BYTES, editorBodyCapStatus, editorSecurityHeaders,
-  editorUpgradeHeaders, isEditorHttpPath, isEditorUpgradePath,
+  EditorTunnelTracker,
+  EDITOR_MAX_BODY_BYTES,
+  editorBodyCapStatus,
+  editorSecurityHeaders,
+  editorUpgradeHeaders,
+  isEditorHttpPath,
+  isEditorUpgradePath,
 } from '../../dist-server/src/lib/editor.js';
 
 // ---------- path routing ----------
 
 test('isEditorHttpPath: /editor and below, under any base — nothing else', () => {
   for (const base of ['/', '/foo']) {
-    const p = (s) => (base === '/' ? s : base + s);
+    const p = s => (base === '/' ? s : base + s);
     assert.ok(isEditorHttpPath(base, p('/editor')), `${base} exact`);
     assert.ok(isEditorHttpPath(base, p('/editor/')), `${base} root slash`);
-    assert.ok(isEditorHttpPath(base, p('/editor/stable-807ba2d/out/vs/code/browser/workbench/workbench.js')), `${base} asset`);
-    assert.ok(isEditorHttpPath(base, p('/editor/foo?folder=%2Fworkspace')), `${base} query split upstream`);
+    assert.ok(
+      isEditorHttpPath(
+        base,
+        p('/editor/stable-807ba2d/out/vs/code/browser/workbench/workbench.js'),
+      ),
+      `${base} asset`,
+    );
+    assert.ok(
+      isEditorHttpPath(base, p('/editor/foo?folder=%2Fworkspace')),
+      `${base} query split upstream`,
+    );
     // /editorial must NOT match; nor paths outside the base.
     assert.ok(!isEditorHttpPath(base, p('/editorial')), `${base} /editorial`);
     assert.ok(!isEditorHttpPath(base, p('/api/editor')), `${base} /api/editor`);
@@ -69,17 +83,36 @@ test('editorSecurityHeaders: framable + the VS Code web CSP the spike pinned', (
 // ---------- body cap: large saves, chunked accepted, never 411 ----------
 
 test('editorBodyCapStatus: sized to a big save, chunked accepted, small bodies pass', () => {
-  assert.equal(EDITOR_MAX_BODY_BYTES, 5 * 1024 * 1024 * 1024 + 1024 * 1024, 'the upload cap — a large editor save');
-  const post = (headers) => ({ method: 'POST', headers });
+  assert.equal(
+    EDITOR_MAX_BODY_BYTES,
+    5 * 1024 * 1024 * 1024 + 1024 * 1024,
+    'the upload cap — a large editor save',
+  );
+  const post = headers => ({ method: 'POST', headers });
   // never 411: a length-less (chunked) body is accepted and stall-guarded
   assert.equal(editorBodyCapStatus(post({ 'transfer-encoding': 'chunked' })), null);
   assert.equal(editorBodyCapStatus(post({})), null);
   assert.equal(editorBodyCapStatus(post({ 'content-length': '2048' })), null);
-  assert.equal(editorBodyCapStatus(post({ 'content-length': String(EDITOR_MAX_BODY_BYTES) })), null);
-  assert.equal(editorBodyCapStatus(post({ 'content-length': String(EDITOR_MAX_BODY_BYTES + 1) })), 413);
-  assert.equal(editorBodyCapStatus({ method: 'PUT', headers: { 'content-length': String(EDITOR_MAX_BODY_BYTES + 1) } }), 413);
+  assert.equal(
+    editorBodyCapStatus(post({ 'content-length': String(EDITOR_MAX_BODY_BYTES) })),
+    null,
+  );
+  assert.equal(
+    editorBodyCapStatus(post({ 'content-length': String(EDITOR_MAX_BODY_BYTES + 1) })),
+    413,
+  );
+  assert.equal(
+    editorBodyCapStatus({
+      method: 'PUT',
+      headers: { 'content-length': String(EDITOR_MAX_BODY_BYTES + 1) },
+    }),
+    413,
+  );
   // GET/HEAD carry no body
-  assert.equal(editorBodyCapStatus({ method: 'GET', headers: { 'content-length': '999999999999' } }), null);
+  assert.equal(
+    editorBodyCapStatus({ method: 'GET', headers: { 'content-length': '999999999999' } }),
+    null,
+  );
   assert.equal(editorBodyCapStatus({ method: 'HEAD', headers: {} }), null);
 });
 
@@ -87,11 +120,11 @@ test('editorBodyCapStatus: sized to a big save, chunked accepted, small bodies p
 
 test('editorUpgradeHeaders: hop-by-hop out, the upgrade pair in, the load-bearing rest preserved', () => {
   const incoming = {
-    host: 'webpi.example.com',            // load-bearing: the editor embeds it
-    connection: 'keep-alive',             // hop-by-hop: must go...
+    host: 'webpi.example.com', // load-bearing: the editor embeds it
+    connection: 'keep-alive', // hop-by-hop: must go...
     'keep-alive': 'timeout=5',
     'transfer-encoding': 'chunked',
-    upgrade: 'websocket',                 // ...and come back as the explicit pair
+    upgrade: 'websocket', // ...and come back as the explicit pair
     'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==',
     'sec-websocket-version': '13',
     cookie: 'webpi_session=t',
@@ -120,8 +153,15 @@ test('editorUpgradeHeaders: hop-by-hop out, the upgrade pair in, the load-bearin
 test('EditorTunnelTracker: logout cuts only that token; closeAll cuts everything; untrack cleans up', () => {
   const tracker = new EditorTunnelTracker();
   const closed = [];
-  const mk = (name) => ({ name, close() { closed.push(name); } });
-  const t1 = mk('a1'), t2 = mk('a2'), t3 = mk('b1');
+  const mk = name => ({
+    name,
+    close() {
+      closed.push(name);
+    },
+  });
+  const t1 = mk('a1'),
+    t2 = mk('a2'),
+    t3 = mk('b1');
   tracker.track('token-a', t1);
   tracker.track('token-a', t2);
   tracker.track('token-b', t3);
@@ -152,11 +192,18 @@ test('EditorTunnelTracker: logout cuts only that token; closeAll cuts everything
 
 /** readEditorUpstream() in a fresh process (RAW_ENV is read at module load). */
 function bootUpstream(env) {
-  const clean = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'WEB_PI_EDITOR_UPSTREAM'));
+  const clean = Object.fromEntries(
+    Object.entries(process.env).filter(([k]) => k !== 'WEB_PI_EDITOR_UPSTREAM'),
+  );
   try {
-    const out = execFileSync(process.execPath, ['-e',
-      "process.stdout.write(JSON.stringify(require('./dist-server/src/lib/env.js').readEditorUpstream()))"],
-      { env: { ...clean, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+    const out = execFileSync(
+      process.execPath,
+      [
+        '-e',
+        "process.stdout.write(JSON.stringify(require('./dist-server/src/lib/env.js').readEditorUpstream()))",
+      ],
+      { env: { ...clean, ...env }, stdio: ['ignore', 'pipe', 'pipe'] },
+    );
     return { config: JSON.parse(out.toString()) };
   } catch (err) {
     return { error: err.stderr.toString() };
@@ -170,14 +217,30 @@ test('env: unset or empty WEB_PI_EDITOR_UPSTREAM is off (compose `VAR: ""` state
 });
 
 test('env: a clean http(s) origin configures the proxy', () => {
-  assert.deepEqual(bootUpstream({ WEB_PI_EDITOR_UPSTREAM: 'http://editor:3000' }), { config: { origin: 'http://editor:3000' } });
-  assert.deepEqual(bootUpstream({ WEB_PI_EDITOR_UPSTREAM: 'https://editor.internal:8443' }), { config: { origin: 'https://editor.internal:8443' } });
+  assert.deepEqual(bootUpstream({ WEB_PI_EDITOR_UPSTREAM: 'http://editor:3000' }), {
+    config: { origin: 'http://editor:3000' },
+  });
+  assert.deepEqual(bootUpstream({ WEB_PI_EDITOR_UPSTREAM: 'https://editor.internal:8443' }), {
+    config: { origin: 'https://editor.internal:8443' },
+  });
 });
 
 test('env: malformed values stop the boot (operator mistake, like object storage)', () => {
-  assert.match(bootUpstream({ WEB_PI_EDITOR_UPSTREAM: 'editor:3000' }).error, /is not an http\(s\) URL/);
-  assert.match(bootUpstream({ WEB_PI_EDITOR_UPSTREAM: 'ftp://editor:3000' }).error, /is not an http\(s\) URL/);
+  assert.match(
+    bootUpstream({ WEB_PI_EDITOR_UPSTREAM: 'editor:3000' }).error,
+    /is not an http\(s\) URL/,
+  );
+  assert.match(
+    bootUpstream({ WEB_PI_EDITOR_UPSTREAM: 'ftp://editor:3000' }).error,
+    /is not an http\(s\) URL/,
+  );
   // a path would be silently dropped by the origin-only proxy — refuse it
-  assert.match(bootUpstream({ WEB_PI_EDITOR_UPSTREAM: 'http://editor:3000/editor' }).error, /must be an origin only/);
-  assert.match(bootUpstream({ WEB_PI_EDITOR_UPSTREAM: 'http://editor:3000/?tkn=x' }).error, /must be an origin only/);
+  assert.match(
+    bootUpstream({ WEB_PI_EDITOR_UPSTREAM: 'http://editor:3000/editor' }).error,
+    /must be an origin only/,
+  );
+  assert.match(
+    bootUpstream({ WEB_PI_EDITOR_UPSTREAM: 'http://editor:3000/?tkn=x' }).error,
+    /must be an origin only/,
+  );
 });

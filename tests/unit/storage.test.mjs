@@ -11,15 +11,27 @@ import { execFileSync } from 'node:child_process';
 import * as net from 'node:net';
 import { Readable } from 'node:stream';
 import { ObjectStore } from '../../dist-server/src/lib/storage.js';
-import { fileDownloadResponse, fileHeadResponse, objectStoreFailureResponse } from '../../dist-server/src/lib/web/responses.service.js';
+import {
+  fileDownloadResponse,
+  fileHeadResponse,
+  objectStoreFailureResponse,
+} from '../../dist-server/src/lib/web/responses.service.js';
 import { startFakeS3 } from '../fake-s3.mjs';
 
 const ACCESS_KEY = 'unit-access';
 const config = (endpoint, overrides = {}) => ({
-  endpoint, region: 'us-east-1', bucket: 'unit-bucket', accessKeyId: ACCESS_KEY, secretAccessKey: 'unit-secret', ...overrides,
+  endpoint,
+  region: 'us-east-1',
+  bucket: 'unit-bucket',
+  accessKeyId: ACCESS_KEY,
+  secretAccessKey: 'unit-secret',
+  ...overrides,
 });
-const upload = (name = 'notes.txt', body = new TextEncoder().encode('hello')) =>
-  ({ name, contentType: 'text/plain', body });
+const upload = (name = 'notes.txt', body = new TextEncoder().encode('hello')) => ({
+  name,
+  contentType: 'text/plain',
+  body,
+});
 const KEY_RE = /^uploads\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MiB = 1024 * 1024;
 
@@ -28,8 +40,14 @@ function byteStream(total, { fill = 0x61, failAfter = Infinity } = {}) {
   let sent = 0;
   return new Readable({
     read() {
-      if (sent >= failAfter) { this.destroy(new Error('client went away')); return; }
-      if (sent >= total) { this.push(null); return; }
+      if (sent >= failAfter) {
+        this.destroy(new Error('client went away'));
+        return;
+      }
+      if (sent >= total) {
+        this.push(null);
+        return;
+      }
       const n = Math.min(64 * 1024, total - sent);
       sent += n;
       this.push(Buffer.alloc(n, fill));
@@ -62,18 +80,24 @@ test('first upload creates the bucket, then stores under uploads/<uuid> with typ
   const s3 = await fake(t);
   const store = new ObjectStore(config(s3.url));
 
-  const r = await store.storeUpload(upload("q1 report (draft)'s – é.txt", new TextEncoder().encode('first')));
+  const r = await store.storeUpload(
+    upload("q1 report (draft)'s – é.txt", new TextEncoder().encode('first')),
+  );
   assert.equal(r.ok, true, r.errorMessage);
   assert.match(r.data.key, KEY_RE);
-  assert.deepEqual({ ...r.data, key: undefined },
-    { key: undefined, name: "q1 report (draft)'s – é.txt", size: 5, contentType: 'text/plain' });
+  assert.deepEqual(
+    { ...r.data, key: undefined },
+    { key: undefined, name: "q1 report (draft)'s – é.txt", size: 5, contentType: 'text/plain' },
+  );
   const stored = s3.buckets.get('unit-bucket')?.get(r.data.key);
   assert.ok(stored, 'object is in the bucket');
   assert.equal(stored.body.toString(), 'first');
   assert.equal(stored.contentType, 'text/plain');
   // RFC 5987: ' ( ) * are percent-encoded too, so the header stays one token.
-  assert.equal(stored.contentDisposition,
-    "attachment; filename*=UTF-8''q1%20report%20%28draft%29%27s%20%E2%80%93%20%C3%A9.txt");
+  assert.equal(
+    stored.contentDisposition,
+    "attachment; filename*=UTF-8''q1%20report%20%28draft%29%27s%20%E2%80%93%20%C3%A9.txt",
+  );
 
   const second = await store.storeUpload(upload('b.txt'));
   assert.equal(second.ok, true, second.errorMessage);
@@ -94,7 +118,9 @@ test('a stream is counted on the way through: one PUT when it fits a part', asyn
 test('a stream past one part goes up as a multipart upload, bytes and headers intact', async t => {
   const s3 = await fake(t);
   const total = 12 * MiB + 123;
-  const r = await new ObjectStore(config(s3.url)).storeUpload(upload('big.txt', byteStream(total, { fill: 0x62 })));
+  const r = await new ObjectStore(config(s3.url)).storeUpload(
+    upload('big.txt', byteStream(total, { fill: 0x62 })),
+  );
   assert.equal(r.ok, true, r.errorMessage);
   assert.equal(r.data.size, total);
   const stored = s3.buckets.get('unit-bucket')?.get(r.data.key);
@@ -107,7 +133,9 @@ test('a stream past one part goes up as a multipart upload, bytes and headers in
 
 test('storage_error: a stream that fails midway stores nothing and aborts the multipart upload', async t => {
   const s3 = await fake(t);
-  const r = await new ObjectStore(config(s3.url)).storeUpload(upload('cut.txt', byteStream(20 * MiB, { failAfter: 11 * MiB })));
+  const r = await new ObjectStore(config(s3.url)).storeUpload(
+    upload('cut.txt', byteStream(20 * MiB, { failAfter: 11 * MiB })),
+  );
   assert.equal(r.errorCode, 'storage_error');
   assert.match(r.errorMessage, /client went away/);
   assert.equal(s3.buckets.get('unit-bucket')?.size, 0);
@@ -140,10 +168,14 @@ test('storage_error: CreateBucket refused (502)', async t => {
   assert.match(r.errorMessage, /could not create bucket unit-bucket: AccessDenied/);
   const res = objectStoreFailureResponse(r);
   assert.equal(res.status, 502);
-  assert.deepEqual(await res.json(), { error: 'could not store the file', detail: r.errorMessage, code: 'storage_error' });
+  assert.deepEqual(await res.json(), {
+    error: 'could not store the file',
+    detail: r.errorMessage,
+    code: 'storage_error',
+  });
 });
 
-test('storage_error: the server keeps failing the put (after the SDK\'s retries)', async t => {
+test("storage_error: the server keeps failing the put (after the SDK's retries)", async t => {
   const s3 = await fake(t);
   s3.buckets.set('unit-bucket', new Map());
   s3.faults.failPuts = 10;
@@ -153,9 +185,11 @@ test('storage_error: the server keeps failing the put (after the SDK\'s retries)
   assert.equal(s3.buckets.get('unit-bucket')?.size, 0);
 });
 
-test('storage_error: wrong credentials (the bucket check\'s 403 reads as scoped keys; the write says no)', async t => {
+test("storage_error: wrong credentials (the bucket check's 403 reads as scoped keys; the write says no)", async t => {
   const s3 = await fake(t);
-  const r = await new ObjectStore(config(s3.url, { accessKeyId: 'someone-else' })).storeUpload(upload());
+  const r = await new ObjectStore(config(s3.url, { accessKeyId: 'someone-else' })).storeUpload(
+    upload(),
+  );
   assert.equal(r.errorCode, 'storage_error');
   assert.match(r.errorMessage, /could not store uploads\/.*: InvalidAccessKeyId/);
 });
@@ -206,12 +240,20 @@ test('fetchObject with a range: the part, its length and Content-Range — first
   const part = async bytes => {
     const r = await store.fetchObject(key, { bytes, ifRange: null });
     assert.equal(r.ok, true, r.errorMessage);
-    return { text: await new Response(r.data.body).text(), length: r.data.contentLength, range: r.data.contentRange };
+    return {
+      text: await new Response(r.data.body).text(),
+      length: r.data.contentLength,
+      range: r.data.contentRange,
+    };
   };
   assert.deepEqual(await part('bytes=2-4'), { text: '234', length: 3, range: 'bytes 2-4/10' });
   assert.deepEqual(await part('bytes=7-'), { text: '789', length: 3, range: 'bytes 7-9/10' });
   assert.deepEqual(await part('bytes=-2'), { text: '89', length: 2, range: 'bytes 8-9/10' });
-  assert.deepEqual(await part('bytes=8-99'), { text: '89', length: 2, range: 'bytes 8-9/10' }, 'last past the end is clipped');
+  assert.deepEqual(
+    await part('bytes=8-99'),
+    { text: '89', length: 2, range: 'bytes 8-9/10' },
+    'last past the end is clipped',
+  );
 });
 
 test('range_not_satisfiable: a range starting past the end (416, Content-Range: bytes */size)', async t => {
@@ -252,7 +294,10 @@ test('If-Range: the range applies only while the validator matches (strong ETag 
 
 test('If-Range on a missing file is still object_not_found', async t => {
   const { store } = await digits(t);
-  const r = await store.fetchObject('uploads/00000000-0000-4000-8000-000000000000', { bytes: 'bytes=0-', ifRange: '"fake"' });
+  const r = await store.fetchObject('uploads/00000000-0000-4000-8000-000000000000', {
+    bytes: 'bytes=0-',
+    ifRange: '"fake"',
+  });
   assert.equal(r.errorCode, 'object_not_found');
 });
 
@@ -260,10 +305,16 @@ test('statObject: metadata without a body; object_not_found; storage_error', asy
   const { s3, store, key } = await digits(t);
   const r = await store.statObject(key);
   assert.equal(r.ok, true, r.errorMessage);
-  assert.deepEqual({ ...r.data, lastModified: r.data.lastModified instanceof Date }, {
-    contentType: 'text/plain', contentLength: 10, contentDisposition: "attachment; filename*=UTF-8''d.txt",
-    etag: '"fake"', lastModified: true,
-  });
+  assert.deepEqual(
+    { ...r.data, lastModified: r.data.lastModified instanceof Date },
+    {
+      contentType: 'text/plain',
+      contentLength: 10,
+      contentDisposition: "attachment; filename*=UTF-8''d.txt",
+      etag: '"fake"',
+      lastModified: true,
+    },
+  );
   const missing = await store.statObject('uploads/00000000-0000-4000-8000-000000000000');
   assert.equal(missing.errorCode, 'object_not_found');
   assert.equal(objectStoreFailureResponse(missing).status, 404);
@@ -291,7 +342,9 @@ test('storage_error: the server fails the read (502)', async t => {
   const s3 = await fake(t);
   s3.buckets.set('unit-bucket', new Map());
   s3.faults.failGets = true;
-  const r = await new ObjectStore(config(s3.url)).fetchObject('uploads/00000000-0000-4000-8000-000000000000');
+  const r = await new ObjectStore(config(s3.url)).fetchObject(
+    'uploads/00000000-0000-4000-8000-000000000000',
+  );
   assert.equal(r.errorCode, 'storage_error');
   const res = objectStoreFailureResponse(r);
   assert.equal(res.status, 502);
@@ -299,9 +352,15 @@ test('storage_error: the server fails the read (502)', async t => {
 });
 
 test('fileDownloadResponse: always an attachment, sandboxed, allowlisted type or octet-stream', async () => {
-  const object = (over) => ({
-    body: new Response('x').body, contentType: 'text/plain', contentLength: 1, contentRange: null,
-    contentDisposition: "attachment; filename*=UTF-8''a.txt", etag: '"e"', lastModified: new Date(0), ...over,
+  const object = over => ({
+    body: new Response('x').body,
+    contentType: 'text/plain',
+    contentLength: 1,
+    contentRange: null,
+    contentDisposition: "attachment; filename*=UTF-8''a.txt",
+    etag: '"e"',
+    lastModified: new Date(0),
+    ...over,
   });
   const ok = fileDownloadResponse(object({}));
   assert.equal(ok.status, 200);
@@ -318,13 +377,22 @@ test('fileDownloadResponse: always an attachment, sandboxed, allowlisted type or
   assert.equal(await ok.text(), 'x');
 
   // Written to the bucket some other way: an HTML type, inline disposition, no metadata.
-  const odd = fileDownloadResponse(object({
-    contentType: 'text/html', contentDisposition: 'inline', contentLength: null, etag: null, lastModified: null,
-  }));
+  const odd = fileDownloadResponse(
+    object({
+      contentType: 'text/html',
+      contentDisposition: 'inline',
+      contentLength: null,
+      etag: null,
+      lastModified: null,
+    }),
+  );
   assert.equal(odd.headers.get('content-type'), 'application/octet-stream');
   assert.equal(odd.headers.get('content-disposition'), 'attachment');
   assert.equal(odd.headers.get('content-length'), null);
-  assert.equal(fileDownloadResponse(object({ contentType: null })).headers.get('content-type'), 'application/octet-stream');
+  assert.equal(
+    fileDownloadResponse(object({ contentType: null })).headers.get('content-type'),
+    'application/octet-stream',
+  );
 
   // A part: 206 with S3's Content-Range and the part's length.
   const part = fileDownloadResponse(object({ contentLength: 3, contentRange: 'bytes 2-4/10' }));
@@ -346,11 +414,18 @@ test('fileDownloadResponse: always an attachment, sandboxed, allowlisted type or
 
 /** readObjectStoreConfig() in a fresh process (RAW_ENV is read at module load), or its error. */
 function bootConfig(env) {
-  const clean = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('WEB_PI_S3_')));
+  const clean = Object.fromEntries(
+    Object.entries(process.env).filter(([k]) => !k.startsWith('WEB_PI_S3_')),
+  );
   try {
-    const out = execFileSync(process.execPath, ['-e',
-      "process.stdout.write(JSON.stringify(require('./dist-server/src/lib/env.js').readObjectStoreConfig()))"],
-      { env: { ...clean, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+    const out = execFileSync(
+      process.execPath,
+      [
+        '-e',
+        "process.stdout.write(JSON.stringify(require('./dist-server/src/lib/env.js').readObjectStoreConfig()))",
+      ],
+      { env: { ...clean, ...env }, stdio: ['ignore', 'pipe', 'pipe'] },
+    );
     return { config: JSON.parse(out.toString()) };
   } catch (err) {
     return { error: err.stderr.toString() };
@@ -359,22 +434,48 @@ function bootConfig(env) {
 
 test('env: no WEB_PI_S3_* (or only empty ones) is "not configured"', () => {
   assert.deepEqual(bootConfig({}), { config: null });
-  assert.deepEqual(bootConfig({ WEB_PI_S3_ENDPOINT: '', WEB_PI_S3_ACCESS_KEY: '' }), { config: null });
+  assert.deepEqual(bootConfig({ WEB_PI_S3_ENDPOINT: '', WEB_PI_S3_ACCESS_KEY: '' }), {
+    config: null,
+  });
 });
 
 test('env: endpoint + both keys configure the store, with bucket/region defaults', () => {
-  assert.deepEqual(bootConfig({
-    WEB_PI_S3_ENDPOINT: 'http://seaweedfs:8333', WEB_PI_S3_ACCESS_KEY: 'a', WEB_PI_S3_SECRET_KEY: 's',
-  }), { config: { endpoint: 'http://seaweedfs:8333', accessKeyId: 'a', secretAccessKey: 's', bucket: 'webpi', region: 'us-east-1' } });
+  assert.deepEqual(
+    bootConfig({
+      WEB_PI_S3_ENDPOINT: 'http://seaweedfs:8333',
+      WEB_PI_S3_ACCESS_KEY: 'a',
+      WEB_PI_S3_SECRET_KEY: 's',
+    }),
+    {
+      config: {
+        endpoint: 'http://seaweedfs:8333',
+        accessKeyId: 'a',
+        secretAccessKey: 's',
+        bucket: 'webpi',
+        region: 'us-east-1',
+      },
+    },
+  );
 });
 
 test('env: a half-configured, non-http or misnamed store stops the boot', () => {
   const keys = { WEB_PI_S3_ACCESS_KEY: 'a', WEB_PI_S3_SECRET_KEY: 's' };
-  assert.match(bootConfig({ WEB_PI_S3_ENDPOINT: 'http://seaweedfs:8333', WEB_PI_S3_ACCESS_KEY: 'a' }).error,
-    /must be set together/);
+  assert.match(
+    bootConfig({ WEB_PI_S3_ENDPOINT: 'http://seaweedfs:8333', WEB_PI_S3_ACCESS_KEY: 'a' }).error,
+    /must be set together/,
+  );
   assert.match(bootConfig(keys).error, /must be set together/);
-  assert.match(bootConfig({ ...keys, WEB_PI_S3_ENDPOINT: 'seaweedfs:8333' }).error, /is not an http\(s\) URL/);
-  assert.match(bootConfig({ ...keys, WEB_PI_S3_ENDPOINT: 'ftp://seaweedfs' }).error, /is not an http\(s\) URL/);
-  assert.match(bootConfig({ ...keys, WEB_PI_S3_ENDPOINT: 'http://seaweedfs:8333', WEB_PI_S3_BUCKET: 'Web_Pi' }).error,
-    /is not a valid bucket name/);
+  assert.match(
+    bootConfig({ ...keys, WEB_PI_S3_ENDPOINT: 'seaweedfs:8333' }).error,
+    /is not an http\(s\) URL/,
+  );
+  assert.match(
+    bootConfig({ ...keys, WEB_PI_S3_ENDPOINT: 'ftp://seaweedfs' }).error,
+    /is not an http\(s\) URL/,
+  );
+  assert.match(
+    bootConfig({ ...keys, WEB_PI_S3_ENDPOINT: 'http://seaweedfs:8333', WEB_PI_S3_BUCKET: 'Web_Pi' })
+      .error,
+    /is not a valid bucket name/,
+  );
 });

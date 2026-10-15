@@ -16,13 +16,18 @@ type WaToast = HTMLElement & {
 
 export class AppHeader extends HTMLElement {
   connectedCallback(): void {
-    (this.querySelector('#sign-out') as HTMLElement | null)
-      ?.addEventListener('click', () => void this.signOut());
+    (this.querySelector('#sign-out') as HTMLElement | null)?.addEventListener(
+      'click',
+      () => void this.signOut(),
+    );
   }
 
   private async signOut(): Promise<void> {
     const sent = await signedInFetch(`${BASE}/logout`, { method: 'POST' });
-    if (!sent.ok) { this.notAnswered(sent); return; }
+    if (!sent.ok) {
+      this.notAnswered(sent);
+      return;
+    }
     location.href = `${BASE}/login`;
   }
 
@@ -30,14 +35,16 @@ export class AppHeader extends HTMLElement {
    *  already on its way to /login. */
   private notAnswered(failure: SignedInFetchFailure): void {
     switch (failure.errorCode) {
-      case 'signed_out': return;
+      case 'signed_out':
+        return;
       case 'network_error':
         void (document.querySelector('wa-toast') as WaToast | null)?.create(
           'network error — try again',
           { variant: 'danger', icon: 'triangle-exclamation', duration: 6000 },
         );
         return;
-      default: return failure satisfies never;
+      default:
+        return failure satisfies never;
     }
   }
 }

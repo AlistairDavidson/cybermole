@@ -36,8 +36,13 @@ import { DatabaseSync, type SQLInputValue, type StatementSync } from 'node:sqlit
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
-  DummyDriver, Kysely, SqliteAdapter, SqliteIntrospector, SqliteQueryCompiler,
-  type Compilable, type DatabaseConnection,
+  DummyDriver,
+  Kysely,
+  SqliteAdapter,
+  SqliteIntrospector,
+  SqliteQueryCompiler,
+  type Compilable,
+  type DatabaseConnection,
 } from 'kysely';
 import type { ResultFailure, ResultSuccess } from '../types/result';
 import type { AppId, AppSlug, JobName, TerminalId, WorkspaceId } from '../types/branded';
@@ -47,7 +52,11 @@ import type { AppId, AppSlug, JobName, TerminalId, WorkspaceId } from '../types/
 export type DatabaseUpdateData = { changes: number };
 export type DatabaseUpdateErrorCode = 'database_error';
 export type DatabaseUpdateSuccess = ResultSuccess<'database_update', DatabaseUpdateData>;
-export type DatabaseUpdateFailure = ResultFailure<'database_update', DatabaseUpdateData, DatabaseUpdateErrorCode>;
+export type DatabaseUpdateFailure = ResultFailure<
+  'database_update',
+  DatabaseUpdateData,
+  DatabaseUpdateErrorCode
+>;
 export type DatabaseUpdateResult = DatabaseUpdateSuccess | DatabaseUpdateFailure;
 
 /** Run one write at the db boundary: a thrown sqlite error (lock
@@ -57,7 +66,11 @@ export type DatabaseUpdateResult = DatabaseUpdateSuccess | DatabaseUpdateFailure
 export function databaseUpdate(context: string, write: () => { changes: number | bigint }) {
   try {
     const { changes } = write();
-    return { ok: true, resultType: 'database_update', data: { changes: Number(changes) } } satisfies DatabaseUpdateSuccess;
+    return {
+      ok: true,
+      resultType: 'database_update',
+      data: { changes: Number(changes) },
+    } satisfies DatabaseUpdateSuccess;
   } catch (err) {
     return {
       ok: false,
@@ -73,14 +86,22 @@ export function databaseUpdate(context: string, write: () => { changes: number |
 export type DatabaseReadData<T> = { value: T };
 export type DatabaseReadErrorCode = 'database_error';
 export type DatabaseReadSuccess<T> = ResultSuccess<'database_read', DatabaseReadData<T>>;
-export type DatabaseReadFailure<T> = ResultFailure<'database_read', DatabaseReadData<T>, DatabaseReadErrorCode>;
+export type DatabaseReadFailure<T> = ResultFailure<
+  'database_read',
+  DatabaseReadData<T>,
+  DatabaseReadErrorCode
+>;
 export type DatabaseReadResult<T> = DatabaseReadSuccess<T> | DatabaseReadFailure<T>;
 
 /** Run one read at the db boundary — databaseUpdate()'s twin for queries:
  *  a thrown sqlite error becomes a database_error failure. */
 export function databaseRead<T>(context: string, read: () => T) {
   try {
-    return { ok: true, resultType: 'database_read', data: { value: read() } } satisfies DatabaseReadSuccess<T>;
+    return {
+      ok: true,
+      resultType: 'database_read',
+      data: { value: read() },
+    } satisfies DatabaseReadSuccess<T>;
   } catch (err) {
     return {
       ok: false,
@@ -383,13 +404,19 @@ export class StateDb {
       const v = db.prepare('PRAGMA user_version').get() as { user_version: number };
       if (v.user_version < 6) db.exec('PRAGMA user_version = 6');
       else if (v.user_version > 6) {
-        throw new Error(`state db ${this.file} is schema v${v.user_version} — newer than this build understands`);
+        throw new Error(
+          `state db ${this.file} is schema v${v.user_version} — newer than this build understands`,
+        );
       }
       if (fresh) fs.chmodSync(this.file, 0o600); // it holds the password hash
       this.conn = db;
       return db;
     } catch (err) {
-      try { db.close(); } catch { /* never got open */ }
+      try {
+        db.close();
+      } catch {
+        /* never got open */
+      }
       throw err as Error;
     }
   }
@@ -400,7 +427,10 @@ export class StateDb {
   private stmt<R>(query: Compilable<R>): { stmt: StatementSync; params: SQLInputValue[] } {
     const { sql, parameters } = query.compile();
     let s = this.stmts.get(sql);
-    if (!s) { s = this.db().prepare(sql); this.stmts.set(sql, s); }
+    if (!s) {
+      s = this.db().prepare(sql);
+      this.stmts.set(sql, s);
+    }
     // Kysely only passes on the values our schema types allow (strings,
     // numbers, null) — all bindable as-is.
     return { stmt: s, params: parameters as SQLInputValue[] };
@@ -430,14 +460,22 @@ export class StateDb {
 
   /** Read one app-settings value (settings kv table); null when unset. */
   getSetting(key: string): string | null {
-    return this.get(qb.selectFrom('settings').select('value').where('key', '=', key))?.value ?? null;
+    return (
+      this.get(qb.selectFrom('settings').select('value').where('key', '=', key))?.value ?? null
+    );
   }
 
   /** Write one app-settings value. Throws on db failure — callers wrap it
    *  in databaseUpdate() so failure reaches the user as a Result (the API
    *  500s instead of lying). */
   setSetting(key: string, value: string): { changes: number | bigint } {
-    return this.run(qb.insertInto('settings').values({ key, value })
-      .onConflict(oc => oc.column('key').doUpdateSet(eb => ({ value: eb.ref('excluded.value') }))));
+    return this.run(
+      qb
+        .insertInto('settings')
+        .values({ key, value })
+        .onConflict(oc =>
+          oc.column('key').doUpdateSet(eb => ({ value: eb.ref('excluded.value') })),
+        ),
+    );
   }
 }

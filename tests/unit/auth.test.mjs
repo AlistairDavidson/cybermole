@@ -20,7 +20,9 @@ import { Auth, setCredential } from '../../dist-server/src/lib/auth.js';
 import { StateDb } from '../../dist-server/src/lib/db.js';
 
 function freshDb() {
-  return new StateDb(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-auth-unit-')), 'webpi.db'));
+  return new StateDb(
+    path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-auth-unit-')), 'webpi.db'),
+  );
 }
 
 /** newSession() answers a Result; the token is what a browser gets. */
@@ -34,15 +36,15 @@ test('alive() reports liveness but never slides — the WS sweep’s peek', t =>
   t.mock.timers.enable({ now: 0 });
   const auth = new Auth(freshDb(), { idleMs: 1000, absoluteMs: 100_000, renewWriteMs: 0 });
   const tok = login(auth);
-  assert.equal(auth.alive(tok).ok, true);   // live
+  assert.equal(auth.alive(tok).ok, true); // live
   assert.equal(auth.alive('nope').ok, false); // unknown
   // Peeking all the way through the idle window must NOT renew: the
   // token dies exactly where it would with no contact at all — the
   // WS keepalive sweep can never extend a terminal's life.
   t.mock.timers.setTime(999);
-  assert.equal(auth.alive(tok).ok, true);   // last moment of the window
+  assert.equal(auth.alive(tok).ok, true); // last moment of the window
   t.mock.timers.setTime(1001);
-  assert.equal(auth.alive(tok).ok, false);  // dead (exp < now) — no slide from alive()
+  assert.equal(auth.alive(tok).ok, false); // dead (exp < now) — no slide from alive()
   // The peek is pure too: the row is still there (valid() cleans up).
   assert.equal(auth.valid(tok).ok, false);
   // dropAll kills every token's liveness at once (log out everywhere).
@@ -58,15 +60,15 @@ test('valid() slides the idle window on use', t => {
   const auth = new Auth(freshDb(), { idleMs: 1000, absoluteMs: 100_000, renewWriteMs: 0 });
   const tok = login(auth);
   t.mock.timers.setTime(999);
-  assert.equal(auth.valid(tok).ok, true);   // inside the first window
+  assert.equal(auth.valid(tok).ok, true); // inside the first window
   t.mock.timers.setTime(1998);
-  assert.equal(auth.valid(tok).ok, true);   // renewed at 999 → exp 1999
+  assert.equal(auth.valid(tok).ok, true); // renewed at 999 → exp 1999
   t.mock.timers.setTime(2998);
-  assert.equal(auth.valid(tok).ok, true);   // renewed at 1998 → exp 2998
+  assert.equal(auth.valid(tok).ok, true); // renewed at 1998 → exp 2998
   t.mock.timers.setTime(3999);
-  assert.equal(auth.valid(tok).ok, false);  // 1001 ms idle since the last renewal
+  assert.equal(auth.valid(tok).ok, false); // 1001 ms idle since the last renewal
   t.mock.timers.setTime(4000);
-  assert.equal(auth.valid(tok).ok, false);  // stays dead once rejected
+  assert.equal(auth.valid(tok).ok, false); // stays dead once rejected
 });
 
 test('valid() throttles renewal writes: the expiry only moves once it would move by renewWriteMs', t => {
@@ -78,10 +80,10 @@ test('valid() throttles renewal writes: the expiry only moves once it would move
   assert.equal(expiry(), 10_000);
   t.mock.timers.setTime(500);
   assert.equal(auth.valid(tok).ok, true);
-  assert.equal(expiry(), 10_000);        // would move 500 ms — no write
+  assert.equal(expiry(), 10_000); // would move 500 ms — no write
   t.mock.timers.setTime(1000);
   assert.equal(auth.valid(tok).ok, true);
-  assert.equal(expiry(), 11_000);        // moves 1000 ms — written
+  assert.equal(expiry(), 11_000); // moves 1000 ms — written
 });
 
 test('the absolute cap kills a constantly-renewed token at created+absoluteMs', t => {
@@ -89,13 +91,13 @@ test('the absolute cap kills a constantly-renewed token at created+absoluteMs', 
   const auth = new Auth(freshDb(), { idleMs: 1000, absoluteMs: 2000, renewWriteMs: 0 });
   const tok = login(auth);
   t.mock.timers.setTime(900);
-  assert.equal(auth.valid(tok).ok, true);   // exp → 1900
+  assert.equal(auth.valid(tok).ok, true); // exp → 1900
   t.mock.timers.setTime(1800);
-  assert.equal(auth.valid(tok).ok, true);   // exp → 2800, still under the cap
+  assert.equal(auth.valid(tok).ok, true); // exp → 2800, still under the cap
   t.mock.timers.setTime(1900);
-  assert.equal(auth.valid(tok).ok, true);   // exp → 2900, would slide forever…
+  assert.equal(auth.valid(tok).ok, true); // exp → 2900, would slide forever…
   t.mock.timers.setTime(2000);
-  assert.equal(auth.valid(tok).ok, false);  // …except created(0) + 2000 <= now
+  assert.equal(auth.valid(tok).ok, false); // …except created(0) + 2000 <= now
   t.mock.timers.setTime(2100);
   assert.equal(auth.valid(tok).ok, false);
 });
@@ -107,12 +109,16 @@ test('newSession() purges sessions dead on either clock', t => {
   const idle = login(auth);
   const kept = login(auth);
   t.mock.timers.setTime(500);
-  assert.equal(auth.valid(kept).ok, true);  // exp → 1500
+  assert.equal(auth.valid(kept).ok, true); // exp → 1500
   t.mock.timers.setTime(1000);
-  assert.equal(auth.valid(kept).ok, true);  // exp → 2000 (renewed under it)
-  t.mock.timers.setTime(1501);           // `idle` is idle-expired; `kept` was
-  const fresh = login(auth);             // renewed at 1000 → dead-purge keeps it
-  assert.equal(db.db().prepare('SELECT COUNT(*) AS n FROM auth_sessions').get().n, 2, 'the dead row was purged');
+  assert.equal(auth.valid(kept).ok, true); // exp → 2000 (renewed under it)
+  t.mock.timers.setTime(1501); // `idle` is idle-expired; `kept` was
+  const fresh = login(auth); // renewed at 1000 → dead-purge keeps it
+  assert.equal(
+    db.db().prepare('SELECT COUNT(*) AS n FROM auth_sessions').get().n,
+    2,
+    'the dead row was purged',
+  );
   assert.equal(auth.valid(idle).ok, false);
   assert.equal(auth.valid(kept).ok, true);
   assert.equal(auth.valid(fresh).ok, true);
@@ -121,7 +127,7 @@ test('newSession() purges sessions dead on either clock', t => {
 test('cookieRefresh() re-arms the Max-Age only after half the idle window', t => {
   t.mock.timers.enable({ now: 0 });
   const auth = new Auth(freshDb(), { idleMs: 1000, absoluteMs: 10_000, renewWriteMs: 0 });
-  const tok = login(auth);                // login sent the cookie (cookie_at 0)
+  const tok = login(auth); // login sent the cookie (cookie_at 0)
   assert.equal(auth.cookieRefresh(tok), null); // fresh — no header yet
   t.mock.timers.setTime(499);
   assert.equal(auth.valid(tok).ok, true);
@@ -130,13 +136,13 @@ test('cookieRefresh() re-arms the Max-Age only after half the idle window', t =>
   assert.equal(auth.valid(tok).ok, true);
   const header = auth.cookieRefresh(tok);
   assert.match(header, /^webpi_session=/);
-  assert.match(header, /Max-Age=1\b/);         // idleMs, in seconds
+  assert.match(header, /Max-Age=1\b/); // idleMs, in seconds
   assert.match(header, /SameSite=Strict/);
   t.mock.timers.setTime(700);
   assert.equal(auth.cookieRefresh(tok), null); // just re-armed at 501
   t.mock.timers.setTime(1202);
   assert.equal(auth.valid(tok).ok, true);
-  assert.ok(auth.cookieRefresh(tok));          // 701 ms since cookie_at 501
+  assert.ok(auth.cookieRefresh(tok)); // 701 ms since cookie_at 501
 });
 
 test('cookieRefresh() never answers for unknown or dead tokens', t => {
@@ -145,7 +151,7 @@ test('cookieRefresh() never answers for unknown or dead tokens', t => {
   assert.equal(auth.cookieRefresh('no-such-token'), null);
   assert.equal(auth.cookieRefresh(undefined), null);
   const tok = login(auth);
-  t.mock.timers.setTime(3000);                  // past the absolute cap
+  t.mock.timers.setTime(3000); // past the absolute cap
   assert.equal(auth.valid(tok).ok, false);
   assert.equal(auth.cookieRefresh(tok), null);
 });
@@ -180,18 +186,33 @@ test('the db holds sha256(token), never the token itself', () => {
   const db = freshDb();
   const tok = login(new Auth(db));
   const rows = db.db().prepare('SELECT token_hash FROM auth_sessions').all();
-  assert.deepEqual(rows.map(r => r.token_hash), [crypto.createHash('sha256').update(tok).digest('hex')]);
-  assert.equal(fs.readFileSync(db.file).includes(Buffer.from(tok)), false, 'the raw token is not in the file');
+  assert.deepEqual(
+    rows.map(r => r.token_hash),
+    [crypto.createHash('sha256').update(tok).digest('hex')],
+  );
+  assert.equal(
+    fs.readFileSync(db.file).includes(Buffer.from(tok)),
+    false,
+    'the raw token is not in the file',
+  );
 });
 
 test('setCredential revokes every session; a revoked or unknown token is no_session', () => {
   const db = freshDb();
   const auth = new Auth(db);
-  assert.deepEqual(auth.configured(), { ok: true, resultType: 'database_read', data: { value: false } });
+  assert.deepEqual(auth.configured(), {
+    ok: true,
+    resultType: 'database_read',
+    data: { value: false },
+  });
   assert.equal(setCredential(db, 'u', 'password-one').ok, true);
   assert.equal(auth.configured().data.value, true);
   const tok = login(auth);
-  assert.deepEqual(auth.valid(tok), { ok: true, resultType: 'session_check', data: { token: tok } });
+  assert.deepEqual(auth.valid(tok), {
+    ok: true,
+    resultType: 'session_check',
+    data: { token: tok },
+  });
   assert.equal(setCredential(db, 'u', 'password-two').ok, true); // a password change
   assert.equal(auth.valid(tok).errorCode, 'no_session');
   assert.equal(auth.alive(tok).errorCode, 'no_session');
@@ -204,7 +225,11 @@ test('verify: success, invalid_credentials (wrong password, wrong user, no crede
   const auth = new Auth(db);
   assert.equal((await auth.verify('u', 'password-one')).errorCode, 'invalid_credentials'); // nothing set
   assert.equal(setCredential(db, 'u', 'password-one').ok, true);
-  assert.deepEqual(await auth.verify('u', 'password-one'), { ok: true, resultType: 'verify_login', data: { username: 'u' } });
+  assert.deepEqual(await auth.verify('u', 'password-one'), {
+    ok: true,
+    resultType: 'verify_login',
+    data: { username: 'u' },
+  });
   assert.equal((await auth.verify('u', 'wrong-password')).errorCode, 'invalid_credentials');
   assert.equal((await auth.verify('someone', 'password-one')).errorCode, 'invalid_credentials');
 });
@@ -245,5 +270,9 @@ test('setCredential rolls back: a failed session purge leaves the old credential
   db.db().prepare('DROP TABLE auth_sessions').run(); // the purge half now fails
   const saved = setCredential(db, 'u', 'password-two');
   assert.equal(saved.errorCode, 'database_error');
-  assert.equal((await auth.verify('u', 'password-one')).ok, true, 'the credential write was rolled back');
+  assert.equal(
+    (await auth.verify('u', 'password-one')).ok,
+    true,
+    'the credential write was rolled back',
+  );
 });

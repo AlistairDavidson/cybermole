@@ -4,7 +4,11 @@
 // scheduler's RUN_HISTORY, like the pruning that enforces it.
 import type { APIRoute } from 'astro';
 import { assertWebPiLocals } from '../../../../../lib/web/locals';
-import { invalidJobNameResponse, jobFailureResponse, jsonResponse } from '../../../../../lib/web/responses.service';
+import {
+  invalidJobNameResponse,
+  jobFailureResponse,
+  jsonResponse,
+} from '../../../../../lib/web/responses.service';
 import { JobNameSchema } from '../../../../../schemas/ids';
 
 export const GET: APIRoute = async ({ locals, params }) => {

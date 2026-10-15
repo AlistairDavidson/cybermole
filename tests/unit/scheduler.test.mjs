@@ -26,9 +26,16 @@ const { StateDb } = await import('../../dist-server/src/lib/db.js');
 const { JobSaveSchema } = await import('../../dist-server/src/schemas/jobs.js');
 
 /** saveJob takes what POST /api/jobs parsed with JobSaveSchema. */
-const parsed = (input) => JobSaveSchema.parse(input);
+const parsed = input => JobSaveSchema.parse(input);
 
-const haveTmux = (() => { try { execFileSync('tmux', ['-V'], { stdio: 'ignore' }); return true; } catch { return false; } })();
+const haveTmux = (() => {
+  try {
+    execFileSync('tmux', ['-V'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+})();
 
 function freshScheduler() {
   const db = new StateDb(path.join(fs.mkdtempSync(path.join(dir, 'db-')), 'webpi.db'));
@@ -39,15 +46,22 @@ function freshScheduler() {
 function brokenScheduler() {
   const file = path.join(fs.mkdtempSync(path.join(dir, 'broken-')), 'not-a-dir');
   fs.writeFileSync(file, '');
-  return new Scheduler(new StateDb(path.join(file, 'webpi.db')), { cwd: dir, env: {}, logDir: path.join(dir, 'job-logs') });
+  return new Scheduler(new StateDb(path.join(file, 'webpi.db')), {
+    cwd: dir,
+    env: {},
+    logDir: path.join(dir, 'job-logs'),
+  });
 }
 
 const GOOD = { name: 'nightly', schedule: '*/5 * * * *', command: 'true' };
 
 test('saveJob: a parsed save succeeds with the normalized name', async () => {
   const s = freshScheduler();
-  assert.deepEqual(await s.saveJob(parsed({ ...GOOD, name: '  Nightly Check ' })),
-    { ok: true, resultType: 'save_job', data: { name: 'nightly-check' } });
+  assert.deepEqual(await s.saveJob(parsed({ ...GOOD, name: '  Nightly Check ' })), {
+    ok: true,
+    resultType: 'save_job',
+    data: { name: 'nightly-check' },
+  });
 });
 
 test('saveJob: invalid_schedule (not 5-field cron), database_error', async () => {
@@ -65,7 +79,11 @@ test('saveJob: invalid_schedule (not 5-field cron), database_error', async () =>
 test('deleteJob: success, job_not_found, database_error', async () => {
   const s = freshScheduler();
   await s.saveJob(parsed(GOOD));
-  assert.deepEqual(await s.deleteJob('nightly'), { ok: true, resultType: 'delete_job', data: { name: 'nightly' } });
+  assert.deepEqual(await s.deleteJob('nightly'), {
+    ok: true,
+    resultType: 'delete_job',
+    data: { name: 'nightly' },
+  });
   const gone = await s.deleteJob('nightly');
   assert.equal(gone.errorCode, 'job_not_found');
   assert.equal(gone.errorMessage, 'no such job');
@@ -78,7 +96,10 @@ test('listJobs: the jobs state on success, database_error when the db is gone', 
   const listed = await s.listJobs();
   assert.equal(listed.ok, true);
   assert.equal(listed.data.available, true);
-  assert.deepEqual(listed.data.jobs.map(j => [j.name, j.session, j.running]), [['nightly', 'webpi-nightly', false]]);
+  assert.deepEqual(
+    listed.data.jobs.map(j => [j.name, j.session, j.running]),
+    [['nightly', 'webpi-nightly', false]],
+  );
   const failed = await brokenScheduler().listJobs();
   assert.equal(failed.errorCode, 'database_error');
 });
@@ -117,28 +138,39 @@ test('runJob: database_error when the job cannot be read, or its fire cannot be 
   assert.deepEqual(unrecorded.data, { name: 'nightly', session: 'webpi-nightly' });
 });
 
-test('runJob: opens the run, then run_active while it lives; 40-char names run too', { skip: !haveTmux }, async () => {
-  const conf = path.join(dir, 'server.conf');
-  fs.writeFileSync(conf, 'set -g exit-empty off\n');
-  execFileSync('tmux', ['-S', SOCKET, '-f', conf, 'start-server']);
-  try {
-    const s = freshScheduler();
-    await s.saveJob(parsed({ ...GOOD, command: 'sleep 10' }));
-    assert.deepEqual(await s.runJob('nightly'),
-      { ok: true, resultType: 'run_job', data: { name: 'nightly', session: 'webpi-nightly' } });
-    const again = await s.runJob('nightly');
-    assert.equal(again.errorCode, 'run_active');
-    assert.equal(again.data.session, 'webpi-nightly');
+test(
+  'runJob: opens the run, then run_active while it lives; 40-char names run too',
+  { skip: !haveTmux },
+  async () => {
+    const conf = path.join(dir, 'server.conf');
+    fs.writeFileSync(conf, 'set -g exit-empty off\n');
+    execFileSync('tmux', ['-S', SOCKET, '-f', conf, 'start-server']);
+    try {
+      const s = freshScheduler();
+      await s.saveJob(parsed({ ...GOOD, command: 'sleep 10' }));
+      assert.deepEqual(await s.runJob('nightly'), {
+        ok: true,
+        resultType: 'run_job',
+        data: { name: 'nightly', session: 'webpi-nightly' },
+      });
+      const again = await s.runJob('nightly');
+      assert.equal(again.errorCode, 'run_active');
+      assert.equal(again.data.session, 'webpi-nightly');
 
-    const long = 'x'.repeat(40);
-    await s.saveJob(parsed({ ...GOOD, name: long, command: 'sleep 10' }));
-    const ran = await s.runJob(long);
-    assert.equal(ran.ok, true, ran.errorMessage);
-    assert.equal((await s.listJobs()).data.jobs.find(j => j.name === long).running, true);
-  } finally {
-    try { execFileSync('tmux', ['-S', SOCKET, 'kill-server'], { stdio: 'ignore' }); } catch { /* gone */ }
-  }
-});
+      const long = 'x'.repeat(40);
+      await s.saveJob(parsed({ ...GOOD, name: long, command: 'sleep 10' }));
+      const ran = await s.runJob(long);
+      assert.equal(ran.ok, true, ran.errorMessage);
+      assert.equal((await s.listJobs()).data.jobs.find(j => j.name === long).running, true);
+    } finally {
+      try {
+        execFileSync('tmux', ['-S', SOCKET, 'kill-server'], { stdio: 'ignore' });
+      } catch {
+        /* gone */
+      }
+    }
+  },
+);
 
 // ---------- the tick's run lifecycle, against a fake tmux (child) ----------
 //
@@ -227,8 +259,10 @@ const s = new Scheduler(db, { cwd: dir, env: {}, logDir: path.join(dir, 'job-log
 })().catch(e => { console.log('CHILD-FAIL ' + (e && e.stack || e)); process.exitCode = 1; });
 `;
 
-test('tick: fires an overdue run, skips it while it lives, logs its finish; run-now runs too',
-  { timeout: 30_000 }, async () => {
+test(
+  'tick: fires an overdue run, skips it while it lives, logs its finish; run-now runs too',
+  { timeout: 30_000 },
+  async () => {
     const fakeDir = fs.mkdtempSync(path.join(dir, 'fake-tmux-'));
     const fakeTmux = path.join(fakeDir, 'tmux');
     fs.writeFileSync(fakeTmux, FAKE_TMUX, { mode: 0o755 });
@@ -245,26 +279,48 @@ test('tick: fires an overdue run, skips it while it lives, logs its finish; run-
       WEB_PI_LOKI_JOB: '',
     };
     const { stdout, stderr } = await new Promise((resolve, reject) =>
-      execFile(process.execPath, [child], { env, timeout: 20_000 },
-        (err, out, serr) => (err ? reject({ err, out, serr }) : resolve({ stdout: out, stderr: serr }))));
+      execFile(process.execPath, [child], { env, timeout: 20_000 }, (err, out, serr) =>
+        err ? reject({ err, out, serr }) : resolve({ stdout: out, stderr: serr }),
+      ),
+    );
     const out = `${stdout}${stderr}`;
     assert.ok(!out.includes('CHILD-FAIL'), `child failed: ${out}`);
-    assert.match(out, /info +\[scheduler\] job nightly fired \(catchup\) — opening run session webpi-nightly/,
-      'the overdue fire is logged');
+    assert.match(
+      out,
+      /info +\[scheduler\] job nightly fired \(catchup\) — opening run session webpi-nightly/,
+      'the overdue fire is logged',
+    );
     // The run session now opens the plan §9 wrapper, not the bare
     // command: the exact argv is pinned by jobs.test.mjs; here just the
     // shape — an outer /bin/sh -c whose script tees to a log file, with
     // the user command riding as $1 (never string-embedded).
-    assert.match(out, /info +\[tmux\] tmux session webpi-nightly started \{"command":"\/bin\/sh -c mkdir -p \\"\$\(dirname/,
-      'the run session opening is logged');
-    assert.match(out, /info +\[scheduler\] job nightly fired \(manual\) — opening run session webpi-nightly/,
-      'the run-now fire is logged');
+    assert.match(
+      out,
+      /info +\[tmux\] tmux session webpi-nightly started \{"command":"\/bin\/sh -c mkdir -p \\"\$\(dirname/,
+      'the run session opening is logged',
+    );
+    assert.match(
+      out,
+      /info +\[scheduler\] job nightly fired \(manual\) — opening run session webpi-nightly/,
+      'the run-now fire is logged',
+    );
     const finishes = out.split('\n').filter(l => l.includes('run finished'));
-    assert.equal(finishes.length, 2, `one finish line per run (got ${finishes.length}): ${finishes.join(' | ')}`);
-    assert.match(finishes[0], /info +\[scheduler\] job nightly run finished \(run session webpi-nightly gone, exit unknown\)/,
-      'no exit file under the fake (it never runs the wrapper) → unknown');
-    assert.match(out, /CHILD-RUNS catchup,manual,schedule/,
-      'exactly the seeded fire + the catch-up + the run-now — the live run was never re-fired');
-  });
+    assert.equal(
+      finishes.length,
+      2,
+      `one finish line per run (got ${finishes.length}): ${finishes.join(' | ')}`,
+    );
+    assert.match(
+      finishes[0],
+      /info +\[scheduler\] job nightly run finished \(run session webpi-nightly gone, exit unknown\)/,
+      'no exit file under the fake (it never runs the wrapper) → unknown',
+    );
+    assert.match(
+      out,
+      /CHILD-RUNS catchup,manual,schedule/,
+      'exactly the seeded fire + the catch-up + the run-now — the live run was never re-fired',
+    );
+  },
+);
 
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));

@@ -35,7 +35,9 @@ const RELEASES = path.join(tmp, 'releases');
 const APP_ROOT = path.join(tmp, 'app'); // fake image root: version.json lives here
 
 function git(cmd, cwd = CHECKOUT) {
-  return execFileSync('git', cmd, { cwd, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  return execFileSync('git', cmd, { cwd, stdio: ['ignore', 'pipe', 'ignore'] })
+    .toString()
+    .trim();
 }
 
 fs.mkdirSync(CHECKOUT, { recursive: true });
@@ -44,7 +46,13 @@ fs.mkdirSync(APP_ROOT, { recursive: true });
 execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: CHECKOUT, stdio: 'ignore' });
 git(['config', 'user.email', 't@t']);
 git(['config', 'user.name', 't']);
-for (const f of ['compose.yaml', 'Dockerfile', 'server/main.ts', 'src/lib/releases.ts', 'package.json']) {
+for (const f of [
+  'compose.yaml',
+  'Dockerfile',
+  'server/main.ts',
+  'src/lib/releases.ts',
+  'package.json',
+]) {
   fs.mkdirSync(path.dirname(path.join(CHECKOUT, f)), { recursive: true });
   fs.writeFileSync(path.join(CHECKOUT, f), `# ${f}\n`);
 }
@@ -60,12 +68,16 @@ fs.writeFileSync(path.join(CHECKOUT, 'compose.yaml'), 'evil: true\n');
 git(['add', '-A']);
 git(['commit', '-q', '-m', 'evil target']);
 const EVIL_SHA = git(['rev-parse', 'HEAD']);
-fs.writeFileSync(path.join(APP_ROOT, 'version.json'),
-  JSON.stringify({ git: BASE_SHA, builtAt: '2026-10-10T00:00:00Z' }));
+fs.writeFileSync(
+  path.join(APP_ROOT, 'version.json'),
+  JSON.stringify({ git: BASE_SHA, builtAt: '2026-10-10T00:00:00Z' }),
+);
 
 // ---------- the real domain service behind the stubbed locals ----------
 
-const { Releases } = await import(pathToFileURL(path.join(ROOT, 'dist-server/src/lib/releases.js')).href);
+const { Releases } = await import(
+  pathToFileURL(path.join(ROOT, 'dist-server/src/lib/releases.js')).href
+);
 const { StateDb } = await import(pathToFileURL(path.join(ROOT, 'dist-server/src/lib/db.js')).href);
 
 const restarts = [];
@@ -79,7 +91,13 @@ const service = new Releases({
   verify: async (username, password) =>
     username === USERNAME && password === PASSWORD
       ? { ok: true, resultType: 'verify_login', data: { username } }
-      : { ok: false, resultType: 'verify_login', data: { username }, errorCode: 'invalid_credentials', errorMessage: 'invalid credentials' },
+      : {
+          ok: false,
+          resultType: 'verify_login',
+          data: { username },
+          errorCode: 'invalid_credentials',
+          errorMessage: 'invalid credentials',
+        },
 });
 
 // The locals main.ts would pass on the authenticated path. Only
@@ -92,7 +110,15 @@ const locals = { webpi: { management: service }, session: 'stubbed-session-token
 
 const { handler } = await import(pathToFileURL(path.join(ROOT, 'dist/server/entry.mjs')).href);
 const server = http.createServer((req, res) => {
-  handler(req, res, () => { res.writeHead(404); res.end('no route'); }, locals);
+  handler(
+    req,
+    res,
+    () => {
+      res.writeHead(404);
+      res.end('no route');
+    },
+    locals,
+  );
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const BASE = `http://127.0.0.1:${server.address().port}`;
@@ -105,7 +131,11 @@ const call = async (method, urlPath, body) => {
   });
   const text = await r.text();
   let json = null;
-  try { json = JSON.parse(text); } catch { /* html */ }
+  try {
+    json = JSON.parse(text);
+  } catch {
+    /* html */
+  }
   return { status: r.status, text, json };
 };
 
@@ -164,7 +194,7 @@ check('the partial for a protected change: REFUSED + the path + the rationale', 
   assert.equal(evilPartial.status, 200);
   assert.ok(evilPartial.text.includes('REFUSED'), 'the verdict badge says REFUSED');
   assert.ok(evilPartial.text.includes('compose.yaml'), 'the protected path is named');
-  assert.ok(evilPartial.text.includes('the split'), 'the entry\'s rationale is shown');
+  assert.ok(evilPartial.text.includes('the split'), "the entry's rationale is shown");
   assert.ok(evilPartial.text.includes(`data-selected="true"`), 'the picked row is marked');
 });
 
@@ -199,11 +229,18 @@ const badPreview = await call('GET', '/api/management/preview?sha=xyz');
 check('GET /api/management/preview with a bad sha: 400 with issues', () => {
   assert.equal(badPreview.status, 400);
   assert.equal(badPreview.json.code, 'validation_failure');
-  assert.ok(badPreview.json.issues && typeof badPreview.json.issues === 'object', 'issues ride along');
+  assert.ok(
+    badPreview.json.issues && typeof badPreview.json.issues === 'object',
+    'issues ride along',
+  );
 });
 
-const body = (sha, password = PASSWORD, confirm = true) =>
-  ({ sha, confirm, username: USERNAME, password });
+const body = (sha, password = PASSWORD, confirm = true) => ({
+  sha,
+  confirm,
+  username: USERNAME,
+  password,
+});
 
 const wrongPw = await call('POST', '/api/management/build', body(CLEAN_SHA, 'nope'));
 check('POST build, wrong password: 401 invalid_credentials, no marker', () => {
@@ -222,7 +259,10 @@ const unconfirmed = await call('POST', '/api/management/build', body(CLEAN_SHA, 
 check('POST build without confirm: 400 (the checkbox is not optional)', () => {
   assert.equal(unconfirmed.status, 400);
   assert.equal(unconfirmed.json.code, 'validation_failure');
-  assert.ok(unconfirmed.json.issues && Object.keys(unconfirmed.json.issues).length > 0, 'issues ride along');
+  assert.ok(
+    unconfirmed.json.issues && Object.keys(unconfirmed.json.issues).length > 0,
+    'issues ride along',
+  );
 });
 const built = await call('POST', '/api/management/build', body(CLEAN_SHA));
 check('POST build, clean commit: 202 + the pending marker on disk', () => {
@@ -247,8 +287,12 @@ check('the history row exists after the request', () => {
   assert.equal(history.json.releases[0].live, 'pending'); // synced from the marker
 });
 
-const notBuilt = await call('POST', '/api/management/activate',
-  { target: CLEAN_SHA, confirm: true, username: USERNAME, password: PASSWORD });
+const notBuilt = await call('POST', '/api/management/activate', {
+  target: CLEAN_SHA,
+  confirm: true,
+  username: USERNAME,
+  password: PASSWORD,
+});
 check('POST activate without a built release: 404 release_not_built, no restart', () => {
   assert.equal(notBuilt.status, 404);
   assert.equal(notBuilt.json.code, 'release_not_built');
@@ -275,17 +319,28 @@ check('preview with replace refs on base AND target: still REFUSED, the real pat
 const releaseDir = path.join(RELEASES, CLEAN_SHA);
 fs.mkdirSync(path.join(releaseDir, 'dist', 'server'), { recursive: true });
 fs.mkdirSync(path.join(releaseDir, 'dist', 'client', '_astro'), { recursive: true });
-fs.writeFileSync(path.join(releaseDir, 'dist', 'server', 'entry.mjs'), 'export const handler = () => {};\n');
+fs.writeFileSync(
+  path.join(releaseDir, 'dist', 'server', 'entry.mjs'),
+  'export const handler = () => {};\n',
+);
 fs.writeFileSync(path.join(releaseDir, 'dist', 'client', '_astro', 'x.js'), 'x');
 fs.mkdirSync(path.join(releaseDir, 'node_modules'), { recursive: true });
-fs.writeFileSync(path.join(releaseDir, 'manifest.json'),
-  JSON.stringify({ sha: CLEAN_SHA, builtAt: 1234, builder: 'tools' }));
+fs.writeFileSync(
+  path.join(releaseDir, 'manifest.json'),
+  JSON.stringify({ sha: CLEAN_SHA, builtAt: 1234, builder: 'tools' }),
+);
 fs.rmSync(path.join(RELEASES, 'pending'), { recursive: true, force: true });
 fs.mkdirSync(path.join(RELEASES, 'done'), { recursive: true });
-fs.writeFileSync(path.join(RELEASES, 'done', `${CLEAN_SHA}.json`),
-  JSON.stringify({ sha: CLEAN_SHA, status: 'built', builtAt: 1234, log: 'ok' }));
-const activated = await call('POST', '/api/management/activate',
-  { target: CLEAN_SHA, confirm: true, username: USERNAME, password: PASSWORD });
+fs.writeFileSync(
+  path.join(RELEASES, 'done', `${CLEAN_SHA}.json`),
+  JSON.stringify({ sha: CLEAN_SHA, status: 'built', builtAt: 1234, log: 'ok' }),
+);
+const activated = await call('POST', '/api/management/activate', {
+  target: CLEAN_SHA,
+  confirm: true,
+  username: USERNAME,
+  password: PASSWORD,
+});
 check('POST activate, built + loadable release: 202, pointer written, restart triggered', () => {
   assert.equal(activated.status, 202);
   assert.deepEqual(activated.json, { target: CLEAN_SHA, status: 'activating' });

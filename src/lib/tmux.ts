@@ -25,7 +25,12 @@ import * as fs from 'node:fs';
 import { ENV, RAW_ENV } from './env';
 import { componentLogger } from './logger';
 import type { ResultFailure, ResultSuccess } from '../types/result';
-import { asTmuxSessionName, type JobName, type TerminalId, type TmuxSessionName } from '../types/branded';
+import {
+  asTmuxSessionName,
+  type JobName,
+  type TerminalId,
+  type TmuxSessionName,
+} from '../types/branded';
 
 export const SOCKET = ENV.WEB_PI_TMUX_SOCKET;
 
@@ -104,8 +109,12 @@ type TmuxError = Error & { stderr?: string | Buffer };
  *  refusing is always safe, forking never is. */
 export function isServerDown(err: TmuxError | null): boolean {
   if (!err) return false;
-  const se = typeof err.stderr === 'string' ? err.stderr
-    : err.stderr === undefined || err.stderr === null ? '' : err.stderr.toString('utf8');
+  const se =
+    typeof err.stderr === 'string'
+      ? err.stderr
+      : err.stderr === undefined || err.stderr === null
+        ? ''
+        : err.stderr.toString('utf8');
   return !se.includes('no sessions');
 }
 
@@ -121,7 +130,11 @@ export type TmuxSessionData = { name: TmuxSessionName };
  *  that is almost always "duplicate session" (name taken). */
 export type TmuxSessionErrorCode = 'server_not_running' | 'tmux_error';
 export type TmuxSessionSuccess = ResultSuccess<'tmux_session', TmuxSessionData>;
-export type TmuxSessionFailure = ResultFailure<'tmux_session', TmuxSessionData, TmuxSessionErrorCode>;
+export type TmuxSessionFailure = ResultFailure<
+  'tmux_session',
+  TmuxSessionData,
+  TmuxSessionErrorCode
+>;
 
 /** Never-fork gate for EVERY path that can start a tmux server as this
  *  uid — new-session AND attach (both are forking commands in tmux):
@@ -135,7 +148,11 @@ export type TmuxSessionFailure = ResultFailure<'tmux_session', TmuxSessionData, 
  *  closes the steady-state case (workspace never started / crashed long
  *  ago), which is what the split must never paper over. */
 export async function requireServer() {
-  const ok = { ok: true, resultType: 'tmux_server', data: { socket: SOCKET } } satisfies TmuxServerSuccess;
+  const ok = {
+    ok: true,
+    resultType: 'tmux_server',
+    data: { socket: SOCKET },
+  } satisfies TmuxServerSuccess;
   if (forksServer(SOCKET)) return ok;
   const { error } = await tmux(SOCKET, ['list-sessions']);
   if (isServerDown(error)) {
@@ -152,15 +169,25 @@ export async function requireServer() {
 
 /** One tmux call. Never rejects: the error (with tmux's stderr) is part
  *  of the answer — callers decide what it means. */
-function tmux(socket: string, args: string[], env?: Record<string, string>, timeout = 5000):
-  Promise<{ error: TmuxError | null; stdout: string }> {
+function tmux(
+  socket: string,
+  args: string[],
+  env?: Record<string, string>,
+  timeout = 5000,
+): Promise<{ error: TmuxError | null; stdout: string }> {
   const conf = fs.existsSync(CONF) ? ['-f', CONF] : [];
   return new Promise(resolve => {
-    execFile('tmux', [...conf, ...socketArgs(socket), ...args],
+    execFile(
+      'tmux',
+      [...conf, ...socketArgs(socket), ...args],
       { timeout, ...(env ? { env: Object.assign({}, process.env, env) } : {}) },
       (err, stdout) => {
-        resolve({ error: err instanceof Error ? err : null, stdout: typeof stdout === 'string' ? stdout : '' });
-      });
+        resolve({
+          error: err instanceof Error ? err : null,
+          stdout: typeof stdout === 'string' ? stdout : '',
+        });
+      },
+    );
   });
 }
 
@@ -216,15 +243,23 @@ export async function hasSession(name: TmuxSessionName): Promise<boolean> {
  *  after `--`. Pure so the spawn (new_terminal, plan §4) and the WS
  *  respawn path build the identical argv — unit-tested without tmux. */
 export function newSessionArgs(
-  name: TmuxSessionName, cwd: string, command: string[], env: Record<string, string>): string[] {
+  name: TmuxSessionName,
+  cwd: string,
+  command: string[],
+  env: Record<string, string>,
+): string[] {
   return ['new-session', '-d', '-s', name, '-c', cwd, ...envArgs(env), '--', ...command];
 }
 
 /** Start a session running the configured command (a terminal tab's
  *  spawn and respawn, and a job run — plan §4/§9). Never-fork guard
  *  first on absolute sockets (see requireServer). */
-export async function newSession(name: TmuxSessionName, cwd: string, command: string[],
-  env: Record<string, string>) {
+export async function newSession(
+  name: TmuxSessionName,
+  cwd: string,
+  command: string[],
+  env: Record<string, string>,
+) {
   const server = await requireServer();
   if (!server.ok) return sessionFailure(name, server);
   const { error } = await tmux(SOCKET, newSessionArgs(name, cwd, command, env), env);
@@ -258,8 +293,12 @@ export function capturePaneHistoryArgs(name: TmuxSessionName): string[] {
  *  Can't fail by design: any error (no session — the attach race — a
  *  dead server) reads as 0, i.e. "no history to backfill". */
 export async function paneHistorySize(name: TmuxSessionName): Promise<number> {
-  const { error, stdout } =
-    await tmux(SOCKET, ['display-message', '-p', '-t', name, '#{history_size}'], undefined, 2000);
+  const { error, stdout } = await tmux(
+    SOCKET,
+    ['display-message', '-p', '-t', name, '#{history_size}'],
+    undefined,
+    2000,
+  );
   if (error) return 0;
   const n = Number.parseInt(stdout.trim(), 10);
   return Number.isFinite(n) && n > 0 ? n : 0;
@@ -282,7 +321,7 @@ export async function capturePaneHistory(name: TmuxSessionName): Promise<string 
   // Shorter than tmux()'s 5s default: the caller holds the attach's
   // output until this resolves, so a wedged capture must not stall the
   // terminal for the full default.
-  if (await paneHistorySize(name) === 0) return null;
+  if ((await paneHistorySize(name)) === 0) return null;
   const { error, stdout } = await tmux(SOCKET, capturePaneHistoryArgs(name), undefined, 2000);
   if (error) {
     log.debug(`capture-pane ${name} failed: ${error.message}`);

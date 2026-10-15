@@ -62,11 +62,19 @@ test.beforeAll(() => {
   fs.rmSync(CHECKOUT, { recursive: true, force: true });
   fs.rmSync(RELEASES, { recursive: true, force: true });
   fs.mkdirSync(CHECKOUT, { recursive: true });
-  const run = (cmd: string[]) => { execFileSync('git', cmd, { cwd: CHECKOUT, stdio: 'ignore' }); };
+  const run = (cmd: string[]) => {
+    execFileSync('git', cmd, { cwd: CHECKOUT, stdio: 'ignore' });
+  };
   run(['init', '-q', '-b', 'main']);
   run(['config', 'user.email', 't@t']);
   run(['config', 'user.name', 't']);
-  for (const f of ['compose.yaml', 'Dockerfile', 'server/main.ts', 'src/lib/releases.ts', 'package.json']) {
+  for (const f of [
+    'compose.yaml',
+    'Dockerfile',
+    'server/main.ts',
+    'src/lib/releases.ts',
+    'package.json',
+  ]) {
     fs.mkdirSync(path.dirname(path.join(CHECKOUT, f)), { recursive: true });
     fs.writeFileSync(path.join(CHECKOUT, f), `# ${f}\n`);
   }
@@ -83,9 +91,14 @@ test.beforeAll(() => {
   run(['commit', '-q', '-m', 'evil target']);
   EVIL_SHA = git(['rev-parse', 'HEAD']);
   // The image's baked version names the base commit (the trusted diff root)
-  fs.writeFileSync(VERSION_FILE, JSON.stringify({ git: BASE_SHA, builtAt: '2026-10-10T00:00:00Z' }));
+  fs.writeFileSync(
+    VERSION_FILE,
+    JSON.stringify({ git: BASE_SHA, builtAt: '2026-10-10T00:00:00Z' }),
+  );
 
-  expect(setCredential(new StateDb(path.join(STATE, 'webpi.db')), USERNAME, PASSWORD).ok).toBe(true);
+  expect(setCredential(new StateDb(path.join(STATE, 'webpi.db')), USERNAME, PASSWORD).ok).toBe(
+    true,
+  );
 
   // The child server: the full app, with the management env pointed at
   // the fixture (checkout + releases volume). No S3, no sessions started.
@@ -106,10 +119,16 @@ test.beforeAll(() => {
   let out = '';
   return new Promise<void>((resolve, reject) => {
     const t = child!;
-    const timer = setTimeout(() => reject(new Error(`server did not boot; stdout: ${out}`)), 15_000);
+    const timer = setTimeout(
+      () => reject(new Error(`server did not boot; stdout: ${out}`)),
+      15_000,
+    );
     t.stdout!.on('data', (d: Buffer) => {
       out += d.toString();
-      if (out.includes('web-pi listening')) { clearTimeout(timer); resolve(); }
+      if (out.includes('web-pi listening')) {
+        clearTimeout(timer);
+        resolve();
+      }
     });
     t.on('error', reject);
   });
@@ -147,7 +166,9 @@ async function login(page: Page): Promise<void> {
   expect(sessionCookie).not.toBeNull();
 }
 
-test('unauthenticated: /management renders the login page in place; the APIs answer 401', async ({ page }) => {
+test('unauthenticated: /management renders the login page in place; the APIs answer 401', async ({
+  page,
+}) => {
   const api = await fetch(`${BASE}/api/management`);
   expect(api.status).toBe(401);
   await page.goto(`${BASE}/management`);
@@ -172,7 +193,10 @@ test('picking a commit fetches the server-rendered verdict BEFORE any verb', asy
   await expect(page.locator('#mgmt-preview')).toContainText('allowed');
   await expect(page.locator('#mgmt-preview .mgmt-protected')).toHaveCount(0);
   // the picked row is marked, and the preview names the changed file
-  await expect(page.locator(`[data-pick="${CLEAN_SHA}"]`).first()).toHaveAttribute('data-selected', 'true');
+  await expect(page.locator(`[data-pick="${CLEAN_SHA}"]`).first()).toHaveAttribute(
+    'data-selected',
+    'true',
+  );
   await expect(page.locator('#mgmt-preview')).toContainText('README.md');
 
   // the evil commit's verdict refuses and names the protected path
@@ -181,19 +205,27 @@ test('picking a commit fetches the server-rendered verdict BEFORE any verb', asy
   await expect(page.locator('#mgmt-preview .mgmt-protected')).toContainText('compose.yaml');
 });
 
-test('build: re-auth gates it, enforcement refuses the protected change, the marker is the only effect', async ({ page }) => {
+test('build: re-auth gates it, enforcement refuses the protected change, the marker is the only effect', async ({
+  page,
+}) => {
   await login(page);
   await page.goto(`${BASE}/management`);
 
-  const call = (sha: string, username: string, password: string) => page.evaluate(
-    async ([s, u, p]) => {
-      const r = await fetch('/api/management/build', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sha: s, confirm: true, username: u, password: p }),
-      });
-      return { status: r.status, body: await r.json().catch(() => ({})) as Record<string, unknown> };
-    },
-    [sha, username, password] as const);
+  const call = (sha: string, username: string, password: string) =>
+    page.evaluate(
+      async ([s, u, p]) => {
+        const r = await fetch('/api/management/build', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sha: s, confirm: true, username: u, password: p }),
+        });
+        return {
+          status: r.status,
+          body: (await r.json().catch(() => ({}))) as Record<string, unknown>,
+        };
+      },
+      [sha, username, password] as const,
+    );
 
   // wrong password → 401, nothing written
   const wrong = await call(CLEAN_SHA, USERNAME, 'nope');
@@ -212,23 +244,32 @@ test('build: re-auth gates it, enforcement refuses the protected change, the mar
   expect(ok.status).toBe(202);
   const marker = path.join(RELEASES, 'pending', `${CLEAN_SHA}.json`);
   expect(fs.existsSync(marker)).toBe(true);
-  expect(JSON.parse(fs.readFileSync(marker, 'utf8'))).toMatchObject({ sha: CLEAN_SHA, base: BASE_SHA });
+  expect(JSON.parse(fs.readFileSync(marker, 'utf8'))).toMatchObject({
+    sha: CLEAN_SHA,
+    base: BASE_SHA,
+  });
   // the page's history table picked the request up
   await page.goto(`${BASE}/management`);
   await expect(page.locator('#mgmt-releases')).toContainText(CLEAN_SHA.slice(0, 12));
 
   // no confirm → the schema refuses it (the dialog's checkbox is not optional)
-  const unconfirmed = await page.evaluate(async ([s, u, p]) => {
-    const r = await fetch('/api/management/build', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sha: s, confirm: false, username: u, password: p }),
-    });
-    return r.status;
-  }, [CLEAN_SHA, USERNAME, PASSWORD] as const);
+  const unconfirmed = await page.evaluate(
+    async ([s, u, p]) => {
+      const r = await fetch('/api/management/build', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sha: s, confirm: false, username: u, password: p }),
+      });
+      return r.status;
+    },
+    [CLEAN_SHA, USERNAME, PASSWORD] as const,
+  );
   expect(unconfirmed).toBe(400);
 });
 
-test('build through the dialog: the checkbox gate, re-auth toast, success closes + refreshes', async ({ page }) => {
+test('build through the dialog: the checkbox gate, re-auth toast, success closes + refreshes', async ({
+  page,
+}) => {
   await login(page);
   await page.goto(`${BASE}/management`);
   // The fetch-based build test above left CLEAN_SHA's pending marker; no
@@ -275,21 +316,27 @@ test('build through the dialog: the checkbox gate, re-auth toast, success closes
   await page.click('#mgmt-confirm-ok');
   await expect(dialogText).not.toBeVisible();
   await expect(page.locator('#mgmt-releases')).toContainText(CLEAN_SHA.slice(0, 12));
-  expect(JSON.parse(fs.readFileSync(
-    path.join(RELEASES, 'pending', `${CLEAN_SHA}.json`), 'utf8'))).toMatchObject(
-    { sha: CLEAN_SHA, base: BASE_SHA });
+  expect(
+    JSON.parse(fs.readFileSync(path.join(RELEASES, 'pending', `${CLEAN_SHA}.json`), 'utf8')),
+  ).toMatchObject({ sha: CLEAN_SHA, base: BASE_SHA });
 });
 
-test('activate without a built release is a 404; a foreign Origin POST never reaches it', async ({ page }) => {
+test('activate without a built release is a 404; a foreign Origin POST never reaches it', async ({
+  page,
+}) => {
   await login(page);
   await page.goto(`${BASE}/management`);
-  const missing = await page.evaluate(async ([sha, u, p]) => {
-    const r = await fetch('/api/management/activate', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ target: sha, confirm: true, username: u, password: p }),
-    });
-    return { status: r.status, code: (await r.json().catch(() => ({}))).code };
-  }, [CLEAN_SHA, USERNAME, PASSWORD] as const);
+  const missing = await page.evaluate(
+    async ([sha, u, p]) => {
+      const r = await fetch('/api/management/activate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: sha, confirm: true, username: u, password: p }),
+      });
+      return { status: r.status, code: (await r.json().catch(() => ({}))).code };
+    },
+    [CLEAN_SHA, USERNAME, PASSWORD] as const,
+  );
   expect(missing.status).toBe(404);
   expect(missing.code).toBe('release_not_built');
 

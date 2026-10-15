@@ -13,7 +13,6 @@ export interface LokiConfig {
   job: string;
 }
 
-
 export const APP_ROOT = path.join(__dirname, '..', '..', '..');
 export const PI_BIN = path.join(APP_ROOT, 'node_modules', '.bin', 'pi');
 
@@ -31,7 +30,8 @@ function readSchemaEnv(): SchemaEnv {
         throw new Error(`${key}=${JSON.stringify(raw)} is not an integer`);
       }
       out[key] = n;
-    } else if (field.type === 'boolean') out[key] = raw === 'true' ? true : raw === 'false' ? false : field.default;
+    } else if (field.type === 'boolean')
+      out[key] = raw === 'true' ? true : raw === 'false' ? false : field.default;
     else out[key] = raw ?? field.default;
   }
   return out as SchemaEnv;
@@ -70,7 +70,8 @@ export const ENV = {
   WEB_PI_AGENT_DIR: agentDir,
   WEB_PI_DB_FILE: dbFile,
   WEB_PI_CLIENT_DIR: RAW_ENV.WEB_PI_CLIENT_DIR ?? path.join(APP_ROOT, 'dist', 'client'),
-  WEB_PI_ASTRO_ENTRY: RAW_ENV.WEB_PI_ASTRO_ENTRY ?? path.join(APP_ROOT, 'dist', 'server', 'entry.mjs'),
+  WEB_PI_ASTRO_ENTRY:
+    RAW_ENV.WEB_PI_ASTRO_ENTRY ?? path.join(APP_ROOT, 'dist', 'server', 'entry.mjs'),
   WEB_PI_NEW_SESSION_CWD: RAW_ENV.WEB_PI_NEW_SESSION_CWD ?? home,
   // task/ws-jobs (plan §9): job run logs live under the WORKSPACE volume
   // — the wrapper runs as the workspace uid, where WEB_PI_STATE_DIR is
@@ -106,8 +107,10 @@ export function readLokiConfig(): LokiConfig | null {
   // selector ({job="webpi"}) without escaping games.
   // eslint-disable-next-line no-useless-escape -- escaped `-` is house style (CODE_STYLE §5: schema regexes render as HTML `pattern` attributes, compiled with the `v` flag)
   if (!/^[a-zA-Z0-9_][a-zA-Z0-9_\-]{0,63}$/.test(label)) {
-    throw new Error(`WEB_PI_LOKI_JOB=${JSON.stringify(label)} is not a valid job label ` +
-      '(letters, digits, "_" and "-", max 64 chars)');
+    throw new Error(
+      `WEB_PI_LOKI_JOB=${JSON.stringify(label)} is not a valid job label ` +
+        '(letters, digits, "_" and "-", max 64 chars)',
+    );
   }
   // winston-loki appends /loki/api/v1/push — a trailing slash would double it.
   return { url: url.replace(/\/+$/, ''), job: label };
@@ -128,7 +131,9 @@ export function readObjectStoreConfig(): ObjectStoreConfig | null {
   const secretAccessKey = RAW_ENV.WEB_PI_S3_SECRET_KEY;
   if (!set(endpoint) && !set(accessKeyId) && !set(secretAccessKey)) return null;
   if (!set(endpoint) || !set(accessKeyId) || !set(secretAccessKey)) {
-    throw new Error('WEB_PI_S3_ENDPOINT, WEB_PI_S3_ACCESS_KEY and WEB_PI_S3_SECRET_KEY must be set together');
+    throw new Error(
+      'WEB_PI_S3_ENDPOINT, WEB_PI_S3_ACCESS_KEY and WEB_PI_S3_SECRET_KEY must be set together',
+    );
   }
   if (!URL.canParse(endpoint) || !/^https?:$/.test(new URL(endpoint).protocol)) {
     throw new Error(`WEB_PI_S3_ENDPOINT=${JSON.stringify(endpoint)} is not an http(s) URL`);
@@ -136,9 +141,17 @@ export function readObjectStoreConfig(): ObjectStoreConfig | null {
   // S3's bucket naming rules (path-style requests put it in the URL path).
   // eslint-disable-next-line no-useless-escape -- escaped `-` is house style (CODE_STYLE §5)
   if (!/^[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]$/.test(RAW_ENV.WEB_PI_S3_BUCKET)) {
-    throw new Error(`WEB_PI_S3_BUCKET=${JSON.stringify(RAW_ENV.WEB_PI_S3_BUCKET)} is not a valid bucket name`);
+    throw new Error(
+      `WEB_PI_S3_BUCKET=${JSON.stringify(RAW_ENV.WEB_PI_S3_BUCKET)} is not a valid bucket name`,
+    );
   }
-  return { endpoint, accessKeyId, secretAccessKey, bucket: RAW_ENV.WEB_PI_S3_BUCKET, region: RAW_ENV.WEB_PI_S3_REGION };
+  return {
+    endpoint,
+    accessKeyId,
+    secretAccessKey,
+    bucket: RAW_ENV.WEB_PI_S3_BUCKET,
+    region: RAW_ENV.WEB_PI_S3_REGION,
+  };
 }
 
 /** Editor webapp upstream (src/lib/editor.ts, docs/editor-webapp.md), or
@@ -156,8 +169,10 @@ export function readEditorUpstream(): EditorUpstream | null {
   }
   const u = new URL(raw);
   if (u.pathname !== '/' || u.search !== '' || u.hash !== '') {
-    throw new Error(`WEB_PI_EDITOR_UPSTREAM=${JSON.stringify(raw)} must be an origin only ` +
-      '(e.g. http://editor:3000) — the proxy forwards request paths verbatim');
+    throw new Error(
+      `WEB_PI_EDITOR_UPSTREAM=${JSON.stringify(raw)} must be an origin only ` +
+        '(e.g. http://editor:3000) — the proxy forwards request paths verbatim',
+    );
   }
   return { origin: u.origin };
 }

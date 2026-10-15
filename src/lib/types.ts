@@ -1,7 +1,14 @@
 // Shared types across server + client (the WS wire protocol is
 // described exactly once, on both ends).
 
-import type { AppId, AppSlug, JobName, TerminalId, TmuxSessionName, WorkspaceId } from '../types/branded';
+import type {
+  AppId,
+  AppSlug,
+  JobName,
+  TerminalId,
+  TmuxSessionName,
+  WorkspaceId,
+} from '../types/branded';
 
 // ---- GET /api/state: the workspace tree (workspaces-plan §5) ----
 
@@ -64,7 +71,7 @@ export interface ScheduledJob {
   /** shell command a run executes (inside tmux session webpi-<name>) */
   command: string;
   /** the optional app tag — display grouping only, never ownership:
- *  cwd/env stay global and runs stay webpi-<name> sessions (plan §9) */
+   *  cwd/env stay global and runs stay webpi-<name> sessions (plan §9) */
   appId: AppId | null;
   /** the tagged app's display name (listJobs' LEFT JOIN; null when untagged) */
   appName: string | null;
@@ -289,10 +296,10 @@ export type ServerMsg =
   | { type: 'attached'; target: TmuxSessionName; socket: string }
   | { type: 'output'; data: string }
   /** scrollback history captured at attach (tmux.ts capturePaneHistory):
- *  HISTORY ONLY, sent once per attach BEFORE any 'output' flows — the
- *  client writes it into the (fresh) buffer and pushes the viewport
- *  down so tmux's home-positioned attach redraw repaints the screen
- *  below it instead of over it. Skipped when there is no history. */
+   *  HISTORY ONLY, sent once per attach BEFORE any 'output' flows — the
+   *  client writes it into the (fresh) buffer and pushes the viewport
+   *  down so tmux's home-positioned attach redraw repaints the screen
+   *  below it instead of over it. Skipped when there is no history. */
   | { type: 'backfill'; data: string }
   | { type: 'exit'; target: TmuxSessionName }
   | { type: 'error'; message: string }
@@ -307,6 +314,4 @@ export type ServerMsg =
  *  reconnect key): a terminal tab (its row's uuid) or a job run (its live
  *  tmux session name) — the live:/resume: variants died with the
  *  pi-session UI (workspaces-plan §11). */
-export type ActiveKey =
-  | `terminal:${TerminalId}`
-  | `run:${TmuxSessionName}`;
+export type ActiveKey = `terminal:${TerminalId}` | `run:${TmuxSessionName}`;

@@ -32,13 +32,21 @@ import { componentLogger } from './logger';
 import { appVersion } from './settings';
 import { RateLimiter, type VerifyLoginResult } from './auth';
 import type {
-  BuildStatus, ChangedPath, CheckoutInfo, CommitEntry, EnforcementVerdict,
-  ManagementState, ReleaseRecord,
+  BuildStatus,
+  ChangedPath,
+  CheckoutInfo,
+  CommitEntry,
+  EnforcementVerdict,
+  ManagementState,
+  ReleaseRecord,
 } from './types';
 import type { CommitSha } from '../types/branded';
 import type { ResultFailure, ResultSuccess } from '../types/result';
 import {
-  BuildDoneMarkerSchema, BuildRequestMarkerSchema, ReleaseManifestSchema, SHA_RE,
+  BuildDoneMarkerSchema,
+  BuildRequestMarkerSchema,
+  ReleaseManifestSchema,
+  SHA_RE,
 } from '../schemas/management';
 
 const log = componentLogger('releases');
@@ -48,30 +56,60 @@ const log = componentLogger('releases');
 // is a change to the security boundary: it can only be made in the
 // original project on the host, never applied from inside the container
 // (this file is itself protected, below).
-export interface ProtectedEntry { path: string; why: string }
+export interface ProtectedEntry {
+  path: string;
+  why: string;
+}
 
 export const PROTECTED_ENTRIES: readonly ProtectedEntry[] = [
-  { path: 'compose.yaml', why: 'the split\'s definition: uids, :ro mounts, internal networks, restart policy, the builder service' },
-  { path: 'Dockerfile', why: 'image construction: root-owned /opt/web-pi, uid 2000/gid 2001, entrypoints, version.json' },
-  { path: 'docker-entrypoint.sh', why: 'the web container\'s entrypoint' },
-  { path: 'docker-workspace-entrypoint.sh', why: 'the workspace entrypoint: tmux ownership, server-access admission, umask, socket perms' },
+  {
+    path: 'compose.yaml',
+    why: "the split's definition: uids, :ro mounts, internal networks, restart policy, the builder service",
+  },
+  {
+    path: 'Dockerfile',
+    why: 'image construction: root-owned /opt/web-pi, uid 2000/gid 2001, entrypoints, version.json',
+  },
+  { path: 'docker-entrypoint.sh', why: "the web container's entrypoint" },
+  {
+    path: 'docker-workspace-entrypoint.sh',
+    why: 'the workspace entrypoint: tmux ownership, server-access admission, umask, socket perms',
+  },
   { path: 'deploy', why: 'the perimeter: nginx TLS/WS proxying and fail2ban' },
-  { path: '.gitmodules', why: 'names external sources of code that enter the tree at checkout time' },
-  { path: 'package.json', why: 'build scripts and dependency declarations — what the builder runs' },
+  {
+    path: '.gitmodules',
+    why: 'names external sources of code that enter the tree at checkout time',
+  },
+  {
+    path: 'package.json',
+    why: 'build scripts and dependency declarations — what the builder runs',
+  },
   { path: 'package-lock.json', why: 'pins every dependency and their install scripts' },
   { path: 'astro.config.mjs', why: 'executed as code at build time; adapter and body-size config' },
   { path: 'tsconfig.json', why: 'what the build compiles' },
-  { path: 'tsconfig.server.json', why: 'the server build\'s inputs' },
-  { path: 'server/main.ts', why: 'the gate: origin check, session check, body caps, security headers, WS bridge' },
+  { path: 'tsconfig.server.json', why: "the server build's inputs" },
+  {
+    path: 'server/main.ts',
+    why: 'the gate: origin check, session check, body caps, security headers, WS bridge',
+  },
   { path: 'server/set-password.ts', why: 'credential machinery (the setCredential CLI)' },
   { path: 'src/middleware.ts', why: 'the fail-closed guard for /api and /partials without locals' },
-  { path: 'src/lib/auth.ts', why: 'login verification, the persisted session store, setCredential' },
+  {
+    path: 'src/lib/auth.ts',
+    why: 'login verification, the persisted session store, setCredential',
+  },
   { path: 'src/lib/env-schema.ts', why: 'the WEB_PI_* contract every runtime knob is declared in' },
-  { path: 'src/lib/env.ts', why: 'the runtime reader: which socket, paths and endpoints are trusted' },
+  {
+    path: 'src/lib/env.ts',
+    why: 'the runtime reader: which socket, paths and endpoints are trusted',
+  },
   { path: 'src/lib/services.ts', why: 'the capability broker: what release code may call' },
   { path: 'src/lib/releases.ts', why: 'this module: the protected set, the enforcement, the swap' },
   { path: 'src/schemas/api.ts', why: 'the login wire schema' },
-  { path: 'src/pages/api/management', why: 'the routes that drive apply — they call the enforcement' },
+  {
+    path: 'src/pages/api/management',
+    why: 'the routes that drive apply — they call the enforcement',
+  },
 ] as const;
 
 // ---------- path normalization + matching (pure — unit-tested) ----------
@@ -129,10 +167,14 @@ export function protectedHits(paths: Iterable<string>): string[] {
 /** One `--name-status` record. With --no-renames, R/C never occur; the
  *  parser still accepts them (judging BOTH ends) rather than trusting
  *  that — defense in depth against a flag regression. */
-export interface DiffRecord { letter: string; path: string; oldPath: string | null }
+export interface DiffRecord {
+  letter: string;
+  path: string;
+  oldPath: string | null;
+}
 
-const ONE_PATH = /^[ADMT]$/;    // added, deleted, modified, type-changed
-const TWO_PATH = /^[RC]\d+$/;   // rename/copy with similarity — defensive
+const ONE_PATH = /^[ADMT]$/; // added, deleted, modified, type-changed
+const TWO_PATH = /^[RC]\d+$/; // rename/copy with similarity — defensive
 
 /** Parse `git diff --no-renames --name-status -z` output. NUL-separated
  *  records: a status token, then one path (A/D/M/T) or two (R100/C75 —
@@ -147,14 +189,18 @@ export function parseNameStatus(raw: string): DiffRecord[] | null {
   let i = 0;
   while (i < tokens.length) {
     const letter = tokens[i];
-    if (letter === undefined || letter === '') { i++; continue; } // trailing NUL / empty runs
+    if (letter === undefined || letter === '') {
+      i++;
+      continue;
+    } // trailing NUL / empty runs
     if (ONE_PATH.test(letter)) {
       const p = tokens[i + 1];
       if (p === undefined || p === '') return null;
       records.push({ letter, path: p, oldPath: null });
       i += 2;
     } else if (TWO_PATH.test(letter)) {
-      const oldPath = tokens[i + 1], p = tokens[i + 2];
+      const oldPath = tokens[i + 1],
+        p = tokens[i + 2];
       if (oldPath === undefined || p === undefined || p === '') return null;
       records.push({ letter, path: p, oldPath });
       i += 3;
@@ -177,7 +223,11 @@ export const PREVIEW_PATH_CAP = 200;
 
 /** The verdict from parsed records: which paths changed, which hits the
  *  protected set, and whether apply is allowed. Pure. */
-export function verdictFromRecords(base: string, target: string, records: DiffRecord[]): EnforcementVerdict {
+export function verdictFromRecords(
+  base: string,
+  target: string,
+  records: DiffRecord[],
+): EnforcementVerdict {
   const changed: ChangedPath[] = [];
   const protectedChanged = new Set<string>();
   let judged = 0;
@@ -188,7 +238,10 @@ export function verdictFromRecords(base: string, target: string, records: DiffRe
     const normalized = normalizeGitPath(raw);
     // An unnormalizable path is one git never mints: count it as a
     // protected hit so the verdict can never be "allowed" on garbage.
-    if (normalized === null) { protectedChanged.add(`<unparsable path: ${raw}>`); return; }
+    if (normalized === null) {
+      protectedChanged.add(`<unparsable path: ${raw}>`);
+      return;
+    }
     if (isProtectedPath(normalized)) protectedChanged.add(normalized);
     if (changed.length < PREVIEW_PATH_CAP) {
       changed.push({ path: normalized, status, protectedPath: isProtectedPath(normalized) });
@@ -206,7 +259,8 @@ export function verdictFromRecords(base: string, target: string, records: DiffRe
     if (why !== null) protectedWhy[p] = why;
   }
   return {
-    base, target,
+    base,
+    target,
     allowed: protectedChanged.size === 0,
     changedCount: judged,
     changed,
@@ -220,7 +274,11 @@ export function verdictFromRecords(base: string, target: string, records: DiffRe
 export type ManagementStateData = ManagementState;
 export type ManagementStateErrorCode = 'database_error';
 export type ManagementStateSuccess = ResultSuccess<'management_state', ManagementStateData>;
-export type ManagementStateFailure = ResultFailure<'management_state', ManagementStateData, ManagementStateErrorCode>;
+export type ManagementStateFailure = ResultFailure<
+  'management_state',
+  ManagementStateData,
+  ManagementStateErrorCode
+>;
 export type ManagementStateResult = ManagementStateSuccess | ManagementStateFailure;
 
 export type ListCommitsData = { commits: CommitEntry[] };
@@ -229,35 +287,47 @@ export type ListCommitsData = { commits: CommitEntry[] };
  *  failed — not a repository, timeout, unreadable. */
 export type ListCommitsErrorCode = 'checkout_missing' | 'git_error';
 export type ListCommitsSuccess = ResultSuccess<'list_commits', ListCommitsData>;
-export type ListCommitsFailure = ResultFailure<'list_commits', ListCommitsData, ListCommitsErrorCode>;
+export type ListCommitsFailure = ResultFailure<
+  'list_commits',
+  ListCommitsData,
+  ListCommitsErrorCode
+>;
 export type ListCommitsResult = ListCommitsSuccess | ListCommitsFailure;
 
 /** Why the enforcement could not be computed (docs/management-page.md
  *  §1.2): without a trustworthy base there is no enforcement, so every
  *  code here refuses rather than guessing. */
 export type EnforcementErrorCode =
-  | 'checkout_missing'    // no checkout configured/present
-  | 'base_unknown'        // the running copy records no git sha (rebuild the image with GIT_SHA)
-  | 'base_not_in_checkout'// the base sha does not resolve in the checkout (rewritten history / wrong repo)
-  | 'target_not_found'    // the picked sha does not resolve
-  | 'git_error';          // git failed (incl. an unparseable diff — fail closed)
+  | 'checkout_missing' // no checkout configured/present
+  | 'base_unknown' // the running copy records no git sha (rebuild the image with GIT_SHA)
+  | 'base_not_in_checkout' // the base sha does not resolve in the checkout (rewritten history / wrong repo)
+  | 'target_not_found' // the picked sha does not resolve
+  | 'git_error'; // git failed (incl. an unparseable diff — fail closed)
 export type EnforcementData = EnforcementVerdict;
 export type EnforcementSuccess = ResultSuccess<'enforcement_preview', EnforcementData>;
-export type EnforcementFailure = ResultFailure<'enforcement_preview', EnforcementData, EnforcementErrorCode>;
+export type EnforcementFailure = ResultFailure<
+  'enforcement_preview',
+  EnforcementData,
+  EnforcementErrorCode
+>;
 export type EnforcementResult = EnforcementSuccess | EnforcementFailure;
 
 export type RequestBuildData = { sha: CommitSha; status: 'requested' };
 export type RequestBuildErrorCode =
-  | 'invalid_credentials'  // the password re-confirmation failed (401)
-  | 'reauth_limited'       // too many password confirmations in the window (429)
+  | 'invalid_credentials' // the password re-confirmation failed (401)
+  | 'reauth_limited' // too many password confirmations in the window (429)
   | 'enforcement_rejected' // the diff touches the protected set (422; the message names the offending paths)
   | 'releases_not_configured' // no WEB_PI_RELEASES_DIR volume (503)
-  | 'build_active'         // another build is pending/running (409)
-  | 'marker_error'         // the request marker could not be written (500)
+  | 'build_active' // another build is pending/running (409)
+  | 'marker_error' // the request marker could not be written (500)
   | 'database_error'
   | EnforcementErrorCode;
 export type RequestBuildSuccess = ResultSuccess<'request_build', RequestBuildData>;
-export type RequestBuildFailure = ResultFailure<'request_build', RequestBuildData, RequestBuildErrorCode>;
+export type RequestBuildFailure = ResultFailure<
+  'request_build',
+  RequestBuildData,
+  RequestBuildErrorCode
+>;
 export type RequestBuildResult = RequestBuildSuccess | RequestBuildFailure;
 
 export type ActivateData = { target: 'image' | CommitSha; status: 'activating' };
@@ -266,8 +336,8 @@ export type ActivateErrorCode =
   | 'reauth_limited'
   | 'enforcement_rejected'
   | 'releases_not_configured'
-  | 'release_not_built'   // no built release for that sha (404)
-  | 'release_invalid'     // manifest mismatch / layout invalid / the entry will not load (409)
+  | 'release_not_built' // no built release for that sha (404)
+  | 'release_invalid' // manifest mismatch / layout invalid / the entry will not load (409)
   | 'database_error'
   | EnforcementErrorCode;
 export type ActivateSuccess = ResultSuccess<'activate_release', ActivateData>;
@@ -311,21 +381,32 @@ const GIT_TIMEOUT_MS = 15_000;
  *  make the diff empty, a replace of the target would archive/serve
  *  another tree under a sha the enforcement approved (docs/
  *  management-page.md §1.2–1.3; unit-tested from the attacker's side). */
-function git(checkout: string, args: string[]): Promise<{ error: Error | null; stdout: string; stderr: string }> {
+function git(
+  checkout: string,
+  args: string[],
+): Promise<{ error: Error | null; stdout: string; stderr: string }> {
   return new Promise(resolve => {
-    execFile('git', ['--no-replace-objects', '-c', 'safe.directory=*', '--no-pager', ...args], {
-      cwd: checkout,
-      timeout: GIT_TIMEOUT_MS,
-      maxBuffer: 16 * 1024 * 1024,
-      env: {
-        ...process.env,
-        GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_NO_REPLACE_OBJECTS: '1',
+    execFile(
+      'git',
+      ['--no-replace-objects', '-c', 'safe.directory=*', '--no-pager', ...args],
+      {
+        cwd: checkout,
+        timeout: GIT_TIMEOUT_MS,
+        maxBuffer: 16 * 1024 * 1024,
+        env: {
+          ...process.env,
+          GIT_CONFIG_GLOBAL: '/dev/null',
+          GIT_CONFIG_NOSYSTEM: '1',
+          GIT_NO_REPLACE_OBJECTS: '1',
+        },
       },
-    }, (err, stdout, stderr) => resolve({
-      error: err instanceof Error ? err : null,
-      stdout: typeof stdout === 'string' ? stdout : '',
-      stderr: typeof stderr === 'string' ? stderr : '',
-    }));
+      (err, stdout, stderr) =>
+        resolve({
+          error: err instanceof Error ? err : null,
+          stdout: typeof stdout === 'string' ? stdout : '',
+          stderr: typeof stderr === 'string' ? stderr : '',
+        }),
+    );
   });
 }
 
@@ -338,16 +419,34 @@ function gitError(what: string, error: Error | null, stderr: string): string {
  *  `rev-parse --git-dir` against a real repo answers its path even when
  *  HEAD is broken; missing dir → checkout_missing, anything else →
  *  git_error with git's own words. */
-async function requireCheckout(checkout: string | null):
-  Promise<{ ok: true; checkout: string } | { ok: false; errorCode: 'checkout_missing' | 'git_error'; errorMessage: string }> {
+async function requireCheckout(
+  checkout: string | null,
+): Promise<
+  | { ok: true; checkout: string }
+  | { ok: false; errorCode: 'checkout_missing' | 'git_error'; errorMessage: string }
+> {
   if (checkout === null) {
-    return { ok: false, errorCode: 'checkout_missing', errorMessage: 'WEB_PI_MANAGEMENT_CHECKOUT is not set — point it at the workspace checkout (compose: /workspace/web-pi)' };
+    return {
+      ok: false,
+      errorCode: 'checkout_missing',
+      errorMessage:
+        'WEB_PI_MANAGEMENT_CHECKOUT is not set — point it at the workspace checkout (compose: /workspace/web-pi)',
+    };
   }
   if (!fs.existsSync(checkout)) {
-    return { ok: false, errorCode: 'checkout_missing', errorMessage: `the workspace checkout ${checkout} does not exist — clone one (docker compose exec workspace git clone <fork> /workspace/web-pi)` };
+    return {
+      ok: false,
+      errorCode: 'checkout_missing',
+      errorMessage: `the workspace checkout ${checkout} does not exist — clone one (docker compose exec workspace git clone <fork> /workspace/web-pi)`,
+    };
   }
   const { error, stderr } = await git(checkout, ['rev-parse', '--git-dir']);
-  if (error) return { ok: false, errorCode: 'git_error', errorMessage: gitError('rev-parse', error, stderr) };
+  if (error)
+    return {
+      ok: false,
+      errorCode: 'git_error',
+      errorMessage: gitError('rev-parse', error, stderr),
+    };
   return { ok: true, checkout };
 }
 
@@ -370,10 +469,13 @@ export async function checkoutInfo(checkout: string | null): Promise<CheckoutInf
     return info;
   }
   const head = await git(checkout, ['rev-parse', 'HEAD']);
-  if (head.error) { info.error = gitError('rev-parse', head.error, head.stderr); return info; }
+  if (head.error) {
+    info.error = gitError('rev-parse', head.error, head.stderr);
+    return info;
+  }
   info.head = head.stdout.trim() || null;
   const branch = await git(checkout, ['symbolic-ref', '--short', 'HEAD']);
-  info.branch = branch.error ? null : (branch.stdout.trim() || null); // detached → null
+  info.branch = branch.error ? null : branch.stdout.trim() || null; // detached → null
   const status = await git(checkout, ['status', '--porcelain']);
   if (!status.error) info.dirty = status.stdout.split('\n').filter(Boolean).length;
   return info;
@@ -382,15 +484,23 @@ export async function checkoutInfo(checkout: string | null): Promise<CheckoutInf
 /** Recent commits of the checkout (newest first), for the picker. */
 export async function listCommitsRaw(checkout: string | null, max = 50): Promise<CommitEntry[]> {
   const out: CommitEntry[] = [];
-  const { error, stdout, stderr } = await git(checkout as string,
-    ['log', `-z`, `--max-count=${max}`, '--pretty=format:%H%x1f%h%x1f%s%x1f%an%x1f%aI']);
+  const { error, stdout, stderr } = await git(checkout as string, [
+    'log',
+    `-z`,
+    `--max-count=${max}`,
+    '--pretty=format:%H%x1f%h%x1f%s%x1f%an%x1f%aI',
+  ]);
   if (error) throw new Error(gitError('log', error, stderr));
   for (const entry of stdout.split('\0')) {
     if (!entry) continue;
     const [sha, short, subject, author, date] = entry.split('\x1f');
     if (!sha || !short) continue;
     out.push({
-      sha, short, subject: subject ?? '', author: author ?? '', date: date ?? '',
+      sha,
+      short,
+      subject: subject ?? '',
+      author: author ?? '',
+      date: date ?? '',
     });
   }
   return out;
@@ -400,23 +510,46 @@ export async function listCommitsRaw(checkout: string | null, max = 50): Promise
  *  every changed path against the protected set. Runs in this (root-
  *  owned, image-resident) code for the preview AND re-runs before every
  *  dangerous verb — the page never decides anything. */
-export async function enforceDiff(checkout: string, base: CommitSha, target: CommitSha):
-  Promise<EnforcementResult> {
-  const fail = (errorCode: EnforcementErrorCode, errorMessage: string): EnforcementFailure =>
-    ({ ok: false, resultType: 'enforcement_preview', errorCode, errorMessage });
+export async function enforceDiff(
+  checkout: string,
+  base: CommitSha,
+  target: CommitSha,
+): Promise<EnforcementResult> {
+  const fail = (errorCode: EnforcementErrorCode, errorMessage: string): EnforcementFailure => ({
+    ok: false,
+    resultType: 'enforcement_preview',
+    errorCode,
+    errorMessage,
+  });
   if (!(await commitExists(checkout, base))) {
-    return fail('base_not_in_checkout',
-      `the running version's commit ${base} does not resolve in ${checkout} — the checkout's history was rewritten or it is a different repository; refusing to apply (docs/management-page.md §1.2)`);
+    return fail(
+      'base_not_in_checkout',
+      `the running version's commit ${base} does not resolve in ${checkout} — the checkout's history was rewritten or it is a different repository; refusing to apply (docs/management-page.md §1.2)`,
+    );
   }
   if (!(await commitExists(checkout, target))) {
     return fail('target_not_found', `commit ${target} does not resolve in ${checkout}`);
   }
-  const { error, stdout, stderr } = await git(checkout,
-    ['diff', '--no-renames', '--name-status', '-z', base, target]);
+  const { error, stdout, stderr } = await git(checkout, [
+    'diff',
+    '--no-renames',
+    '--name-status',
+    '-z',
+    base,
+    target,
+  ]);
   if (error) return fail('git_error', gitError('diff', error, stderr));
   const records = parseNameStatus(stdout);
-  if (records === null) return fail('git_error', 'the diff output could not be parsed — refusing to apply (fail closed)');
-  return { ok: true, resultType: 'enforcement_preview', data: verdictFromRecords(base, target, records) };
+  if (records === null)
+    return fail(
+      'git_error',
+      'the diff output could not be parsed — refusing to apply (fail closed)',
+    );
+  return {
+    ok: true,
+    resultType: 'enforcement_preview',
+    data: verdictFromRecords(base, target, records),
+  };
 }
 
 // ---------- the served-release pointer (docs/management-page.md §3.2) ----------
@@ -477,7 +610,12 @@ export function currentBaseSha(appRoot: string): CommitSha | null {
   return image && SHA_RE.test(image.git) ? (image.git as CommitSha) : null;
 }
 
-export interface MarkerPaths { pending: string; building: string; done: string; releaseDir: string }
+export interface MarkerPaths {
+  pending: string;
+  building: string;
+  done: string;
+  releaseDir: string;
+}
 
 export function markerPaths(releasesDir: string, sha: string): MarkerPaths {
   return {
@@ -497,7 +635,10 @@ export function markerPaths(releasesDir: string, sha: string): MarkerPaths {
  *  order flip alone would leave the stale answer winning the window
  *  between request and claim). Unreadable JSON in done/<sha>.json reads
  *  as failed — the page must never wait forever on a corrupt answer. */
-export function readBuildMarker(releasesDir: string, sha: string): { status: BuildStatus; log: string | null; builtAt: number | null } {
+export function readBuildMarker(
+  releasesDir: string,
+  sha: string,
+): { status: BuildStatus; log: string | null; builtAt: number | null } {
   const p = markerPaths(releasesDir, sha);
   if (fs.existsSync(p.building)) return { status: 'building', log: null, builtAt: null };
   if (fs.existsSync(p.pending)) return { status: 'pending', log: null, builtAt: null };
@@ -506,11 +647,19 @@ export function readBuildMarker(releasesDir: string, sha: string): { status: Bui
     try {
       parsed = JSON.parse(fs.readFileSync(p.done, 'utf8'));
     } catch {
-      return { status: 'failed', log: 'the builder\'s done marker is not valid JSON', builtAt: null };
+      return {
+        status: 'failed',
+        log: "the builder's done marker is not valid JSON",
+        builtAt: null,
+      };
     }
     const marker = BuildDoneMarkerSchema.safeParse(parsed);
     if (!marker.success || marker.data.sha !== sha) {
-      return { status: 'failed', log: 'the builder\'s done marker does not match the schema', builtAt: null };
+      return {
+        status: 'failed',
+        log: "the builder's done marker does not match the schema",
+        builtAt: null,
+      };
     }
     return { status: marker.data.status, log: marker.data.log, builtAt: marker.data.builtAt };
   }
@@ -521,8 +670,10 @@ export function readBuildMarker(releasesDir: string, sha: string): { status: Bui
 export function anyBuildActive(releasesDir: string): boolean {
   for (const dir of ['pending', 'building']) {
     try {
-      if ((fs.readdirSync(path.join(releasesDir, dir))).some(f => f.endsWith('.json'))) return true;
-    } catch { /* absent dir = nothing in flight */ }
+      if (fs.readdirSync(path.join(releasesDir, dir)).some(f => f.endsWith('.json'))) return true;
+    } catch {
+      /* absent dir = nothing in flight */
+    }
   }
   return false;
 }
@@ -533,7 +684,8 @@ export function anyBuildActive(releasesDir: string): boolean {
 export function writeBuildRequest(releasesDir: string, sha: string, base: string): void {
   const p = markerPaths(releasesDir, sha);
   const body = JSON.stringify(
-    BuildRequestMarkerSchema.parse({ sha, base, requestedAt: Date.now() }));
+    BuildRequestMarkerSchema.parse({ sha, base, requestedAt: Date.now() }),
+  );
   fs.mkdirSync(path.dirname(p.pending), { recursive: true });
   const tmp = `${p.pending}.tmp`;
   fs.writeFileSync(tmp, body, { mode: 0o660 });
@@ -549,7 +701,10 @@ export function writeBuildRequest(releasesDir: string, sha: string, base: string
  *  in no process, ever (the layout checks cannot see imports; the
  *  activate-time probe below is the load check). Never throws: reasons
  *  come back as strings. */
-export function validateReleaseDir(releaseDir: string, sha: string): { ok: true } | { ok: false; reason: string } {
+export function validateReleaseDir(
+  releaseDir: string,
+  sha: string,
+): { ok: true } | { ok: false; reason: string } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(fs.readFileSync(path.join(releaseDir, 'manifest.json'), 'utf8'));
@@ -559,7 +714,10 @@ export function validateReleaseDir(releaseDir: string, sha: string): { ok: true 
   const manifest = ReleaseManifestSchema.safeParse(parsed);
   if (!manifest.success) return { ok: false, reason: `manifest.json does not match the schema` };
   if (manifest.data.sha !== sha) {
-    return { ok: false, reason: `manifest sha ${manifest.data.sha} ≠ ${sha} — the release dir is not what it claims` };
+    return {
+      ok: false,
+      reason: `manifest sha ${manifest.data.sha} ≠ ${sha} — the release dir is not what it claims`,
+    };
   }
   if (!fs.existsSync(path.join(releaseDir, 'dist', 'server', 'entry.mjs'))) {
     return { ok: false, reason: `dist/server/entry.mjs is missing in ${releaseDir}` };
@@ -577,7 +735,10 @@ export function validateReleaseDir(releaseDir: string, sha: string): { ok: true 
     return { ok: false, reason: `dist/client is empty in ${releaseDir}` };
   }
   if (!fs.existsSync(path.join(releaseDir, 'node_modules'))) {
-    return { ok: false, reason: `node_modules (the image's, linked) is missing in ${releaseDir} — the SSR entry's imports cannot resolve without it` };
+    return {
+      ok: false,
+      reason: `node_modules (the image's, linked) is missing in ${releaseDir} — the SSR entry's imports cannot resolve without it`,
+    };
   }
   return { ok: true };
 }
@@ -593,7 +754,9 @@ const ENTRY_PROBE_MS = 10_000;
  *  the bound is as unloadable as one that rejects. Executing the release's
  *  module code here is the same in-process class as serving it
  *  (docs/management-page.md §1.5 #6). Never throws. */
-export async function probeReleaseEntry(entry: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+export async function probeReleaseEntry(
+  entry: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
   let timer: ReturnType<typeof setTimeout> | null = null;
   try {
     // Not just "loads": the entry must export the handler main.ts serves,
@@ -601,7 +764,10 @@ export async function probeReleaseEntry(entry: string): Promise<{ ok: true } | {
     const loaded = await Promise.race([
       import(pathToFileURL(entry).href) as Promise<{ handler?: unknown }>,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`did not load within ${ENTRY_PROBE_MS / 1000}s`)), ENTRY_PROBE_MS);
+        timer = setTimeout(
+          () => reject(new Error(`did not load within ${ENTRY_PROBE_MS / 1000}s`)),
+          ENTRY_PROBE_MS,
+        );
         timer.unref();
       }),
     ]);
@@ -610,7 +776,10 @@ export async function probeReleaseEntry(entry: string): Promise<{ ok: true } | {
     }
     return { ok: true };
   } catch (err) {
-    return { ok: false, reason: `the release's SSR entry failed to load (${(err as Error).message})` };
+    return {
+      ok: false,
+      reason: `the release's SSR entry failed to load (${(err as Error).message})`,
+    };
   } finally {
     if (timer !== null) clearTimeout(timer);
   }
@@ -656,15 +825,26 @@ export function resolveServingDirs(opts: {
       };
     }
     if (fs.existsSync(releaseDir)) {
-      return { dirs: imageDirs(opts), note: `release ${current} is INVALID (${valid.reason}) — falling back to the image copy` };
+      return {
+        dirs: imageDirs(opts),
+        note: `release ${current} is INVALID (${valid.reason}) — falling back to the image copy`,
+      };
     }
-    return { dirs: imageDirs(opts), note: `release ${current} is missing — falling back to the image copy` };
+    return {
+      dirs: imageDirs(opts),
+      note: `release ${current} is missing — falling back to the image copy`,
+    };
   }
   return { dirs: imageDirs(opts), note: 'serving the image copy' };
 }
 
 function imageDirs(opts: { imageClientDir: string; imageAstroEntry: string }): ServeDirs {
-  return { clientDir: opts.imageClientDir, astroEntry: opts.imageAstroEntry, releaseDir: null, sha: null };
+  return {
+    clientDir: opts.imageClientDir,
+    astroEntry: opts.imageAstroEntry,
+    releaseDir: null,
+    sha: null,
+  };
 }
 
 // ---------- the service (one instance, built by server/main.ts via services.ts) ----------
@@ -696,8 +876,12 @@ export interface ReleasesDeps {
 }
 
 interface ReleaseRow {
-  sha: string; status: ReleaseStatus; requested_at: number;
-  built_at: number | null; applied_at: number | null; log: string | null;
+  sha: string;
+  status: ReleaseStatus;
+  requested_at: number;
+  built_at: number | null;
+  applied_at: number | null;
+  log: string | null;
 }
 
 /** The management page's service. All state lives in the state db and on
@@ -721,18 +905,33 @@ export class Releases {
   /** History rows, newest first (a failure on a db read). */
   private dbRows(): ReleaseRow[] | ManagementStateFailure {
     const read = databaseRead('could not read releases', (): ReleaseRow[] =>
-      this.deps.db.all(qb.selectFrom('releases')
-        .select(['sha', 'status', 'requested_at', 'built_at', 'applied_at', 'log'])
-        .orderBy('requested_at', 'desc').limit(HISTORY_CAP)));
-    return read.ok ? read.data.value
-      : { ok: false, resultType: 'management_state', errorCode: 'database_error', errorMessage: read.errorMessage };
+      this.deps.db.all(
+        qb
+          .selectFrom('releases')
+          .select(['sha', 'status', 'requested_at', 'built_at', 'applied_at', 'log'])
+          .orderBy('requested_at', 'desc')
+          .limit(HISTORY_CAP),
+      ),
+    );
+    return read.ok
+      ? read.data.value
+      : {
+          ok: false,
+          resultType: 'management_state',
+          errorCode: 'database_error',
+          errorMessage: read.errorMessage,
+        };
   }
 
   /** GET /api/management: everything the page renders. Only the db read
    *  can fail (git problems land in the checkout card as data). */
   async state(): Promise<ManagementStateResult> {
-    const fail = (errorMessage: string): ManagementStateFailure =>
-      ({ ok: false, resultType: 'management_state', errorCode: 'database_error', errorMessage });
+    const fail = (errorMessage: string): ManagementStateFailure => ({
+      ok: false,
+      resultType: 'management_state',
+      errorCode: 'database_error',
+      errorMessage,
+    });
     // Pull the builder's answers for in-flight builds into the history
     // rows first, so the recorded outcome outlives the marker files —
     // including a RE-build's new answer over an already-recorded one
@@ -747,12 +946,17 @@ export class Releases {
       }
     }
     const rows = this.dbRows();
-    if (!Array.isArray(rows)) return fail(rows.errorMessage ?? 'could not read the release history');
+    if (!Array.isArray(rows))
+      return fail(rows.errorMessage ?? 'could not read the release history');
     const image = readImageVersion(this.deps.appRoot);
     const releases: ReleaseRecord[] = rows.map(r => {
       const record: ReleaseRecord = {
-        sha: r.sha, status: r.status, requestedAt: r.requested_at,
-        builtAt: r.built_at, appliedAt: r.applied_at, log: r.log,
+        sha: r.sha,
+        status: r.status,
+        requestedAt: r.requested_at,
+        builtAt: r.built_at,
+        appliedAt: r.applied_at,
+        log: r.log,
       };
       if (r.status === 'requested' && this.deps.releasesDir !== null) {
         const marker = readBuildMarker(this.deps.releasesDir, r.sha);
@@ -767,20 +971,29 @@ export class Releases {
     const boot = this.deps.bootServing();
     const serving: ManagementState['serving'] = {
       kind: boot.kind,
-      image: image === null ? null
-        : { appVersion: appVersion(this.deps.appRoot), git: image.git, builtAt: image.builtAt },
-      release: boot.kind === 'release' && boot.sha !== null
-        ? { sha: boot.sha,
-            builtAt: this.deps.releasesDir === null ? null
-              : (readReleaseManifest(path.join(this.deps.releasesDir, boot.sha))?.builtAt ?? null) }
-        : null,
+      image:
+        image === null
+          ? null
+          : { appVersion: appVersion(this.deps.appRoot), git: image.git, builtAt: image.builtAt },
+      release:
+        boot.kind === 'release' && boot.sha !== null
+          ? {
+              sha: boot.sha,
+              builtAt:
+                this.deps.releasesDir === null
+                  ? null
+                  : (readReleaseManifest(path.join(this.deps.releasesDir, boot.sha))?.builtAt ??
+                    null),
+            }
+          : null,
     };
     const pointed = readPointer(this.deps.releasesDir);
     const bootSha = boot.sha;
     const nextBoot: ManagementState['nextBoot'] =
       pointed !== null && pointed !== bootSha ? { kind: 'release', sha: pointed } : null;
     return {
-      ok: true, resultType: 'management_state',
+      ok: true,
+      resultType: 'management_state',
       data: {
         me: 'ok',
         serving,
@@ -796,13 +1009,27 @@ export class Releases {
   async commits(): Promise<ListCommitsResult> {
     const ready = await requireCheckout(this.deps.checkout);
     if (!ready.ok) {
-      return { ok: false, resultType: 'list_commits', errorCode: ready.errorCode, errorMessage: ready.errorMessage };
+      return {
+        ok: false,
+        resultType: 'list_commits',
+        errorCode: ready.errorCode,
+        errorMessage: ready.errorMessage,
+      };
     }
     try {
       const commits = await listCommitsRaw(ready.checkout);
-      return { ok: true, resultType: 'list_commits', data: { commits } } satisfies ListCommitsSuccess;
+      return {
+        ok: true,
+        resultType: 'list_commits',
+        data: { commits },
+      } satisfies ListCommitsSuccess;
     } catch (err) {
-      return { ok: false, resultType: 'list_commits', errorCode: 'git_error', errorMessage: (err as Error).message };
+      return {
+        ok: false,
+        resultType: 'list_commits',
+        errorCode: 'git_error',
+        errorMessage: (err as Error).message,
+      };
     }
   }
 
@@ -816,13 +1043,21 @@ export class Releases {
   private async enforce(target: CommitSha): Promise<EnforcementResult> {
     const ready = await requireCheckout(this.deps.checkout);
     if (!ready.ok) {
-      return { ok: false, resultType: 'enforcement_preview', errorCode: ready.errorCode, errorMessage: ready.errorMessage };
+      return {
+        ok: false,
+        resultType: 'enforcement_preview',
+        errorCode: ready.errorCode,
+        errorMessage: ready.errorMessage,
+      };
     }
     const base = currentBaseSha(this.deps.appRoot);
     if (base === null) {
       return {
-        ok: false, resultType: 'enforcement_preview', errorCode: 'base_unknown',
-        errorMessage: 'the running copy does not record its source git sha — rebuild the image with GIT_SHA=$(git rev-parse HEAD) docker compose build (docs/management-page.md §1.2); refusing to apply',
+        ok: false,
+        resultType: 'enforcement_preview',
+        errorCode: 'base_unknown',
+        errorMessage:
+          'the running copy does not record its source git sha — rebuild the image with GIT_SHA=$(git rev-parse HEAD) docker compose build (docs/management-page.md §1.2); refusing to apply',
       };
     }
     return enforceDiff(ready.checkout, base, target);
@@ -831,9 +1066,17 @@ export class Releases {
   /** POST /api/management/build — re-auth, enforce, then hand the sha to
    *  the builder via the pending marker. The BUILD runs workspace-side;
    *  this side only writes the request and records it. */
-  async requestBuild(input: { sha: CommitSha; username: string; password: string }): Promise<RequestBuildResult> {
+  async requestBuild(input: {
+    sha: CommitSha;
+    username: string;
+    password: string;
+  }): Promise<RequestBuildResult> {
     const { sha } = input;
-    const fail = (errorCode: RequestBuildErrorCode, errorMessage: string, data?: RequestBuildData): RequestBuildFailure =>
+    const fail = (
+      errorCode: RequestBuildErrorCode,
+      errorMessage: string,
+      data?: RequestBuildData,
+    ): RequestBuildFailure =>
       data === undefined
         ? { ok: false, resultType: 'request_build', errorCode, errorMessage }
         : { ok: false, resultType: 'request_build', data, errorCode, errorMessage };
@@ -842,21 +1085,27 @@ export class Releases {
     }
     const verified = await this.deps.verify(input.username, input.password);
     if (!verified.ok) {
-      return fail('invalid_credentials',
+      return fail(
+        'invalid_credentials',
         verified.errorCode === 'database_error'
           ? 'could not verify the password — try again'
-          : 'wrong username or password');
+          : 'wrong username or password',
+      );
     }
     if (this.deps.releasesDir === null) {
-      return fail('releases_not_configured',
-        'the releases volume is not mounted — add the WEB_PI_RELEASES_DIR wiring (docs/management-page.md §7) and docker compose up -d');
+      return fail(
+        'releases_not_configured',
+        'the releases volume is not mounted — add the WEB_PI_RELEASES_DIR wiring (docs/management-page.md §7) and docker compose up -d',
+      );
     }
     const verdict = await this.enforce(sha);
     if (!verdict.ok) return fail(verdict.errorCode, verdict.errorMessage ?? verdict.errorCode);
     if (!verdict.data.allowed) {
-      return fail('enforcement_rejected',
+      return fail(
+        'enforcement_rejected',
         `refused: the diff ${verdict.data.base.slice(0, 12)}…→${sha.slice(0, 12)}… changes the protected set (${verdict.data.protectedChanged.join(', ')}) — that part of the software is only modifiable in the original project on the host (docs/management-page.md §1.1)`,
-        { sha, status: 'requested' });
+        { sha, status: 'requested' },
+      );
     }
     if (anyBuildActive(this.deps.releasesDir)) {
       return fail('build_active', 'another build is pending or running — wait for it to finish');
@@ -867,18 +1116,39 @@ export class Releases {
       return fail('marker_error', `could not write the build request: ${(err as Error).message}`);
     }
     const saved = databaseUpdate('could not record the build request', () =>
-      this.deps.db.run(qb.insertInto('releases')
-        .values({ sha, status: 'requested', requested_at: Date.now(), built_at: null, applied_at: null, log: null })
-        // A re-build resets the build lifecycle (requested, no built/log)
-        // but PRESERVES applied_at: "it was the served release" is history
-        // that survives re-builds and re-activations alike (§3.3).
-        .onConflict(oc => oc.column('sha').doUpdateSet(eb => ({
-          status: eb.ref('excluded.status'), requested_at: eb.ref('excluded.requested_at'),
-          built_at: eb.ref('excluded.built_at'), log: eb.ref('excluded.log'),
-        })))));
+      this.deps.db.run(
+        qb
+          .insertInto('releases')
+          .values({
+            sha,
+            status: 'requested',
+            requested_at: Date.now(),
+            built_at: null,
+            applied_at: null,
+            log: null,
+          })
+          // A re-build resets the build lifecycle (requested, no built/log)
+          // but PRESERVES applied_at: "it was the served release" is history
+          // that survives re-builds and re-activations alike (§3.3).
+          .onConflict(oc =>
+            oc.column('sha').doUpdateSet(eb => ({
+              status: eb.ref('excluded.status'),
+              requested_at: eb.ref('excluded.requested_at'),
+              built_at: eb.ref('excluded.built_at'),
+              log: eb.ref('excluded.log'),
+            })),
+          ),
+      ),
+    );
     if (!saved.ok) return fail('database_error', saved.errorMessage, { sha, status: 'requested' });
-    log.info(`management: build requested for ${sha.slice(0, 12)}… (base ${verdict.data.base.slice(0, 12)}…)`);
-    return { ok: true, resultType: 'request_build', data: { sha, status: 'requested' } } satisfies RequestBuildSuccess;
+    log.info(
+      `management: build requested for ${sha.slice(0, 12)}… (base ${verdict.data.base.slice(0, 12)}…)`,
+    );
+    return {
+      ok: true,
+      resultType: 'request_build',
+      data: { sha, status: 'requested' },
+    } satisfies RequestBuildSuccess;
   }
 
   /** POST /api/management/activate — the swap/rollback: validate the
@@ -886,25 +1156,37 @@ export class Releases {
    *  pointer, record history, and trigger the graceful restart that
    *  makes the next boot serve it. Target 'image' rolls back to the
    *  image copy (needs no releases volume). */
-  async activate(input: { target: 'image' | CommitSha; username: string; password: string }): Promise<ActivateResult> {
+  async activate(input: {
+    target: 'image' | CommitSha;
+    username: string;
+    password: string;
+  }): Promise<ActivateResult> {
     const { target } = input;
-    const fail = (errorCode: ActivateErrorCode, errorMessage: string): ActivateFailure =>
-      ({ ok: false, resultType: 'activate_release', errorCode, errorMessage });
+    const fail = (errorCode: ActivateErrorCode, errorMessage: string): ActivateFailure => ({
+      ok: false,
+      resultType: 'activate_release',
+      errorCode,
+      errorMessage,
+    });
     if (!this.reauthAllowed()) {
       return fail('reauth_limited', 'too many password confirmations — wait and try again');
     }
     const verified = await this.deps.verify(input.username, input.password);
     if (!verified.ok) {
-      return fail('invalid_credentials',
+      return fail(
+        'invalid_credentials',
         verified.errorCode === 'database_error'
           ? 'could not verify the password — try again'
-          : 'wrong username or password');
+          : 'wrong username or password',
+      );
     }
     const sha: CommitSha | null = target === 'image' ? null : target;
     if (sha !== null) {
       if (this.deps.releasesDir === null) {
-        return fail('releases_not_configured',
-          'the releases volume is not mounted — add the WEB_PI_RELEASES_DIR wiring (docs/management-page.md §7)');
+        return fail(
+          'releases_not_configured',
+          'the releases volume is not mounted — add the WEB_PI_RELEASES_DIR wiring (docs/management-page.md §7)',
+        );
       }
       // Enforcement re-run: the verdict the page showed is a courtesy;
       // this is the check. The base is ALWAYS the image's baked sha
@@ -913,23 +1195,28 @@ export class Releases {
       const verdict = await this.enforce(sha);
       if (!verdict.ok) return fail(verdict.errorCode, verdict.errorMessage ?? verdict.errorCode);
       if (!verdict.data.allowed) {
-        return fail('enforcement_rejected',
+        return fail(
+          'enforcement_rejected',
           `refused: the diff ${verdict.data.base.slice(0, 12)}…→${sha.slice(0, 12)}… changes the protected set (${verdict.data.protectedChanged.join(', ')}) — only modifiable in the original project on the host`,
         );
       }
       const marker = readBuildMarker(this.deps.releasesDir, sha);
       if (marker.status !== 'built') {
-        return fail('release_not_built',
+        return fail(
+          'release_not_built',
           marker.status === 'failed'
             ? `the build of ${sha.slice(0, 12)}… failed — check its log on the page`
-            : `no built release for ${sha.slice(0, 12)}… (build status: ${marker.status})`);
+            : `no built release for ${sha.slice(0, 12)}… (build status: ${marker.status})`,
+        );
       }
       const valid = validateReleaseDir(path.join(this.deps.releasesDir, sha), sha);
       if (!valid.ok) return fail('release_invalid', valid.reason);
       // Load check: the layout above cannot see the entry's OWN imports.
       // Probing here (bounded) keeps the pointer off any release the next
       // boot could not serve — the decision point, not the restart.
-      const probed = await probeReleaseEntry(path.join(this.deps.releasesDir, sha, 'dist', 'server', 'entry.mjs'));
+      const probed = await probeReleaseEntry(
+        path.join(this.deps.releasesDir, sha, 'dist', 'server', 'entry.mjs'),
+      );
       if (!probed.ok) return fail('release_invalid', probed.reason);
     }
     // Pointer + history, then the restart. The pointer write is the
@@ -939,29 +1226,43 @@ export class Releases {
       try {
         writePointer(this.deps.releasesDir, sha);
       } catch (err) {
-        return fail('database_error', `could not write the release pointer: ${(err as Error).message}`);
+        return fail(
+          'database_error',
+          `could not write the release pointer: ${(err as Error).message}`,
+        );
       }
     } else if (sha === null) {
       // No releases volume and rolling back to the image: the boot is
       // already serving the image copy — nothing to change, no restart.
-      return { ok: true, resultType: 'activate_release', data: { target, status: 'activating' } } satisfies ActivateSuccess;
+      return {
+        ok: true,
+        resultType: 'activate_release',
+        data: { target, status: 'activating' },
+      } satisfies ActivateSuccess;
     }
     if (sha !== null) {
       const saved = databaseUpdate('could not record the activation', () =>
         // applied_at keeps its FIRST value across re-activations (coalesce):
         // "epoch ms it first became the served release" (§3.3), not the last.
-        this.deps.db.run(qb.updateTable('releases')
-          .set(eb => ({
-            status: 'applied' as ReleaseStatus,
-            applied_at: eb.fn.coalesce(eb.ref('applied_at'), eb.val(Date.now())),
-          }))
-          .where('sha', '=', sha)));
+        this.deps.db.run(
+          qb
+            .updateTable('releases')
+            .set(eb => ({
+              status: 'applied' as ReleaseStatus,
+              applied_at: eb.fn.coalesce(eb.ref('applied_at'), eb.val(Date.now())),
+            }))
+            .where('sha', '=', sha),
+        ),
+      );
       if (!saved.ok) return fail('database_error', saved.errorMessage);
     }
-    log.info(`management: ${sha === null ? 'rolling back to the image copy' : `activating release ${sha.slice(0, 12)}…`} — restarting`);
+    log.info(
+      `management: ${sha === null ? 'rolling back to the image copy' : `activating release ${sha.slice(0, 12)}…`} — restarting`,
+    );
     this.deps.requestRestart();
     return {
-      ok: true, resultType: 'activate_release',
+      ok: true,
+      resultType: 'activate_release',
       data: { target, status: 'activating' },
     } satisfies ActivateSuccess;
   }
@@ -975,18 +1276,29 @@ export class Releases {
     const outcome = marker.status === 'built' || marker.status === 'failed' ? marker.status : null;
     if (outcome === null || row.status === outcome) return;
     databaseUpdate('could not record the build outcome', () =>
-      this.deps.db.run(qb.updateTable('releases')
-        // built_at is the builder's own clock (the done marker), not sync time
-        .set({ status: outcome, built_at: marker.builtAt ?? Date.now(), log: (marker.log ?? '').slice(0, LOG_CAP) })
-        .where('sha', '=', row.sha)));
+      this.deps.db.run(
+        qb
+          .updateTable('releases')
+          // built_at is the builder's own clock (the done marker), not sync time
+          .set({
+            status: outcome,
+            built_at: marker.builtAt ?? Date.now(),
+            log: (marker.log ?? '').slice(0, LOG_CAP),
+          })
+          .where('sha', '=', row.sha),
+      ),
+    );
   }
 }
 
 /** manifest.json of a release dir, or null when unreadable/invalid. */
-function readReleaseManifest(releaseDir: string): { sha: string; builtAt: number; builder: string } | null {
+function readReleaseManifest(
+  releaseDir: string,
+): { sha: string; builtAt: number; builder: string } | null {
   try {
     const parsed = ReleaseManifestSchema.safeParse(
-      JSON.parse(fs.readFileSync(path.join(releaseDir, 'manifest.json'), 'utf8')));
+      JSON.parse(fs.readFileSync(path.join(releaseDir, 'manifest.json'), 'utf8')),
+    );
     return parsed.success ? parsed.data : null;
   } catch {
     return null;

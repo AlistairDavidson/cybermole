@@ -12,7 +12,12 @@ import { UPLOAD_MAX_BODY_BYTES } from '../schemas/uploads';
 
 /** Response/request headers that must not be copied verbatim across a
  *  proxy hop: Node (re)generates them for the leg it owns. */
-export const EDITOR_HOP_BY_HOP_HEADERS = ['connection', 'keep-alive', 'transfer-encoding', 'upgrade'] as const;
+export const EDITOR_HOP_BY_HOP_HEADERS = [
+  'connection',
+  'keep-alive',
+  'transfer-encoding',
+  'upgrade',
+] as const;
 
 /** Request headers as Node's http hands them to a proxy. */
 export type IncomingHeaders = Record<string, string | string[] | undefined>;
@@ -30,7 +35,10 @@ export function editorUpgradeHeaders(incoming: IncomingHeaders): IncomingHeaders
   // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- scrubbing the hop-by-hop header set
   for (const hop of EDITOR_HOP_BY_HOP_HEADERS) delete headers[hop];
   headers.connection = 'Upgrade';
-  headers.upgrade = typeof incoming.upgrade === 'string' && incoming.upgrade !== '' ? incoming.upgrade : 'websocket';
+  headers.upgrade =
+    typeof incoming.upgrade === 'string' && incoming.upgrade !== ''
+      ? incoming.upgrade
+      : 'websocket';
   return headers;
 }
 
@@ -97,7 +105,10 @@ export const EDITOR_MAX_BODY_BYTES = UPLOAD_MAX_BODY_BYTES;
  *  non-upload route — NEVER 411: a length-less (chunked) body is
  *  accepted, streamed to the upstream, and guarded by the stall watch
  *  instead of a whole-body deadline. */
-export function editorBodyCapStatus(req: { method?: string | undefined; headers: Record<string, string | string[] | undefined> }): 413 | null {
+export function editorBodyCapStatus(req: {
+  method?: string | undefined;
+  headers: Record<string, string | string[] | undefined>;
+}): 413 | null {
   if (req.method === 'GET' || req.method === 'HEAD') return null;
   const declared = req.headers['content-length'];
   if (declared === undefined) return null; // chunked: accepted, stall-guarded
@@ -120,7 +131,10 @@ export class EditorTunnelTracker {
 
   track(token: SessionToken, handle: EditorTunnelHandle): void {
     let set = this.byToken.get(token);
-    if (!set) { set = new Set(); this.byToken.set(token, set); }
+    if (!set) {
+      set = new Set();
+      this.byToken.set(token, set);
+    }
     set.add(handle);
   }
 

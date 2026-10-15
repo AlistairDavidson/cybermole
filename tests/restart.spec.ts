@@ -40,10 +40,16 @@ async function boot(dir: string): Promise<ChildProcess> {
   });
   let out = '';
   await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`server did not boot; stdout: ${out}`)), 15_000);
+    const timer = setTimeout(
+      () => reject(new Error(`server did not boot; stdout: ${out}`)),
+      15_000,
+    );
     child.stdout!.on('data', (d: Buffer) => {
       out += d.toString();
-      if (out.includes('web-pi listening')) { clearTimeout(timer); resolve(); }
+      if (out.includes('web-pi listening')) {
+        clearTimeout(timer);
+        resolve();
+      }
     });
     child.on('error', reject);
   });
@@ -67,7 +73,8 @@ test('a login survives a server restart; a password change revokes it', async ()
   let child = await boot(dir);
   try {
     const login = await fetch(`${BASE}/login`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: USERNAME, password: PASSWORD }),
     });
     expect(login.status).toBe(200);

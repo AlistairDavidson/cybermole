@@ -15,7 +15,8 @@ export const TMUX_SESSION_NAME_RE = /^[a-zA-Z0-9_\-]{1,64}$/;
 
 /** Object keys POST /api/files mints (src/lib/storage.ts): uploads/<uuid v4>,
  *  lowercase. The download route serves nothing else from the bucket. */
-export const OBJECT_KEY_RE = /^uploads\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+export const OBJECT_KEY_RE =
+  /^uploads\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** Longest job name — as typed (JobSaveSchema) and once normalized
  *  (JOB_NAME_RE). Normalizing never lengthens a name. */
@@ -28,8 +29,12 @@ export const JOB_NAME_RE = new RegExp(`^(?!webpi-)[a-z0-9][a-z0-9_\\-]{0,${MAX_J
 
 /** Normalize a job-supplied name (the shared slug rules). */
 export function normalizeJobName(raw: string): string {
-  return raw.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '').slice(0, MAX_JOB_NAME);
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, MAX_JOB_NAME);
 }
 
 /** Longest app slug — as normalized (APP_SLUG_RE); the cap on the typed
@@ -46,8 +51,12 @@ export const APP_SLUG_RE = new RegExp(`^[a-z0-9][a-z0-9\\-]{0,${MAX_APP_SLUG - 1
  *  nothing usable was typed. The output always satisfies APP_SLUG_RE or
  *  is empty. */
 export function normalizeSlug(raw: string): string {
-  return raw.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '').slice(0, MAX_APP_SLUG);
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, MAX_APP_SLUG);
 }
 
 /** Lowercase uuid v4 — the id shape apps/workspaces/terminals mint

@@ -6,7 +6,10 @@
 import type { APIRoute } from 'astro';
 import { assertWebPiLocals } from '../../../../../../lib/web/locals';
 import {
-  invalidFiredAtResponse, invalidJobNameResponse, jobFailureResponse, runLogResponse,
+  invalidFiredAtResponse,
+  invalidJobNameResponse,
+  jobFailureResponse,
+  runLogResponse,
 } from '../../../../../../lib/web/responses.service';
 import { JobNameSchema } from '../../../../../../schemas/ids';
 import { FiredAtSchema } from '../../../../../../schemas/jobs';

@@ -5,13 +5,20 @@
 // is information for the human, never the gate.
 import type { APIRoute } from 'astro';
 import { assertWebPiLocals } from '../../../lib/web/locals';
-import { failureResponse, jsonResponse, managementFailureResponse } from '../../../lib/web/responses.service';
+import {
+  failureResponse,
+  jsonResponse,
+  managementFailureResponse,
+} from '../../../lib/web/responses.service';
 import { PreviewQuerySchema } from '../../../schemas/management';
 import { parseZod } from '../../../lib/web/parsing.service';
 
 export const GET: APIRoute = async ({ locals, request }) => {
   const { webpi } = assertWebPiLocals(locals);
-  const parsed = parseZod({ sha: new URL(request.url).searchParams.get('sha') }, PreviewQuerySchema);
+  const parsed = parseZod(
+    { sha: new URL(request.url).searchParams.get('sha') },
+    PreviewQuerySchema,
+  );
   if (!parsed.ok) return failureResponse(parsed);
   const verdict = await webpi.management.preview(parsed.data.sha);
   if (!verdict.ok) return managementFailureResponse(verdict);
