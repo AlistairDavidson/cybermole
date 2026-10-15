@@ -16,10 +16,12 @@
 // keeps the session, and the backoff lands back on it once it's back.
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { SerializeAddon } from '@xterm/addon-serialize';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '@awesome.me/webawesome/dist/components/button/button.js';
 import type { ActiveKey, ClientMsg, ServerMsg } from '../../lib/types';
 import type { TerminalId, TmuxSessionName } from '../../types/branded';
 import { BASE } from '../../base';
@@ -44,6 +46,29 @@ function chunkInput(data: string): string[] {
     i = end;
   }
   return out;
+}
+
+/** Plain-text transcript of a terminal's whole buffer — scrollback
+ *  included — one line per buffer row, trailing blank rows (a fresh
+ *  pane's never-written rows) trimmed. The walk behind "copy output";
+ *  exported for tests.
+ *
+ *  Which buffer that IS depends on the attach: while a pane is attached,
+ *  tmux holds the client terminal in the ALTERNATE screen (no client-side
+ *  scrollback — tmux's own history lives server-side, exactly what the
+ *  task/terminal-search backfill TODO is about), so this walks the
+ *  visible screen; once the alt screen is left (pre-attach, an ended
+ *  pane), buffer.active is the normal buffer and the walk carries its
+ *  scrollback. Either way it is exactly what the user is looking at. */
+export function terminalPlainText(terminal: Terminal): string {
+  const buffer = terminal.buffer.active;
+  const lines: string[] = [];
+  for (let i = 0; i < buffer.length; i++) {
+    const line = buffer.getLine(i);
+    if (line) lines.push(line.translateToString(true));
+  }
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  return lines.join('\n');
 }
 
 /** Every connected instance — the online/visibility reconnect wake-up is
@@ -71,6 +96,7 @@ export class AgentTerminal extends HTMLElement {
 
   terminal?: Terminal;
   fitXtermAddon?: FitAddon;
+  serializeXtermAddon?: SerializeAddon;
   websocket?: WebSocket;
   activeKey?: ActiveKey;
   resizeObserver?: ResizeObserver;
@@ -106,6 +132,7 @@ export class AgentTerminal extends HTMLElement {
   connectedCallback(): void {
     instances.add(this);
     armSharedWake();
+    this.ensureToolbar();
     if (this.terminal) {
       return;
     }
@@ -123,6 +150,9 @@ export class AgentTerminal extends HTMLElement {
 
     this.fitXtermAddon = new FitAddon();
     this.terminal.loadAddon(this.fitXtermAddon);
+
+    this.serializeXtermAddon = new SerializeAddon();
+    this.terminal.loadAddon(this.serializeXtermAddon);
 
     this.terminal.open(terminalContainer);
 
@@ -193,6 +223,96 @@ export class AgentTerminal extends HTMLElement {
     el.className = `terminal-status ${kind}`;
     el.innerHTML = `${indicator}<span></span>`;
     (el.lastElementChild as HTMLElement).textContent = text;
+  }
+
+  // ---- toolbar: transcript actions ----
+
+  /** The pane's toolbar, overlaid top-right over .terminal-container
+   *  (console.css: position absolute, so it is never in the container's
+   *  flow — the ResizeObserver fit must keep seeing the container's true
+   *  box, AGENTS.md). Rebuilt here on every (re)connect when missing, so
+   * every pane creation path (AgentTerminal.astro, <terminal-tabs>'s
+   * innerHTML panes) gets it without duplicating markup. */
+  private ensureToolbar(): void {
+    if (this.querySelector('.terminal-toolbar')) return;
+    const bar = document.createElement('div');
+    bar.className = 'terminal-toolbar wa-cluster wa-gap-s';
+    bar.setAttribute('role', 'toolbar');
+    bar.setAttribute('aria-label', 'terminal actions');
+    // HOOK(task/terminal-search): the find bar joins this toolbar — the
+    // ctrl+F wa-input cluster slots in as a FIRST child of .terminal-toolbar
+    // (before the buttons, which stay pinned to the right edge); insert it
+    // here in ensureToolbar so all three pane-creation paths get it too.
+    bar.innerHTML = `
+      <wa-button class="tb-copy-output" appearance="plain" variant="neutral" size="xs"
+          title="copy the terminal's output — scrollback included — as plain text">
+        <wa-icon slot="start" name="copy" aria-hidden="true"></wa-icon>copy
+      </wa-button>
+      <wa-button class="tb-download-transcript" appearance="plain" variant="neutral" size="xs"
+          title="download the transcript — scrollback included, ANSI colors preserved">
+        <wa-icon slot="start" name="download" aria-hidden="true"></wa-icon>download
+      </wa-button>`;
+    (bar.querySelector('.tb-copy-output') as HTMLElement).addEventListener('click', () => void this.copyOutput());
+    (bar.querySelector('.tb-download-transcript') as HTMLElement).addEventListener('click', () => this.downloadTranscript());
+    const status = this.querySelector('.terminal-status');
+    if (status) status.before(bar);
+    else this.appendChild(bar);
+  }
+
+  /** The plain-text transcript (terminalPlainText above) — public so
+   *  tests (and any future plain-text export) can read it without the
+   *  clipboard. */
+  transcriptText(): string {
+    return this.terminal ? terminalPlainText(this.terminal) : '';
+  }
+
+  /** Toast through the app's stack: <console-app>'s <wa-toast> (the
+   *  nearest) when the pane is in the console, else the layout's
+   *  (Base.astro renders one on every page). */
+  private toast(message: string, options?: Record<string, unknown>): void {
+    const host = (this.closest('console-app') ?? document).querySelector('wa-toast') as
+      (HTMLElement & { create?: (message: string, options?: Record<string, unknown>) => unknown }) | null;
+    if (host?.create) host.create(message, options);
+  }
+
+  /** "copy output": the whole buffer as plain text onto the clipboard.
+   *  writeText rejects on a denied permission or an insecure context —
+   *  a toast, never a throw out of a click handler. */
+  private async copyOutput(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(this.transcriptText());
+      this.toast('copied the terminal output', { variant: 'neutral', icon: 'circle-check', duration: 4000 });
+    } catch {
+      this.toast('could not copy — clipboard unavailable or denied',
+        { variant: 'danger', icon: 'triangle-exclamation', duration: 6000 });
+    }
+    this.terminal?.focus();
+  }
+
+  /** "download transcript": the serialize addon's ANSI artifact — the
+   *  whole buffer (scrollback included) WITH its SGR colors and cursor
+   *  state, so the file replays faithfully in any terminal (`less -R`,
+   *  cat, xterm). .ans is the primary download artifact because the
+   *  color/positioning information is exactly what a plain-text walk
+   *  (the copy button) throws away; anyone needing plain text on disk
+   *  can paste the copy. While attached, that "whole buffer" is tmux's
+   *  alternate screen (see terminalPlainText — the client-side reality
+   *  until task/terminal-search's backfill); the normal buffer and its
+   *  scrollback ride along whenever one exists. Named after the attached
+   *  session (t-<uuid>, or the run's webpi-<name>) — the tab's identity
+   *  on both attach modes. */
+  private downloadTranscript(): void {
+    const content = this.serializeXtermAddon ? this.serializeXtermAddon.serialize() : '';
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${this.attachedTarget ?? 'terminal'}-transcript.ans`;
+    link.click();
+    // the download keeps the blob alive; the URL can't be revoked before
+    // the browser has taken it (30 s covers the largest scrollbacks)
+    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    this.terminal?.focus();
   }
 
   attach(mode: 'terminal' | 'run',
