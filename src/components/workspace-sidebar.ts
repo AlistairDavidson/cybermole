@@ -111,8 +111,15 @@ export class WorkspaceSidebar extends HTMLElement {
     const rows = visible.length
       ? `<ul>${visible.map(w => this.row(w)).join('')}</ul>`
       : `<p class="group-empty">no workspaces yet</p>`;
+    // HOOK(task/collapsible-apps): this header is reworked there — keep
+    // the title additive when that branch lands (task/app-cwd: an app's
+    // cwd rides the header title so the group's start dir is discoverable
+    // without opening the dialog).
+    const title = app
+      ? (app.cwd ? `${app.name} — workspaces start at ${app.cwd}` : app.name)
+      : 'console';
     return `<section class="ws-group" data-group="${esc(key)}">` +
-      `<h2><span class="g-name" title="${esc(app?.name ?? 'console')}">${esc(name)}</span>` +
+      `<h2><span class="g-name" title="${esc(title)}">${esc(name)}</span>` +
       `<span class="g-actions">` +
       `<wa-button class="new-ws-btn" data-new-ws="${app ? esc(app.id) : ''}" size="xs" appearance="plain" ` +
       `title="new workspace in ${esc(name)}"><wa-icon name="plus" label="new workspace"></wa-icon></wa-button>` +
