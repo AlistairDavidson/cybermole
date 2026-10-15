@@ -217,9 +217,16 @@ export class TerminalTabs extends HTMLElement {
   }
 
   /** The popped class on a tab's row button (dimmed; the CSS shows the
-   *  pop button on the active tab only). */
+   *  pop button on the active tab only) — and its aria label NOW, not at
+   *  the next sync poll (updateTabButton recomputes the same string from
+   *  state, so the two can never disagree). */
   private markPopped(id: TerminalId, on: boolean): void {
-    this.tabs.get(id)?.classList.toggle('popped', on);
+    const tab = this.tabs.get(id);
+    if (!tab) return;
+    tab.classList.toggle('popped', on);
+    const ws = this.ws;
+    const i = ws ? ws.terminals.findIndex(t => t.id === id) : -1;
+    if (i >= 0) this.updateTabButton(ws!.terminals[i]!, i);
   }
 
   /** The body's "this terminal is elsewhere" notice — the popped tab
