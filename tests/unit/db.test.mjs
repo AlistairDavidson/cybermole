@@ -81,6 +81,7 @@ test('a fresh file (user_version 0) gets the v6 shape at CREATE — no ALTER eve
   for (const t of ['apps', 'workspaces', 'terminals']) {
     assert.ok(columns(db, t).length > 0, t);
   }
+  assert.ok(columns(db, 'apps').includes('cwd')); // task/app-cwd: at CREATE
   assert.ok(columns(db, 'jobs').includes('app_id'));
   for (const c of ['log', 'exit_code', 'finished_at']) {
     assert.ok(columns(db, 'job_runs').includes(c), c);
@@ -140,6 +141,45 @@ test('a v5-shaped file upgrades to v6 with the ALTERs applied and its data intac
     name: 'w', cwd: '/', sort_order: 10, created_at: 1, updated_at: 1, created_by: 't', updated_by: 't',
   }));
   assert.ok(db.get(qb.selectFrom('workspaces').select('id')));
+});
+
+test('a v6 file whose apps table predates apps.cwd (task/app-cwd) gains the column at open, data intact, version unmoved', () => {
+  const file = freshFile('webpi-db-v6-no-app-cwd-');
+  // The pre-task/app-cwd v6 shape, hand-built: every other table can come
+  // from SCHEMA at open (CREATE IF NOT EXISTS) — the apps table must exist
+  // WITHOUT cwd so the ALTER path is what adds it.
+  const raw = new DatabaseSync(file);
+  raw.exec(`
+    CREATE TABLE IF NOT EXISTS apps (
+      id         TEXT PRIMARY KEY,
+      name       TEXT NOT NULL,
+      slug       TEXT NOT NULL UNIQUE,
+      sort_order INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      created_by TEXT NOT NULL,
+      updated_by TEXT NOT NULL
+    );
+  `);
+  raw.exec('PRAGMA user_version = 6');
+  raw.prepare("INSERT INTO apps (id, name, slug, sort_order, created_at, updated_at, created_by, updated_by) " +
+    "VALUES ('123e4567-e89b-42d3-a456-426614174000', 'alpha app', 'alpha-app', 10, 1, 1, 't', 't')").run();
+  raw.close();
+
+  const db = new StateDb(file);
+  db.db(); // open + migrate: addColumnIfMissing applies the cwd ALTER
+  assert.ok(columns(db, 'apps').includes('cwd'));
+  // the pre-existing row survived, the new column reads NULL (spread: the
+  // null prototype rows again)
+  assert.deepEqual(
+    { ...db.get(qb.selectFrom('apps').select(['name', 'slug', 'cwd']).where('slug', '=', 'alpha-app')) },
+    { name: 'alpha app', slug: 'alpha-app', cwd: null });
+  assert.equal(userVersion(file), 6); // no version bump — the column check, not the number
+  // reopening skips the ALTER (ADD COLUMN twice would throw "duplicate column name")
+  const reopened = new StateDb(file);
+  reopened.db();
+  assert.ok(columns(reopened, 'apps').includes('cwd'));
+  assert.equal(userVersion(file), 6);
 });
 
 test('a db newer than v6 refuses to open', () => {
