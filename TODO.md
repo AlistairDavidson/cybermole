@@ -92,6 +92,7 @@ xterm:
   
   font decision first, then: bundled mono webfont via web-fonts addon (needs xterm 6.1-beta) + ligatures if a ligature font
   
-  search addon + ctrl+F bar (wa-input cluster in terminal toolbar, NOT the workspace sidebar - 15s innerHTML poll eats state) server backfill via `tmux capture-pane -S -5000 -p` written to WS on attach so attached terminals have searchable scrollback
+  ~~search addon + ctrl+F bar (wa-input cluster in terminal toolbar, NOT the workspace sidebar - 15s innerHTML poll eats state) server backfill via `tmux capture-pane -S -5000 -p` written to WS on attach so attached terminals have searchable scrollback~~
+    done — task/terminal-search: @xterm/addon-search find bar in the pane's .terminal-toolbar (module-level query state), the attach-time 'backfill' frame (history-only capture-pane, written under the redraw via viewport padding), and the tmux.conf terminal-overrides (smcup@/rmcup@/indn@) that keep attached clients in a normal, scrollback-growing buffer
 
   ~~serialize - "download transcript" / "copy output" button, zero server changes; maybe e2e assertions on terminal state~~ DONE (task/terminal-transcript: .terminal-toolbar in agent-terminal — copy = plain-text buffer walk to the clipboard, download = serialize() .ans; real-clipboard + download-event e2e)

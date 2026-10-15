@@ -152,12 +152,12 @@ export async function requireServer() {
 
 /** One tmux call. Never rejects: the error (with tmux's stderr) is part
  *  of the answer — callers decide what it means. */
-function tmux(socket: string, args: string[], env?: Record<string, string>):
+function tmux(socket: string, args: string[], env?: Record<string, string>, timeout = 5000):
   Promise<{ error: TmuxError | null; stdout: string }> {
   const conf = fs.existsSync(CONF) ? ['-f', CONF] : [];
   return new Promise(resolve => {
     execFile('tmux', [...conf, ...socketArgs(socket), ...args],
-      { timeout: 5000, ...(env ? { env: Object.assign({}, process.env, env) } : {}) },
+      { timeout, ...(env ? { env: Object.assign({}, process.env, env) } : {}) },
       (err, stdout) => {
         resolve({ error: err instanceof Error ? err : null, stdout: typeof stdout === 'string' ? stdout : '' });
       });
@@ -231,4 +231,64 @@ export async function newSession(name: TmuxSessionName, cwd: string, command: st
   if (error) return tmuxFailure(name, 'new-session', error);
   log.info(`tmux session ${name} started`, { command: command.join(' ') });
   return { ok: true, resultType: 'tmux_session', data: { name } } satisfies TmuxSessionSuccess;
+}
+
+// ---------- scrollback backfill (the attach-time capture) ----------
+
+/** History lines the attach backfill captures (`-S`, tmux.ts). Matches
+ *  the browser terminal's scrollback (agent-terminal.ts) — enough to
+ *  search recent history without shipping the whole 100k-line pane. */
+export const BACKFILL_LINES = 5000;
+
+/** The capture-pane argv (minus the socket/-f prefix `tmux()` adds) for
+ *  the attach backfill. Pure, so the spawn and the unit test share one
+ *  contract: `-E -1` stops at the LAST HISTORY line — the visible screen
+ *  is deliberately excluded, because tmux's attach redraw repaints the
+ *  screen itself and backfilling it too would double it (the client
+ *  writes the history, then pushes the viewport down so the redraw lands
+ *  below it — see agent-terminal.ts). */
+export function capturePaneHistoryArgs(name: TmuxSessionName): string[] {
+  return ['capture-pane', '-p', '-S', String(-BACKFILL_LINES), '-E', '-1', '-t', name];
+}
+
+/** A pane's history line count — the empty-history gate for the
+ *  backfill capture: with NO history, capture-pane's `-E -1` clamps to
+ *  the first SCREEN line (observed: a 2-line pane's first line comes
+ *  back), which would backfill a line the attach redraw paints too.
+ *  Can't fail by design: any error (no session — the attach race — a
+ *  dead server) reads as 0, i.e. "no history to backfill". */
+export async function paneHistorySize(name: TmuxSessionName): Promise<number> {
+  const { error, stdout } =
+    await tmux(SOCKET, ['display-message', '-p', '-t', name, '#{history_size}'], undefined, 2000);
+  if (error) return 0;
+  const n = Number.parseInt(stdout.trim(), 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** A pane's scrollback history as terminal-ready text (one `\r\n` per
+ *  line), for the WS backfill on attach (server/main.ts). HISTORY ONLY —
+ *  the visible screen is the redraw's job. Can't fail by design: no
+ *  session (race: killed between the attach's checks and here), an empty
+ *  history, or any tmux error reads as null — "skip the backfill", the
+ *  attach itself is unaffected. capture-pane is not a forking command:
+ *  on a down server it errors instead of starting one, so unlike
+ *  new-session and attach it needs no never-fork gate. Trailing blank
+ *  lines are trimmed: a shell that cleared the screen leaves dozens, and
+ *  the client would pad the buffer with them. Lines are re-terminated
+ *  \r\n — capture-pane emits bare \n, and a terminal's LF moves the
+ *  cursor DOWN only (the column persists): bare-\n lines would land each
+ *  one further right than the last. */
+export async function capturePaneHistory(name: TmuxSessionName): Promise<string | null> {
+  // Shorter than tmux()'s 5s default: the caller holds the attach's
+  // output until this resolves, so a wedged capture must not stall the
+  // terminal for the full default.
+  if (await paneHistorySize(name) === 0) return null;
+  const { error, stdout } = await tmux(SOCKET, capturePaneHistoryArgs(name), undefined, 2000);
+  if (error) {
+    log.debug(`capture-pane ${name} failed: ${error.message}`);
+    return null;
+  }
+  const trimmed = stdout.replace(/(?:[ \t]*\r?\n)+$/, '');
+  if (trimmed === '') return null;
+  return trimmed.split(/\r?\n/).join('\r\n') + '\r\n';
 }

@@ -5,7 +5,8 @@
 // never thrown on.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseClientMsg } from '../../dist-server/src/schemas/frames.js';
+import * as frames from '../../dist-server/src/schemas/frames.js';
+const { parseClientMsg } = frames;
 
 test('accepts each frame shape, stripping unknown extra keys', () => {
   assert.deepEqual(parseClientMsg('{"type":"input","data":"hi"}'), { type: 'input', data: 'hi' });
@@ -60,4 +61,33 @@ test('input frames carry 64 KiB paste chunks (the hot path)', () => {
   const msg = parseClientMsg(JSON.stringify({ type: 'input', data }));
   assert.deepEqual(msg, { type: 'input', data });
   assert.equal(msg && msg.type === 'input' && msg.data.length === 65536, true);
+});
+
+// ---------- task/terminal-search: the backfill server frame ----------
+// The one server→client frame the browser validates (src/schemas/frames.ts):
+// it bulk-writes into the terminal buffer, so junk is dropped, never
+// written. Same never-throws contract as the client-frame gate.
+test('parseBackfillMsg: accepts a well-formed capture, rejects junk with null', () => {
+  const { parseBackfillMsg } = frames;
+  assert.equal(typeof parseBackfillMsg, 'function');
+  const capture = 'line 1\nline 2\n';
+  assert.deepEqual(parseBackfillMsg(JSON.stringify({ type: 'backfill', data: capture })),
+    { type: 'backfill', data: capture });
+  // empty capture is a legal frame (the client skips the write)
+  assert.deepEqual(parseBackfillMsg('{"type":"backfill","data":""}'), { type: 'backfill', data: '' });
+  // extra keys tolerated (stripped) — same policy as the client frames
+  assert.deepEqual(parseBackfillMsg('{"type":"backfill","data":"x","junk":1}'),
+    { type: 'backfill', data: 'x' });
+  for (const f of [
+    'not json', '', 'null', '[]', '5', '{}',
+    '{"type":"backfill"}',
+    '{"type":"backfill","data":5}',
+    '{"type":"backfill","data":null}',
+    '{"type":"backfill","data":["x"]}',
+    '{"type":"output","data":"x"}',
+    '{"type":"BACKFILL","data":"x"}',
+  ]) {
+    assert.doesNotThrow(() => parseBackfillMsg(f), f);
+    assert.equal(parseBackfillMsg(f), null, f);
+  }
 });

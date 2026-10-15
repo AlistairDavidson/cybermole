@@ -908,6 +908,55 @@ test('popping a tab moves the pane to a window: main socket down, popup attached
   expect((await api(page, 'DELETE', `/api/workspaces/${ws}`)).status).toBe(200);
 });
 
+test('scrollback backfill: a reload restores history once — and ctrl+F finds it (task/terminal-search)', async ({ page }) => {
+  test.setTimeout(60_000);
+  await login(page);
+  const { id } = await makeTerminal(page, 'backfill ws');
+  await page.click(`terminal-tabs .tab[data-term="${id}"]`);
+  await waitForTermText(page, MARKER, 20_000);
+
+  // More than a screen of history, a unique anchor at the very top of it
+  // (BF_TOP_1 is a prefix of BF_TOP_10..19 — counting it would lie).
+  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page.keyboard.type('echo BF_ANCHOR_$((40+2)); for i in $(seq 1 80); do echo BF_TOP_$i; done; echo BF_DONE_$((40+2))\n');
+  await waitForTermText(page, 'BF_DONE_42', 10_000);
+
+  // Reload through the tab's deep link (a plain / reload would select
+  // the first fixture workspace, not this one): the fresh page reattaches —
+  // the server's backfill frame must
+  // restore the HISTORY (tmux's attach redraw repaints the screen only)
+  // exactly once: a doubled write would show BF_TOP_1 twice.
+  await page.goto(`/?t=${id}`);
+  await waitForTermText(page, 'BF_DONE_42', 20_000);
+  const bufferText = await page.evaluate(() => {
+    const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as
+      { terminal?: { buffer: { active: { length: number; getLine(i: number): { translateToString(trimRight?: boolean): string } | undefined } } } } | null;
+    const t = el?.terminal; if (!t) return '';
+    let s = '';
+    for (let i = 0; i < t.buffer.active.length; i++) s += t.buffer.active.getLine(i)?.translateToString(true) + '\n';
+    return s;
+  });
+  expect(bufferText).toContain('BF_ANCHOR_42');
+  expect(bufferText.split('BF_ANCHOR_42').length - 1).toBe(1);
+
+  // ctrl+F with the terminal focused opens the find bar (not the
+  // browser's); the query scrolls the viewport up to the topmost match.
+  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page.keyboard.press('Control+f');
+  const find = page.locator('agent-terminal:not(.hidden) .terminal-find');
+  await expect(find).toBeVisible();
+  await find.locator('wa-input.terminal-find-input input').fill('BF_ANCHOR_42');
+  await expect.poll(async () => await page.evaluate(() => {
+    const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as
+      { terminal?: { rows: number; buffer: { active: { viewportY: number; getLine(i: number): { translateToString(trimRight?: boolean): string } | undefined } } } } | null;
+    const t = el?.terminal; if (!t) return '';
+    let s = '';
+    for (let i = t.buffer.active.viewportY; i < t.buffer.active.viewportY + t.rows; i++)
+      s += t.buffer.active.getLine(i)?.translateToString(true) + '\n';
+    return s;
+  }), { timeout: 5_000 }).toContain('BF_ANCHOR_42');
+});
+
 test('jobs: validate, save, run now, delete', async ({ page }) => {
   await login(page);
   expect((await api(page, 'GET', '/api/jobs')).json).toMatchObject({ available: true, jobs: [] });

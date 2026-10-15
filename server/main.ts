@@ -1064,12 +1064,41 @@ function attach(ws: WebSocket, token: SessionToken): void {
       wsSend(ws, { type: 'error', message: 'spawn failed: ' + (e as Error).message });
       return;
     }
-    x.onData(d => wsSend(ws, { type: 'output', data: d }));
+    // Scrollback backfill: capture the pane's HISTORY and send it as one
+    // 'backfill' frame BEFORE any 'output' flows — the client writes it
+    // into its fresh buffer and pushes the viewport down so the attach
+    // redraw lands below it (agent-terminal.ts). Until the capture
+    // resolves, the pty's output is buffered, never dropped: it carries
+    // the redraw. capture-pane is a non-forking client command — it
+    // errors on a down server instead of starting one, so it rides after
+    // the attach's own never-fork gate above without one of its own
+    // (tmux.ts capturePaneHistory).
+    const held: string[] = [];
+    let flushing = false;
+    x.onData(d => {
+      if (flushing) wsSend(ws, { type: 'output', data: d });
+      else held.push(d);
+    });
     x.onExit(() => { wsSend(ws, { type: 'exit', target }); ws.close(); });
     p = x;
     attachedTo = target;
     wsSend(ws, { type: 'attached', target, socket: tmux.SOCKET });
     wsLog.info('terminal attached', { target });
+    let history: string | null = null;
+    try {
+      history = await tmux.capturePaneHistory(target);
+    } catch (err) {
+      // capturePaneHistory can't fail by design; this is the belt under
+      // the suspenders — a capture failure must never break the attach.
+      wsLog.warn('backfill capture threw', { target, error: err });
+    }
+    if (history !== null) {
+      wsSend(ws, { type: 'backfill', data: history });
+      wsLog.debug('scrollback backfill sent', { target, bytes: history.length });
+    }
+    flushing = true;
+    for (const d of held) wsSend(ws, { type: 'output', data: d });
+    held.length = 0;
   }
 
   async function onMessage(msg: ClientMsg): Promise<void> {

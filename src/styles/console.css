@@ -10,6 +10,16 @@
   --wa-color-surface-raised: #181b24;
   --wa-color-surface-lowered: #0d0f15;
   --wa-color-surface-border: #262a36;
+
+  /* find-bar search highlights (terminal find, agent-terminal.ts): the
+     xterm search addon paints match/active backgrounds onto the canvas —
+     literal #RRGGBB only, no var() chains (a custom-property read returns
+     the raw token stream, unresolved). Mirror of the dark surfaces +
+     brand-60 accent. */
+  --webpi-find-match: #313648;
+  --webpi-find-match-active: #3e96ff;
+  --webpi-find-overview: #888c96;
+  --webpi-find-overview-active: #3e96ff;
 }
 
 * { box-sizing: border-box; }
@@ -296,6 +306,7 @@ console-app .dialog-note {
 
 /* ---- agent-terminal ---- */
 agent-terminal {
+  position: relative; /* the toolbar overlays the pane's top-right */
   flex: 1; display: flex; flex-direction: column;
   min-width: 0; min-height: 0; padding: var(--wa-space-xs);
   /* the toolbar's containing block */
@@ -303,23 +314,26 @@ agent-terminal {
 }
 agent-terminal .terminal-container { flex: 1; min-height: 0; }
 agent-terminal .terminal-container .xterm { height: 100%; }
-/* The pane's toolbar (transcript actions — task/terminal-transcript; the
-   find bar joins it — task/terminal-search): overlaid on the terminal's
-   top-right corner. Absolutely positioned on PURPOSE — it must never be
-   in .terminal-container's flow, or it would eat a row of terminal and
-   muddy the ResizeObserver fit's box (AGENTS.md: the terminal tracks the
-   available space). The translucent surface keeps glyphs underneath from
-   bleeding through the small buttons. */
+/* The pane's overlay toolbar (top-right) — task/terminal-transcript's
+   copy/download buttons and task/terminal-search's find bar, one shared
+   surface (the branches' shared contract, joined at merge). Absolutely
+   positioned on PURPOSE — it must never be in .terminal-container's flow,
+   or it would eat a row of terminal and muddy the ResizeObserver fit's box
+   (AGENTS.md: the terminal tracks the available space). The translucent
+   surface keeps glyphs underneath from bleeding through the controls. */
 agent-terminal .terminal-toolbar {
   position: absolute;
   top: var(--wa-space-3xs);
   right: var(--wa-space-3xs);
-  z-index: 2;
+  z-index: 3;
   padding: var(--wa-space-3xs) var(--wa-space-2xs);
   border-radius: var(--wa-border-radius-m);
   background: color-mix(in srgb, var(--wa-color-surface-raised) 85%, transparent);
   border: var(--wa-border-width-s) solid var(--wa-color-surface-border);
+  box-shadow: var(--wa-shadow-m);
 }
+agent-terminal .terminal-find wa-input { width: 15rem; }
+agent-terminal .terminal-find wa-button::part(base) { padding-inline: var(--wa-space-3xs); }
 agent-terminal .terminal-status {
   display: flex; align-items: center; gap: var(--wa-space-2xs);
   color: var(--wa-color-text-quiet); font-size: var(--wa-font-size-2xs);
