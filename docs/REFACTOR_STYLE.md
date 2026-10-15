@@ -45,7 +45,7 @@ code has it.
 5. Add tests for each new error code. Keep wire responses (status codes,
    bodies the browser reads) unchanged unless the change is the point,
    and the e2e suite will tell you if they moved.
-6. Run `npm run build && npm run check && npm run test:unit && npm run test:e2e`.
+6. Run `npm run build && npm run lint && npm run check && npm run test:unit && npm run test:e2e`.
 
 ## Don't
 
