@@ -1,0 +1,24 @@
+# Generated / vendored / built output
+dist/
+dist-server/
+node_modules/
+pi/
+.astro/
+.fleet/
+.pi/
+test-results/
+playwright-report/
+package-lock.json
+version.json
+
+# .astro needs prettier-plugin-astro, and `astro check` (npm run check) already
+# covers the frontmatter; .md docs are hand-wrapped
+*.astro
+*.md
+
+# The formatter's scope is the code: hand-tuned styles, ops YAML and the
+# generated icon set stay out of it
+*.css
+*.yaml
+*.yml
+public/icons/
