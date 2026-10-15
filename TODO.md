@@ -13,6 +13,11 @@ don't lose dev state on restarts and make sure we don't lose server state
 
 ## Console features
 
+Tab bar works but is shit
+popout behaviour improvement (_blank is probably better)
+popout button off of tab
+popout 
+
 app preview?
 
 self-naming workspaces
