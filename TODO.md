@@ -32,7 +32,7 @@ configure terminal app and agent
 no folder setting when creating workspace - "app" does that
 I nav rename "Console" -> "App" or "Root" or "Global" or something
 
-button to pop a tab to a window
+button to pop a tab to a window — DONE (task/pop-tab-window)
 
 ## Workspaces follow-ups (deferred with the plan — docs/workspaces-plan.md §14)
 
