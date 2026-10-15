@@ -6,7 +6,7 @@ preact signals - make this available for any frontend state needs apps might hav
 
 ## Quality
 playwright fuzzer/monkeys? fuzz based integration testing
-prettier — tooling shipped (.prettierrc + `npm run format`/`format:check`); repo-wide `npm run format` not yet applied — run it when the fleet merge is done
+prettier — done: .prettierrc + `npm run format`/`format:check`, repo-wide apply landed after the fleet merges (format:check clean)
 fully-working watch/dev mode (probably never astro dev tho
 automatically set dev credentials
 don't lose dev state on restarts and make sure we don't lose server state
