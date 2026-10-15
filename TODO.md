@@ -1,10 +1,16 @@
+## Branding
+New name
+
 ## Infrastructure
 preact signals - make this available for any frontend state needs apps might have in future
 
 ## Quality
-playwright fuzzer? fuzz based integration testing
+playwright fuzzer/monkeys? fuzz based integration testing
 use linter
 prettier
+fully-working watch/dev mode (probably never astro dev tho
+automatically set dev credentials
+don't lose dev state on restarts and make sure we don't lose server state
 
 ## Console features
 
@@ -21,6 +27,13 @@ maybe hideable nav on desktop
 global light/dark mode from browser, not hard coded
 vscodium follow global light/dark mode
 
+configure terminal app and agent
+
+no folder setting when creating workspace - "app" does that
+I nav rename "Console" -> "App" or "Root" or "Global" or something
+
+button to pop a tab to a window
+
 ## Workspaces follow-ups (deferred with the plan — docs/workspaces-plan.md §14)
 
 terminal tab drag-reorder + workspace/app reorder UI (the sort_order columns exist)
@@ -34,6 +47,7 @@ editor extension/marketplace configuration beyond the VSCodium defaults (Open VS
 pi-session resume as a workspace action ("resume a past agent session into a new terminal tab")
 
 job log size caps / rotation; job exit-code notification hooks
+  this should be with winston/loki/grafana
 
 ## Jobs
 
