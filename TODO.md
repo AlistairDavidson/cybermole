@@ -20,7 +20,7 @@ self-naming workspaces
 
 ability to configure default agent
 
-in navigation, apps should be collapsible
+in navigation, apps should be collapsible — done (task/collapsible-apps: chevron per group, persisted in localStorage, filter forces groups open)
 
 maybe hideable nav on desktop
 
