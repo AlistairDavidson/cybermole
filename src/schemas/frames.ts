@@ -31,6 +31,24 @@ const clientMsgSchema = z.union(
   [inputMsg, resizeMsg, attachTerminalMsg, attachRunMsg]);
 export type ClientMsg = z.infer<typeof clientMsgSchema>;
 
+// The one SERVER frame the browser validates: 'backfill' bulk-writes a
+// large blob into the terminal buffer, so a malformed frame must be
+// dropped (below), not garble the terminal. Every other ServerMsg
+// (src/lib/types.ts) stays trusted-and-unparsed — the server wrote it,
+// a parse would be ceremony.
+const backfillMsgSchema = z.object({ type: z.literal('backfill'), data: z.string() });
+export type BackfillMsg = z.infer<typeof backfillMsgSchema>;
+
+/** One 'backfill' server frame, or null for anything the schema rejects
+ *  (bad JSON, non-objects, a non-string `data`) — dropped, never thrown
+ *  on, exactly like the client-frame gate. */
+export function parseBackfillMsg(raw: string): BackfillMsg | null {
+  let v: unknown;
+  try { v = JSON.parse(raw); } catch { return null; }
+  const r = backfillMsgSchema.safeParse(v);
+  return r.success ? r.data : null;
+}
+
 /** One client frame, or null for anything the schemas reject (bad JSON,
  *  `null`, arrays, non-objects, missing/mistyped fields, unknown type) —
  *  callers DROP malformed frames, they are never thrown on. */

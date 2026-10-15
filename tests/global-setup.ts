@@ -95,11 +95,21 @@ export default async function globalSetup(): Promise<void> {
   // story (live:false, attach respawns) is part of what the suite asserts.
   // The first tab is the live one on purpose: it is the tab auto-selected
   // at login, and a live auto-selection attaches without respawning.
+  // -f on the FIRST session starts the server under the app's own conf
+  // (exactly what the app's first new-session does — terminal-search made
+  // that conf load-bearing: its terminal-overrides keep attached clients
+  // in the normal buffer so scrollback survives, which the backfill tests
+  // rely on and production always runs with).
+  let first = true;
   for (const [group, index] of [[scratch, 0], [deploy, 0], [proj, 0]] as const) {
     const id = group.terminals[index];
     if (!id) throw new Error('global-setup: fixture terminal missing');
-    execFileSync('tmux', ['-L', TMUX_SOCKET, 'new-session', '-d',
-      '-s', terminalSessionName(asTerminalId(id)), '-c', group.cwd, '--', cmd]);
+    execFileSync('tmux', [
+      '-L', TMUX_SOCKET,
+      ...(first ? ['-f', path.resolve(__dirname, '..', 'tmux.conf')] : []),
+      'new-session', '-d', '-s', terminalSessionName(asTerminalId(id)), '-c', group.cwd, '--', cmd,
+    ]);
+    first = false;
   }
 
   // The server serves dist/ + dist-server/ — build if they're missing.

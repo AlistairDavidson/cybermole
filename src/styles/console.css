@@ -10,6 +10,16 @@
   --wa-color-surface-raised: #181b24;
   --wa-color-surface-lowered: #0d0f15;
   --wa-color-surface-border: #262a36;
+
+  /* find-bar search highlights (terminal find, agent-terminal.ts): the
+     xterm search addon paints match/active backgrounds onto the canvas —
+     literal #RRGGBB only, no var() chains (a custom-property read returns
+     the raw token stream, unresolved). Mirror of the dark surfaces +
+     brand-60 accent. */
+  --webpi-find-match: #313648;
+  --webpi-find-match-active: #3e96ff;
+  --webpi-find-overview: #888c96;
+  --webpi-find-overview-active: #3e96ff;
 }
 
 * { box-sizing: border-box; }
@@ -260,11 +270,27 @@ console-app .dialog-note {
 
 /* ---- agent-terminal ---- */
 agent-terminal {
+  position: relative; /* the toolbar overlays the pane's top-right */
   flex: 1; display: flex; flex-direction: column;
   min-width: 0; min-height: 0; padding: var(--wa-space-xs);
 }
 agent-terminal .terminal-container { flex: 1; min-height: 0; }
 agent-terminal .terminal-container .xterm { height: 100%; }
+/* The pane's overlay toolbar (top-right): the find bar — and, per the
+   task/terminal-transcript shared contract, its buttons — float above the
+   terminal surface. Absolutely positioned on purpose: .terminal-container
+   keeps the whole box (its ResizeObserver drives fitting; a toolbar in
+   flow would steal rows from the terminal instead). */
+agent-terminal .terminal-toolbar {
+  position: absolute; top: var(--wa-space-2xs); right: var(--wa-space-2xs); z-index: 3;
+  background: var(--wa-color-surface-raised);
+  border: var(--wa-border-width-s) solid var(--wa-color-surface-border);
+  border-radius: var(--wa-border-radius-m);
+  padding: var(--wa-space-3xs) var(--wa-space-2xs);
+  box-shadow: var(--wa-shadow-m);
+}
+agent-terminal .terminal-find wa-input { width: 15rem; }
+agent-terminal .terminal-find wa-button::part(base) { padding-inline: var(--wa-space-3xs); }
 agent-terminal .terminal-status {
   display: flex; align-items: center; gap: var(--wa-space-2xs);
   color: var(--wa-color-text-quiet); font-size: var(--wa-font-size-2xs);

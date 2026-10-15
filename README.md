@@ -104,7 +104,11 @@ tab renders not-live and the first attach retries it) + `PATCH`/
 `terminal` (a tab's uuid — respawns the session at the workspace cwd
 when tmux died; reconnects re-send the frame they started with) and
 `run` (a live job run's session — never respawns); input and resize
-frames are unchanged. Deep links: `/?t=<terminal uuid>` opens that
+frames are unchanged. On attach the server sends one `backfill` frame
+ahead of any output — the pane's scrollback history captured with
+`tmux capture-pane` (history only; the client writes it under the attach
+redraw), so a reattached tab has searchable history — Ctrl+F / Cmd+F
+opens the pane's find bar (@xterm/addon-search). Deep links: `/?t=<terminal uuid>` opens that
 tab's workspace with it selected; `/?run=<session name>` attaches a
 live job run (the jobs page's "view" button).
 

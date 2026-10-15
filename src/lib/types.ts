@@ -284,6 +284,12 @@ export type { ClientMsg } from '../schemas/frames';
 export type ServerMsg =
   | { type: 'attached'; target: TmuxSessionName; socket: string }
   | { type: 'output'; data: string }
+  /** scrollback history captured at attach (tmux.ts capturePaneHistory):
+ *  HISTORY ONLY, sent once per attach BEFORE any 'output' flows — the
+ *  client writes it into the (fresh) buffer and pushes the viewport
+ *  down so tmux's home-positioned attach redraw repaints the screen
+ *  below it instead of over it. Skipped when there is no history. */
+  | { type: 'backfill'; data: string }
   | { type: 'exit'; target: TmuxSessionName }
   | { type: 'error'; message: string }
   /** the session token this socket authenticated with was dropped

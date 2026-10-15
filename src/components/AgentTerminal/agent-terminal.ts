@@ -17,11 +17,15 @@
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { SearchAddon, type ISearchDecorationOptions } from '@xterm/addon-search';
 import '@xterm/xterm/css/xterm.css';
 import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '@awesome.me/webawesome/dist/components/input/input.js';
+import '@awesome.me/webawesome/dist/components/button/button.js';
 import type { ActiveKey, ClientMsg, ServerMsg } from '../../lib/types';
 import type { TerminalId, TmuxSessionName } from '../../types/branded';
+import { parseBackfillMsg } from '../../schemas/frames';
 import { BASE } from '../../base';
 
 /** Max UTF-16 units per input frame. JSON spends at most 6 bytes on one
@@ -64,6 +68,83 @@ function armSharedWake(): void {
   document.addEventListener('visibilitychange', wakePendingReconnects);
 }
 
+// ---- find bar (the @xterm/addon-search face) ----
+
+/** Query state is module-level on purpose, never in the pane's DOM: pane
+ *  elements are discarded on workspace switches, and the sidebar's 15 s
+ *  innerHTML poll would eat DOM state anyway (AGENTS.md). Per-target
+ *  (ActiveKey) with the last query as the fallback for a target never
+ *  searched — the browser's own find bar behaves the same way. */
+const findQueries = new Map<ActiveKey, string>();
+let lastFindQuery = '';
+/** Live-search debounce while typing (ms). */
+const FIND_DEBOUNCE_MS = 150;
+
+/** Search-highlight colours, resolved once from the app's tokens in
+ *  console.css :root — the one sanctioned home of hex. The addon paints
+ *  literal #RRGGBB onto the canvas/overview ruler, so Web Awesome tokens
+ *  (var() chains — a custom-property read returns the raw, unresolved
+ *  stream) can't be used; the literals are read here instead. null when
+ *  they don't resolve: find still runs, just unhighlighted. */
+let findDecorations: ISearchDecorationOptions | null | undefined;
+function resolveFindDecorations(): ISearchDecorationOptions | undefined {
+  if (findDecorations === undefined) {
+    const cs = getComputedStyle(document.documentElement);
+    const pick = (name: string): string => cs.getPropertyValue(name).trim();
+    const match = pick('--webpi-find-match');
+    const active = pick('--webpi-find-match-active');
+    const overview = pick('--webpi-find-overview');
+    const activeOverview = pick('--webpi-find-overview-active');
+    findDecorations = match !== '' && active !== '' && overview !== '' && activeOverview !== ''
+      ? {
+        matchBackground: match, activeMatchBackground: active,
+        matchOverviewRuler: overview, activeMatchColorOverviewRuler: activeOverview,
+      }
+      : null;
+  }
+  return findDecorations ?? undefined;
+}
+
+/** Is the given element a real text field the user might be typing into
+ *  (the sidebar's filter, a dialog input)? Ctrl+F is theirs, not the
+ *  terminal's. The check probes shadow roots too: a wa-* form control's
+ *  real input lives inside its shadow DOM, and focus can sit on the HOST
+ *  (verified: after filling the sidebar filter, activeElement is the
+ *  <wa-input> host, not its inner input). Exception: anything INSIDE an
+ *  <agent-terminal> — most notably xterm's own hidden helper textarea,
+ *  which is exactly the "terminal pane is the active context" case the
+ *  find bar is FOR (the find bar's input lives in there too, where
+ *  re-opening re-selects the query, like the browser's own find bar). */
+const inTextField = (el: Element | null): boolean => {
+  if (el === null) return false;
+  if (el.closest('agent-terminal') !== null) return false;
+  if ((el as HTMLElement).isContentEditable || el.matches('input, textarea, select')) return true;
+  return el.shadowRoot?.querySelector('input, textarea, select') != null;
+};
+
+/** One capture-phase document listener for every pane (the shared-wake
+ *  pattern): Ctrl+F / Cmd+F opens the visible pane's find bar. Capture so
+ *  it runs before xterm's own key handling — preventDefault stops the
+ *  browser's native find (the \x06 the terminal would send is dropped by
+ *  the per-terminal custom key handler instead; xterm ignores a later
+ *  preventDefault). */
+let sharedFindArmed = false;
+const openFindOnCtrlF = (e: KeyboardEvent): void => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== 'f') return;
+  if (inTextField(document.activeElement)) return;
+  for (const t of instances) {
+    if ((t as unknown as HTMLElement).classList.contains('hidden')) continue;
+    e.preventDefault();
+    t.openFind();
+    return;
+  }
+};
+function armSharedFind(): void {
+  if (sharedFindArmed) return;
+  sharedFindArmed = true;
+  document.addEventListener('keydown', openFindOnCtrlF, true);
+}
+
 export class AgentTerminal extends HTMLElement {
   static get observedAttributes(): string[] {
     return ['status'];
@@ -71,9 +152,22 @@ export class AgentTerminal extends HTMLElement {
 
   terminal?: Terminal;
   fitXtermAddon?: FitAddon;
+  searchAddon?: SearchAddon;
   websocket?: WebSocket;
   activeKey?: ActiveKey;
   resizeObserver?: ResizeObserver;
+  /** The pane's overlay toolbar (.terminal-toolbar) — the find bar's
+   *  host; shared contract with task/terminal-transcript (see
+   *  buildToolbar). */
+  toolbar: HTMLElement | null = null;
+  private findBar: HTMLElement | null = null;
+  private findInput: HTMLElement & { value: string | null; focus(): void } | null = null;
+  private findDebounce: ReturnType<typeof setTimeout> | null = null;
+  /** Has anything been written into the buffer since the last reset?
+   *  Gates the 'backfill' write: a reconnect's terminal already holds
+   *  the session (reconnect() keeps the buffer), so backfilling again
+   *  would duplicate the history. */
+  private bufferPrimed = false;
   /** tmux session the server last attached us to — set on 'attached'. */
   private attachedTarget: TmuxSessionName | null = null;
   /** Is the current attach OVER for good (never attached, or ended by
@@ -106,6 +200,7 @@ export class AgentTerminal extends HTMLElement {
   connectedCallback(): void {
     instances.add(this);
     armSharedWake();
+    armSharedFind();
     if (this.terminal) {
       return;
     }
@@ -116,7 +211,13 @@ export class AgentTerminal extends HTMLElement {
 
     this.terminal = new Terminal({
       cursorBlink: true, fontSize: 13, fontFamily: 'monospace',
-      scrollback: 5000, theme: {
+      scrollback: 5000,
+      // @xterm/addon-search's highlight decorations ride xterm's proposed
+      // API (registerDecoration), which xterm 6 gates behind this flag —
+      // the addon throws "You must set the allowProposedApi option" on
+      // every find otherwise.
+      allowProposedApi: true,
+      theme: {
         background: surfaceColor
       },
     });
@@ -124,7 +225,21 @@ export class AgentTerminal extends HTMLElement {
     this.fitXtermAddon = new FitAddon();
     this.terminal.loadAddon(this.fitXtermAddon);
 
+    this.searchAddon = new SearchAddon();
+    this.terminal.loadAddon(this.searchAddon);
+
     this.terminal.open(terminalContainer);
+
+    // Ctrl+F / Cmd+F is the find bar's while the terminal has focus:
+    // xterm ignores a later preventDefault (verified — the \x06 still
+    // goes to the pty), so its documented hook drops the key at the
+    // source instead. The shared document listener (armSharedFind) still
+    // preventDefaults the BROWSER's native find and opens the bar.
+    this.terminal.attachCustomKeyEventHandler(e => {
+      if (e.type === 'keydown' && (e.ctrlKey || e.metaKey) && !e.altKey
+        && e.key.toLowerCase() === 'f') return false;
+      return true;
+    });
 
     // URLs in agent output become clickable (a custom handler — e.g.
     // copy-to-clipboard instead of navigate — can come later).
@@ -146,6 +261,8 @@ export class AgentTerminal extends HTMLElement {
       () => this.fitNow()
     );
     this.resizeObserver.observe(terminalContainer);
+
+    this.buildToolbar();
 
     this.fitNow();
     // NB: the WebGL renderer is NOT loaded here — only on activate()
@@ -195,11 +312,136 @@ export class AgentTerminal extends HTMLElement {
     (el.lastElementChild as HTMLElement).textContent = text;
   }
 
+  // ---- the terminal toolbar + find bar ----
+
+  /** The pane's overlay toolbar, top-right (`.terminal-toolbar`, a
+   *  wa-cluster). Built here rather than in the pane markup so every
+   * <agent-terminal> — sidebar-created, tab-created, the run pane — gets
+   * one; the find bar is its first cluster. SHARED CONTRACT
+   * (task/terminal-transcript): its buttons join this toolbar as children
+   * AFTER the find cluster, keeping the same shell. */
+  private buildToolbar(): void {
+    const toolbar = document.createElement('div');
+    toolbar.className = 'terminal-toolbar wa-cluster';
+    toolbar.setAttribute('role', 'toolbar');
+    toolbar.setAttribute('aria-label', 'terminal tools');
+    const find = document.createElement('div');
+    find.className = 'terminal-find wa-cluster hidden';
+    find.innerHTML = `
+      <wa-input class="terminal-find-input" placeholder="find in terminal…" size="s"
+        aria-label="find in terminal"></wa-input>
+      <wa-button class="find-prev" appearance="plain" size="xs" title="previous match (shift+enter)">
+        <wa-icon name="chevron-up" label="previous match"></wa-icon>
+      </wa-button>
+      <wa-button class="find-next" appearance="plain" size="xs" title="next match (enter)">
+        <wa-icon name="chevron-down" label="next match"></wa-icon>
+      </wa-button>
+      <wa-button class="find-close" appearance="plain" size="xs" title="close (esc)">
+        <wa-icon name="xmark" label="close find bar"></wa-icon>
+      </wa-button>`;
+    toolbar.appendChild(find);
+    // HOOK(task/terminal-transcript): transcript / copy-output buttons
+    // append to `toolbar` here, after the find cluster.
+    this.appendChild(toolbar);
+    this.toolbar = toolbar;
+    this.findBar = find;
+
+    const input = find.querySelector('.terminal-find-input') as
+      (HTMLElement & { value: string | null; focus(): void }) | null;
+    this.findInput = input;
+    if (input) {
+      // wa-input emits a plain `input` event per keystroke (same as the
+      // sidebar's filter); .value is null when empty.
+      input.addEventListener('input', () => this.onFindInput());
+      // Keys from the shadow-DOM input retarget to the host: Enter=next,
+      // Shift+Enter=prev, Esc=close + refocus the terminal.
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          this.runFind(this.findQuery(), e.shiftKey);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          this.closeFind();
+        }
+      });
+    }
+    (find.querySelector('.find-next') as HTMLElement | null)?.addEventListener('click',
+      () => this.runFind(this.findQuery(), false));
+    (find.querySelector('.find-prev') as HTMLElement | null)?.addEventListener('click',
+      () => this.runFind(this.findQuery(), true));
+    (find.querySelector('.find-close') as HTMLElement | null)?.addEventListener('click',
+      () => this.closeFind());
+  }
+
+  private findQuery(): string {
+    return this.findInput?.value ?? '';
+  }
+
+  /** Ctrl+F / Cmd+F (the shared listener) or a transcript hook: reveal
+   *  the find bar with the pane's saved query (module-level state — the
+   *  query survives pane switches), selected so typing replaces it, and
+   *  a live search running. */
+  openFind(): void {
+    if (!this.terminal || !this.findBar || !this.findInput) return;
+    this.findBar.classList.remove('hidden');
+    const saved = (this.activeKey !== undefined ? findQueries.get(this.activeKey) : undefined)
+      ?? lastFindQuery;
+    this.findInput.value = saved;
+    this.findInput.focus();
+    const native = (this.findInput as unknown as { input?: HTMLInputElement }).input
+      ?? this.findInput.shadowRoot?.querySelector('input') ?? null;
+    if (native) native.select(); // typing replaces, like the browser's find
+    if (saved) this.runFind(saved, false);
+  }
+
+  /** Esc / close button: hide, clear the decorations, hand focus back to
+   *  the terminal (the next keystroke belongs to the shell). The query
+   *  stays saved for the next open. */
+  private closeFind(): void {
+    if (this.findDebounce !== null) {
+      clearTimeout(this.findDebounce);
+      this.findDebounce = null;
+    }
+    this.searchAddon?.clearDecorations();
+    this.findBar?.classList.add('hidden');
+    this.terminal?.focus();
+  }
+
+  /** Typing in the find bar: remember the query (module-level, per
+   *  activeKey + the global fallback) and run a debounced live search so
+   *  the highlight decorations track the text as it's typed. */
+  private onFindInput(): void {
+    const q = this.findQuery();
+    if (this.activeKey !== undefined) findQueries.set(this.activeKey, q);
+    lastFindQuery = q;
+    if (this.findDebounce !== null) clearTimeout(this.findDebounce);
+    this.findDebounce = setTimeout(() => {
+      this.findDebounce = null;
+      this.runFind(q, false);
+    }, FIND_DEBOUNCE_MS);
+  }
+
+  private runFind(query: string, backwards: boolean): void {
+    const addon = this.searchAddon;
+    if (!addon || !this.terminal) return;
+    if (query === '') {
+      addon.clearDecorations();
+      return;
+    }
+    // findNext/findPrevious scroll the match into view and paint the
+    // decorations; the addon keeps its own result cursor, so repeated
+    // Enter steps through matches.
+    if (backwards) addon.findPrevious(query, { decorations: resolveFindDecorations() });
+    else addon.findNext(query, { decorations: resolveFindDecorations() });
+  }
+
   attach(mode: 'terminal' | 'run',
     target: TerminalId | TmuxSessionName, key: ActiveKey): void {
     this.cancelReconnect();
     this.closeSocket();
     this.terminal?.reset();
+    this.bufferPrimed = false; // fresh buffer: the next backfill belongs in it
     this.terminal?.focus();
     this.activeKey = key;
     this.attachedTarget = null;
@@ -235,7 +477,26 @@ export class AgentTerminal extends HTMLElement {
 
     websocket.onmessage = ev => {
       let m: ServerMsg; try { m = JSON.parse(ev.data as string) as ServerMsg; } catch { return; }
-      if (m.type === 'output') this.terminal?.write(m.data);
+      if (m.type === 'output') {
+        this.bufferPrimed = true;
+        this.terminal?.write(m.data);
+      }
+      // Scrollback backfill — the capture that ran on the server between
+      // 'attached' and the first 'output'. Written only into a FRESH
+      // buffer: a reconnect keeps its buffer (no reset), and backfilling
+      // again would duplicate the history. The newline pad is the dedupe:
+      // the captured history stops above the visible screen (-E -1), and
+      // rows-1 newlines push the viewport down so tmux's attach redraw —
+      // home-positioned (ESC[H) relative to the viewport top — repaints
+      // the screen BELOW the backfilled history instead of over it.
+      // (Verified end to end: each line appears exactly once.)
+      else if (m.type === 'backfill') {
+        const b = parseBackfillMsg(ev.data as string);
+        if (!b || b.data === '' || this.bufferPrimed || !this.terminal) return;
+        this.bufferPrimed = true;
+        this.terminal.write(b.data);
+        if (this.terminal.rows > 1) this.terminal.write('\n'.repeat(this.terminal.rows - 1));
+      }
       else if (m.type === 'attached') {
         this.ended = false;
         this.attachedTarget = m.target;
