@@ -45,7 +45,9 @@ function caretOf(el: WaInputLike): number | null {
  *  below. The in-memory set is the render-time source of truth (a poll
  *  re-render reads it, so collapsed groups never flicker open). */
 const NAV_COLLAPSED_KEY = 'webpi:nav-collapsed';
-/** The Console group's fixed collapse key (apps use their slug). */
+/** The Console group's fixed collapse key (apps use their slug). NB: an
+ *  app named "Console" slugs to 'console' too — same collision its
+ *  data-group already has on main; both groups then collapse in tandem. */
 const CONSOLE_GROUP_KEY = 'console';
 
 let collapsedGroups: Set<string> | null = null;
@@ -138,7 +140,7 @@ export class WorkspaceSidebar extends HTMLElement {
     if (!st) return '';
     const groups: string[] = [
       this.group(CONSOLE_GROUP_KEY, 'console', st.workspaces.filter(w => w.appId === null)),
-    ];;
+    ];
     for (const app of st.apps) {
       groups.push(this.group(app.slug, app.name, st.workspaces.filter(w => w.appId === app.id), app));
     }
