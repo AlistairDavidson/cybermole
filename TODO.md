@@ -34,6 +34,8 @@ I nav rename "Console" -> "App" or "Root" or "Global" or something
 
 button to pop a tab to a window
 
+link to logs (page with grafana in an iframe)
+
 ## Workspaces follow-ups (deferred with the plan — docs/workspaces-plan.md §14)
 
 terminal tab drag-reorder + workspace/app reorder UI (the sort_order columns exist)
@@ -56,18 +58,12 @@ Jobs MCP
 Job page
   Agent console as above but told about this job (can be opened)
 
-## App management
-
+## Apps
+Build out apps feature properly
 All apps get an app management page that allows you to manage rollbacks, see logs
 console that knows to interrogate this page
 Migrations
-
-## Agentic shit
-Code style skill - typescript branded types etc
-Component skills
-Development / testing process
-commits
-How to scaffold an app eg write its AGENTS.md, always make an mcp with tools that match every user action
+Apps MCP
 
 ## Distribution
 installation instructions / script for agents / actual scripts
@@ -80,6 +76,13 @@ Skills and other methods to enforce my coding patterns
 Write a refined agent workflow
 HIG skill
 
+## Agentic shit
+Code style skill - typescript branded types etc
+Component skills
+Development / testing process
+commits
+How to scaffold an app eg write its AGENTS.md, always make an mcp with tools that match every user action
+
 ## Deferred, ignore
 postgres option
 
@@ -90,7 +93,6 @@ xterm:
   unicode-graphemes - emoji/combining chars currently render wrong-width in agent output (6.0-only on npm, experimental)
   
   font decision first, then: bundled mono webfont via web-fonts addon (needs xterm 6.1-beta) + ligatures if a ligature font
-  skip: attach (our WS JSON protocol is richer: attach modes, resize, errors, status), canvas (deprecated, removed in xterm 6)
   
   search addon + ctrl+F bar (wa-input cluster in terminal toolbar, NOT the workspace sidebar - 15s innerHTML poll eats state) server backfill via `tmux capture-pane -S -5000 -p` written to WS on attach so attached terminals have searchable scrollback
 
