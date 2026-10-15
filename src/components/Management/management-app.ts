@@ -87,7 +87,7 @@ export class ManagementApp extends HTMLElement {
 
   private toast(message: string, variant: string, icon: string): void {
     const host = document.querySelector('wa-toast'); // Base.astro's stack
-    (host as WaToast | null)?.create(message, { variant, icon, duration: 8000 });
+    void (host as WaToast | null)?.create(message, { variant, icon, duration: 8000 });
   }
 
   private errorToast(fallback: string, body: { error?: string } = {}): void {

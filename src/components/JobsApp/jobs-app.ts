@@ -95,7 +95,7 @@ export class JobsApp extends HTMLElement {
     // The list is server-rendered; the 15 s poll keeps it fresh (and
     // retries a failed listing — the partial answers 500 with no fragment
     // then, so what is shown stays until a good one lands).
-    this.pollTimer = setInterval(() => this.load(), 15000);
+    this.pollTimer = setInterval(() => { void this.load(); }, 15000);
   }
 
   disconnectedCallback(): void {
@@ -104,7 +104,7 @@ export class JobsApp extends HTMLElement {
   }
 
   private toast(message: string, variant: string, icon: string): void {
-    (this.querySelector('wa-toast') as WaToast | null)?.create(message, {
+    void (this.querySelector('wa-toast') as WaToast | null)?.create(message, {
       variant, icon, duration: 6000,
     });
   }
@@ -193,7 +193,7 @@ export class JobsApp extends HTMLElement {
     this.setAppOptions(job?.app ?? '');
     this.clearFieldErrors();
     this.setFeedback(null);
-    this.validate();
+    void this.validate();
     dlg.open = true;
     (job ? schedule : name).focus();
   }
@@ -218,7 +218,7 @@ export class JobsApp extends HTMLElement {
 
   private queueValidate(): void {
     if (this.validateTimer) clearTimeout(this.validateTimer);
-    this.validateTimer = setTimeout(() => this.validate(), 350);
+    this.validateTimer = setTimeout(() => { void this.validate(); }, 350);
   }
 
   private setFeedback(c: CalendarCheck | null): void {

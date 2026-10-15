@@ -36,6 +36,7 @@ exit "\${FAKE_NPM_EXIT:-0}"
   process.env.PATH = `${bin}${path.delimiter}${saved.PATH}`;
   Object.assign(process.env, env);
   t.after(() => {
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- restoring the saved env
     for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
     Object.assign(process.env, saved);
   });

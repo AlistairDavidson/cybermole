@@ -45,7 +45,7 @@ function readPiped(): Promise<string[]> {
   });
 }
 
-(async (): Promise<void> => {
+void (async (): Promise<void> => {
   let username: string, pw: string, pw2: string;
   if (process.stdin.isTTY) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });

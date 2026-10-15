@@ -32,7 +32,7 @@ import { componentLogger } from './logger';
 import { appVersion } from './settings';
 import { RateLimiter, type VerifyLoginResult } from './auth';
 import type {
-  BuildStatus, ChangedPath, CheckoutInfo, CommitEntry, EnforcementVerdict, ImageVersion,
+  BuildStatus, ChangedPath, CheckoutInfo, CommitEntry, EnforcementVerdict,
   ManagementState, ReleaseRecord,
 } from './types';
 import type { CommitSha } from '../types/branded';

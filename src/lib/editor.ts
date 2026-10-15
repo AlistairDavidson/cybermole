@@ -27,6 +27,7 @@ export type IncomingHeaders = Record<string, string | string[] | undefined>;
  *  as remoteAuthority), Sec-WebSocket-Key/Version, cookies — passes through. */
 export function editorUpgradeHeaders(incoming: IncomingHeaders): IncomingHeaders {
   const headers: IncomingHeaders = { ...incoming };
+  // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- scrubbing the hop-by-hop header set
   for (const hop of EDITOR_HOP_BY_HOP_HEADERS) delete headers[hop];
   headers.connection = 'Upgrade';
   headers.upgrade = typeof incoming.upgrade === 'string' && incoming.upgrade !== '' ? incoming.upgrade : 'websocket';

@@ -717,6 +717,7 @@ test('hidden tabs keep their WS attached: state and scrollback persist, refit on
 /** Authed in-page JSON fetch (Playwright's API client doesn't send the
  *  Secure session cookie over the suite's plain-http origin). */
 async function api(page: Page, method: string, url: string, body?: unknown):
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- the parsed body, callers narrow it
   Promise<{ status: number; json: any }> {
   return page.evaluate(async ([m, u, b]) => {
     const r = await fetch(u!, {

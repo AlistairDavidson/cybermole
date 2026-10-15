@@ -10,7 +10,6 @@ import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
-// @ts-ignore — no bundled types for the native module
 import * as pty from 'node-pty';
 import { Auth, RateLimiter, type Auth as AuthType } from '../src/lib/auth';
 import { StateDb } from '../src/lib/db';
@@ -20,7 +19,7 @@ import { componentLogger, closeLogger } from '../src/lib/logger';
 import * as jobs from '../src/lib/jobs';
 import { AutoUpdater } from '../src/lib/auto-update';
 import {
-  EDITOR_HOP_BY_HOP_HEADERS, EDITOR_MAX_BODY_BYTES, EditorTunnelTracker, editorBodyCapStatus,
+  EDITOR_HOP_BY_HOP_HEADERS, EditorTunnelTracker, editorBodyCapStatus,
   editorSecurityHeaders, editorUpgradeHeaders, isEditorHttpPath, isEditorUpgradePath, type EditorUpstream,
 } from '../src/lib/editor';
 import { createServices, type ServerConfig, type WebPiLocals } from '../src/lib/services';
@@ -525,6 +524,7 @@ function proxyEditorRequest(req: http.IncomingMessage, res: http.ServerResponse,
   // in the workbench HTML as `remoteAuthority` (spike-verified), which is
   // how the browser learns to dial its WebSocket back through this proxy.
   const headers = { ...req.headers };
+  // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- scrubbing the hop-by-hop header set
   for (const hop of EDITOR_HOP_BY_HOP_HEADERS) delete headers[hop];
   const target = new URL(req.url ?? '/', upstream.origin);
   const proxied = http.request(target, { method: req.method, headers }, upstreamRes => {
@@ -533,6 +533,7 @@ function proxyEditorRequest(req: http.IncomingMessage, res: http.ServerResponse,
       if (Array.isArray(value)) out[name] = value.join(', ');
       else if (value !== undefined) out[name] = value;
     }
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- scrubbing the hop-by-hop header set
     for (const hop of EDITOR_HOP_BY_HOP_HEADERS) delete out[hop];
     // Editor HTML carries its own header set (framing + the VS Code web
     // CSP, pinned by the spike): handler-set headers win — hardenResponse
@@ -1227,7 +1228,7 @@ function shutdown(signal: string): void {
     shutdownLog.error(`shutdown: drain unfinished after ${SHUTDOWN_DEADLINE_MS}ms — exiting`);
     process.exit(0);
   }, SHUTDOWN_DEADLINE_MS);
-  (async () => {
+  void (async () => {
     for (const step of shutdownSteps) {
       try { await step(); } catch (err) { shutdownLog.error('shutdown step failed', { error: err }); }
     }
