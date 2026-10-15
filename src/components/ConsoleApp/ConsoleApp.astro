@@ -40,6 +40,13 @@ const wsValidation = zodSchemaToHTMLAttributes(workspaceForm);
           hint="the slug is derived (lowercase, dashes) and stays fixed"
           {...appValidation.name}
         />
+        <WaField
+          id="app-cwd"
+          name="cwd"
+          label="working directory"
+          hint="optional — workspaces under this app start here; empty starts them at the server default"
+          {...appValidation.cwd}
+        />
       </form>
     </validation-enhancer-zod>
     <wa-button slot="footer" appearance="plain" data-dialog="close">cancel</wa-button>
@@ -50,13 +57,7 @@ const wsValidation = zodSchemaToHTMLAttributes(workspaceForm);
     <validation-enhancer-zod>
       <form id="workspace-form" class="wa-stack wa-gap-s">
         <WaField id="workspace-name" name="name" label="name" {...wsValidation.name} />
-        <WaField
-          id="workspace-cwd"
-          name="cwd"
-          label="working directory"
-          hint="terminal tabs start here; the editor tab opens it"
-          {...wsValidation.cwd}
-        />
+        <p class="dialog-note" id="workspace-start">starts at the server default</p>
       </form>
     </validation-enhancer-zod>
     <wa-button slot="footer" appearance="plain" data-dialog="close">cancel</wa-button>

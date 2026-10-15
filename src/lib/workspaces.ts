@@ -94,8 +94,10 @@ export type WorkspaceTreeResult = WorkspaceTreeSuccess | WorkspaceTreeFailure;
 
 /** The cwd check, same shape as zed.ts's: absolute + a directory the
  *  server can see. About typos, not access control — the caller holds
- *  the session cookie, which is already a shell at this privilege. */
-function checkedCwd(cwd: string): { ok: true; cwd: string } | { ok: false; reason: string } {
+ *  the session cookie, which is already a shell at this privilege.
+ *  Exported for apps.ts: an app's cwd is a workspace-start default, so
+ *  it passes the same rule (task/app-cwd). */
+export function checkedCwd(cwd: string): { ok: true; cwd: string } | { ok: false; reason: string } {
   if (!cwd.startsWith('/')) return { ok: false, reason: `cwd must be an absolute path: ${cwd}` };
   try {
     if (!fs.statSync(cwd).isDirectory()) return { ok: false, reason: `cwd is not a directory: ${cwd}` };
@@ -121,8 +123,8 @@ export interface WorkspacesDeps {
    *  family (plan §4). */
   spawnSession: (name: TmuxSessionName, cwd: string) =>
     Promise<TmuxSessionSuccess | TmuxSessionFailure>;
-  /** WEB_PI_NEW_SESSION_CWD — the default when POST /api/workspaces omits
-   *  cwd (plan §6). */
+  /** WEB_PI_NEW_SESSION_CWD — the default when the create carries no cwd
+   *  of its own AND the parent app has none (plan §6, task/app-cwd). */
   defaultCwd: string;
   /** Live tmux session names (tmux.liveSessionNames) — the tree read's
    *  live diff (`t-<uuid>` present = the tab is live, plan §5). Injected
@@ -160,25 +162,34 @@ export class Workspaces {
         .where('app_id', 'is', appId))?.max ?? 0) + 10);
   }
 
-  /** Create a workspace. cwd defaults to the configured new-session cwd;
-   *  an explicit one is validated (absolute + existing dir). */
+  /** Create a workspace. The cwd is DERIVED (task/app-cwd: no folder
+   *  setting at the dialog or on the wire — the app does that): an
+   *  explicit one (an internal caller; the POST body no longer carries
+   *  one) wins, then the parent app's cwd, then the configured default
+   *  (WEB_PI_NEW_SESSION_CWD). Whatever wins is validated (absolute +
+   *  existing dir) — the parent app's cwd included: the dir may have
+   *  gone since the app was saved. */
   async saveWorkspace(input: { appId?: AppId | null; name: string; cwd?: string }): Promise<SaveWorkspaceResult> {
     const fail = (errorCode: SaveWorkspaceErrorCode, errorMessage: string) =>
       ({ ok: false, resultType: 'save_workspace', errorCode, errorMessage }) satisfies SaveWorkspaceFailure;
     const name = input.name.trim();
     if (!name) return fail('invalid_name', 'name is required');
-    const cwd = checkedCwd(input.cwd === undefined ? this.deps.defaultCwd : input.cwd);
-    if (!cwd.ok) return fail('invalid_cwd', cwd.reason);
     const appId = input.appId ?? null;
+    let parentCwd: string | null = null;
     if (appId !== null) {
       // Pre-check the FK (constraint violations are closed error codes,
       // never message-sniffed — plan §2); the residual race degrades to
-      // database_error at the insert.
+      // database_error at the insert. The same read carries the app's cwd
+      // — the create-side default below (task/app-cwd).
       const parent = databaseRead('could not read app', () =>
-        this.deps.db.get(qb.selectFrom('apps').select('id').where('id', '=', appId)) ?? null);
+        this.deps.db.get(qb.selectFrom('apps').select(['id', 'cwd']).where('id', '=', appId)) ?? null);
       if (!parent.ok) return fail('database_error', parent.errorMessage);
       if (!parent.data.value) return fail('app_not_found', 'no such app');
+      parentCwd = parent.data.value.cwd;
     }
+    const wanted = input.cwd !== undefined ? input.cwd : (parentCwd ?? this.deps.defaultCwd);
+    const cwd = checkedCwd(wanted);
+    if (!cwd.ok) return fail('invalid_cwd', cwd.reason);
     const actor = this.actor();
     if (!actor.ok) return fail('database_error', actor.errorMessage);
     const order = this.nextOrder(appId);

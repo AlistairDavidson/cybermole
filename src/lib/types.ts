@@ -10,6 +10,10 @@ export interface AppState {
   id: AppId;
   name: string;
   slug: AppSlug;
+  /** Where workspaces under this app start (task/app-cwd) — null = the
+   *  server default (ConsoleState.defaultCwd): the new-workspace dialog's
+   *  start-path hint and the create-side cwd derivation read it. */
+  cwd: string | null;
   order: number;
 }
 

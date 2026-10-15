@@ -29,7 +29,6 @@ vscodium follow global light/dark mode
 
 configure terminal app and agent
 
-no folder setting when creating workspace - "app" does that
 I nav rename "Console" -> "App" or "Root" or "Global" or something
 
 button to pop a tab to a window — DONE (task/pop-tab-window)
@@ -40,7 +39,7 @@ link to logs (page with grafana in an iframe)
 
 terminal tab drag-reorder + workspace/app reorder UI (the sort_order columns exist)
 
-workspace templates (pre-seeded terminals); per-app cwd
+workspace templates (pre-seeded terminals) — still deferred; per-app cwd (done — apps carry an optional cwd; new workspaces derive theirs from it)
 
 app icons
 

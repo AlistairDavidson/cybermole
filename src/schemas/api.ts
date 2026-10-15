@@ -50,21 +50,32 @@ export const autoUpdateBody = z.object({ enabled: z.boolean({ error: 'enabled mu
 // have no invalid_* code, so terminal titles are validated HERE (a bad
 // title is a 400 before the domain is ever reached).
 
-/** POST /api/apps — any string; the domain slugs it (empty slug →
- *  invalid_name). */
-export const appCreateBody = z.object({ name: z.string().max(80, 'name is too long (max 80)') });
+/** POST /api/apps — name any string (the domain slugs it: empty slug →
+ *  invalid_name); cwd optional (task/app-cwd): absent/empty = unset
+ *  (workspaces under the app start at the server default), a non-empty
+ *  one validated by the domain (absolute + existing dir). */
+export const appCreateBody = z.object({
+  name: z.string().max(80, 'name is too long (max 80)'),
+  cwd: z.string().max(4096, 'cwd is too long').optional(),
+});
 
 /** PATCH /api/apps/:slug — name only (the slug is stable once created, v1);
- *  absent = a no-op that returns the row. */
-export const appPatchBody = z.object({ name: z.string().max(80, 'name is too long (max 80)').optional() });
+ *  cwd per terminalPatchBody's title convention: absent = keep, null =
+ *  clear back to unset (the server default applies), a string = set
+ *  (domain-validated). */
+export const appPatchBody = z.object({
+  name: z.string().max(80, 'name is too long (max 80)').optional(),
+  cwd: z.string().max(4096, 'cwd is too long').nullable().optional(),
+});
 
-/** POST /api/workspaces — appId null (or absent) = the console group; cwd
- *  optional, defaulting server-side to WEB_PI_NEW_SESSION_CWD (the domain
- *  validates absolute + existing directory). */
+/** POST /api/workspaces — appId null (or absent) = the console group. No
+ *  cwd (task/app-cwd — "no folder setting when creating workspace": the
+ *  app does that): the server DERIVES it — the parent app's cwd when it
+ *  has one, else WEB_PI_NEW_SESSION_CWD (the domain validates the
+ *  winner, absolute + existing directory). */
 export const workspaceCreateBody = z.object({
   appId: AppIdSchema.nullable().optional(),
   name: z.string().max(120, 'name is too long (max 120)'),
-  cwd: z.string().max(4096, 'cwd is too long').optional(),
 });
 
 /** PATCH /api/workspaces/:id — either field alone; absent fields keep. */
@@ -92,14 +103,18 @@ export const terminalPatchBody = z.object({
 // an empty field never costs a round trip, while the server stays
 // permissive so a malformed POST is the domain's 400/409 to answer.
 
-/** The new-app dialog: one required name (the domain slugs it). */
+/** The new-app dialog: a required name (the domain slugs it) + an
+ *  OPTIONAL cwd (task/app-cwd — no min: the enhancer parses an empty
+ *  wa-input as '', which must pass; the domain treats '' as unset). */
 export const appForm = z.object({
   name: z.string().trim().min(1, 'name is required').max(80, 'name is too long (max 80)'),
+  cwd: z.string().trim().max(4096, 'cwd is too long').optional(),
 });
 
-/** The new-workspace dialog: name + cwd (prefilled from state.defaultCwd;
- *  the server re-validates absolute + existing directory). */
+/** The new-workspace dialog: name only (task/app-cwd — the folder setting
+ *  is gone: the app carries it). The dialog shows where the workspace
+ *  will start (the parent app's cwd, else the server default) as a hint;
+ *  the server derives and validates the same way. */
 export const workspaceForm = z.object({
   name: z.string().trim().min(1, 'name is required').max(120, 'name is too long (max 120)'),
-  cwd: z.string().trim().min(1, 'cwd is required').max(4096, 'cwd is too long'),
 });

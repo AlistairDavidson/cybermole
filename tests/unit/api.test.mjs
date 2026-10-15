@@ -104,53 +104,65 @@ test('a failed body renders "field: message" (the 400 text)', () => {
 
 // ---------- the console dialogs' forms (task/ws-console, plan §8) ----------
 
-test('appForm: a trimmed non-empty name, capped at 80; emptiness named', () => {
+test('appForm: trimmed non-empty name capped at 80; optional cwd — empty passes (an empty wa-input is null, parsed as "")', () => {
   assert.deepEqual(parse(appForm, { name: '  My App! ' }), { name: 'My App!' });
+  assert.deepEqual(parse(appForm, { name: 'My App! ', cwd: '' }), { name: 'My App!', cwd: '' }); // unset
+  assert.deepEqual(parse(appForm, { name: 'My App!', cwd: ' /srv/app ' }), { name: 'My App!', cwd: '/srv/app' });
   assert.equal(issueText(appForm, { name: '   ' }), 'name: name is required');
   assert.equal(issueText(appForm, { name: 'x'.repeat(81) }), 'name: name is too long (max 80)');
-  for (const bad of [{}, { name: 5 }, null]) {
+  assert.equal(issueText(appForm, { name: 'w', cwd: 'x'.repeat(4097) }), 'cwd: cwd is too long');
+  for (const bad of [{}, { name: 5 }, null, { name: 'w', cwd: 5 }]) {
     assert.equal(ok(appForm, bad), false, JSON.stringify(bad));
   }
 });
 
-test('workspaceForm: name + cwd both required (the dialog prefills cwd)', () => {
-  assert.deepEqual(parse(workspaceForm, { name: ' scratch ', cwd: ' /workspace ' }),
-    { name: 'scratch', cwd: '/workspace' });
-  assert.equal(issueText(workspaceForm, { name: '', cwd: '/w' }), 'name: name is required');
-  assert.equal(issueText(workspaceForm, { name: 'w', cwd: ' ' }), 'cwd: cwd is required');
-  assert.equal(issueText(workspaceForm, { name: 'w', cwd: 'x'.repeat(4097) }), 'cwd: cwd is too long');
-  for (const bad of [{}, { name: 'w' }, { cwd: '/w' }, { name: 5, cwd: '/w' }, null]) {
+test('workspaceForm: name only (task/app-cwd — no folder setting; the dialog shows the derived start dir as a hint)', () => {
+  assert.deepEqual(parse(workspaceForm, { name: ' scratch ' }), { name: 'scratch' });
+  // a cwd key is stripped, never honored — the server derives the dir
+  assert.deepEqual(parse(workspaceForm, { name: 'scratch', cwd: '/workspace' }), { name: 'scratch' });
+  assert.equal(issueText(workspaceForm, { name: '' }), 'name: name is required');
+  assert.equal(issueText(workspaceForm, { name: 'x'.repeat(121) }), 'name: name is too long (max 120)');
+  for (const bad of [null, {}, { name: 5 }, { name: '' }, { name: '   ' }]) {
     assert.equal(ok(workspaceForm, bad), false, JSON.stringify(bad));
   }
 });
 
 // ---------- workspaces-plan §6 bodies (task/ws-schema) ----------
 
-test('appCreateBody: any string name (the domain slugs it); over-long is a named 400', () => {
+test('appCreateBody: any string name (the domain slugs it); cwd optional (task/app-cwd); over-longs are named 400s', () => {
   assert.deepEqual(parse(appCreateBody, { name: '  My App!' }), { name: '  My App!' });
   assert.deepEqual(parse(appCreateBody, { name: '' }), { name: '' }); // emptiness is the domain's call
-  for (const bad of [{}, { name: 5 }, null, { name: null }]) {
+  assert.deepEqual(parse(appCreateBody, { name: 'x', cwd: '/srv/app' }), { name: 'x', cwd: '/srv/app' });
+  for (const bad of [
+    {}, { name: 5 }, null, { name: null },
+    { name: 'x', cwd: 5 }, { name: 'x', cwd: 'x'.repeat(4097) },
+  ]) {
     assert.equal(ok(appCreateBody, bad), false, JSON.stringify(bad));
   }
   assert.equal(issueText(appCreateBody, { name: 'x'.repeat(81) }), 'name: name is too long (max 80)');
+  assert.equal(issueText(appCreateBody, { name: 'x', cwd: 'x'.repeat(4097) }), 'cwd: cwd is too long');
 });
 
-test('appPatchBody: name optional; absent means a no-op', () => {
+test('appPatchBody: name optional; cwd per terminalPatchBody (absent keeps, null clears, string sets)', () => {
   assert.deepEqual(parse(appPatchBody, {}), {});
   assert.deepEqual(parse(appPatchBody, { name: 'New' }), { name: 'New' });
+  assert.deepEqual(parse(appPatchBody, { cwd: '/srv/app' }), { cwd: '/srv/app' });
+  assert.deepEqual(parse(appPatchBody, { cwd: null }), { cwd: null }); // null clears (task/app-cwd)
   assert.equal(ok(appPatchBody, { name: 5 }), false);
+  assert.equal(ok(appPatchBody, { cwd: 5 }), false);
   assert.equal(issueText(appPatchBody, { name: 'x'.repeat(81) }), 'name: name is too long (max 80)');
+  assert.equal(issueText(appPatchBody, { cwd: 'x'.repeat(4097) }), 'cwd: cwd is too long');
 });
 
-test('workspaceCreateBody: appId null/absent/uuid v4; name required; cwd optional', () => {
+test('workspaceCreateBody: appId null/absent/uuid v4; name required; NO cwd (task/app-cwd — the server derives it, an app carries it)', () => {
   const ID = '123e4567-e89b-42d3-a456-426614174000';
   assert.deepEqual(parse(workspaceCreateBody, { name: 'scratch' }), { name: 'scratch' });
+  // a cwd on the wire is stripped, never honored — the create derives it
   assert.deepEqual(parse(workspaceCreateBody, { appId: null, name: 'x', cwd: '/tmp', junk: 1 }),
-    { appId: null, name: 'x', cwd: '/tmp' });
+    { appId: null, name: 'x' });
   assert.deepEqual(parse(workspaceCreateBody, { appId: ID, name: 'x' }), { appId: ID, name: 'x' });
   for (const bad of [
     {}, { name: 5 }, { appId: 'nope', name: 'x' }, { appId: 7, name: 'x' },
-    { name: 'x', cwd: 5 }, { name: 'x', cwd: 'x'.repeat(4097) },
   ]) {
     assert.equal(ok(workspaceCreateBody, bad), false, JSON.stringify(bad));
   }

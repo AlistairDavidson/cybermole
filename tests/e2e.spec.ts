@@ -109,10 +109,17 @@ function tmuxStatus(args: string[]): number {
 
 /** Make a workspace through the real API (in-page fetch — Playwright's
  *  API client doesn't send the Secure session cookie over this suite's
- *  plain-http origin), refresh the console's state, return its id. */
-async function makeWorkspace(page: Page, name: string, cwd = WORKSPACE): Promise<string> {
-  const made = await api(page, 'POST', '/api/workspaces', { name, cwd });
+ *  plain-http origin), refresh the console's state, return its id. A
+ *  distinct cwd (when the caller needs one) is set through the PATCH
+ *  route — the create DERIVES it now (task/app-cwd: the parent app's
+ *  cwd, else WEB_PI_NEW_SESSION_CWD — WORKSPACE in this suite). */
+async function makeWorkspace(page: Page, name: string, cwd?: string): Promise<string> {
+  const made = await api(page, 'POST', '/api/workspaces', { name });
   expect(made.status, JSON.stringify(made.json)).toBe(200);
+  if (cwd !== undefined) {
+    const patched = await api(page, 'PATCH', `/api/workspaces/${made.json.id}`, { cwd });
+    expect(patched.status, JSON.stringify(patched.json)).toBe(200);
+  }
   await refreshState(page);
   // select it through the sidebar (the real UI path) so its tab bar renders
   await page.click(`workspace-sidebar li[data-ws="${made.json.id}"]`);
@@ -129,7 +136,7 @@ async function makeTerminalIn(page: Page, ws: string): Promise<string> {
 
 /** Make a workspace + one terminal tab; return both ids. The tab's pane is
  *  created by CLICKING the tab (first activation). */
-async function makeTerminal(page: Page, name: string, cwd = WORKSPACE): Promise<{ ws: string; id: string }> {
+async function makeTerminal(page: Page, name: string, cwd?: string): Promise<{ ws: string; id: string }> {
   const ws = await makeWorkspace(page, name, cwd);
   return { ws, id: await makeTerminalIn(page, ws) };
 }
@@ -266,7 +273,7 @@ test('login lands on the console with the fixture workspace tree in the sidebar'
   await expect(tabs.locator('.tab-new')).toHaveCount(1);
 });
 
-test('console flow: create app → workspace (default cwd) → new terminal → live tab → input round-trips; close kills the session', async ({ page }) => {
+test('console flow: create app (with a cwd) → workspace (starts at the app\'s cwd) → new terminal → live tab → input round-trips; close kills the session', async ({ page }) => {
   test.setTimeout(90_000);
   await login(page);
   await page.waitForFunction(() => customElements.get('validation-enhancer-zod') !== undefined);
@@ -281,14 +288,21 @@ test('console flow: create app → workspace (default cwd) → new terminal → 
   await page.click('#app-save');
   await expect(page.locator('#app-name-error')).toHaveText('name is required');
   expect(posts).toEqual([]);
+  // the optional cwd (task/app-cwd — "no folder setting when creating
+  // workspace: the app does that"): this app's workspaces start at its dir
+  const appDir = `${WORKSPACE}/flow-app-dir`;
+  fs.mkdirSync(appDir, { recursive: true });
   await page.fill('wa-input#app-name input', 'Flow App');
+  await page.fill('wa-input#app-cwd input', appDir);
   await page.click('#app-save');
   const group = page.locator('workspace-sidebar .ws-group[data-group="flow-app"]');
   await expect(group.locator('h2 .g-name')).toHaveText('Flow App');
 
-  // --- new workspace under it: cwd prefilled from state.defaultCwd
+  // --- new workspace under it: NO folder setting in this dialog
+  //     (task/app-cwd — the app carries it): the hint says where it starts
   await group.locator('[data-new-ws]').click();
-  await expect(page.locator('wa-input#workspace-cwd input')).toHaveValue(WORKSPACE);
+  await expect(page.locator('#workspace-dialog wa-input[name="cwd"]')).toHaveCount(0);
+  await expect(page.locator('#workspace-start')).toHaveText(`starts at ${appDir}`);
   await page.click('#workspace-save');
   await expect(page.locator('#workspace-name-error')).toHaveText('name is required');
   // blocked in the browser: no workspace POST yet — only the app POST so far
@@ -297,7 +311,11 @@ test('console flow: create app → workspace (default cwd) → new terminal → 
   await page.click('#workspace-save');
   // selected: the tab bar's no-terminals prompt carries its own +
   await expect(page.locator('.tabs-empty-terminals')).toBeVisible();
-  await expect(page.locator('workspace-sidebar li[data-ws].active')).toContainText('flow ws');
+  // the workspace's cwd IS the app's (the server derived it — the row's
+  // title carries w.cwd) — not the suite default (WEB_PI_NEW_SESSION_CWD)
+  const flowRow = page.locator('workspace-sidebar li[data-ws].active');
+  await expect(flowRow).toContainText('flow ws');
+  await expect(flowRow).toHaveAttribute('title', appDir);
 
   // --- new terminal via the tab bar's + : the tab appears LIVE, the pane
   //     attaches, the banner (cmd.sh) renders, input round-trips
@@ -316,11 +334,12 @@ test('console flow: create app → workspace (default cwd) → new terminal → 
   await page.keyboard.type('echo TYPIST_$((41+1))\n');
   await waitForTermText(page, 'TYPIST_42', 10_000);
 
-  // the spawn really ran on the suite's socket, at the workspace cwd
+  // the spawn really ran on the suite's socket, at the workspace cwd —
+  // the app's dir (derived at the create), not the suite default
   expect(tmuxStatus(['has-session', '-t', `t-${tabId}`])).toBe(0);
   const pane = spawnSync('tmux', ['-L', TMUX_SOCKET, 'display-message', '-p', '-t', `t-${tabId}:0.0`, '#{pane_current_path}'],
     { encoding: 'utf8' });
-  expect(pane.stdout?.toString().trim()).toBe(WORKSPACE);
+  expect(pane.stdout?.toString().trim()).toBe(appDir);
 
   // --- close the tab: confirm dialog → row + tmux session both gone
   await page.click(`terminal-tabs .tab[data-term="${tabId}"] .tab-close`);
@@ -1671,13 +1690,13 @@ test('SIGTERM: every socket gets restart, closes, and the process exits 0', asyn
     await page.goto(`http://127.0.0.1:${port}/login`);
     await signIn(page);
     await page.waitForURL(u => u.pathname === '/');
-    const wsMade = await page.evaluate(async cwd => {
+    const wsMade = await page.evaluate(async () => {
       const w = await fetch('/api/workspaces', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'sig ws', cwd }),
+        body: JSON.stringify({ name: 'sig ws' }), // cwd derived: this server's WEB_PI_NEW_SESSION_CWD is dir
       });
       return (await w.json()) as { id: string };
-    }, dir);
+    });
     await page.evaluate(() =>
       (document.querySelector('console-app') as unknown as { loadState(): Promise<void> }).loadState());
     await page.click(`workspace-sidebar li[data-ws="${wsMade.id}"]`);
@@ -1806,8 +1825,11 @@ test('deep link ?t=<uuid> opens the terminal\'s workspace with its tab selected;
   await login(page);
   const cwd = `${WORKSPACE}/t-deep-link`;
   fs.mkdirSync(cwd, { recursive: true });
-  const wsMade = await api(page, 'POST', '/api/workspaces', { name: 'deep link', cwd });
+  // no cwd on the create (task/app-cwd): set the distinct dir through PATCH
+  const wsMade = await api(page, 'POST', '/api/workspaces', { name: 'deep link' });
   expect(wsMade.status).toBe(200);
+  const patched = await api(page, 'PATCH', `/api/workspaces/${wsMade.json.id}`, { cwd });
+  expect(patched.status, JSON.stringify(patched.json)).toBe(200);
   const made = await api(page, 'POST', `/api/workspaces/${wsMade.json.id}/terminals`, {});
   expect(made.status).toBe(200);
   expect(made.json.live).toBe(true);
@@ -1896,9 +1918,11 @@ test('a terminal tab survives a WEB restart: tmux keeps the session, the client 
     await signIn(page);
     await page.waitForURL(u => u.pathname === '/');
 
-    // One workspace + terminal tab, attached through the real UI.
-    const wsMade = await api(page, 'POST', '/api/workspaces', { name: 'survive', cwd });
-    expect(wsMade.status).toBe(200);
+    // One workspace + terminal tab, attached through the real UI. No cwd on
+    // the create (task/app-cwd): this server's WEB_PI_NEW_SESSION_CWD is the
+    // same dir, so the derivation lands there.
+    const wsMade = await api(page, 'POST', '/api/workspaces', { name: 'survive' });
+    expect(wsMade.status, JSON.stringify(wsMade.json)).toBe(200);
     await refreshState(page);
     await page.click(`workspace-sidebar li[data-ws="${wsMade.json.id}"]`);
     await page.click('terminal-tabs .tab-new');

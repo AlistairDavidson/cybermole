@@ -93,11 +93,14 @@ anything — an app delete just un-tags its jobs).
 
 The surface behind it: `GET /api/state` — the 15 s poll every open tab
 runs — serves the workspace tree (apps, workspaces with their terminals
-and live flags, plus `editor` on/off and `defaultCwd` for the dialog).
-The rest are thin Astro routes: `POST /api/apps` + `PATCH`/
-`DELETE /api/apps/:slug`; `POST /api/workspaces` (a `cwd` that defaults
-to `WEB_PI_NEW_SESSION_CWD` and must be an existing absolute dir) +
-`PATCH`/`DELETE /api/workspaces/:id`; `POST
+and live flags, plus `editor` on/off, `defaultCwd` and each app's own
+`cwd`). The rest are thin Astro routes: `POST /api/apps` (an optional
+`cwd` — where workspaces under the app start) + `PATCH`/
+`DELETE /api/apps/:slug` (the patch also renames and/or sets/clears
+the cwd); `POST /api/workspaces` — no `cwd` on the wire: the server
+derives it (the parent app's `cwd` when it has one, else
+`WEB_PI_NEW_SESSION_CWD`; whatever wins must be an existing absolute
+dir) + `PATCH`/`DELETE /api/workspaces/:id`; `POST
 /api/workspaces/:id/terminals` (the row survives a failed spawn — the
 tab renders not-live and the first attach retries it) + `PATCH`/
 `DELETE /api/terminals/:id`. The terminal WS attaches in two modes:
@@ -162,8 +165,8 @@ What that command brings up:
   for a few minutes, later boots self-heal in seconds). One server:
   `dev:server` builds, serves `:3001`, and rebuilds + restarts on change
   — everything renders exactly as production does. Everything is real:
-  `webpi.db` login, the workspace tree, live attach — the new-workspace
-  dialog prefills `/app` (the repo, `WEB_PI_NEW_SESSION_CWD`), so
+  `webpi.db` login, the workspace tree, live attach — new workspaces
+  under an app with its `cwd` set to `/app` (the repo) start there, so
   terminals work in the checkout, self-modification included.
 - **dev-editor** — the editor, ON by default: the same image as prod's
   `editor` but as the *host* uid over the same `/app` bind, so the editor
@@ -257,7 +260,7 @@ directly.
 | `WEB_PI_HOME` | `os.homedir()` | `HOME` for spawned processes (tmux, the terminals' shells) |
 | `WEB_PI_STATE_DIR` | `$WEB_PI_HOME/.local/state/web-pi` | one directory for all web-pi state: the sqlite db (`webpi.db`) and the runtime `pi-agent/` (pi credentials + its own sessions). Per-path overrides (`WEB_PI_DB_FILE`, `WEB_PI_AGENT_DIR`) still win. In the container compose points it at `/state` on a dedicated volume |
 | `WEB_PI_AGENT_DIR` | `<state dir>/pi-agent` | runtime pi agent dir (config, credentials, pi's own session store) — seeded from the repo's `pi/` template where absent (a stray `PI_CODING_AGENT_DIR` in the server's env is ignored with an error logged). Every spawned terminal carries it as `PI_CODING_AGENT_DIR`, so a pi you run by hand stays on it |
-| `WEB_PI_NEW_SESSION_CWD` | `$WEB_PI_HOME` | default cwd for new workspaces — prefills the new-workspace dialog and is the fallback when a POST omits `cwd` |
+| `WEB_PI_NEW_SESSION_CWD` | `$WEB_PI_HOME` | default cwd for new workspaces — the fallback when the parent app has no `cwd` of its own (shown as the start-path hint in the new-workspace dialog) |
 | `WEB_PI_COMMAND` | `$SHELL -l` (fallback `/bin/sh -l`) | the command a new terminal tab runs (whitespace-split) |
 | `WEB_PI_JOB_LOG_DIR` | `/workspace/.webpi/job-logs` | root under which job runs persist their logs + exit files (`<dir>/<job>/<fired-at>.{log,exit}`) — a path that exists in both containers of the compose split (laid out by `workspace-init`); point it somewhere writable in other split shapes |
 | `WEB_PI_TMUX_SOCKET` | `web-pi` | the tmux socket the app uses. A relative *name* is the single-user shape: the app's own server, forked on the first session-creating call, under the per-uid default dir. An **absolute path** switches on the privilege split ([below](#the-privilege-split-two-containers)): tmux runs as another uid/container on that shared socket (`-S` instead of `-L` — a relative name resolves per-uid and cannot be shared), and terminal spawns, job runs and attaches refuse to fork a server, erroring with "workspace tmux server not running" instead. The server lifecycle is then the workspace side's job (`docker-workspace-entrypoint.sh`, or the host-install equivalent below) |

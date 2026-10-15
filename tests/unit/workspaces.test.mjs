@@ -142,6 +142,37 @@ test('save_workspace: invalid_cwd — relative, missing, a file; absolute + exis
   assert.equal(good.data.cwd, os.tmpdir());
 });
 
+test('save_workspace: the cwd DERIVES — the parent app\'s cwd (task/app-cwd), else the configured default', async () => {
+  const db = freshDb();
+  const defaultDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-ws-default-'));
+  const w = domain(db, USERNAME, async () => true, defaultDir);
+  const a = new Apps({ db, username: () => USERNAME, killSession: async () => true });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-app-cwd-'));
+  const placed = (await a.saveApp('placed', dir)).data;
+  const bare = (await a.saveApp('bare')).data;
+  // an app with a cwd: its workspaces start there — no cwd on the create
+  const underPlaced = await w.saveWorkspace({ appId: placed.id, name: 'under placed' });
+  assert.equal(underPlaced.ok, true, underPlaced.errorMessage);
+  assert.equal(underPlaced.data.cwd, dir);
+  assert.equal(wsRow(db, underPlaced.data.id).cwd, dir);
+  // an app without one: the configured default — same as the console group
+  const underBare = await w.saveWorkspace({ appId: bare.id, name: 'under bare' });
+  assert.equal(underBare.ok, true, underBare.errorMessage);
+  assert.equal(underBare.data.cwd, defaultDir);
+  const consoleWs = await w.saveWorkspace({ name: 'console one' });
+  assert.equal(consoleWs.data.cwd, defaultDir);
+  // an explicit cwd (an internal caller — the POST body carries none) wins
+  const explicit = await w.saveWorkspace({ appId: placed.id, name: 'explicit', cwd: os.tmpdir() });
+  assert.equal(explicit.ok, true, explicit.errorMessage);
+  assert.equal(explicit.data.cwd, os.tmpdir());
+  // the DERIVED cwd is validated: the app\'s dir may be gone since it was saved
+  fs.rmSync(dir, { recursive: true, force: true });
+  const gone = await w.saveWorkspace({ appId: placed.id, name: 'gone' });
+  assert.equal(gone.ok, false, gone.errorMessage);
+  assert.equal(gone.errorCode, 'invalid_cwd');
+  assert.ok(gone.errorMessage.includes(dir), gone.errorMessage);
+});
+
 test('save_workspace: app_not_found for a missing parent app', async () => {
   const w = domain(freshDb());
   const r = await w.saveWorkspace({ appId: MISSING_WS, name: 'x', cwd: '/' });

@@ -1,4 +1,5 @@
-// /api/apps/:slug — PATCH renames (the slug is stable once created, v1),
+// /api/apps/:slug — PATCH renames and/or sets the cwd (the slug is stable
+// once created, v1; cwd null clears it back to unset — task/app-cwd),
 // DELETE cascades workspaces + terminals and un-tags jobs (§6). A slug
 // that isn't APP_SLUG_RE is a 400 before the domain is reached.
 import type { APIRoute } from 'astro';
@@ -14,7 +15,7 @@ export const PATCH: APIRoute = async ({ locals, params, request }) => {
   if (!slug.success) return invalidAppSlugResponse();
   const parsed = await parseAndValidateAPIRequest(request, appPatchBody);
   if (!parsed.ok) return failureResponse(parsed);
-  const saved = await webpi.apps.renameApp(slug.data, parsed.data.name);
+  const saved = await webpi.apps.renameApp(slug.data, parsed.data.name, parsed.data.cwd);
   if (!saved.ok) return appFailureResponse(saved);
   return jsonResponse(saved.data, 200);
 };

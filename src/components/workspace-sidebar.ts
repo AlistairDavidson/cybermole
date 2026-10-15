@@ -169,15 +169,20 @@ export class WorkspaceSidebar extends HTMLElement {
     const rows = visible.length
       ? `<ul class="ws-group-rows" id="${rowsId}"${hide}>${visible.map(w => this.row(w)).join('')}</ul>`
       : `<p class="ws-group-rows group-empty" id="${rowsId}"${hide}>no workspaces yet</p>`;
-    // HOOK(task/app-cwd): an app-cwd hint is added to this group header
-    // (next to the name); keep the chevron + actions intact when merging.
+    // HOOK(task/app-cwd × task/collapsible-apps, resolved at merge): the
+    // app's cwd rides the header's title tooltip (the group's start dir is
+    // discoverable without opening the dialog), on top of the collapse
+    // chevron + actions.
+    const title = app
+      ? (app.cwd ? `${app.name} — workspaces start at ${app.cwd}` : app.name)
+      : 'console';
     return `<section class="ws-group" data-group="${esc(key)}">` +
       `<h2>` +
       `<button type="button" class="g-collapse" data-toggle-group="${esc(key)}" ` +
       `aria-expanded="${collapsed ? 'false' : 'true'}" aria-controls="${rowsId}" ` +
       `aria-label="${esc(name)} workspaces">` +
       `<wa-icon name="chevron-down"></wa-icon></button>` +
-      `<span class="g-name" title="${esc(app?.name ?? 'console')}">${esc(name)}</span>` +
+      `<span class="g-name" title="${esc(title)}">${esc(name)}</span>` +
       `<span class="g-actions">` +
       `<wa-button class="new-ws-btn" data-new-ws="${app ? esc(app.id) : ''}" size="xs" appearance="plain" ` +
       `title="new workspace in ${esc(name)}"><wa-icon name="plus" label="new workspace"></wa-icon></wa-button>` +

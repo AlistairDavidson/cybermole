@@ -273,8 +273,16 @@ export class ConsoleApp extends HTMLElement {
 
   private openWorkspaceDialog(): void {
     this.resetForm('#workspace-form');
-    const cwd = this.querySelector('#workspace-cwd') as WaInput | null;
-    if (cwd) cwd.value = this.state?.defaultCwd ?? '';
+    // No folder setting in this dialog (task/app-cwd — the app carries
+    // it): show where the workspace will start instead — the parent
+    // app's cwd when it has one, else the server default. Mirrors the
+    // server's own create-side derivation (Workspaces.saveWorkspace).
+    const note = this.querySelector('#workspace-start') as HTMLElement | null;
+    const app = this.newWorkspaceAppId === null
+      ? null
+      : (this.state?.apps ?? []).find(a => a.id === this.newWorkspaceAppId) ?? null;
+    const start = app?.cwd ?? this.state?.defaultCwd;
+    if (note) note.textContent = start === undefined ? 'starts at the server default' : `starts at ${start}`;
     this.dialog('#workspace-dialog').show();
     this.focusField('#workspace-name');
   }
@@ -296,7 +304,10 @@ export class ConsoleApp extends HTMLElement {
 
   private async createApp(): Promise<void> {
     const name = ((this.querySelector('#app-name') as WaInput | null)?.value ?? '').trim();
-    const done = await this.call('POST', '/api/apps', { name });
+    // An empty wa-input's value is null: no cwd field filled = unset —
+    // workspaces under the app start at the server default (task/app-cwd).
+    const cwd = ((this.querySelector('#app-cwd') as WaInput | null)?.value ?? '').trim();
+    const done = await this.call('POST', '/api/apps', cwd === '' ? { name } : { name, cwd });
     if (!done) return;
     if (!done.ok) { this.errorToast('could not create the app — try again', done.json); return; }
     this.dialog('#app-dialog').open = false;
@@ -306,10 +317,11 @@ export class ConsoleApp extends HTMLElement {
 
   private async createWorkspace(): Promise<void> {
     const name = ((this.querySelector('#workspace-name') as WaInput | null)?.value ?? '').trim();
-    const cwd = ((this.querySelector('#workspace-cwd') as WaInput | null)?.value ?? '').trim();
+    // No cwd in the body (task/app-cwd): the server derives it — the
+    // parent app's cwd, else WEB_PI_NEW_SESSION_CWD.
     const appId = this.newWorkspaceAppId;
     const done = await this.call('POST', '/api/workspaces',
-      appId === null ? { name, cwd } : { appId, name, cwd });
+      appId === null ? { name } : { appId, name });
     if (!done) return;
     if (!done.ok) { this.errorToast('could not create the workspace — try again', done.json); return; }
     this.dialog('#workspace-dialog').open = false;

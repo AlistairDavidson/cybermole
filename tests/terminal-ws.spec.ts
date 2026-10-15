@@ -155,9 +155,15 @@ test('terminal route spawns; WS terminal mode attaches, round-trips input, RESPA
   const socket = 'webpi-itest-tws'; // relative: single-user fork-to-start
   const server = await bootServer(dir, socket);
   try {
-    // Create the workspace + a terminal tab through the new routes.
-    const wsMade = await api(server.cookie, 'POST', '/api/workspaces', { name: 'scratch', cwd: dir });
+    // Create the workspace + a terminal tab through the new routes. No cwd
+    // on the create (task/app-cwd — the server derives it), so the distinct
+    // dir is set through the PATCH route: this server's configured default
+    // is deliberately os.tmpdir(), NOT the workspace cwd the respawns below
+    // must land at.
+    const wsMade = await api(server.cookie, 'POST', '/api/workspaces', { name: 'scratch' });
     expect(wsMade.status).toBe(200);
+    const patched = await api(server.cookie, 'PATCH', `/api/workspaces/${wsMade.json.id}`, { cwd: dir });
+    expect(patched.status, JSON.stringify(patched.json)).toBe(200);
     const termMade = await api(server.cookie, 'POST', `/api/workspaces/${wsMade.json.id}/terminals`, {});
     expect(termMade.status).toBe(200);
     expect(termMade.json.live).toBe(true);
@@ -222,8 +228,11 @@ test('split shape (absolute socket, no server): the create still returns its row
   const socket = path.join(dir, 'tmux'); // absolute ⇒ split mode: -S + never-fork guard
   const server = await bootServer(dir, socket);
   try {
-    const wsMade = await api(server.cookie, 'POST', '/api/workspaces', { name: 'split', cwd: dir });
+    // No cwd on the create (task/app-cwd): the dir rides the PATCH route.
+    const wsMade = await api(server.cookie, 'POST', '/api/workspaces', { name: 'split' });
     expect(wsMade.status).toBe(200);
+    const patched = await api(server.cookie, 'PATCH', `/api/workspaces/${wsMade.json.id}`, { cwd: dir });
+    expect(patched.status, JSON.stringify(patched.json)).toBe(200);
 
     // Workspace server down: the spawn's never-fork guard refuses — 503
     // with the row attached (plan §4: a dead tab, not a missing one) —
