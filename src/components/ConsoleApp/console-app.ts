@@ -109,6 +109,11 @@ export class ConsoleApp extends HTMLElement {
     });
     // Any pane's socket closing (server restart, a drop) → refresh dots.
     this.addEventListener('terminal-closed', () => void this.loadState());
+    // A pop-out the browser refused (popup blocker): the pane never
+    // moved — say so, it looks like a dead button otherwise.
+    this.addEventListener('pop-blocked', () =>
+      this.toast('pop-up blocked — allow pop-ups to pop a tab out',
+        { variant: 'danger', icon: 'triangle-exclamation', duration: 6000 }));
 
     // The dialogs' footer buttons live outside their forms (dialog footer
     // slot): submit the form so <validation-enhancer-zod> validates first.
