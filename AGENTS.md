@@ -128,21 +128,4 @@ upgrades in a real browser (headless Chromium via the playwright install in
 ## Fleet merge process
 
 Fleet work lands on `task/*` branches (one per worker, all cut from the same
-base). Integration is ONE BRANCH AT A TIME, reviewed as a staged whole —
-never a blind merge commit:
-
-1. Pick the next branch by dependency/conflict order, not launch order
-   (plumbing before features that build on it; docs consolidation last).
-2. `git merge --no-ff --no-commit <branch>` — the entire merged change sits
-   STAGED on main with nothing committed (equivalent to merging, then
-   undoing the commit so the whole change is staged). Resolve conflicts
-   keeping BOTH branches' intent, and wire up junctions the workers designed
-   to meet (they leave each other explicitly-marked hooks — read their
-   comments).
-3. Verify the merged tree before review: `npm ci` if the lockfile moved,
-   `npm run build`, `npm run test:unit` (if the branch added one),
-   `npm run test:e2e`.
-4. Present the change as aspects with reviewer notes; the human edits and
-   discusses the staged change until satisfied. Then it lands as ONE commit
-   per branch on main (the granular history stays on the `task/*` ref),
-   and the next branch starts at step 1.
+base). Integration is ONE BRANCH AT A TIME. Fleet agents must be instructed to skip e2e testing; it doesn't work well in the sandbox. The orchestrator is responsible for running e2e tests.
