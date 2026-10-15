@@ -16,6 +16,7 @@ import { randomUUID } from 'node:crypto';
 import { databaseRead, databaseUpdate, qb, type StateDb } from './db';
 import { componentLogger } from './logger';
 import { terminalSessionName } from './tmux';
+import { checkedCwd } from './workspaces';
 import type { DatabaseReadResult } from './db';
 import type { ResultFailure, ResultSuccess } from '../types/result';
 import type { AppId, AppSlug, TmuxSessionName } from '../types/branded';
@@ -27,14 +28,17 @@ const log = componentLogger('apps');
 
 // ---------- results (HTTP statuses are mapped in responses.service.ts) ----------
 
-export type SaveAppData = { id: AppId; name: string; slug: AppSlug };
+export type SaveAppData = { id: AppId; name: string; slug: AppSlug; cwd: string | null };
 /** invalid_name: the display name is empty, or slugs to nothing usable.
- *  duplicate_slug: the derived slug is taken (pre-checked, not
- *  message-sniffed — plan §2). app_not_found: rename of a slug that no
- *  longer resolves (the plan's §3 list predates the PATCH route; the code
- *  is added so a missing app is a 404, not a 500). database_error: the
- *  state db failed (also the residual pre-check/insert race's answer). */
-export type SaveAppErrorCode = 'invalid_name' | 'duplicate_slug' | 'app_not_found' | 'database_error';
+ *  invalid_cwd: the optional cwd (task/app-cwd — where workspaces under
+ *  the app start) is not an absolute existing directory (workspaces.ts's
+ *  checkedCwd, the same rule a workspace cwd passes). duplicate_slug: the
+ *  derived slug is taken (pre-checked, not message-sniffed — plan §2).
+ *  app_not_found: rename of a slug that no longer resolves (the plan's §3
+ *  list predates the PATCH route; the code is added so a missing app is a
+ *  404, not a 500). database_error: the state db failed (also the residual
+ *  pre-check/insert race's answer). */
+export type SaveAppErrorCode = 'invalid_name' | 'invalid_cwd' | 'duplicate_slug' | 'app_not_found' | 'database_error';
 export type SaveAppSuccess = ResultSuccess<'save_app', SaveAppData>;
 export type SaveAppFailure = ResultFailure<'save_app', SaveAppData, SaveAppErrorCode>;
 export type SaveAppResult = SaveAppSuccess | SaveAppFailure;
@@ -90,20 +94,30 @@ export class Apps {
 
   private bySlug(slug: AppSlug) {
     return databaseRead('could not read app', () =>
-      this.deps.db.get(qb.selectFrom('apps').select(['id', 'name']).where('slug', '=', slug)) ?? null);
+      this.deps.db.get(qb.selectFrom('apps').select(['id', 'name', 'cwd']).where('slug', '=', slug)) ?? null);
   }
 
   /** Create an app: the slug is DERIVED (normalizeSlug) and checked
    *  against the table before the insert — constraint violations are
    *  closed error codes, never message-sniffed (plan §2); the residual
-   *  check-then-insert race degrades to database_error. */
-  async saveApp(name: string): Promise<SaveAppResult> {
+   *  check-then-insert race degrades to database_error. The optional cwd
+   *  (task/app-cwd) is empty/absent = unset (workspaces under the app
+   *  start at the server default); a non-empty one passes workspaces.ts's
+   *  checkedCwd — the same rule a workspace cwd passes. */
+  async saveApp(name: string, cwd?: string): Promise<SaveAppResult> {
     const fail = (errorCode: SaveAppErrorCode, errorMessage: string) =>
       ({ ok: false, resultType: 'save_app', errorCode, errorMessage }) satisfies SaveAppFailure;
     const trimmed = name.trim();
     if (!trimmed) return fail('invalid_name', 'name is required');
     const slug = normalizeSlug(trimmed);
     if (!slug || !APP_SLUG_RE.test(slug)) return fail('invalid_name', 'name must contain letters or digits');
+    const wanted = cwd === undefined ? '' : cwd.trim();
+    let dir: string | null = null;
+    if (wanted !== '') {
+      const checked = checkedCwd(wanted);
+      if (!checked.ok) return fail('invalid_cwd', checked.reason);
+      dir = checked.cwd;
+    }
     const actor = this.actor();
     if (!actor.ok) return fail('database_error', actor.errorMessage);
     const taken = this.bySlug(asAppSlug(slug));
@@ -115,36 +129,54 @@ export class Apps {
     const now = Date.now();
     const inserted = databaseUpdate('could not save the app', () =>
       this.deps.db.run(qb.insertInto('apps').values({
-        id, name: trimmed, slug: asAppSlug(slug), sort_order: order.data.value,
+        id, name: trimmed, slug: asAppSlug(slug), cwd: dir, sort_order: order.data.value,
         created_at: now, updated_at: now, created_by: actor.username, updated_by: actor.username,
       })));
     if (!inserted.ok) return fail('database_error', inserted.errorMessage);
-    log.info(`app "${trimmed}" (${slug}) created`);
-    return { ok: true, resultType: 'save_app', data: { id, name: trimmed, slug: asAppSlug(slug) } } satisfies SaveAppSuccess;
+    log.info(`app "${trimmed}" (${slug}) created${dir === null ? '' : `, cwd ${dir}`}`);
+    return { ok: true, resultType: 'save_app', data: { id, name: trimmed, slug: asAppSlug(slug), cwd: dir } } satisfies SaveAppSuccess;
   }
 
-  /** Rename an app. The slug is stable once created (v1 — plan §6); an
-   *  absent name is a no-op that returns the row as it stands. */
-  async renameApp(slug: AppSlug, name: string | undefined): Promise<SaveAppResult> {
+  /** Patch an app: name and/or cwd, absent fields keep (the {title?}
+   *  convention of the workspace patches); the slug is stable once
+   *  created (v1 — plan §6); an absent everything is a no-op that returns
+   *  the row as it stands. cwd null CLEARS it back to unset — the app's
+   *  workspaces then start at the server default (terminalPatchBody's
+   *  title convention); a string passes workspaces.ts's checkedCwd. */
+  async renameApp(slug: AppSlug, name: string | undefined, cwd: string | null | undefined): Promise<SaveAppResult> {
     const fail = (errorCode: SaveAppErrorCode, errorMessage: string) =>
       ({ ok: false, resultType: 'save_app', errorCode, errorMessage }) satisfies SaveAppFailure;
     const found = this.bySlug(slug);
     if (!found.ok) return fail('database_error', found.errorMessage);
     const row = found.data.value;
     if (!row) return fail('app_not_found', 'no such app');
-    if (name === undefined) {
-      return { ok: true, resultType: 'save_app', data: { id: row.id, name: row.name, slug } } satisfies SaveAppSuccess;
+    if (name === undefined && cwd === undefined) {
+      return { ok: true, resultType: 'save_app', data: { id: row.id, name: row.name, slug, cwd: row.cwd } } satisfies SaveAppSuccess;
     }
-    const trimmed = name.trim();
-    if (!trimmed) return fail('invalid_name', 'name is required');
+    const trimmed = name === undefined ? undefined : name.trim();
+    if (trimmed === '') return fail('invalid_name', 'name is required');
+    let dir: string | null | undefined;
+    if (cwd === null) dir = null; // null CLEARS it; an empty string is a 400, not a clear
+    else if (cwd !== undefined) {
+      const checked = checkedCwd(cwd.trim());
+      if (!checked.ok) return fail('invalid_cwd', checked.reason);
+      dir = checked.cwd;
+    }
     const actor = this.actor();
     if (!actor.ok) return fail('database_error', actor.errorMessage);
     const updated = databaseUpdate('could not save the app', () =>
       this.deps.db.run(qb.updateTable('apps')
-        .set({ name: trimmed, updated_at: Date.now(), updated_by: actor.username })
+        .set({
+          ...(trimmed === undefined ? {} : { name: trimmed }),
+          ...(dir === undefined ? {} : { cwd: dir }),
+          updated_at: Date.now(), updated_by: actor.username,
+        })
         .where('id', '=', row.id)));
     if (!updated.ok) return fail('database_error', updated.errorMessage);
-    return { ok: true, resultType: 'save_app', data: { id: row.id, name: trimmed, slug } } satisfies SaveAppSuccess;
+    return {
+      ok: true, resultType: 'save_app',
+      data: { id: row.id, name: trimmed ?? row.name, slug, cwd: dir === undefined ? row.cwd : dir },
+    } satisfies SaveAppSuccess;
   }
 
   /** Delete an app: the FK cascades its workspaces and their terminals,
@@ -178,13 +210,14 @@ export class Apps {
 
   /** Every app, sort_order asc (+ created_at tiebreak — order allocation
    *  is in steps of 10, plan §2, but nothing rewrites gaps in v1). One
-   *  read: the sidebar's grouping order (plan §5) and the jobs dialog's
-   *  tag picker (plan §9). */
+   *  read: the sidebar's grouping order (plan §5), the jobs dialog's
+   *  tag picker (plan §9) and the new-workspace dialog's start-path hint
+   *  (task/app-cwd: the app cwd vs the server default). */
   listApps(): ListAppsResult {
     const read = databaseRead('could not read apps', (): Array<{
-      id: AppId; name: string; slug: AppSlug; sort_order: number; created_at: number;
+      id: AppId; name: string; slug: AppSlug; cwd: string | null; sort_order: number; created_at: number;
     }> => this.deps.db.all(qb.selectFrom('apps')
-      .select(['id', 'name', 'slug', 'sort_order', 'created_at'])
+      .select(['id', 'name', 'slug', 'cwd', 'sort_order', 'created_at'])
       .orderBy('sort_order', 'asc').orderBy('created_at', 'asc')));
     if (!read.ok) {
       return {
@@ -193,7 +226,10 @@ export class Apps {
     }
     return {
       ok: true, resultType: 'list_apps',
-      data: { apps: read.data.value.map(a => ({ id: a.id, name: a.name, slug: a.slug, order: a.sort_order })) },
+      data: {
+        apps: read.data.value.map(a =>
+          ({ id: a.id, name: a.name, slug: a.slug, cwd: a.cwd, order: a.sort_order })),
+      },
     } satisfies ListAppsSuccess;
   }
 }

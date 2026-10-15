@@ -114,6 +114,7 @@ const SCHEMA = `
     id         TEXT PRIMARY KEY,     -- uuid v4 (crypto.randomUUID) → AppId
     name       TEXT NOT NULL,        -- display name, free text
     slug       TEXT NOT NULL UNIQUE, -- APP_SLUG_RE (src/schemas/patterns.ts)
+    cwd        TEXT,                 -- optional: where workspaces under this app start (NULL = the server default, task/app-cwd)
     sort_order INTEGER NOT NULL,
     created_at INTEGER NOT NULL,     -- epoch ms
     updated_at INTEGER NOT NULL,
@@ -213,6 +214,9 @@ export interface AppsTable {
   id: AppId;
   name: string;
   slug: AppSlug;
+  /** Optional: where workspaces under this app start — the create-side
+   *  default derivation (task/app-cwd). NULL = the configured default. */
+  cwd: string | null;
   sort_order: number;
   created_at: number;
   updated_at: number;
@@ -326,16 +330,20 @@ function addColumnIfMissing(db: DatabaseSync, table: string, column: string, ddl
 }
 
 /** The v6 migration: jobs gains its optional app tag, job_runs the
- *  persisted-run columns (docs/workspaces-plan.md §2). Additive only —
+ *  persisted-run columns (docs/workspaces-plan.md §2), and apps its
+ *  optional cwd (task/app-cwd — the workspace-create default derivation).
+ *  Additive only —
  * the `sessions` table stays untouched in this branch (it dies, with its
  * readers, in task/ws-console). Runs at every open; each ALTER is guarded
- * by addColumnIfMissing, so a fresh db (columns already in CREATE) and a
- * half-migrated db both pass. */
+ *  by addColumnIfMissing, so a fresh db (columns already in CREATE), a
+ *  pre-v6 db and a v6 db from before task/app-cwd all pass — the column
+ *  check decides, never the version number. */
 function migrateToV6(db: DatabaseSync): void {
   addColumnIfMissing(db, 'jobs', 'app_id', 'TEXT REFERENCES apps(id) ON DELETE SET NULL');
   addColumnIfMissing(db, 'job_runs', 'log', 'TEXT');
   addColumnIfMissing(db, 'job_runs', 'exit_code', 'INTEGER');
   addColumnIfMissing(db, 'job_runs', 'finished_at', 'INTEGER');
+  addColumnIfMissing(db, 'apps', 'cwd', 'TEXT');
 }
 /** web-pi's state database: a lazily-opened node:sqlite connection (see
  *  module comment) plus cached prepared statements. */
@@ -367,8 +375,11 @@ export class StateDb {
       // releases table (management page); 6 adds apps/workspaces/terminals
       // + the jobs/job_runs columns above and drops the pi-session
       // overlay (workspaces plan §2/§11 — the one destructive step,
-      // idempotent in SCHEMA itself). The CREATE IF NOT EXISTS block +
-      // migrateToV6 bring any older db up to the current shape.
+      // idempotent in SCHEMA itself); apps.cwd rides the same v6 shape
+      // (task/app-cwd, additive — a v6 db from before it still opens: the
+      // column check applies it, the version never moves). The CREATE IF
+      // NOT EXISTS block + migrateToV6 bring any older db up to the
+      // current shape.
       const v = db.prepare('PRAGMA user_version').get() as { user_version: number };
       if (v.user_version < 6) db.exec('PRAGMA user_version = 6');
       else if (v.user_version > 6) {
