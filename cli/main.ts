@@ -9,6 +9,12 @@
 // Runs with zero new runtime deps (node:http over the unix socket).
 import { consoleOutput, type Output } from './output';
 import { jobsGroupHelp, runJobsCommand } from './jobs';
+// plan §6: `webpi mcp` runs the stdio jobs MCP server (server/mcp.ts).
+// Imported, never re-executed: mcp.ts's self-guard runs only when IT is
+// argv[1] — the pi/ template registers the same server via the absolute
+// `node /opt/web-pi/dist-server/server/mcp.js` form (PATH-independent);
+// this subcommand is the dev-shape convenience.
+import { main as runMcpServer } from '../server/mcp';
 
 const TOP_HELP = `webpi — the web-pi command line
 
@@ -22,6 +28,7 @@ Usage:
 
 Groups:
   jobs          scheduled jobs — every action the /jobs page offers
+  mcp           run the stdio jobs MCP server (for pi's tool list)
 
 Common per-verb options:
   --json        print the server's raw JSON answer instead of the human
@@ -66,11 +73,17 @@ export async function runCli(argv: string[], io: Output): Promise<number> {
     }
     return runJobsCommand(rest, io);
   }
+  if (group === 'mcp') {
+    // The MCP server runs over stdio until its client disconnects;
+    // runMcpServer never throws (its own catch sets process.exitCode).
+    await runMcpServer();
+    return process.exitCode === 1 ? 1 : 0;
+  }
   if (group.startsWith('-')) {
     io.err(`webpi: unknown option '${group}' — try: webpi --help`);
     return 2;
   }
-  io.err(`webpi: unknown group '${group}' — try: webpi --help (today: jobs)`);
+  io.err(`webpi: unknown group '${group}' — try: webpi --help (today: jobs, mcp)`);
   return 2;
 }
 
