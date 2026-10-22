@@ -73,7 +73,9 @@ test('saveJob: invalid_schedule (not 5-field cron), database_error', async () =>
   }
   const failed = await brokenScheduler().saveJob(parsed(GOOD));
   assert.equal(failed.errorCode, 'database_error');
-  assert.match(failed.errorMessage, /^could not save job: /);
+  // saveJob reads the row first now (job_created vs job_updated, plan
+  // §7's events), so a broken db fails on that read.
+  assert.match(failed.errorMessage, /^could not read job: /);
 });
 
 test('deleteJob: success, job_not_found, database_error', async () => {

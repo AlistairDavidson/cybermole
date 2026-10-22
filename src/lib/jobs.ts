@@ -35,7 +35,14 @@ import {
 } from './db';
 import { componentLogger } from './logger';
 import type { CalendarCheck, JobsState, ScheduledJob } from './types';
-import { hasSession, jobSessionName, liveSessionNames, newSession } from './tmux';
+import {
+  hasSession,
+  jobSessionName,
+  killSession,
+  liveSessionNames,
+  newSession,
+} from './tmux';
+import { emitDomainEvent } from './events';
 import type { ResultFailure, ResultSuccess } from '../types/result';
 import type { AppId, JobName, TmuxSessionName } from '../types/branded';
 import { MAX_SCHEDULE, type SaveInput } from '../schemas/jobs';
@@ -67,6 +74,24 @@ export type RunJobErrorCode = 'job_not_found' | 'run_active' | 'tmux_error' | 'd
 export type RunJobSuccess = ResultSuccess<'run_job', RunJobData>;
 export type RunJobFailure = ResultFailure<'run_job', RunJobData, RunJobErrorCode>;
 export type RunJobResult = RunJobSuccess | RunJobFailure;
+
+/** Kill a job's live run (its tmux session). run_not_found: no run row
+ *  with that fired_at. not_running: the named run is not the live one
+ *  (the session is gone, or a newer run is live). tmux_error: the kill
+ *  itself failed. Service-level on purpose: the internal API's kill
+ *  route (plan §4) calls THIS, so the run_killed event (below) fires for
+ *  every killer. No browser route yet — the console view remains the
+ *  human's kill path. */
+export type KillRunData = { name: JobName; session: TmuxSessionName; firedAt: number };
+export type KillRunErrorCode =
+  | 'job_not_found'
+  | 'run_not_found'
+  | 'not_running'
+  | 'tmux_error'
+  | 'database_error';
+export type KillRunSuccess = ResultSuccess<'kill_run', KillRunData>;
+export type KillRunFailure = ResultFailure<'kill_run', KillRunData, KillRunErrorCode>;
+export type KillRunResult = KillRunSuccess | KillRunFailure;
 
 export type ListJobsErrorCode = 'database_error';
 export type ListJobsSuccess = ResultSuccess<'list_jobs', JobsState>;
@@ -253,6 +278,24 @@ export interface JobContext {
   /** Run-log root (WEB_PI_JOB_LOG_DIR; /workspace/.webpi/job-logs in the
    *  compose split — a path that exists in BOTH containers, plan §9). */
   logDir: string;
+}
+
+// ---------- domain events (plan §7 — emit at the choke points only) ----------
+
+// Every emitDomainEvent call in this file sits INSIDE a service function
+// (saveJob / deleteJob / fire / observeFinish / killRun), because every
+// caller funnels through exactly those: the browser's /api/jobs routes,
+// the internal socket API's routes (plan §4 — they call these same
+// functions, never a parallel path), the scheduler tick and run-now
+// (both go through fire), and kills. That placement is the whole
+// guarantee: the event fires identically whoever acted, and no HTTP
+// route can bypass it. /ws/events (src/lib/events-ws.ts) forwards the
+// events; the pages refresh on them.
+
+/** The shared fire-success emission: a run was recorded AND its session
+ *  opened — run-now, the tick and catch-up all land here. */
+function emitRunStarted(job: JobName, firedAt: number): void {
+  emitDomainEvent({ topic: 'jobs', type: 'run_started', job, firedAt });
 }
 
 const log = componentLogger('scheduler');
@@ -596,6 +639,13 @@ export class Scheduler {
         ),
       );
       if (!updated.ok) log.error(`job ${armed.job}: ${updated.errorMessage}`);
+      else
+        emitDomainEvent({
+          topic: 'jobs',
+          type: 'run_finished',
+          job: armed.job,
+          firedAt: run.fired_at,
+        });
     }
     log.info(
       `job ${armed.job} run finished (run session ${session} gone, ` +
@@ -629,7 +679,10 @@ export class Scheduler {
     );
     if (!opened.ok)
       log.error(`job ${row.name}: could not open run session ${session} (${opened.errorMessage})`);
-    else this.running.set(session, { job: row.name, firedAt: recorded.firedAt }); // armed — its end gets the finish line
+    else {
+      this.running.set(session, { job: row.name, firedAt: recorded.firedAt }); // armed — its end gets the finish line
+      emitRunStarted(row.name, recorded.firedAt);
+    }
     return opened;
   }
 
@@ -704,6 +757,11 @@ export class Scheduler {
       }) satisfies SaveJobFailure;
     const check = checkCron(schedule);
     if (!check.valid) return fail('invalid_schedule', check.error ?? 'invalid schedule');
+    // Created vs updated (the event below): read BEFORE the upsert. The
+    // residual read-then-write race degrades to job_updated — harmless,
+    // the page refresh either way.
+    const existing = this.row(name);
+    if (!existing.ok) return fail('database_error', existing.errorMessage);
     if (appId != null) {
       const app = databaseRead(
         'could not read the app tag',
@@ -729,6 +787,11 @@ export class Scheduler {
       return fail('database_error', `could not save job: ${(err as Error).message}`);
     }
     this.warned.delete(name);
+    emitDomainEvent({
+      topic: 'jobs',
+      type: existing.data.value === undefined ? 'job_created' : 'job_updated',
+      job: name,
+    });
     return { ok: true, resultType: 'save_job', data: { name } } satisfies SaveJobSuccess;
   }
 
@@ -767,6 +830,7 @@ export class Scheduler {
       log.warn(`could not remove run logs of job ${name}: ${(err as Error).message}`);
     }
     this.warned.delete(name);
+    emitDomainEvent({ topic: 'jobs', type: 'job_deleted', job: name });
     return { ok: true, resultType: 'delete_job', data: { name } } satisfies DeleteJobSuccess;
   }
 
@@ -889,5 +953,51 @@ export class Scheduler {
       }
     }
     return { ok: true, resultType: 'run_job', data: { name, session } } satisfies RunJobSuccess;
+  }
+
+  /** Kill the job's live run: its tmux session, gone. The named run must
+   *  BE the live one — a fire is refused while a session lives, so the
+   *  live session always belongs to the newest recorded run; anything
+   *  older answers not_running instead of killing a newer run under an
+   *  old name. The run's finish is still observed by the next tick (a
+   * killed wrapper writes no exit file — the run's result stays
+   * 'unknown' by design), which emits run_finished after this emits
+   * run_killed. The internal API's kill route (plan §4) calls THIS. */
+  async killRun(name: JobName, firedAt: number) {
+    const session = jobSessionName(name);
+    const fail = (errorCode: KillRunErrorCode, errorMessage: string) =>
+      ({
+        ok: false,
+        resultType: 'kill_run',
+        data: { name, session, firedAt },
+        errorCode,
+        errorMessage,
+      }) satisfies KillRunFailure;
+    const found = this.row(name);
+    if (!found.ok) return fail('database_error', found.errorMessage);
+    if (found.data.value === undefined) return fail('job_not_found', 'no such job');
+    const run = databaseRead(
+      'could not read job runs',
+      () =>
+        this.db.get(
+          qb
+            .selectFrom('job_runs')
+            .select('fired_at')
+            .where('job', '=', name)
+            .where('fired_at', '=', firedAt),
+        ) ?? null,
+    );
+    if (!run.ok) return fail('database_error', run.errorMessage);
+    if (run.data.value === null) return fail('run_not_found', 'no such run');
+    const last = this.lastRun(name);
+    if (!last.ok) return fail('database_error', last.errorMessage);
+    if (last.data.value?.fired_at !== firedAt)
+      return fail('not_running', 'that run is not the live one');
+    if (!(await hasSession(session)))
+      return fail('not_running', 'no live run — it may have just finished');
+    const killed = await killSession(session);
+    if (!killed) return fail('tmux_error', 'could not kill the run session');
+    emitDomainEvent({ topic: 'jobs', type: 'run_killed', job: name, firedAt });
+    return { ok: true, resultType: 'kill_run', data: { name, session, firedAt } } satisfies KillRunSuccess;
   }
 }
