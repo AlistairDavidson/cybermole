@@ -1,6 +1,6 @@
 // eslint.config.mjs — ESLint 9 flat config for web-pi's hand-written code.
 //
-// Scope: the TypeScript surfaces (src/, server/, tests/, playwright.config.ts)
+// Scope: the TypeScript surfaces (src/, server/, cli/, tests/, playwright.config.ts)
 // and the plain-JS ones (tools/, tests/unit/*.test.mjs, the .mjs config files,
 // public/sw.js). `.astro` files stay out — `astro check` (npm run check) already
 // type-checks them, and eslint-plugin-astro would only add template style rules.
@@ -36,9 +36,15 @@ export default [
 
   // Type-aware linting for the TypeScript surfaces. Both tsconfigs are listed
   // explicitly: the project service only discovers configs named tsconfig.json,
-  // and src/lib + src/schemas + src/types + server live in tsconfig.server.json.
+  // and src/lib + src/schemas + src/types + server + cli live in tsconfig.server.json.
   {
-    files: ['src/**/*.ts', 'server/**/*.ts', 'tests/**/*.ts', 'playwright.config.ts'],
+    files: [
+      'src/**/*.ts',
+      'server/**/*.ts',
+      'cli/**/*.ts',
+      'tests/**/*.ts',
+      'playwright.config.ts',
+    ],
     languageOptions: {
       parserOptions: {
         project: ['./tsconfig.json', './tsconfig.server.json'],

@@ -15,5 +15,11 @@
     "sourceMap": false,
     "declaration": false
   },
-  "include": ["server/**/*.ts", "src/lib/**/*.ts", "src/types/**/*.ts", "src/schemas/**/*.ts"]
+  "include": [
+    "server/**/*.ts",
+    "cli/**/*.ts",
+    "src/lib/**/*.ts",
+    "src/types/**/*.ts",
+    "src/schemas/**/*.ts"
+  ]
 }
