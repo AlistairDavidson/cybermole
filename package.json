@@ -24,7 +24,8 @@
   },
   "bin": {
     "web-pi": "dist-server/server/main.js",
-    "webpi-set-password": "dist-server/server/set-password.js"
+    "webpi-set-password": "dist-server/server/set-password.js",
+    "webpi": "dist-server/cli/main.js"
   },
   "files": [
     "dist/",
