@@ -29,16 +29,20 @@ const { runCommandArgv } = await import('../../dist-server/src/lib/jobs.js');
 
 /** Run the appender exactly as the wrapper does, feeding `input` and
  *  waiting for a clean exit. Small inputs only: this buffers the whole
- *  write (the backpressured paths below are the honest pipe tests). */
+ *  write (the backpressured paths below are the honest pipe tests).
+ *  stdout is captured and returned — the appender is a capped TEE and
+ *  its passthrough is the pane's live view; it must never be blanked. */
 async function append(logPath, maxBytes, input) {
   const child = spawn(process.execPath, [APPENDER, logPath, String(maxBytes)], {
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   const stderr = [];
+  const stdout = [];
   child.stderr.on('data', c => stderr.push(c));
+  child.stdout.on('data', c => stdout.push(c));
   child.stdin.end(input);
   const [code] = await once(child, 'exit');
-  return { code, stderr: Buffer.concat(stderr).toString() };
+  return { code, stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr).toString() };
 }
 
 // ---------- the appender: passthrough, cap, boundary ----------
@@ -52,6 +56,7 @@ test('appender: under the cap, stdin lands in the file byte-for-byte (create, th
   // per run, so 'a' vs truncate only matters for reuse, where 'a' is right.
   const second = await append(log, 1024, 'second\n');
   assert.equal(second.code, 0);
+  assert.equal(second.stdout.toString(), 'second\n', 'tee passthrough on every run');
   assert.equal(fs.readFileSync(log, 'utf8'), 'first\nsecond\n');
 });
 
@@ -72,6 +77,8 @@ test(
     child.stdin.on('error', err => errors.push(err));
     const stderr = [];
     child.stderr.on('data', c => stderr.push(c));
+    const stdout = [];
+    child.stdout.on('data', c => stdout.push(c));
     let off = 0;
     while (off < payload.length) {
       const chunk = payload.subarray(off, off + 16 * 1024);
@@ -89,6 +96,11 @@ test(
     assert.equal(file.subarray(0, cap).toString(), payload.subarray(0, cap).toString());
     assert.equal(file.subarray(cap).toString(), marker);
     assert.equal(file.toString().split('[truncated').length - 1, 1, 'the marker appears once');
+    assert.equal(
+      Buffer.concat(stdout).length,
+      payload.length,
+      'tee passthrough: stdout sees EVERYTHING even past the cap — the pane is never blanked',
+    );
   },
 );
 
@@ -128,6 +140,12 @@ test(
     child.stdin.on('error', err => errors.push(err));
     const stderr = [];
     child.stderr.on('data', c => stderr.push(c));
+    // The appender is a tee: it passes everything through to stdout even
+    // when the log is dead — so stdout MUST be consumed here or the test
+    // deadlocks with the appender (writeSync blocks on the full pipe, the
+    // drain stops, and our stdin.write never sees 'drain' again).
+    const stdout = [];
+    child.stdout.on('data', c => stdout.push(c));
     let off = 0;
     const total = 256 * 1024;
     while (off < total) {
@@ -139,6 +157,11 @@ test(
     const [code] = await once(child, 'exit');
     assert.equal(code, 1);
     assert.match(Buffer.concat(stderr).toString(), /could not open/);
+    assert.equal(
+      Buffer.concat(stdout).length,
+      total,
+      'passthrough continues even with the log dead — the pane is never blanked',
+    );
     assert.deepEqual(errors, [], 'even a failed open keeps draining — never EPIPE');
   },
 );

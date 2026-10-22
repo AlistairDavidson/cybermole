@@ -5,8 +5,9 @@
 //
 //     node job-log-appender.js <logPath> <maxBytes>
 //
-// stdin is appended to <logPath> until <maxBytes> bytes are written; past
-// the cap the file gets ONE "[truncated at N bytes]" marker line and no
+// A capped TEE, not a sink: stdin passes through to stdout (the tmux
+// pane — the console's live run view — must keep showing the output) and
+// is appended to <logPath> until <maxBytes> bytes are written; past the cap
 // further bytes — while stdin KEEPS BEING DRAINED until the job closes
 // it. Never exit before stdin ends: closing the read end early would
 // SIGPIPE the job mid-run, killing it or corrupting the exit code the
@@ -64,6 +65,12 @@ function main(): void {
   let written = 0;
   let marked = false;
   process.stdin.on('data', (chunk: Buffer) => {
+    // Passthrough FIRST, always, capped or not: this is a capped tee, not
+    // a sink. The pane the tmux session displays (the console's live run
+    // view, /?run=) is this process's stdout — the file cap must never
+    // blank it. A stdout write failure (dead pane) is ignored: the run
+    // goes on, only the file side matters then.
+    writeAll(1, chunk);
     if (fd === null || marked || chunk.length === 0) return; // drain only
     const room = maxBytes - written;
     if (room <= 0) {
