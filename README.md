@@ -366,10 +366,11 @@ jobs work in every install shape, the container included.
   shell privilege — zero escalation), and nginx/the TLS proxy never see
   the listener. A stale socket file is removed at boot; a socket a
   LIVE server answers on — two servers sharing one state dir, a real
-  dev/test shape — no longer stops the boot: the instance serves on
-  with the listener off and a loud boot line, until it owns the socket
-  again (the workspace side's tools then answer a clear "internal API
-  disabled" error). Design: [docs/jobs-agent-plan.md](docs/jobs-agent-plan.md)
+  dev/test shape — no longer stops the boot (§3 amended in
+  integration): the instance serves on with the listener off and a
+  loud boot line telling you to stop the other server or point
+  `WEB_PI_SOCK` elsewhere. Design:
+  [docs/jobs-agent-plan.md](docs/jobs-agent-plan.md)
   §3–§4.
 - **The `webpi` CLI (agents, and humans in a terminal)**: a third bin
   (`package.json`, shipped in both containers of the split — the
