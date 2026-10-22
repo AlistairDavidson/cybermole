@@ -134,7 +134,7 @@ is a type error.
     path.
   - `src/middleware.ts` fails closed: `/api/*` and `/partials/*` answer
     503 when `locals.webpi` is missing (`astro dev`, or the Astro handler
-    run on its own). The data pages (settings, jobs, management) take the
+    run on its own). The data pages (settings, jobs) take the
     same stance in their frontmatter: `assertWebPiLocals` (src/lib/web/
     locals.ts) throws — a page without the services is a broken
     invariant, never a loading placeholder the client fills in.
