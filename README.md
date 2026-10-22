@@ -56,7 +56,11 @@ containers and two uids (server vs tmux/terminals) — see
   optionally tagged with an app. Every run — scheduler-fired or "run now"
   — opens in a tmux session on the app's socket *and* persists a durable
   log + exit code; the jobs page shows run history with a log-tail
-  viewer, and a live run is viewable in the console via `/?run=`.
+  viewer, and a live run is viewable in the console via `/?run=`. The
+  whole surface is agent-operable too — the same jobs over an internal
+  unix-socket API drive the `webpi` CLI and in-session MCP tools, and a
+  seeded workspace-root `AGENTS.md` hands the root agent the
+  conventions (the jobs section below tells it as one story)
 - **Settings** — `/settings`: read-only dashboard of the effective config
   (listen address, paths, versions) plus the pi update actions — a manual
   update-pi button and an opt-in daily auto-update that stays within the
@@ -271,7 +275,7 @@ directly.
 | `WEB_PI_HOME` | `os.homedir()` | `HOME` for spawned processes (tmux, the terminals' shells) |
 | `WEB_PI_STATE_DIR` | `$WEB_PI_HOME/.local/state/web-pi` | one directory for all web-pi state: the sqlite db (`webpi.db`) and the runtime `pi-agent/` (pi credentials + its own sessions). Per-path overrides (`WEB_PI_DB_FILE`, `WEB_PI_AGENT_DIR`) still win. In the container compose points it at `/state` on a dedicated volume |
 | `WEB_PI_AGENT_DIR` | `<state dir>/pi-agent` | runtime pi agent dir (config, credentials, pi's own session store) — seeded from the repo's `pi/` template where absent (a stray `PI_CODING_AGENT_DIR` in the server's env is ignored with an error logged). Every spawned terminal carries it as `PI_CODING_AGENT_DIR`, so a pi you run by hand stays on it |
-| `WEB_PI_NEW_SESSION_CWD` | `$WEB_PI_HOME` | default cwd for new workspaces — the fallback when the parent app has no `cwd` of its own (shown as the start-path hint in the new-workspace dialog) |
+| `WEB_PI_NEW_SESSION_CWD` | `$WEB_PI_HOME` | default cwd for new workspaces — the fallback when the parent app has no `cwd` of its own (shown as the start-path hint in the new-workspace dialog). The workspace root's `AGENTS.md` (the root agent's standing jobs instructions) is seeded into it where absent — [jobs](#scheduled-jobs-jobs-the-in-process-scheduler), [`root-agents/`](root-agents/) |
 | `WEB_PI_COMMAND` | `$SHELL -l` (fallback `/bin/sh -l`) | the command a new terminal tab runs (whitespace-split) |
 | `WEB_PI_JOB_LOG_DIR` | `/workspace/.webpi/job-logs` | root under which job runs persist their logs + exit files (`<dir>/<job>/<fired-at>.{log,exit}`) — a path that exists in both containers of the compose split (laid out by `workspace-init`); point it somewhere writable in other split shapes |
 | `WEB_PI_JOB_LOG_MAX` | `20971520` (20 MiB) | write-time cap on each job run's log — past it the run wrapper's appender stops writing (one `[truncated at N bytes]` marker line) but keeps draining the job's output, so a chatty or runaway job can neither fill the disk mid-run nor die of a broken pipe. A non-integer or negative value stops the server at boot |
@@ -324,6 +328,17 @@ jobs work in every install shape, the container included.
   (`GET /api/jobs/:name/runs`, `GET /api/jobs/:name/runs/:fired_at/log`,
   the newest 1 MiB, text/plain). History is capped at 20 runs per job —
   pruning unlinks the pruned runs' log files before deleting their rows.
+- **The job page (`/jobs/:name`)** — the job's definition with its edit
+  entry, its run history (fired-at, origin, duration, exit), the
+  log-tail viewer and the live-run link. It updates **live**: the
+  service layer emits domain events at its mutation/observation choke
+  points (`job_created` … `run_finished`) and the cookie-gated
+  `/ws/events` WebSocket forwards them, so the jobs pages run the same
+  partial refresh the moment anything changes a job — whoever changed
+  it (the page, the CLI, the MCP tools, the scheduler's tick): one
+  source of truth, evented. The 15 s poll stays as the safety net; the
+  WS reconnects with backoff like the terminal's. Agents read job state
+  through the CLI/MCP, never by scraping the page.
 - **App tag**: a job is global, optionally tagged with an app
   (`app_id` — the picker on the save dialog, the chip on the card);
   never owned by one — deleting the app just un-tags its jobs.
@@ -349,18 +364,47 @@ jobs work in every install shape, the container included.
   truth. No cookie/CSRF/rate-limit layer applies: the socket file's
   `0660` mode is the gate (full jobs control is the workspace side's own
   shell privilege — zero escalation), and nginx/the TLS proxy never see
-  the listener. A stale socket file is removed at boot; a live one fails
-  the boot. Design: [docs/jobs-agent-plan.md](docs/jobs-agent-plan.md)
+  the listener. A stale socket file is removed at boot; a socket a
+  LIVE server answers on — two servers sharing one state dir, a real
+  dev/test shape — no longer stops the boot: the instance serves on
+  with the listener off and a loud boot line, until it owns the socket
+  again (the workspace side's tools then answer a clear "internal API
+  disabled" error). Design: [docs/jobs-agent-plan.md](docs/jobs-agent-plan.md)
   §3–§4.
+- **The `webpi` CLI (agents, and humans in a terminal)**: a third bin
+  (`package.json`, shipped in both containers of the split — the
+  workspace side is its whole point) over that socket, parity with
+  every action the /jobs page offers: `webpi jobs list [-a <app>]`,
+  `runs <name>`, `log <name> <firedAt>`, `create`, `set`, `delete`,
+  `run`, `kill`, `validate`. `--help` is the agent-facing documentation
+  — self-describing, no discovery round-trip — and `--json` prints the
+  server's raw answer for scripting. Exit codes: 0 success, 1 the
+  operation failed (the server's error answer, or no server on the
+  socket), 2 usage; `validate`'s ANSWER is the validity, so 1 =
+  something invalid. The socket is discovered `$WEB_PI_SOCK` →
+  `/run/web-pi/webpi.sock` → `<state dir>/webpi.sock`, a friendly error
+  naming the knob when off. Design:
+  [docs/jobs-agent-plan.md](docs/jobs-agent-plan.md) §5.
 - **MCP over the internal API (agents, in-session)**: `server/mcp.ts` is
-  a stdio MCP server whose tools are 1:1 with those verbs (plus
-  `apps_list`) — registered for every pi session by the [`pi/`](pi/)
-  template's `mcp.json` (see its README for the exposure, the absolute
-  `/opt/web-pi` path it spawns, and the dev-shape difference). Tool
-  results carry the internal API's Result JSON verbatim. Design:
-  [docs/jobs-agent-plan.md](docs/jobs-agent-plan.md) §6 (the `webpi mcp`
-  subcommand and the CLI land on the parallel branches; the orchestrator
-  wires the subcommand at merge).
+  a stdio MCP server — also runnable as `webpi mcp`, the dev-shape
+  convenience — whose tools are 1:1 with those verbs (plus `apps_list`)
+  — registered for every pi session by the [`pi/`](pi/) template's
+  `mcp.json` (see its README for the exposure, the absolute `/opt/web-pi`
+  path it spawns, and the dev-shape difference). Tool results carry the
+  internal API's Result JSON verbatim — an agent reads the same answers
+  the console and the CLI do. Design:
+  [docs/jobs-agent-plan.md](docs/jobs-agent-plan.md) §6.
+- **Root-agent conventions (`AGENTS.md`)**: the workspace root's
+  `AGENTS.md` — the root agent's standing instructions: scheduled work
+  belongs in jobs, a fired run is *started, not finished* (poll the run
+  history and check exit codes), and the tool surface above — is
+  seeded only-where-absent (the pi-template policy) from the repo's
+  [`root-agents/`](root-agents/) template into the default workspace
+  cwd (`/workspace` in the split): by the workspace entrypoint (uid
+  2000) there, by the server boot next to the pi-template seeding in
+  single-user shapes. App agents in checkouts under the root read it by
+  upward walk — accepted same-uid usage. Design:
+  [docs/jobs-agent-plan.md](docs/jobs-agent-plan.md) §9.
 - The trade-off vs the old systemd timers: nothing fires while web-pi
   itself is down (hence the catch-up above). Job commands run as the
   web-pi user, on the app's socket, per the security model — the terminal
@@ -382,6 +426,12 @@ config is project-controlled too:
   (`auth.json`, `sessions/`) is never in the template. The seeder is
   whoever owns the dir: the server at boot in single-user shapes, the
   workspace entrypoint in the split (so every file lands uid-2000-owned).
+- A sibling one-file template, [`root-agents/AGENTS.md`](root-agents/),
+  seeds the **workspace root's** `AGENTS.md` — the root agent's standing
+  jobs instructions — with the same only-where-absent policy and the
+  same seeder halves, but into the default workspace cwd
+  (`WEB_PI_NEW_SESSION_CWD`), not the agent dir: app checkouts under
+  the root read it by upward walk (see the jobs section).
 - Every spawned terminal carries `PI_CODING_AGENT_DIR=<runtime dir>`
   (delivered via `tmux new-session -e`, deterministic per session) — a pi
   you run by hand in one never touches your `~/.pi/agent`, in either
@@ -435,7 +485,8 @@ part of the plain stack and its proxy is wired on by default — set
   sessions — web's never-fork guard depends on it), `chmod 0660` +
   `chgrp webpi` on the socket (tmux creates it 0600 regardless of umask),
   admits the web user with `tmux server-access -a node`, seeds the runtime
-  pi-agent from the image's `pi/` template (only where absent — same
+  pi-agent from the image's `pi/` template and the workspace root's
+  `AGENTS.md` from its `root-agents/` one (only where absent — same
   policy as the single-user server boot), and supervises the server.
   Workspaces' files live on the `webpi-workspace` volume at `/workspace`
   (the default workspace cwd — `WEB_PI_NEW_SESSION_CWD` prefills the
@@ -676,9 +727,11 @@ sudo -u web-pi-work sh -c 'umask 0007; \
 
 (/run is wiped on boot — repeat the server bring-up from your boot
 scripts, or put the socket on persistent storage. Nothing seeds the
-pi-agent template in this shape — the single-user server-boot seeding is
-off with an absolute socket — so copy the repo's `pi/` into the runtime
-agent dir yourself, as `web-pi-work`, if you want the shipped defaults.)
+pi-agent template — or the workspace root's `AGENTS.md` — in this shape:
+the single-user server-boot seeding is off with an absolute socket, so
+copy the repo's `pi/` into the runtime agent dir and its `root-agents/
+AGENTS.md` to the workspace cwd yourself, as `web-pi-work`, if you want
+the shipped defaults.)
 And run the server itself, as your user, with the split env —
 `WEB_PI_TMUX_SOCKET=/run/web-pi/tmux`, a workspace cwd
 (`WEB_PI_NEW_SESSION_CWD`), a `WEB_PI_JOB_LOG_DIR` and
@@ -711,6 +764,7 @@ Or skip Docker: the npm package is a deploy channel too —
 npm i -g web-pi
 webpi-set-password              # interactive; creates webpi.db
 web-pi                          # serves on http://127.0.0.1:3000
+webpi jobs list                 # the third bin: the jobs CLI (see the jobs section)
 ```
 
 — same `WEB_PI_*` env contract, loopback bind by default, behind the same
@@ -1029,14 +1083,22 @@ standalone-workspace install above (`WEB_PI_COMMAND`).
   (request bodies, WS frames, branded IDs); `src/types` — the `Result`
   contract and branded ID types. Conventions: `docs/CODE_STYLE.md`
 - `server` — the Node server: origin + session gate, login/logout,
-  assets, the Astro SSR handler (pages + API), WS → node-pty → tmux, and
-  the same-origin `/editor` reverse proxy (HTTP streaming + raw WS
-  tunnels, per-token tracking — `src/lib/editor.ts`)
+  assets, the Astro SSR handler (pages + API), WS → node-pty → tmux, the
+  same-origin `/editor` reverse proxy (HTTP streaming + raw WS
+  tunnels, per-token tracking — `src/lib/editor.ts`), the internal jobs
+  API on its unix socket (`internal-api.ts` — same Result JSON as the
+  browser routes) and the stdio jobs MCP server (`mcp.ts`)
 - `src/pages/jobs.astro` + `src/components/JobsApp/` — the scheduled-jobs
   page (list/create/edit/run/delete, cron validation, app tag, run
-  history + log viewer)
+  history + log viewer), plus the per-job detail page
+  `src/pages/jobs/[name].astro` — live-updated over `/ws/events`
+  (`src/lib/events.ts` — the domain-event bus)
 - `pi/` — the controlled pi agent-dir template (settings, MCPs, skills,
-  extensions) seeded into the runtime dir; `tmux.conf` at the root is the
+  extensions) seeded into the runtime dir; `root-agents/` — the one-file
+  workspace-root `AGENTS.md` template (the root agent's jobs
+  conventions), seeded by the same boot halves; `cli/` — the `webpi`
+  bin: the jobs verbs + `webpi mcp`, a zero-runtime-dep client over the
+  internal socket; `tmux.conf` at the root is the
   tmux server config — together they're the shipped "environment config"
 - `editor/` — the VSCodium reh-web editor image (pinned tarball, uid 2000)
   for the compose `editor` profile — `Dockerfile` + entrypoint
