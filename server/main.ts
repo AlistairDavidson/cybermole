@@ -27,6 +27,7 @@ import {
 } from '../src/lib/env';
 import { componentLogger, closeLogger } from '../src/lib/logger';
 import * as jobs from '../src/lib/jobs';
+import { EventsRelay, checkEventsUpgrade } from '../src/lib/events-ws';
 import { AutoUpdater } from '../src/lib/auto-update';
 import {
   EDITOR_HOP_BY_HOP_HEADERS,
@@ -890,6 +891,7 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     if (token) {
       closeTokenSockets(token, { type: 'signed-out' });
       editorTunnels.closeToken(token);
+      eventsRelay.closeToken(token, { type: 'signed-out' });
     }
     // A failed delete means the token is still valid server-side: say so
     // (the browser's cookie is cleared either way).
@@ -970,6 +972,7 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     const dropped = auth.dropAll();
     closeAllSockets({ type: 'signed-out' });
     editorTunnels.closeAll();
+    eventsRelay.closeAll({ type: 'signed-out' });
     if (!dropped.ok) {
       authLog.error(`log out everywhere failed: ${dropped.errorMessage}`);
       send(res, 500, 'could not end the sessions', { 'Set-Cookie': clearSessionCookie() });
@@ -1048,6 +1051,16 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
 
 // ---------- WebSocket → node-pty → tmux attach ----------
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
+
+// task/jobs-page (plan §7): /ws/events — the jobs pages' live
+// subscription to the domain-event bus. The scheduler's service layer
+// (src/lib/jobs.ts) emits at its choke points (whoever acted — the
+// browser routes, the internal socket API of plan §4, the tick,
+// run-now); this relay forwards each event to every authenticated
+// browser socket. The gate is checkEventsUpgrade (src/lib/events-ws.ts),
+// the same checks the terminal's branch below applies inline.
+const eventsRelay = new EventsRelay({ alive: token => auth.alive(token), log: wsLog });
+eventsRelay.start();
 
 // Live sockets per session token, fed by the upgrade handler (which has
 // already validated it): POST /logout, log-out-everywhere and shutdown
@@ -1163,6 +1176,30 @@ server.on('upgrade', (req, socket, head) => {
       return;
     }
     upgradeEditorSocket(req, socket, head, session.data.token);
+    return;
+  }
+  if (url === route('/ws/events')) {
+    // task/jobs-page (plan §7): the events WS — same gates as the
+    // terminal (shutdown, the shared rate limiter, Origin, the session
+    // cookie), decided by checkEventsUpgrade so the logic is unit-
+    // testable; the terminal's branch below keeps its inline twin.
+    const gate = checkEventsUpgrade(req, ipOf(req), {
+      shuttingDown: () => shuttingDown,
+      allow: ip2 => wsLimiter.allow(ip2),
+      originOk,
+      validSession: cookie => auth.valid(Auth.sessionToken(cookie)),
+    });
+    if (!gate.ok) {
+      if (gate.reply === 'status') {
+        wsLog.warn(`events ws upgrade rejected: ${gate.why}`, { ip: ipOf(req) });
+        socket.write(`HTTP/1.1 ${gate.status}\r\n${securityHeaderBlock()}\r\n`);
+      } else {
+        wsLog.warn(`events ws upgrade rejected: ${gate.why}`, { ip: ipOf(req) });
+      }
+      socket.destroy();
+      return;
+    }
+    eventsRelay.handleUpgrade(req, socket, head, gate.token);
     return;
   }
   if (url !== route('/ws')) {
@@ -1520,6 +1557,9 @@ const shutdownSteps: Array<() => void | Promise<void>> = [
   () => {
     closeAllSockets({ type: 'restart' });
   }, // 2. notify + close every client
+  () => {
+    eventsRelay.stop({ type: 'restart' });
+  }, // 2.1 events sockets: unsubscribe + close (clients reconnect with backoff)
   () => {
     editorTunnels.closeAll();
   }, // 2.5 editor tunnels: cut (the iframe reconnects)
