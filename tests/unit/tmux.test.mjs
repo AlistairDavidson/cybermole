@@ -178,6 +178,16 @@ test('capturePaneHistoryArgs: plain text, history capped at BACKFILL_LINES, scre
  *  carrying exit-empty off (a separate `set-option` races the empty
  *  server's instant exit — the option must ride the server-start conf). */
 function startServer() {
+  // The PREVIOUS test's kill-server returns before the server process
+  // has exited and unlinked the socket; starting against that window
+  // attaches to the dying server and fails with "server exited
+  // unexpectedly" (a flake that grew with the suite's parallel load).
+  // Wait out the unlink; if the file outlives the wait it is a dead
+  // server's stale leftover — remove it, like the entrypoint's
+  // stale-socket handling.
+  const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  for (let i = 0; i < 500 && fs.existsSync(SOCKET); i += 1) sleep(10);
+  if (fs.existsSync(SOCKET)) fs.rmSync(SOCKET, { force: true });
   const conf = path.join(dir, 'server.conf');
   fs.writeFileSync(conf, 'set -g exit-empty off\n');
   execFileSync('tmux', ['-S', SOCKET, '-f', conf, 'start-server']);
