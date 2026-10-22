@@ -283,15 +283,13 @@ test("delete_app: cascades workspaces and terminals, un-tags jobs, best-effort-k
   const consoleTerm = (await w.newTerminal(consoleWs.id, undefined)).data;
   // a job tagged with the app (raw: the tag picker is task/ws-jobs)
   db.run(
-    qb
-      .insertInto('jobs')
-      .values({
-        name: 'nightly',
-        schedule: '* * * * *',
-        command: 'true',
-        created_at: 1,
-        app_id: app.id,
-      }),
+    qb.insertInto('jobs').values({
+      name: 'nightly',
+      schedule: '* * * * *',
+      command: 'true',
+      created_at: 1,
+      app_id: app.id,
+    }),
   );
 
   const deleted = await a.deleteApp('gone');
