@@ -3,11 +3,11 @@ New name
 
 ## Infrastructure
 preact signals - make this available for any frontend state needs apps might have in future
+lit?
 
 ## Quality
 playwright fuzzer/monkeys? fuzz based integration testing
 prettier — done: .prettierrc + `npm run format`/`format:check`, repo-wide apply landed after the fleet merges (format:check clean)
-fully-working watch/dev mode (probably never astro dev tho
 automatically set dev credentials
 don't lose dev state on restarts and make sure we don't lose server state
 
