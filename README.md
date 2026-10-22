@@ -274,6 +274,7 @@ directly.
 | `WEB_PI_NEW_SESSION_CWD` | `$WEB_PI_HOME` | default cwd for new workspaces — the fallback when the parent app has no `cwd` of its own (shown as the start-path hint in the new-workspace dialog) |
 | `WEB_PI_COMMAND` | `$SHELL -l` (fallback `/bin/sh -l`) | the command a new terminal tab runs (whitespace-split) |
 | `WEB_PI_JOB_LOG_DIR` | `/workspace/.webpi/job-logs` | root under which job runs persist their logs + exit files (`<dir>/<job>/<fired-at>.{log,exit}`) — a path that exists in both containers of the compose split (laid out by `workspace-init`); point it somewhere writable in other split shapes |
+| `WEB_PI_JOB_LOG_MAX` | `20971520` (20 MiB) | write-time cap on each job run's log — past it the run wrapper's appender stops writing (one `[truncated at N bytes]` marker line) but keeps draining the job's output, so a chatty or runaway job can neither fill the disk mid-run nor die of a broken pipe. A non-integer or negative value stops the server at boot |
 | `WEB_PI_TMUX_SOCKET` | `web-pi` | the tmux socket the app uses. A relative *name* is the single-user shape: the app's own server, forked on the first session-creating call, under the per-uid default dir. An **absolute path** switches on the privilege split ([below](#the-privilege-split-two-containers)): tmux runs as another uid/container on that shared socket (`-S` instead of `-L` — a relative name resolves per-uid and cannot be shared), and terminal spawns, job runs and attaches refuse to fork a server, erroring with "workspace tmux server not running" instead. The server lifecycle is then the workspace side's job (`docker-workspace-entrypoint.sh`, or the host-install equivalent below) |
 | `WEB_PI_TMUX_CONF` | `<app root>/tmux.conf` | tmux server config, applied when the tmux server starts (escape-time, scrollback, truecolour — see the file) |
 | `WEB_PI_DB_FILE` | `<state dir>/webpi.db` | sqlite state db (0600): login credential, login sessions (`auth_sessions`), the workspace tree (`apps`, `workspaces`, `terminals`), scheduled-job tables (`jobs`, `job_runs` — the in-process scheduler + run logs), `settings` kv (the pi auto-update toggle + outcomes). Fresh setup: `npm run set-password` creates it |
@@ -310,17 +311,20 @@ jobs work in every install shape, the container included.
   gets). Runs are tmux sessions like any other — a **live** run is
   attachable from its card (`/?run=webpi-<name>`, the console's run
   attach mode), including runs that fired while you had no browser open.
-- **Run logs**: the fire wraps the command so the run's output is teed
-  to a durable log and its exit code captured to a file under
+- **Run logs**: the fire wraps the command so the run's output is
+  appended to a durable log and its exit code captured to a file under
   `WEB_PI_JOB_LOG_DIR` (the log dir is created by the wrapper itself — a
-  failed log write never kills the run). The tick's finish observation
-  reads the exit file back into `job_runs` (exit code + finish time;
+  failed log write never kills the run). Each log is capped at write
+  time (`WEB_PI_JOB_LOG_MAX`, 20 MiB by default): past the cap the
+  wrapper's appender stops writing — one `[truncated at N bytes]`
+  marker — while still draining the job's output, so a runaway job
+  neither fills the disk mid-run nor dies of a SIGPIPE. The tick's
+  finish observation reads the exit file back into `job_runs` (exit code + finish time;
   `unknown` when the file is missing), and the page shows each job's run
   history (fired-at, origin, duration, exit) with a log-tail viewer
   (`GET /api/jobs/:name/runs`, `GET /api/jobs/:name/runs/:fired_at/log`,
   the newest 1 MiB, text/plain). History is capped at 20 runs per job —
   pruning unlinks the pruned runs' log files before deleting their rows.
-  No log size cap yet (a truncating wrapper can come later).
 - **App tag**: a job is global, optionally tagged with an app
   (`app_id` — the picker on the save dialog, the chip on the card);
   never owned by one — deleting the app just un-tags its jobs.
