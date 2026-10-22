@@ -1,5 +1,5 @@
 ## Branding
-New name
+New name -> cybermole
 
 ## Infrastructure
 preact signals - make this available for any frontend state needs apps might have in future
