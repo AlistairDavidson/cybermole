@@ -39,6 +39,15 @@ function readSchemaEnv(): SchemaEnv {
 
 export const RAW_ENV: SchemaEnv = readSchemaEnv();
 
+// task/job-log-caps (jobs-agent-plan §8): a negative byte cap is an
+// operator mistake of the same class as the non-integers readSchemaEnv
+// already stops the boot on — fail closed the same way, at module load.
+if (RAW_ENV.WEB_PI_JOB_LOG_MAX < 0) {
+  throw new Error(
+    `WEB_PI_JOB_LOG_MAX=${RAW_ENV.WEB_PI_JOB_LOG_MAX} must not be negative (a byte count)`,
+  );
+}
+
 // task/mgmt-page: optional — empty string counts as unset (compose `VAR: ""`).
 const optionalPath = (v: string | undefined): string | null =>
   v === undefined || v.trim() === '' ? null : v.trim();
@@ -80,6 +89,9 @@ export const ENV = {
   // override it (a bare host run has no /workspace — runs then leave no
   // logs and their results stay 'unknown', never a failure).
   WEB_PI_JOB_LOG_DIR: RAW_ENV.WEB_PI_JOB_LOG_DIR ?? '/workspace/.webpi/job-logs',
+  // task/job-log-caps (plan §8): the write-time cap the run wrapper's
+  // appender enforces per run log (src/lib/job-log-appender.ts).
+  WEB_PI_JOB_LOG_MAX: RAW_ENV.WEB_PI_JOB_LOG_MAX,
   // The command a new terminal tab runs (plan §10): a login shell by
   // default — $SHELL -l when the env carries one, /bin/sh -l otherwise.
   // Whitespace-split by main.ts like any override; e2e's deterministic
