@@ -24,7 +24,7 @@ process.env.WEB_PI_TMUX_SOCKET = path.join(dir, 'tmux');
 process.env.FAKE_TMUX_DIR = dir;
 process.env.PATH = `${fakeBin}:${process.env.PATH}`;
 
-const { startInternalApi, probeSocketFile } =
+const { startInternalApi, probeSocketFile, InternalSocketOwnedError } =
   await import('../../dist-server/server/internal-api.js');
 const { Scheduler, runLogPaths } = await import('../../dist-server/src/lib/jobs.js');
 const { StateDb } = await import('../../dist-server/src/lib/db.js');
@@ -602,12 +602,17 @@ test('a stale socket file is unlinked and rebound at boot', async () => {
   }
 });
 
-test('a live listener owns the socket: boot refuses', async () => {
+test('a live listener owns the socket: the typed error main.ts degrades on', async () => {
   const w = await boot();
   try {
     await assert.rejects(
       startInternalApi({ socketPath: w.socketPath, scheduler: w.scheduler, apps: w.apps }),
       err => {
+        // The typed marker is the contract: main.ts serves on (loud log,
+        // listener disabled) ONLY for this error; every other failure
+        // still stops the boot (plan §3, amended in integration).
+        assert.ok(err instanceof InternalSocketOwnedError, 'the typed marker, not just the message');
+        assert.equal(err.socketPath, w.socketPath);
         assert.match(err.message, /another web-pi server owns the socket/);
         return true;
       },

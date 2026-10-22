@@ -39,7 +39,7 @@ import {
   type EditorUpstream,
 } from '../src/lib/editor';
 import { createServices, type ServerConfig, type WebPiLocals } from '../src/lib/services';
-import { startInternalApi, type InternalApiHandle } from './internal-api';
+import { startInternalApi, InternalSocketOwnedError, type InternalApiHandle } from './internal-api';
 import { ObjectStore } from '../src/lib/storage';
 import type { ClientMsg, ServerMsg } from '../src/lib/types';
 import { loginBody } from '../src/schemas/api';
@@ -235,8 +235,12 @@ const shutdownScheduler = (): void => scheduler.stop();
 // mode is the gate; docs/jobs-agent-plan.md §2–§4). WEB_PI_SOCK: unset =
 // the shape default (/run/web-pi/webpi.sock when that shared dir exists,
 // else <state dir>/webpi.sock); empty = off; a non-absolute value stops
-// the boot (env.ts, like the S3 vars). A stale socket file is removed; a
-// LIVE one fails the boot — two servers must never share a socket.
+// the boot (env.ts, like the S3 vars). A stale socket file is removed and
+// rebound. A LIVE socket (another instance owns it — two servers sharing
+// one state dir on a dev box, tests) DEGRADES: this instance serves on,
+// without the listener, behind a loud boot line — the web app must not
+// die over an auxiliary IPC listener. Anything else that fails here
+// still fails the boot.
 const INTERNAL_SOCK = readInternalApiSocket();
 let internalApi: InternalApiHandle | null = null;
 if (INTERNAL_SOCK === null) {
@@ -247,6 +251,13 @@ if (INTERNAL_SOCK === null) {
       internalApi = api;
     })
     .catch(err => {
+      if (err instanceof InternalSocketOwnedError) {
+        bootLog.error(
+          `internal API DISABLED on this instance: ${err.message} — ` +
+            'the workspace side\'s jobs tools (CLI/MCP) will fail until this instance owns the socket',
+        );
+        return;
+      }
       bootLog.error(`internal API failed to start on ${INTERNAL_SOCK}: ${(err as Error).message}`);
       process.exit(1); // a boot failure, not a degraded mode: fail loudly
     });

@@ -72,7 +72,13 @@ owns its state; the workspace uid owns everything it can touch. No more
   side); plain host — `<state dir>/webpi.sock`.
 - Created `0660` group `webpi` (explicit chmod after listen — the tmux
   0600-umask dance, server-side); a stale socket file is removed at boot
-  like the workspace entrypoint does for tmux.
+  like the workspace entrypoint does for tmux. **Amended in integration:**
+  a socket a LIVE server answers on no longer fails the boot — the
+  instance serves on with the listener disabled and a loud boot line
+  (`InternalSocketOwnedError`, main.ts degrades on exactly that marker).
+  Two servers sharing one state dir (dev box, tests) is a real shape, and
+  the web app must not die over an auxiliary IPC listener; every other
+  start failure still stops the boot.
 - Env: `WEB_PI_SOCK` — absolute path override; unset = the default for
   the shape; **empty = the listener is off** (CLI/MCP then fail with a
   clear "internal API disabled" error). A set-but-crazy value stops the

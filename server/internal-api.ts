@@ -75,6 +75,23 @@ export interface InternalApiHandle {
   close(): Promise<void>;
 }
 
+/** The socket file exists AND answers — another web-pi server owns it.
+ *  main.ts treats this one specially (plan §3, amended in integration):
+ *  the web app SERVES ON, with this listener disabled and a loud boot
+ *  line — crashing the whole web server over an auxiliary IPC listener
+ *  would let a second instance on the same state dir (dev box, tests)
+ *  take the primary down. Anything else that fails here still fails the
+ *  boot. */
+export class InternalSocketOwnedError extends Error {
+  constructor(readonly socketPath: string) {
+    super(
+      `another web-pi server owns the socket (${socketPath}) — ` +
+        'this instance serves without the internal API; stop the other server, or point WEB_PI_SOCK elsewhere',
+    );
+    this.name = 'InternalSocketOwnedError';
+  }
+}
+
 // ---------- socket lifecycle (plan §3) ----------
 
 /** Liveness probe of an existing socket file: can anything answer on it?
@@ -101,19 +118,16 @@ export function probeSocketFile(socketPath: string, timeoutMs = 500): Promise<'l
 }
 
 /** Boot the internal API: claim the socket (stale file → unlink, live
- *  listener → reject: "another web-pi server owns the socket"), listen,
- *  then chmod the file 0660 — group access is the gate in the compose
- *  split (the setgid /run/web-pi dir gives the file the shared group; on
- *  a plain host the process's own group), mirroring the workspace
- *  entrypoint's tmux-socket chmod. Resolves once the listener is up. */
+ *  listener → InternalSocketOwnedError), listen, then chmod the file
+ *  0660 — group access is the gate in the compose split (the setgid
+ *  /run/web-pi dir gives the file the shared group; on a plain host the
+ *  process's own group), mirroring the workspace entrypoint's tmux-socket
+ *  chmod. Resolves once the listener is up. */
 export async function startInternalApi(deps: InternalApiDeps): Promise<InternalApiHandle> {
   if (fs.existsSync(deps.socketPath)) {
     const state = await probeSocketFile(deps.socketPath);
     if (state === 'live') {
-      throw new Error(
-        `another web-pi server owns the socket (${deps.socketPath}) — ` +
-          'refusing to start the internal API; stop the other server, or point WEB_PI_SOCK elsewhere',
-      );
+      throw new InternalSocketOwnedError(deps.socketPath);
     }
     log.info(`removing stale internal socket ${deps.socketPath}`);
     fs.rmSync(deps.socketPath, { force: true });
