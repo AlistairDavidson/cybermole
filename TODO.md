@@ -7,6 +7,7 @@ lit?
 
 ## Quality
 fleet agents need the ability to run e2e tests, dependencies set up for them so they don't churn
+make flakey tests not flakey
 playwright fuzzer/monkeys? fuzz based integration testing
 automatically set dev credentials to `test`/`test`
 don't lose dev state on restarts and make sure we don't lose server state

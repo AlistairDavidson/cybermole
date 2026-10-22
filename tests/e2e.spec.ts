@@ -1623,6 +1623,100 @@ test('jobs: app tag chip, persisted run logs, run history + log view (task/ws-jo
   expect((await api(page, 'DELETE', '/api/apps/e2e-jobs-app')).status).toBe(200);
 });
 
+// The jobs-agent-plan §4+§7 acceptance line (docs/jobs-agent-plan.md):
+// a mutation over the INTERNAL SOCKET — the agent path — updates an
+// OPEN /jobs page without waiting for the 15 s poll. The chain is
+// service-layer events → /ws/events → the page's partial refresh; one
+// source of truth, evented. The window is 6 s and the mutation fires
+// ~1 s after load, so the poll (ticks at 15 s from load) can never be
+// what satisfies it — only the WS path can.
+test('an internal-socket mutation updates an open /jobs page without the poll (jobs-agent-plan §4+§7 acceptance)', async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto('/jobs');
+  await expect(page.locator('jobs-app')).toBeVisible();
+
+  // The agent transport: plain node:http over the suite webServer's
+  // internal socket (WEB_PI_SOCK in playwright.config — the file mode is
+  // the gate). Same Result JSON shapes as the browser API (plan §4).
+  const internalApi = (
+    method: string,
+    url: string,
+    body?: unknown,
+  ): Promise<{ status: number; json: { name?: string; errorCode?: string } | null }> =>
+    new Promise((resolve, reject) => {
+      const payload = body === undefined ? null : JSON.stringify(body);
+      const req = http.request(
+        {
+          socketPath: `${WORKSPACE}.sock`, // sibling of WORKSPACE — see playwright.config
+          path: url,
+          method,
+          // Chunked bodies are refused (411) — the internal API demands a
+          // Content-Length exactly like the CLI (plan §4) does.
+          headers:
+            payload === null
+              ? { 'Content-Type': 'application/json' }
+              : {
+                  'Content-Type': 'application/json',
+                  'Content-Length': String(Buffer.byteLength(payload)),
+                },
+        },
+        res => {
+          const chunks: Buffer[] = [];
+          res.on('data', (c: Buffer) => chunks.push(c));
+          res.on('end', () => {
+            const text = Buffer.concat(chunks).toString();
+            let json: { name?: string; errorCode?: string } | null = null;
+            try {
+              json = text ? JSON.parse(text) : null;
+            } catch {
+              json = null;
+            }
+            resolve({ status: res.statusCode ?? 0, json });
+          });
+        },
+      );
+      req.setTimeout(5_000, () => req.destroy(new Error('internal API timeout')));
+      req.on('error', reject);
+      if (payload !== null) req.write(payload);
+      req.end();
+    });
+
+  // Create over the socket (the agent's jobs_create): the card appears
+  // on the open page well inside the poll's shadow.
+  const created = await internalApi('POST', '/jobs', {
+    name: 'sock-live',
+    schedule: '*/5 * * * *',
+    command: 'sleep 3',
+  });
+  expect(created.json).toMatchObject({ name: 'sock-live' });
+  await expect
+    .poll(() => page.locator('jobs-app .job-name', { hasText: 'sock-live' }).count(), {
+      timeout: 6_000,
+    })
+    .toBe(1);
+
+  // Run-now over the socket (jobs_run_now): run_started → the badge
+  // flips on the open page. sleep 3 ends on its own — nothing to clean.
+  const fired = await internalApi('POST', '/jobs/sock-live/run');
+  expect(fired.json).toMatchObject({ name: 'sock-live' });
+  await expect
+    .poll(() => page.locator('jobs-app .job wa-badge:has-text("running")').count(), {
+      timeout: 6_000,
+    })
+    .toBe(1);
+
+  // Delete over the socket (jobs_delete): the card leaves the open page.
+  const deleted = await internalApi('DELETE', '/jobs/sock-live');
+  expect(deleted.json).toMatchObject({ name: 'sock-live' });
+  await expect
+    .poll(() => page.locator('jobs-app .job-name', { hasText: 'sock-live' }).count(), {
+      timeout: 6_000,
+    })
+    .toBe(0);
+});
+
 test('the workspace filter matches names, hides empty groups, and survives the poll re-render', async ({
   page,
 }) => {
