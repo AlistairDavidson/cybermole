@@ -1,0 +1,62 @@
+---
+// JobDetail.astro — the /jobs/:name page's shell: <job-detail>
+// (job-detail-app.ts) wrapping the swappable fragment (JobDetailBody —
+// the 15 s poll and the /ws/events subscription replace #job-detail
+// inside it) plus the log-tail box and toast, which live OUTSIDE the
+// swapped region on purpose (an open log must survive a refresh — the
+// same reason the runs dialog is a dialog on /jobs). `job` null = no
+// such job (deleted, or a name that cannot exist): the not-found body,
+// 404 from the page.
+import '@awesome.me/webawesome/dist/components/button/button.js';
+import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '@awesome.me/webawesome/dist/components/card/card.js';
+import '@awesome.me/webawesome/dist/components/badge/badge.js';
+import '@awesome.me/webawesome/dist/components/toast/toast.js';
+import JobDetailBody from './JobDetailBody.astro';
+import type { ScheduledJob } from '../../lib/types';
+import type { JobRunView } from '../../lib/jobs';
+
+interface Props {
+  /** the job, server-rendered; null when it does not exist (404 page). */
+  job: ScheduledJob | null;
+  /** its run history; null when the read failed (the refresh retries). */
+  runs: JobRunView[] | null;
+}
+const { job, runs } = Astro.props;
+// Matches the server's WEB_PI_BASE ('' for root, else '/foo').
+const base = (import.meta.env.BASE_URL ?? '/').replace(/\/+$/, '');
+---
+{job === null ? (
+  <div class="jobs-main wa-stack wa-gap-m">
+    <header class="jobs-header">
+      <h1><wa-icon name="clock"></wa-icon> job not found</h1>
+    </header>
+    <p class="jobs-empty">
+      no job by this name — it may have been deleted. back to{' '}
+      <a class="job-view" href={`${base}/jobs`}>the jobs page</a>.
+    </p>
+  </div>
+) : (
+  <job-detail>
+    <div class="jobs-main wa-stack wa-gap-m">
+      <JobDetailBody job={job} runs={runs} />
+      <!-- Outside #job-detail: a refresh (poll or event) must not wipe an
+           open log tail — the same caveat the /jobs runs dialog avoids. -->
+      <div id="run-log-box" class="run-log-box hidden">
+        <div class="run-log-head">
+          <span id="run-log-title"></span>
+          <wa-button size="xs" appearance="plain" id="run-log-close">hide log</wa-button>
+        </div>
+        <pre id="run-log" class="run-log"></pre>
+      </div>
+    </div>
+    <wa-toast placement="bottom-start"></wa-toast>
+  </job-detail>
+)}
+
+<script>
+  import "@awesome.me/astro-lit/dsd-polyfill.js";
+  import "@awesome.me/astro-lit/hydration-support.js";
+  import "../../icons";
+  import "./job-detail-app";
+</script>

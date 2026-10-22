@@ -1,0 +1,36 @@
+---
+// GET /partials/jobs/<name> — the /jobs/:name detail as a fragment:
+// <job-detail> swaps it in on its 15 s refresh and on /ws/events
+// messages (plan §7). Behind the main.ts gate (signed out: 401) and
+// src/middleware.ts (no locals: 503). A failed listing answers 500 with
+// no fragment — the element keeps what it shows; a missing job answers
+// 404 with no fragment — the element returns to /jobs.
+import JobDetailBody from '../../../components/JobDetail/JobDetailBody.astro';
+import { assertWebPiLocals } from '../../../lib/web/locals';
+import { JobNameSchema } from '../../../schemas/ids';
+import type { JobRunView } from '../../../lib/jobs';
+import type { ScheduledJob } from '../../../lib/types';
+
+export const partial = true;
+
+const { webpi } = assertWebPiLocals(Astro.locals);
+const parsed = JobNameSchema.safeParse(Astro.params.name);
+let job: ScheduledJob | null = null;
+let runs: JobRunView[] | null = null;
+if (parsed.success) {
+  const listed = await webpi.scheduler.listJobs();
+  if (listed.ok) job = listed.data.jobs.find(j => j.name === parsed.data) ?? null;
+  // console.error on purpose, not src/lib/logger.ts: frontmatter is
+  // Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
+  else console.error(`job detail partial: ${listed.errorMessage}`);
+  if (job) {
+    const listedRuns = webpi.scheduler.listRuns(parsed.data);
+    if (listedRuns.ok) runs = listedRuns.data.runs;
+    else console.error(`job detail partial: ${listedRuns.errorMessage}`);
+  }
+}
+Astro.response.headers.set('Cache-Control', 'no-store');
+if (job === null) Astro.response.status = 404;
+else if (runs === null) Astro.response.status = 500;
+---
+{job && runs !== null && <JobDetailBody job={job} runs={runs} />}

@@ -23,7 +23,9 @@ const last = job.last
 ---
 <wa-card class="job">
   <div class="job-head">
-    <span class="job-name"><wa-icon name="clock"></wa-icon>{job.name}</span>
+    <a class="job-name" href={`${base}/jobs/${encodeURIComponent(job.name)}`}>
+      <wa-icon name="clock"></wa-icon>{job.name}
+    </a>
     <span class="wa-cluster wa-gap-3xs">
       {job.appName && <wa-badge pill class="job-app">{job.appName}</wa-badge>}
       {job.active
