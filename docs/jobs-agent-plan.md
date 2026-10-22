@@ -1,9 +1,21 @@
 # The jobs agent plan — jobs as a core feature, agent-operable
 
-Status: **agreed** — the design discussion that produced this repositioned
-the project (self-modification retired as a target; apps are the
-live-modifiable unit, in a future epic; jobs are core). This doc specs the
-first epic built on that positioning. Branches: §10.
+Status: **shipped** — all seven §10 branches landed on main, in merge
+order: `task/retire-management` (3518b18, §1), `task/job-log-caps`
+(174351e, §8), `task/jobs-socket` (6f1a764, §3+§4), `task/jobs-page`
+(bdbe39f, §7), `task/jobs-cli` (286f9a2, §5), `task/jobs-mcp` (298c4a7,
+§6), and `task/root-agents-md` (this branch — §9's root-agent AGENTS.md
+seeding plus the docs refresh that flipped this header; README/TODO now
+describe the shipped system). Integration amendments, told where they
+changed the agreed plan: a socket a LIVE server answers on DEGRADES the
+instance (loud boot line, listener off) instead of failing its boot
+(§3, amended inline below); the run wrapper's appender is a capped TEE,
+not a sink — §8's "stops writing, keeps draining" also passes the job's
+output through, so the live run view stays alive past the cap (after an
+e2e regression); killRun was reconciled onto the socket branch's
+`run_not_active` family with the `run_killed` event grafted in (§4/§7,
+reconciled at the jobs-page merge). The body below is the plan as
+agreed — the historical record, unchanged.
 
 ## 0. Positioning (locked)
 
