@@ -1,0 +1,41 @@
+---
+// GET /jobs/:name — the job detail page (plan §7): the definition
+// (schedule/command/app tag, with the edit entry), the run history with
+// exit codes + durations, the log-tail viewer and the live-run link —
+// server-rendered (docs/CODE_STYLE.md §7); <job-detail> enhances it
+// (log buttons, a 15 s refresh from /partials/jobs/<name>, the
+// /ws/events subscription). A page without the services is a broken
+// invariant — assertWebPiLocals throws. The name is validated the way
+// every entry point validates it (JobNameSchema); a name that cannot
+// exist renders the not-found body with a 404.
+import Base from '../../layouts/Base.astro';
+import JobDetail from '../../components/JobDetail/JobDetail.astro';
+import { assertWebPiLocals } from '../../lib/web/locals';
+import { JobNameSchema } from '../../schemas/ids';
+import type { JobRunView } from '../../lib/jobs';
+import type { ScheduledJob } from '../../lib/types';
+
+const { webpi } = assertWebPiLocals(Astro.locals);
+const parsed = JobNameSchema.safeParse(Astro.params.name);
+let job: ScheduledJob | null = null;
+let runs: JobRunView[] | null = null;
+if (parsed.success) {
+  // listJobs (not row+listRuns): the card fields — running, session,
+  // next, last, the app tag — come from the same read the /jobs list
+  // uses, so the two surfaces can never disagree.
+  const listed = await webpi.scheduler.listJobs();
+  if (listed.ok) job = listed.data.jobs.find(j => j.name === parsed.data) ?? null;
+  // console.error on purpose, not src/lib/logger.ts: frontmatter is
+  // Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
+  else console.error(`job page: ${listed.errorMessage}`);
+  if (job) {
+    const listedRuns = webpi.scheduler.listRuns(parsed.data);
+    if (listedRuns.ok) runs = listedRuns.data.runs;
+    else console.error(`job page: ${listedRuns.errorMessage}`);
+  }
+}
+if (job === null) Astro.response.status = 404;
+---
+<Base title={`web-pi — job ${job ? job.name : 'not found'}`} header="jobs">
+  <JobDetail job={job} runs={runs} />
+</Base>

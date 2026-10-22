@@ -6,8 +6,9 @@ preact signals - make this available for any frontend state needs apps might hav
 lit?
 
 ## Quality
+fleet agents need the ability to run e2e tests, dependencies set up for them so they don't churn
 playwright fuzzer/monkeys? fuzz based integration testing
-prettier — done: .prettierrc + `npm run format`/`format:check`, repo-wide apply landed automatically set dev credentials to `test`/`test`
+automatically set dev credentials to `test`/`test`
 don't lose dev state on restarts and make sure we don't lose server state
 
 ## Console features
