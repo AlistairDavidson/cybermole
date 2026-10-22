@@ -75,7 +75,12 @@ function fresh() {
   const root = fs.mkdtempSync(path.join(dir, 'case-'));
   const logDir = path.join(root, 'job-logs');
   const db = new StateDb(path.join(root, 'webpi.db'));
-  return { root, logDir, db, s: new Scheduler(db, { cwd: root, env: {}, logDir }) };
+  return {
+    root,
+    logDir,
+    db,
+    s: new Scheduler(db, { cwd: root, env: {}, logDir, logMaxBytes: 20 * 1024 * 1024 }),
+  };
 }
 
 /** Seed an app row (the Apps domain's writer is out of scope here) and

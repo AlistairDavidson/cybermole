@@ -60,6 +60,14 @@ export const envSchema = {
   // see compose.yaml). Unset/empty keeps that default; the e2e suite and
   // dev shapes point it somewhere writable.
   WEB_PI_JOB_LOG_DIR: { type: 'string', context: 'server', access: 'secret', optional: true },
+  // task/job-log-caps (jobs-agent-plan §8): the write-time cap on a job
+  // run's log — the run wrapper pipes through a small bundled node
+  // appender (src/lib/job-log-appender.ts) that stops writing past this
+  // many bytes (one "[truncated at N bytes]" marker) while still draining
+  // the job's output, so a chatty or runaway job cannot fill the disk
+  // mid-run. Non-integer and negative values stop the server at boot
+  // (env.ts), like the S3 vars.
+  WEB_PI_JOB_LOG_MAX: { type: 'number', context: 'server', access: 'secret', default: 20971520 },
   // The command a new terminal tab runs (workspaces-plan §10),
   // whitespace-split by main.ts. Dynamic default in env.ts: a login
   // shell — $SHELL -l, /bin/sh -l when SHELL is unset.

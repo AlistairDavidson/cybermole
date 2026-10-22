@@ -167,6 +167,8 @@ const scheduler = new jobs.Scheduler(stateDb, {
   cwd: CFG.newSessionCwd,
   env: sessionEnv,
   logDir: CFG.jobLogDir,
+  // task/job-log-caps (plan §8): the run wrapper's write-time log cap.
+  logMaxBytes: ENV.WEB_PI_JOB_LOG_MAX,
 });
 scheduler.start();
 // pi auto-update (src/lib/auto-update.ts): when the persisted setting is

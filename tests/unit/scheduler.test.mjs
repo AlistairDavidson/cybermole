@@ -39,7 +39,12 @@ const haveTmux = (() => {
 
 function freshScheduler() {
   const db = new StateDb(path.join(fs.mkdtempSync(path.join(dir, 'db-')), 'webpi.db'));
-  return new Scheduler(db, { cwd: dir, env: {}, logDir: path.join(dir, 'job-logs') });
+  return new Scheduler(db, {
+    cwd: dir,
+    env: {},
+    logDir: path.join(dir, 'job-logs'),
+    logMaxBytes: 20 * 1024 * 1024,
+  });
 }
 
 /** A Scheduler whose state db can never open (its parent is a file). */
@@ -50,6 +55,7 @@ function brokenScheduler() {
     cwd: dir,
     env: {},
     logDir: path.join(dir, 'job-logs'),
+    logMaxBytes: 20 * 1024 * 1024,
   });
 }
 
@@ -129,7 +135,12 @@ test('runJob: database_error when the job cannot be read, or its fire cannot be 
   // Reads work, the run bookkeeping write doesn't: the fire is refused
   // before any spawn (a tmux attempt would answer tmux_error instead).
   const db = new StateDb(path.join(fs.mkdtempSync(path.join(dir, 'db-')), 'webpi.db'));
-  const s = new Scheduler(db, { cwd: dir, env: {}, logDir: path.join(dir, 'job-logs') });
+  const s = new Scheduler(db, {
+    cwd: dir,
+    env: {},
+    logDir: path.join(dir, 'job-logs'),
+    logMaxBytes: 20 * 1024 * 1024,
+  });
   await s.saveJob(GOOD);
   db.db().prepare('DROP TABLE job_runs').run();
   const unrecorded = await s.runJob('nightly');
@@ -229,7 +240,12 @@ const { Scheduler } = require(process.cwd() + '/dist-server/src/lib/jobs.js');
 const { StateDb } = require(process.cwd() + '/dist-server/src/lib/db.js');
 const { JobSaveSchema } = require(process.cwd() + '/dist-server/src/schemas/jobs.js');
 const db = new StateDb(path.join(dir, 'webpi.db'));
-const s = new Scheduler(db, { cwd: dir, env: {}, logDir: path.join(dir, 'job-logs') });
+const s = new Scheduler(db, {
+  cwd: dir,
+  env: {},
+  logDir: path.join(dir, 'job-logs'),
+  logMaxBytes: 20 * 1024 * 1024,
+});
 // No process.exit in here: it can truncate the pipe-buffered console
 // output mid-write; exitCode + natural exit lets the lines drain.
 (async () => {
