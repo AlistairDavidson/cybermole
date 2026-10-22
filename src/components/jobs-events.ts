@@ -91,14 +91,17 @@ export function subscribeJobsEvents(onEvent: () => void): () => void {
   };
 
   // A pending backoff must not wait out its full delay once the browser
-  // says the network is back (the terminal WS does the same on
-  // visibility + online).
+  // says the network is back, or the tab is visible again (the terminal
+  // WS wakes on both — agent-terminal.ts; a hidden tab's timers are
+  // throttled, so visibility is the one that usually fires).
   const wake = (): void => {
     if (reconnectTimer === null || final || closedByUs) return;
+    if (document.visibilityState === 'hidden') return;
     clearTimeout(reconnectTimer);
     connect();
   };
   window.addEventListener('online', wake);
+  document.addEventListener('visibilitychange', wake);
 
   connect();
 
@@ -107,6 +110,7 @@ export function subscribeJobsEvents(onEvent: () => void): () => void {
     refresh.cancel();
     if (reconnectTimer !== null) clearTimeout(reconnectTimer);
     window.removeEventListener('online', wake);
+    document.removeEventListener('visibilitychange', wake);
     try {
       socket?.close();
     } catch {
