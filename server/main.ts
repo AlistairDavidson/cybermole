@@ -27,6 +27,7 @@ import {
 } from '../src/lib/env';
 import { componentLogger, closeLogger } from '../src/lib/logger';
 import * as jobs from '../src/lib/jobs';
+import { seedRootAgentsFile } from '../src/lib/root-agents';
 import { EventsRelay, checkEventsUpgrade } from '../src/lib/events-ws';
 import { AutoUpdater } from '../src/lib/auto-update';
 import {
@@ -85,6 +86,11 @@ if (PI_AGENT_DIR && !RAW_ENV.WEB_PI_AGENT_DIR) {
   );
 }
 const agentTemplate = path.join(APP_ROOT, 'pi');
+// jobs-agent-plan §9: the one-file template for the workspace-root
+// AGENTS.md (the root agent's standing instructions), seeded into the
+// DEFAULT workspace cwd (the workspace root — /workspace in the split)
+// by the same boot halves as the pi template.
+const rootAgentsTemplate = path.join(APP_ROOT, 'root-agents', 'AGENTS.md');
 
 const CFG: ServerConfig = {
   host: ENV.WEB_PI_HOST,
@@ -129,6 +135,22 @@ function seedAgentDir(): void {
     bootLog.warn(`could not seed pi agent dir (${CFG.agentDir}): ${(err as Error).message}`);
   }
 }
+//
+// jobs-agent-plan §9: the workspace-root AGENTS.md is seeded by the same
+// halves — only-where-absent, <default workspace cwd>/AGENTS.md, so app
+// checkouts under the root see it by upward walk.
+function seedRootAgents(): void {
+  const seeded = seedRootAgentsFile(CFG.newSessionCwd, rootAgentsTemplate);
+  if (seeded.ok) {
+    if (seeded.data.seeded)
+      bootLog.info(
+        `workspace root: seeded AGENTS.md at ${seeded.data.target} ` +
+          "(the root agent's standing instructions — only where absent)",
+      );
+    return; // an existing file won — the policy, not a problem
+  }
+  bootLog.warn(`could not seed the workspace-root AGENTS.md: ${seeded.errorMessage}`);
+}
 // Privilege split (DESIGN_REVIEW §1.1): with an absolute-path
 // WEB_PI_TMUX_SOCKET the tmux server — and every pi session — runs as
 // ANOTHER uid (the workspace half). The runtime agent dir belongs to
@@ -136,11 +158,14 @@ function seedAgentDir(): void {
 // (docker-workspace-entrypoint.sh): web-side cp's would leave node-owned
 // 0644 files pi can't write next to its config. Single-user shapes
 // (relative socket name) keep seeding here.
-if (tmux.forksServer(tmux.SOCKET)) seedAgentDir();
-else
+if (tmux.forksServer(tmux.SOCKET)) {
+  seedAgentDir();
+  seedRootAgents();
+} else
   bootLog.info(
     `privilege split: tmux socket ${tmux.SOCKET} is an absolute path — ` +
-      `pi agent dir seeding and tmux server ownership live on the workspace side`,
+      `pi agent dir and workspace-root AGENTS.md seeding, and tmux server ` +
+      `ownership, live on the workspace side`,
   );
 
 // Environment for processes spawned inside tmux sessions (pi). Delivered
