@@ -693,6 +693,65 @@ test('kill: the live run dies; every failure code of the family', async () => {
   }
 });
 
+test('database_error: a broken state db answers through the CLI, exit 1', async () => {
+  // jobs-runs/internal-api's broken-db trick: the db's parent is a file,
+  // so every lazy open fails — the boundary turns it into database_error
+  // results. kill's family (the task's reconciled list) ends complete:
+  // job_not_found, run_not_found, run_not_active, tmux_error above,
+  // database_error here — plus the read verbs' mapping.
+  const root = fs.mkdtempSync(path.join(dir, 'broken-'));
+  const notADir = path.join(root, 'not-a-dir');
+  fs.writeFileSync(notADir, '');
+  const scheduler = new Scheduler(new StateDb(path.join(notADir, 'webpi.db')), {
+    cwd: root,
+    env: {},
+    logDir: path.join(root, 'job-logs'),
+    logMaxBytes: 20 * 1024 * 1024,
+  });
+  const api = await startInternalApi({
+    socketPath: SOCKET,
+    scheduler,
+    apps: new Apps({
+      db: new StateDb(path.join(root, 'good.db')),
+      username: () => ({ ok: true, data: { value: 'unit' } }),
+      killSession: async () => true,
+    }),
+  });
+  try {
+    for (const argv of [['list'], ['kill', 'nightly', '123'], ['runs', 'nightly']]) {
+      const io = capture();
+      assert.equal(await run(argv, io), 1, `${argv.join(' ')} exits 1`);
+      assert.match(io.stderr(), /database_error/, `${argv.join(' ')} carries the code`);
+    }
+  } finally {
+    await api.close();
+  }
+});
+
+test("log read_error: an unreadable log file (the service test's root guard)", async () => {
+  const w = await boot();
+  try {
+    await run(
+      ['create', '--name', 'nightly', '--schedule', '0 4 * * *', '--command', 'true'],
+      capture(),
+    );
+    assert.equal(await run(['run', 'nightly'], capture()), 0);
+    const firedAt = (await call('GET', '/jobs/nightly/runs')).json.runs[0].firedAt;
+    const paths = runLogPaths(w.logDir, 'nightly', firedAt);
+    fs.mkdirSync(path.dirname(paths.log), { recursive: true });
+    fs.writeFileSync(paths.log, 'secret\n');
+    if (process.getuid && process.getuid() !== 0) {
+      fs.chmodSync(paths.log, 0o000); // root ignores 000 — jobs-runs' guard
+      const io = capture();
+      assert.equal(await run(['log', 'nightly', String(firedAt)], io), 1);
+      assert.match(io.stderr(), /read_error/);
+      assert.match(io.stderr(), /could not read the run log/);
+    }
+  } finally {
+    await w.api.close();
+  }
+});
+
 test('validate: valid is 0, invalid is 1 (an ANSWER, not a failure), usage is 2', async () => {
   const w = await boot();
   try {
