@@ -28,6 +28,7 @@ import { componentLogger } from '../src/lib/logger';
 import { checkCron, type ListJobsFailure, type Scheduler } from '../src/lib/jobs';
 import type { Apps } from '../src/lib/apps';
 import {
+  appFailureResponse,
   appFilterNotFoundResponse,
   failureResponse,
   invalidAppSlugResponse,
@@ -318,6 +319,15 @@ function createRoutes(
       }
     }
 
+    if (segments.length === 1 && segments[0] === 'apps') {
+      // GET only: the picker is a READ (plan §6 — the MCP's apps_list tool,
+      // the same rows the browser dialog renders). Creating and managing
+      // apps stays on the console surface — §2 granted the workspace side
+      // jobs control, not app management.
+      if (req.method === 'GET') return listApps(res);
+      return sendWebResponse(res, notFoundResponse());
+    }
+
     if (segments.length === 1 && segments[0] === 'jobs') {
       if (req.method === 'GET') return listJobs(res, url.searchParams.get('app'));
       if (req.method === 'POST') return saveJob(req, res);
@@ -357,6 +367,15 @@ function createRoutes(
         return runLog(res, name.data, firedAt.data);
     }
     return sendWebResponse(res, notFoundResponse());
+  }
+
+  /** GET /apps — the app rows the jobs tools' tag picker needs (plan
+   *  §6: the MCP's apps_list; the browser's save dialog renders the same
+   *  rows from /api/state's apps half). */
+  async function listApps(res: http.ServerResponse): Promise<void> {
+    const listed = apps.listApps();
+    if (!listed.ok) return sendWebResponse(res, appFailureResponse(listed));
+    return sendWebResponse(res, jsonResponse(listed.data, 200));
   }
 
   /** GET /jobs (?app=<slug> — filter to one app's tagged jobs; an

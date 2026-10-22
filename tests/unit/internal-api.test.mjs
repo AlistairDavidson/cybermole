@@ -350,6 +350,41 @@ test('GET /jobs?app=<slug>: filters; unknown slug is a 404, bad slug a 400', asy
   }
 });
 
+test('GET /apps: the picker rows over the socket; database_error when the apps db breaks', async () => {
+  // task/jobs-mcp (plan §6): the MCP's apps_list tool's verb — the same
+  // rows the browser dialog renders (the /api/state apps half).
+  const w = await boot();
+  try {
+    const app = await w.apps.saveApp('Deploy Tools');
+    const r = await call(w.socketPath, 'GET', '/apps');
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.json, {
+      apps: [{ id: app.data.id, name: 'Deploy Tools', slug: 'deploy-tools', cwd: null, order: 10 }],
+    });
+    const notGet = await call(w.socketPath, 'POST', '/apps', { name: 'X' });
+    assert.equal(notGet.status, 404); // the picker is a read; writes stay console-side
+  } finally {
+    await w.api.close();
+  }
+
+  // a broken apps db answers the family's one failure code
+  const root = fs.mkdtempSync(path.join(dir, 'broken-apps-'));
+  const notADir = path.join(root, 'not-a-dir');
+  fs.writeFileSync(notADir, '');
+  const api = await startInternalApi({
+    socketPath: path.join(root, 'webpi.sock'),
+    scheduler: w.scheduler,
+    apps: appsFor(new StateDb(path.join(notADir, 'webpi.db'))),
+  });
+  try {
+    const broken = await call(path.join(root, 'webpi.sock'), 'GET', '/apps');
+    assert.equal(broken.status, 500);
+    assert.equal(broken.json.code, 'database_error');
+  } finally {
+    await api.close();
+  }
+});
+
 test('the app tag: PATCH appId sets/null clears, like the browser save dialog', async () => {
   const w = await boot();
   try {

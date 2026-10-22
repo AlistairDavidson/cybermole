@@ -41,6 +41,7 @@
     "@aws-sdk/lib-storage": "^3.1149.0",
     "@earendil-works/pi-coding-agent": "^1.0.1",
     "@fastify/busboy": "^3.2.3",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-serialize": "^0.14.0",
