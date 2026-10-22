@@ -68,14 +68,6 @@ const V5_SCHEMA = `
     expires_at INTEGER NOT NULL,
     cookie_at  INTEGER NOT NULL
   );
-  CREATE TABLE IF NOT EXISTS releases (
-    sha          TEXT    PRIMARY KEY,
-    status       TEXT    NOT NULL,
-    requested_at INTEGER NOT NULL,
-    built_at     INTEGER,
-    applied_at   INTEGER,
-    log          TEXT
-  );
 `;
 
 test('a fresh file (user_version 0) gets the v6 shape at CREATE — no ALTER ever throws', () => {
