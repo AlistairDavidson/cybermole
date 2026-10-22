@@ -7,35 +7,28 @@ lit?
 
 ## Quality
 playwright fuzzer/monkeys? fuzz based integration testing
-prettier — done: .prettierrc + `npm run format`/`format:check`, repo-wide apply landed after the fleet merges (format:check clean)
-automatically set dev credentials
+prettier — done: .prettierrc + `npm run format`/`format:check`, repo-wide apply landed automatically set dev credentials to `test`/`test`
 don't lose dev state on restarts and make sure we don't lose server state
 
 ## Console features
 
-Tab bar works but is shit
-popout behaviour improvement (_blank is probably better)
+popout behaviour improvement (_blank is better)
 popout button off of tab
-popout 
+  -> combine with copy/download bar
 
 app preview?
 
 self-naming workspaces
 
-ability to configure default agent
+ability to configure which agent is used - auto-opens as first terminal session (pi default)
+ability to configure which terminal is used (zsh default)
 
-in navigation, apps should be collapsible — done (task/collapsible-apps: chevron per group, persisted in localStorage, filter forces groups open)
-
-maybe hideable nav on desktop
+hideable nav on desktop
 
 global light/dark mode from browser, not hard coded
 vscodium follow global light/dark mode
 
-configure terminal app and agent
-
-I nav rename "Console" -> "App" or "Root" or "Global" or something
-
-button to pop a tab to a window — DONE (task/pop-tab-window)
+Rename "Console" -> "Global"
 
 link to logs (page with grafana in an iframe)
 
@@ -51,22 +44,15 @@ editor extension/marketplace configuration beyond the VSCodium defaults (Open VS
 
 pi-session resume as a workspace action ("resume a past agent session into a new terminal tab")
 
-job log size caps / rotation; job exit-code notification hooks
-  this should be with winston/loki/grafana
+job exit-code notification hooks (deferred — jobs-agent-plan.md §11)
 
 ## Jobs
 
-Agent console with AGENTS.md from this app that says how to manage jobs (can be opened)
-Jobs MCP
-Job page
-  Agent console as above but told about this job (can be opened)
+implement the jobs agent plan (docs/jobs-agent-plan.md)
 
 ## Apps
-Build out apps feature properly
-All apps get an app management page that allows you to manage rollbacks, see logs
-console that knows to interrogate this page
-Migrations
-Apps MCP
+Build out apps feature properly (its own future epic — apps own their lifecycle
+via jobs + git, no web-pi deploy/rollback machinery; docs/jobs-agent-plan.md §0)
 
 ## Distribution
 installation instructions / script for agents / actual scripts
