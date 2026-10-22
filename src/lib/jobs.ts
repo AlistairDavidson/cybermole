@@ -35,7 +35,7 @@ import {
 } from './db';
 import { componentLogger } from './logger';
 import type { CalendarCheck, JobsState, ScheduledJob } from './types';
-import { hasSession, jobSessionName, liveSessionNames, newSession } from './tmux';
+import { hasSession, jobSessionName, killSession, liveSessionNames, newSession } from './tmux';
 import type { ResultFailure, ResultSuccess } from '../types/result';
 import type { AppId, JobName, TmuxSessionName } from '../types/branded';
 import { MAX_SCHEDULE, type SaveInput } from '../schemas/jobs';
@@ -72,6 +72,28 @@ export type ListJobsErrorCode = 'database_error';
 export type ListJobsSuccess = ResultSuccess<'list_jobs', JobsState>;
 export type ListJobsFailure = ResultFailure<'list_jobs', JobsState, ListJobsErrorCode>;
 export type ListJobsResult = ListJobsSuccess | ListJobsFailure;
+
+/** One job's stored definition — the internal API's PATCH route's
+ *  read-merge-write source (task/jobs-socket, plan §4). */
+export type GetJobData = { name: JobName; schedule: string; command: string; appId: AppId | null };
+export type GetJobErrorCode = 'job_not_found' | 'database_error';
+export type GetJobSuccess = ResultSuccess<'get_job', GetJobData>;
+export type GetJobFailure = ResultFailure<'get_job', GetJobData, GetJobErrorCode>;
+export type GetJobResult = GetJobSuccess | GetJobFailure;
+
+/** Kill a job's live run (the internal API's
+ *  POST /jobs/:name/runs/:firedAt/kill — task/jobs-socket, plan §4; the
+ *  human's equivalent is Ctrl-C in the run's console view).
+ *  run_not_found: no run row with that fired_at. run_not_active: the run
+ *  is not the job's CURRENT live run — already finished, or a newer run
+ *  is the live one (a stale fired_at must never kill a newer run).
+ *  tmux_error: the kill-session call itself failed. */
+export type KillRunData = { name: JobName; firedAt: number };
+export type KillRunErrorCode =
+  'job_not_found' | 'run_not_found' | 'run_not_active' | 'tmux_error' | 'database_error';
+export type KillRunSuccess = ResultSuccess<'kill_run', KillRunData>;
+export type KillRunFailure = ResultFailure<'kill_run', KillRunData, KillRunErrorCode>;
+export type KillRunResult = KillRunSuccess | KillRunFailure;
 
 /** One run-history row (GET /api/jobs/:name/runs). hasLog is honest
  *  about the FILE, not the column: a fire whose wrapper could not create
@@ -683,6 +705,35 @@ export class Scheduler {
     } satisfies ListJobsSuccess;
   }
 
+  /** One job's stored definition (the internal API's PATCH route merges
+   *  into it and saves through saveJob — plan §4). Sync: a pure db read
+   *  through the row() boundary. */
+  getJob(name: JobName): GetJobResult {
+    const found = this.row(name);
+    if (!found.ok) {
+      return {
+        ok: false,
+        resultType: 'get_job',
+        errorCode: 'database_error',
+        errorMessage: found.errorMessage,
+      } satisfies GetJobFailure;
+    }
+    const row = found.data.value;
+    if (row === undefined) {
+      return {
+        ok: false,
+        resultType: 'get_job',
+        errorCode: 'job_not_found',
+        errorMessage: 'no such job',
+      } satisfies GetJobFailure;
+    }
+    return {
+      ok: true,
+      resultType: 'get_job',
+      data: { name, schedule: row.schedule, command: row.command, appId: row.appId },
+    } satisfies GetJobSuccess;
+  }
+
   /** Create or update a job: cron check, optional app-tag check, then
    *  upsert into the db. The input was parsed by JobSaveSchema at the
    *  boundary (name normalized + branded, schedule/command trimmed and
@@ -889,5 +940,51 @@ export class Scheduler {
       }
     }
     return { ok: true, resultType: 'run_job', data: { name, session } } satisfies RunJobSuccess;
+  }
+
+  /** Kill the job's live run (the internal API's run-kill verb, plan §4).
+   *  The named run row must exist AND be the job's newest — a live
+   *  session can only be the newest run's (the tick skips a job whose
+   *  session is live, and runJob refuses one), so a stale fired_at can
+   *  never kill a NEWER run it didn't name. The kill itself is tmux's
+   *  best-effort kill-session; the finish observation (exit 'unknown'
+   *  unless the wrapper got its echo $? out before the SIGHUP) lands on
+   *  the next tick like any run end. */
+  async killRun(name: JobName, firedAt: number): Promise<KillRunResult> {
+    const session = jobSessionName(name);
+    const fail = (errorCode: KillRunErrorCode, errorMessage: string) =>
+      ({
+        ok: false,
+        resultType: 'kill_run',
+        data: { name, firedAt },
+        errorCode,
+        errorMessage,
+      }) satisfies KillRunFailure;
+    const found = this.row(name);
+    if (!found.ok) return fail('database_error', found.errorMessage);
+    if (found.data.value === undefined) return fail('job_not_found', 'no such job');
+    const run = databaseRead(
+      'could not read job runs',
+      () =>
+        this.db.get(
+          qb
+            .selectFrom('job_runs')
+            .select('fired_at')
+            .where('job', '=', name)
+            .where('fired_at', '=', firedAt),
+        ) ?? null,
+    );
+    if (!run.ok) return fail('database_error', run.errorMessage);
+    if (run.data.value === null) return fail('run_not_found', 'no such run');
+    const newest = this.lastRun(name);
+    if (!newest.ok) return fail('database_error', newest.errorMessage);
+    if (newest.data.value?.fired_at !== firedAt) {
+      return fail('run_not_active', 'that run is not the current run — a newer one is live');
+    }
+    if (!(await hasSession(session))) return fail('run_not_active', 'the run is not running');
+    const killed = await killSession(session);
+    if (!killed) return fail('tmux_error', `could not kill the run session ${session}`);
+    log.info(`job ${name} run ${firedAt} killed`);
+    return { ok: true, resultType: 'kill_run', data: { name, firedAt } } satisfies KillRunSuccess;
   }
 }

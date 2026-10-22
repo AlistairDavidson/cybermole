@@ -59,3 +59,45 @@ export const FiredAtSchema = z
 /** A parsed save: name normalized + branded, schedule/command trimmed and
  *  shape-checked — saveJob's input. */
 export type SaveInput = z.output<typeof JobSaveSchema>;
+
+// task/jobs-socket (plan §4): the internal API's two request bodies. The
+// same field rules as JobSaveSchema; Node-free like everything here so the
+// CLI/MCP client side (plan §5/§6) can reuse them.
+
+/** PATCH /jobs/:name over the internal socket — set schedule/command/app:
+ *  absent keeps the stored value, null clears the app tag (the
+ *  appPatchBody convention). The route merges with the stored job and
+ *  saves through the SAME saveJob the browser's POST /api/jobs uses. */
+export const JobPatchSchema = z.object({
+  schedule: z
+    .string()
+    .trim()
+    .min(1, 'schedule is required')
+    .max(MAX_SCHEDULE, `schedule is too long (max ${MAX_SCHEDULE})`)
+    .regex(SINGLE_LINE, 'schedule must be one line')
+    .optional(),
+  command: z
+    .string()
+    .trim()
+    .min(1, 'command is required')
+    .max(MAX_COMMAND, `command is too long (max ${MAX_COMMAND})`)
+    .regex(SINGLE_LINE, 'command must be one line')
+    .optional(),
+  appId: AppIdSchema.nullable().optional(),
+});
+export type JobPatch = z.output<typeof JobPatchSchema>;
+
+/** POST /jobs/validate over the internal socket — cron + command
+ *  validation (plan §4): either field, at least one (the browser's
+ *  validate is schedule-only; the internal one checks a whole candidate
+ *  command too). Raw strings here — the schedule's validity is checkCron's
+ *  to judge, the command's is JobPatchSchema's command rule. */
+export const JobValidateSchema = z
+  .object({
+    schedule: z.string().optional(),
+    command: z.string().optional(),
+  })
+  .refine(v => v.schedule !== undefined || v.command !== undefined, {
+    message: 'nothing to validate — send schedule and/or command',
+  });
+export type JobValidateBody = z.output<typeof JobValidateSchema>;
