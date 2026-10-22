@@ -126,6 +126,27 @@ function call(socketPath, method, urlPath, body) {
 
 const GOOD = { name: 'nightly', schedule: '0 4 * * *', command: 'echo hello' };
 
+// ---------- §3: socket lifecycle ----------
+
+test('startInternalApi: creates a missing socket parent dir (the state-dir default is otherwise never materialized)', async () => {
+  // The e2e specs' spawned second servers hit exactly this: WEB_PI_SOCK
+  // unset, agent dir / db pointed elsewhere, so nothing ever mkdirs
+  // ~/.local/state/web-pi and listen() died EACCES on the missing parent.
+  const root = fs.mkdtempSync(path.join(dir, 'case-'));
+  const db = new StateDb(path.join(root, 'webpi.db'));
+  const scheduler = new Scheduler(db, { cwd: root, env: {}, logDir: path.join(root, 'job-logs') });
+  const deep = path.join(root, 'state', 'web-pi', 'webpi.sock');
+  assert.ok(!fs.existsSync(path.dirname(deep)));
+  const api = await startInternalApi({ socketPath: deep, scheduler, apps: appsFor(db) });
+  try {
+    assert.ok(fs.statSync(deep).isSocket(), 'listener bound on the created dir');
+    const r = await call(deep, 'GET', '/jobs');
+    assert.equal(r.status, 200);
+  } finally {
+    await api.close();
+  }
+});
+
 // ---------- §4: the verbs ----------
 
 test('GET /jobs: the browser shape, empty first', async () => {

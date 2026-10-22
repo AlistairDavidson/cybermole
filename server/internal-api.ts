@@ -24,6 +24,7 @@
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
+import * as path from 'node:path';
 import { componentLogger } from '../src/lib/logger';
 import { checkCron, type ListJobsFailure, type Scheduler } from '../src/lib/jobs';
 import type { Apps } from '../src/lib/apps';
@@ -125,6 +126,14 @@ export function probeSocketFile(socketPath: string, timeoutMs = 500): Promise<'l
  *  process's own group), mirroring the workspace entrypoint's tmux-socket
  *  chmod. Resolves once the listener is up. */
 export async function startInternalApi(deps: InternalApiDeps): Promise<InternalApiHandle> {
+  // The socket's parent dir is created if missing: the state-dir default
+  // (~/.local/state/web-pi) is only otherwise materialized by the db / agent
+  // dir (main.ts mkdirs the agent dir), so a server booted with those pointed
+  // elsewhere — the e2e specs' spawned second servers, a dev's first run —
+  // would otherwise die on listen EACCES/ENOENT. The /run/web-pi shape is
+  // only ever chosen when that dir already exists (env.ts probes), so the
+  // recursive mkdir is a no-op there and never tries to conjure a root path.
+  fs.mkdirSync(path.dirname(deps.socketPath), { recursive: true });
   if (fs.existsSync(deps.socketPath)) {
     const state = await probeSocketFile(deps.socketPath);
     if (state === 'live') {
