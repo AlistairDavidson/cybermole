@@ -372,6 +372,10 @@ test('jobs_runs / jobs_log / jobs_kill: the run lifecycle over the tools', async
 
     const empty = await callJson(w.client, 'jobs_runs', { name: 'nightly' });
     assert.deepEqual(empty.json, { runs: [] });
+    // the failure code path: a job that doesn't exist
+    const noJob = await callJson(w.client, 'jobs_runs', { name: 'ghost' });
+    assert.equal(noJob.isError, false);
+    assert.equal(noJob.json.code, 'job_not_found');
 
     await callJson(w.client, 'jobs_run_now', { name: 'nightly' });
     const runs = await callJson(w.client, 'jobs_runs', { name: 'nightly' });
@@ -434,6 +438,16 @@ test('jobs_validate: invalid values are answers; nothing sent is the API 400', a
       nothing.json.issues[''],
       'nothing to validate — send schedule and/or command',
     );
+
+    // a candidate OVER the 10 KiB body cap reaches the API too (the
+    // validate inputs are raw by design — invalid values are for the
+    // API to judge): the API answers its own 413 body_too_large code,
+    // never a tool-boundary rejection
+    const oversized = await callJson(w.client, 'jobs_validate', {
+      command: 'x'.repeat(11 * 1024),
+    });
+    assert.equal(oversized.isError, false);
+    assert.equal(oversized.json.code, 'body_too_large');
   } finally {
     await w.client.close();
     await w.api.close();
@@ -447,11 +461,12 @@ test('the Content-Length discipline: lengthed bodies reach the cap check, never 
   try {
     // A body-carrying request WITHOUT Content-Length is refused 411 before
     // a byte is read (internal-api.ts bodyCapStatus). Every body the MCP
-    // client sends is lengthed — asserted straight at the transport: a
-    // >10 KiB body answers the API's 413 body_too_large, the answer ONLY
-    // a declared over-cap length can produce. (Through the tools
-    // themselves the cap is unreachable by construction: the input
-    // schemas cap every field far below it — command at 4000 chars.)
+    // client sends is lengthed. A >10 KiB body answers the API's 413
+    // body_too_large — the answer ONLY a declared over-cap length can
+    // produce (asserted at the transport here, and THROUGH a tool in the
+    // jobs_validate test — its raw candidate strings are the one tool
+    // input that can exceed the cap; jobs_create/jobs_set cap their
+    // fields far below it):
     const big = await requestInternalApi(w.socketPath, {
       method: 'POST',
       path: '/jobs',
