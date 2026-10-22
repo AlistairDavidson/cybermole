@@ -31,14 +31,15 @@ export type SeedRootAgentsResult = SeedRootAgentsSuccess | SeedRootAgentsFailure
  *  every failure is caught here and returned, never thrown. An existing
  *  target is success (seeded: false) even without the template — the
  *  policy is satisfied, there is nothing to do. */
-export function seedRootAgentsFile(
-  workspaceRoot: string,
-  templateFile: string,
-): SeedRootAgentsResult {
+export function seedRootAgentsFile(workspaceRoot: string, templateFile: string) {
   const target = path.join(workspaceRoot, 'AGENTS.md');
   try {
     if (fs.existsSync(target)) {
-      return { ok: true, resultType: 'seed_root_agents', data: { target, seeded: false } };
+      return {
+        ok: true,
+        resultType: 'seed_root_agents',
+        data: { target, seeded: false },
+      } satisfies SeedRootAgentsSuccess;
     }
     if (!fs.existsSync(templateFile)) {
       return {
@@ -47,11 +48,15 @@ export function seedRootAgentsFile(
         data: { target, seeded: false },
         errorCode: 'template_missing',
         errorMessage: `the root-agent template is missing (${templateFile}) — nothing seeded`,
-      };
+      } satisfies SeedRootAgentsFailure;
     }
     fs.mkdirSync(workspaceRoot, { recursive: true });
     fs.cpSync(templateFile, target);
-    return { ok: true, resultType: 'seed_root_agents', data: { target, seeded: true } };
+    return {
+      ok: true,
+      resultType: 'seed_root_agents',
+      data: { target, seeded: true },
+    } satisfies SeedRootAgentsSuccess;
   } catch (err) {
     return {
       ok: false,
@@ -59,6 +64,6 @@ export function seedRootAgentsFile(
       data: { target, seeded: false },
       errorCode: 'seed_failed',
       errorMessage: `could not seed ${target} from ${templateFile}: ${(err as Error).message}`,
-    };
+    } satisfies SeedRootAgentsFailure;
   }
 }
