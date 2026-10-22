@@ -67,8 +67,11 @@ function main(): void {
     if (fd === null || marked || chunk.length === 0) return; // drain only
     const room = maxBytes - written;
     if (room <= 0) {
-      // Already at the cap and more arrived: mark once, then discard.
-      marked = writeAll(fd, markerLine(maxBytes));
+      // Already at the cap and more arrived: mark once, then discard. A
+      // failed marker write (ENOSPC) stops touching the file for good —
+      // never retry it into a partial, garbled marker on a later chunk.
+      if (writeAll(fd, markerLine(maxBytes))) marked = true;
+      else fd = null;
       return;
     }
     const keep = chunk.subarray(0, room);
@@ -77,7 +80,12 @@ function main(): void {
       return;
     }
     written += keep.length;
-    if (chunk.length > room) marked = writeAll(fd, markerLine(maxBytes));
+    // A chunk that straddles the cap marks here; a failed marker write
+    // (ENOSPC) stops touching the file for good — same policy as above.
+    if (chunk.length > room) {
+      if (writeAll(fd, markerLine(maxBytes))) marked = true;
+      else fd = null;
+    }
   });
   process.stdin.on('end', () => {
     if (fd !== null) fs.closeSync(fd);
