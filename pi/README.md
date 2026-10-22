@@ -30,6 +30,35 @@ Layout mirrors pi's agent directory (`pi docs: configuration.md`):
 Project-level config (`.pi/` in a session's cwd) still applies on top of
 this, per pi's normal precedence — trust prompts included.
 
+## The jobs MCP server
+
+`mcp.json` registers **webpi-jobs** — the jobs surface as in-session
+MCP tools (docs/jobs-agent-plan.md §6): a stdio server
+(`dist-server/server/mcp.js`, spawned per session) whose tools are 1:1
+with the internal jobs API's verbs — `jobs_list`, `jobs_create`,
+`jobs_set`, `jobs_delete`, `jobs_runs`, `jobs_log`, `jobs_run_now`,
+`jobs_kill`, `jobs_validate`, plus `apps_list` (the create form's
+app-tag picker is a user action too). Every session starts with them
+(`exposure: "direct"` — a small, frequently used tool set), and every
+tool result carries the internal API's Result JSON verbatim, so an
+agent reads the same answers the console and the CLI do — including the
+failure codes (`job_not_found`, `run_not_active`, …). It needs the
+internal socket: it resolves `WEB_PI_SOCK` exactly like the server
+itself, so the compose split's default needs no entry `env` (override
+`WEB_PI_SOCK` there only if the deployment moves the socket off the
+shape default).
+
+The command is the **absolute image path** — the entry runs in the
+workspace container, and both containers ship the image at `/opt/web-pi`.
+Dev shapes differ: the compose dev profile bind-mounts the checkout at
+`/app` (`/app/dist-server/server/mcp.js`), and a bare host run uses the
+checkout's own path. Seeding is only-where-absent, so a host that wants
+a dev-shaped entry pre-seeds the runtime dir's `mcp.json` before first
+boot — an existing runtime file always wins over the template.
+
+Template updates here reach the runtime dir at the next seeding boot
+and an open session only via `/reload`.
+
 ## Shipping resources to every session
 
 - **MCP servers** — `mcp.json`:

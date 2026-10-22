@@ -342,15 +342,25 @@ jobs work in every install shape, the container included.
   above) — JSON only, verbs mirroring the cookie-gated `/api/jobs`
   family (`GET`/`POST /jobs`, `POST /jobs/validate`, `PATCH`/`DELETE
   /jobs/:name`, `GET /jobs/:name/runs`, `POST /jobs/:name/run`, `POST
-  /jobs/:name/runs/:firedAt/kill`, `GET /jobs/:name/runs/:firedAt/log`)
-  and answering the same Result JSON. Every verb calls the same
-  `src/lib/jobs` service functions the browser routes do — one source of
+  /jobs/:name/runs/:firedAt/kill`, `GET /jobs/:name/runs/:firedAt/log`,
+  plus `GET /apps` for the job-tag picker) and answering the same
+  Result JSON. Every verb calls the same `src/lib/jobs` service
+  functions the browser routes do — one source of
   truth. No cookie/CSRF/rate-limit layer applies: the socket file's
   `0660` mode is the gate (full jobs control is the workspace side's own
   shell privilege — zero escalation), and nginx/the TLS proxy never see
   the listener. A stale socket file is removed at boot; a live one fails
   the boot. Design: [docs/jobs-agent-plan.md](docs/jobs-agent-plan.md)
-  §3–§4 (CLI + MCP clients over it are the next branches).
+  §3–§4.
+- **MCP over the internal API (agents, in-session)**: `server/mcp.ts` is
+  a stdio MCP server whose tools are 1:1 with those verbs (plus
+  `apps_list`) — registered for every pi session by the [`pi/`](pi/)
+  template's `mcp.json` (see its README for the exposure, the absolute
+  `/opt/web-pi` path it spawns, and the dev-shape difference). Tool
+  results carry the internal API's Result JSON verbatim. Design:
+  [docs/jobs-agent-plan.md](docs/jobs-agent-plan.md) §6 (the `webpi mcp`
+  subcommand and the CLI land on the parallel branches; the orchestrator
+  wires the subcommand at merge).
 - The trade-off vs the old systemd timers: nothing fires while web-pi
   itself is down (hence the catch-up above). Job commands run as the
   web-pi user, on the app's socket, per the security model — the terminal
