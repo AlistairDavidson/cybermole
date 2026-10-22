@@ -274,6 +274,7 @@ directly.
 | `WEB_PI_NEW_SESSION_CWD` | `$WEB_PI_HOME` | default cwd for new workspaces — the fallback when the parent app has no `cwd` of its own (shown as the start-path hint in the new-workspace dialog) |
 | `WEB_PI_COMMAND` | `$SHELL -l` (fallback `/bin/sh -l`) | the command a new terminal tab runs (whitespace-split) |
 | `WEB_PI_JOB_LOG_DIR` | `/workspace/.webpi/job-logs` | root under which job runs persist their logs + exit files (`<dir>/<job>/<fired-at>.{log,exit}`) — a path that exists in both containers of the compose split (laid out by `workspace-init`); point it somewhere writable in other split shapes |
+| `WEB_PI_SOCK` | `/run/web-pi/webpi.sock` when `/run/web-pi` exists (the compose split), else `<state dir>/webpi.sock` | the [internal jobs API](#scheduled-jobs-jobs-the-in-process-scheduler)'s unix socket: a second HTTP listener in the same server process serving the workspace side (agents) — see the jobs section. **Empty = the listener is off**; a set-but-non-absolute value stops the server at boot, like the S3 vars. The socket file is created `0660` — the file mode (the shared `webpi` group in the split shape) is the only auth |
 | `WEB_PI_TMUX_SOCKET` | `web-pi` | the tmux socket the app uses. A relative *name* is the single-user shape: the app's own server, forked on the first session-creating call, under the per-uid default dir. An **absolute path** switches on the privilege split ([below](#the-privilege-split-two-containers)): tmux runs as another uid/container on that shared socket (`-S` instead of `-L` — a relative name resolves per-uid and cannot be shared), and terminal spawns, job runs and attaches refuse to fork a server, erroring with "workspace tmux server not running" instead. The server lifecycle is then the workspace side's job (`docker-workspace-entrypoint.sh`, or the host-install equivalent below) |
 | `WEB_PI_TMUX_CONF` | `<app root>/tmux.conf` | tmux server config, applied when the tmux server starts (escape-time, scrollback, truecolour — see the file) |
 | `WEB_PI_DB_FILE` | `<state dir>/webpi.db` | sqlite state db (0600): login credential, login sessions (`auth_sessions`), the workspace tree (`apps`, `workspaces`, `terminals`), scheduled-job tables (`jobs`, `job_runs` — the in-process scheduler + run logs), `settings` kv (the pi auto-update toggle + outcomes). Fresh setup: `npm run set-password` creates it |
@@ -334,6 +335,20 @@ jobs work in every install shape, the container included.
   now" checks and returns 409 in that case. Deleting a job removes its
   definition, run history and log files but deliberately leaves a live run's
   session alone.
+- **Internal API (agents)**: the workspace side gets the same jobs
+  surface over a second HTTP listener on a unix socket (`WEB_PI_SOCK`,
+  above) — JSON only, verbs mirroring the cookie-gated `/api/jobs`
+  family (`GET`/`POST /jobs`, `POST /jobs/validate`, `PATCH`/`DELETE
+  /jobs/:name`, `GET /jobs/:name/runs`, `POST /jobs/:name/run`, `POST
+  /jobs/:name/runs/:firedAt/kill`, `GET /jobs/:name/runs/:firedAt/log`)
+  and answering the same Result JSON. Every verb calls the same
+  `src/lib/jobs` service functions the browser routes do — one source of
+  truth. No cookie/CSRF/rate-limit layer applies: the socket file's
+  `0660` mode is the gate (full jobs control is the workspace side's own
+  shell privilege — zero escalation), and nginx/the TLS proxy never see
+  the listener. A stale socket file is removed at boot; a live one fails
+  the boot. Design: [docs/jobs-agent-plan.md](docs/jobs-agent-plan.md)
+  §3–§4 (CLI + MCP clients over it are the next branches).
 - The trade-off vs the old systemd timers: nothing fires while web-pi
   itself is down (hence the catch-up above). Job commands run as the
   web-pi user, on the app's socket, per the security model — the terminal

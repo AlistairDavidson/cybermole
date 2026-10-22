@@ -1,0 +1,611 @@
+// internal-api.test.mjs — task/jobs-socket (docs/jobs-agent-plan.md §3–§4)
+// units: the internal jobs API — a real HTTP listener on a tmp-dir unix
+// socket, exercised over node:http socketPath for EVERY verb, plus the
+// socket lifecycle (stale file unlinked+rebound, a live listener refused,
+// the 0660 chmod, close() unlinking) and the WEB_PI_SOCK env rules
+// (src/lib/env.ts — child processes, the editor/storage test pattern).
+// Needs no real tmux: the jobs-runs stand-in on PATH answers the
+// commands src/lib/tmux.ts issues (plus kill-session, which the kill
+// verb adds); the socket path is set before the import so tmux.ts binds
+// it at module load.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import * as http from 'node:http';
+import * as net from 'node:net';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-internal-api-'));
+const fakeBin = path.join(dir, 'bin');
+fs.mkdirSync(fakeBin);
+process.env.WEB_PI_TMUX_SOCKET = path.join(dir, 'tmux');
+process.env.FAKE_TMUX_DIR = dir;
+process.env.PATH = `${fakeBin}:${process.env.PATH}`;
+
+const { startInternalApi, probeSocketFile } =
+  await import('../../dist-server/server/internal-api.js');
+const { Scheduler, runLogPaths } = await import('../../dist-server/src/lib/jobs.js');
+const { StateDb } = await import('../../dist-server/src/lib/db.js');
+const { Apps } = await import('../../dist-server/src/lib/apps.js');
+const { internalSocketDefault } = await import('../../dist-server/src/lib/env.js');
+
+// The jobs-runs stand-in tmux, plus kill-session (the kill verb): $dir/up
+// marks the server up, $dir/sessions lists live session names.
+const FAKE_TMUX = `#!/bin/sh
+dir="$FAKE_TMUX_DIR"; sessions="$dir/sessions"
+[ -e "$sessions" ] || : > "$sessions"
+while [ $# -gt 0 ]; do case "$1" in -f|-S|-L) shift 2 ;; *) break ;; esac; done
+sub="$1"; shift
+case "$sub" in
+  list-sessions)
+    [ -e "$dir/up" ] || { echo "error connecting to $WEB_PI_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
+    while [ $# -gt 0 ]; do [ "$1" = "-F" ] && shift 2 && continue; shift; done
+    cat "$sessions"
+    ;;
+  has-session)
+    [ -e "$dir/up" ] || exit 1
+    while [ $# -gt 0 ]; do [ "$1" = "-t" ] && { grep -qx "$2" "$sessions" && exit 0; exit 1; }; shift; done
+    exit 1
+    ;;
+  new-session)
+    [ -e "$dir/up" ] || { echo "error connecting to $WEB_PI_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
+    while [ $# -gt 0 ]; do [ "$1" = "-s" ] && { echo "$2" >> "$sessions"; exit 0; }; shift; done
+    exit 1
+    ;;
+  kill-session)
+    [ -e "$dir/up" ] || exit 1
+    while [ $# -gt 0 ]; do [ "$1" = "-t" ] && { grep -vx "$2" "$sessions" > "$sessions.x" 2>/dev/null || : > "$sessions.x"; mv "$sessions.x" "$sessions"; exit 0; }; shift; done
+    exit 1
+    ;;
+  *) echo "fake-tmux: unsupported subcommand: $sub" >&2; exit 1 ;;
+esac
+`;
+fs.writeFileSync(path.join(fakeBin, 'tmux'), FAKE_TMUX, { mode: 0o755 });
+
+/** One case's world: fresh db + scheduler + apps domain + the API booted
+ *  on its own socket. The fake tmux server is "up" from the start so
+ *  run/kill work; cases that want it down remove the marker. */
+async function boot() {
+  const root = fs.mkdtempSync(path.join(dir, 'case-'));
+  const logDir = path.join(root, 'job-logs');
+  const db = new StateDb(path.join(root, 'webpi.db'));
+  const scheduler = new Scheduler(db, { cwd: root, env: {}, logDir });
+  const apps = new Apps({
+    db,
+    username: () => ({ ok: true, data: { value: 'unit' } }),
+    killSession: async () => true,
+  });
+  // the fake tmux's live-session list is shared across cases (it stands
+  // in for the one tmux server); each case starts with none.
+  fs.writeFileSync(path.join(dir, 'sessions'), '');
+  fs.writeFileSync(path.join(dir, 'up'), '');
+  const socketPath = path.join(root, 'webpi.sock');
+  const api = await startInternalApi({ socketPath, scheduler, apps });
+  return { root, logDir, db, scheduler, apps, api, socketPath };
+}
+
+/** One HTTP request over the socket; resolves status/headers/body. */
+function call(socketPath, method, urlPath, body) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        socketPath,
+        method,
+        path: urlPath,
+        headers: body === undefined ? {} : { 'content-type': 'application/json' },
+      },
+      res => {
+        const chunks = [];
+        res.on('data', c => chunks.push(c));
+        res.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf8');
+          let json = null;
+          try {
+            json = JSON.parse(text);
+          } catch {
+            /* the log route answers text/plain */
+          }
+          resolve({ status: res.statusCode, headers: res.headers, text, json });
+        });
+      },
+    );
+    req.on('error', reject);
+    if (body === undefined) req.end();
+    else req.end(typeof body === 'string' ? body : JSON.stringify(body));
+  });
+}
+
+const GOOD = { name: 'nightly', schedule: '0 4 * * *', command: 'echo hello' };
+
+// ---------- §4: the verbs ----------
+
+test('GET /jobs: the browser shape, empty first', async () => {
+  const w = await boot();
+  try {
+    const r = await call(w.socketPath, 'GET', '/jobs');
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.json, { available: true, detail: null, jobs: [] });
+  } finally {
+    await w.api.close();
+  }
+});
+
+test('POST /jobs creates; GET /jobs lists; bodies match the browser API', async () => {
+  const w = await boot();
+  try {
+    const created = await call(w.socketPath, 'POST', '/jobs', GOOD);
+    assert.equal(created.status, 200);
+    assert.deepEqual(created.json, { name: 'nightly', session: null });
+
+    const listed = await call(w.socketPath, 'GET', '/jobs');
+    assert.equal(listed.json.jobs.length, 1);
+    const job = listed.json.jobs[0];
+    assert.equal(job.name, 'nightly');
+    assert.equal(job.schedule, '0 4 * * *');
+    assert.equal(job.command, 'echo hello');
+    assert.equal(job.appId, null);
+    assert.equal(job.appName, null);
+  } finally {
+    await w.api.close();
+  }
+});
+
+test('POST /jobs: a name that normalizes invalid is the browser 400 validation body', async () => {
+  const w = await boot();
+  try {
+    // "webpi-…" is reserved for run sessions (JOB_NAME_RE) — and does
+    // not normalize away, unlike punctuation
+    const r = await call(w.socketPath, 'POST', '/jobs', { ...GOOD, name: 'webpi-nightly' });
+    assert.equal(r.status, 400);
+    assert.deepEqual(r.json, {
+      error: 'name: use letters, digits, - and _ (and not webpi-…)',
+      code: 'validation_failure',
+      issues: { name: 'use letters, digits, - and _ (and not webpi-…)' },
+    });
+  } finally {
+    await w.api.close();
+  }
+});
+
+test('POST /jobs: an invalid schedule is the browser invalid_schedule 400', async () => {
+  const w = await boot();
+  try {
+    const r = await call(w.socketPath, 'POST', '/jobs', { ...GOOD, schedule: '99 * * * *' });
+    assert.equal(r.status, 400);
+    assert.equal(r.json.code, 'invalid_schedule');
+    assert.equal(r.json.detail, null);
+    assert.ok(typeof r.json.error === 'string');
+  } finally {
+    await w.api.close();
+  }
+});
+
+test('POST /jobs: non-JSON content type and oversized bodies are refused like the public API', async () => {
+  const w = await boot();
+  try {
+    const wrongType = await new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          socketPath: w.socketPath,
+          method: 'POST',
+          path: '/jobs',
+          headers: { 'content-type': 'text/plain' },
+        },
+        res => {
+          const chunks = [];
+          res.on('data', c => chunks.push(c));
+          res.on('end', () =>
+            resolve({
+              status: res.statusCode,
+              json: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+            }),
+          );
+        },
+      );
+      req.on('error', reject);
+      req.end('{}');
+    });
+    assert.equal(wrongType.status, 415);
+    assert.equal(wrongType.json.code, 'unsupported_content_type');
+
+    const big = await call(w.socketPath, 'POST', '/jobs', {
+      ...GOOD,
+      command: 'x'.repeat(11 * 1024),
+    });
+    assert.equal(big.status, 413);
+    assert.equal(big.json.code, 'body_too_large');
+
+    // chunked with no Content-Length: the public API's 411 stance
+    const chunked = await new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          socketPath: w.socketPath,
+          method: 'POST',
+          path: '/jobs',
+          headers: { 'content-type': 'application/json', 'transfer-encoding': 'chunked' },
+        },
+        res => {
+          const chunks = [];
+          res.on('data', c => chunks.push(c));
+          res.on('end', () =>
+            resolve({
+              status: res.statusCode,
+              json: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+            }),
+          );
+        },
+      );
+      req.on('error', reject);
+      req.end('{}');
+    });
+    assert.equal(chunked.status, 411);
+    assert.equal(chunked.json.code, 'length_required');
+  } finally {
+    await w.api.close();
+  }
+});
+
+test('POST /jobs/validate: cron + command checks; invalid values are answers, not errors', async () => {
+  const w = await boot();
+  try {
+    const ok = await call(w.socketPath, 'POST', '/jobs/validate', {
+      schedule: '*/5 * * * *',
+      command: 'true',
+    });
+    assert.equal(ok.status, 200);
+    assert.equal(ok.json.schedule.valid, true);
+    assert.equal(ok.json.schedule.validatedBy, 'cron-parser');
+    assert.match(ok.json.schedule.next, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    assert.deepEqual(ok.json.command, { valid: true, error: null });
+
+    const bad = await call(w.socketPath, 'POST', '/jobs/validate', {
+      schedule: '99 * * * *',
+      command: '',
+    });
+    assert.equal(bad.status, 200); // an answer, not a failed request
+    assert.equal(bad.json.schedule.valid, false);
+    assert.ok(bad.json.schedule.error.length > 0);
+    assert.equal(bad.json.command.valid, false);
+
+    const scheduleOnly = await call(w.socketPath, 'POST', '/jobs/validate', {
+      schedule: '0 4 * * *',
+    });
+    assert.equal(scheduleOnly.json.schedule.valid, true);
+    assert.equal(scheduleOnly.json.command, null);
+
+    const empty = await call(w.socketPath, 'POST', '/jobs/validate', {});
+    assert.equal(empty.status, 400);
+    assert.equal(empty.json.code, 'validation_failure');
+  } finally {
+    await w.api.close();
+  }
+});
+
+test('PATCH /jobs/:name: absent keeps, provided sets; saves through the same service', async () => {
+  const w = await boot();
+  try {
+    await call(w.socketPath, 'POST', '/jobs', GOOD);
+
+    const patched = await call(w.socketPath, 'PATCH', '/jobs/nightly', { schedule: '30 5 * * *' });
+    assert.equal(patched.status, 200);
+    assert.deepEqual(patched.json, { name: 'nightly', session: null });
+
+    const listed = await call(w.socketPath, 'GET', '/jobs');
+    const job = listed.json.jobs[0];
+    assert.equal(job.schedule, '30 5 * * *'); // set
+    assert.equal(job.command, 'echo hello'); // kept
+
+    const badSchedule = await call(w.socketPath, 'PATCH', '/jobs/nightly', { schedule: 'nope' });
+    assert.equal(badSchedule.status, 400);
+    assert.equal(badSchedule.json.code, 'invalid_schedule');
+
+    const missing = await call(w.socketPath, 'PATCH', '/jobs/ghost', { schedule: '0 4 * * *' });
+    assert.equal(missing.status, 404);
+    assert.equal(missing.json.code, 'job_not_found');
+  } finally {
+    await w.api.close();
+  }
+});
+
+test('GET /jobs?app=<slug>: filters; unknown slug is a 404, bad slug a 400', async () => {
+  const w = await boot();
+  try {
+    const app = await w.apps.saveApp('Deploy Tools');
+    assert.equal(app.ok, true);
+    await call(w.socketPath, 'POST', '/jobs', GOOD);
+    await call(w.socketPath, 'POST', '/jobs', {
+      name: 'rebuild',
+      schedule: '0 6 * * *',
+      command: 'make',
+      appId: app.data.id,
+    });
+
+    const filtered = await call(w.socketPath, 'GET', '/jobs?app=deploy-tools');
+    assert.equal(filtered.status, 200);
+    assert.equal(filtered.json.jobs.length, 1);
+    assert.equal(filtered.json.jobs[0].name, 'rebuild');
+    assert.equal(filtered.json.jobs[0].appName, 'Deploy Tools');
+
+    const untagged = await call(w.socketPath, 'GET', '/jobs');
+    assert.equal(untagged.json.jobs.length, 2);
+
+    const unknown = await call(w.socketPath, 'GET', '/jobs?app=no-such-app');
+    assert.equal(unknown.status, 404);
+    assert.equal(unknown.json.code, 'app_not_found');
+
+    const invalid = await call(w.socketPath, 'GET', '/jobs?app=%2F%2F');
+    assert.equal(invalid.status, 400);
+    assert.equal(invalid.json.code, 'invalid_app_slug');
+  } finally {
+    await w.api.close();
+  }
+});
+
+test('the app tag: PATCH appId sets/null clears, like the browser save dialog', async () => {
+  const w = await boot();
+  try {
+    const app = await w.apps.saveApp('Deploy Tools');
+    await call(w.socketPath, 'POST', '/jobs', GOOD);
+    await call(w.socketPath, 'PATCH', '/jobs/nightly', { appId: app.data.id });
+    assert.equal((await call(w.socketPath, 'GET', '/jobs')).json.jobs[0].appId, app.data.id);
+    await call(w.socketPath, 'PATCH', '/jobs/nightly', { appId: null });
+    assert.equal((await call(w.socketPath, 'GET', '/jobs')).json.jobs[0].appId, null);
+  } finally {
+    await w.api.close();
+  }
+});
+
+test('DELETE /jobs/:name: then job_not_found on repeat', async () => {
+  const w = await boot();
+  try {
+    await call(w.socketPath, 'POST', '/jobs', GOOD);
+    const deleted = await call(w.socketPath, 'DELETE', '/jobs/nightly');
+    assert.equal(deleted.status, 200);
+    assert.deepEqual(deleted.json, { name: 'nightly', session: null });
+    const again = await call(w.socketPath, 'DELETE', '/jobs/nightly');
+    assert.equal(again.status, 404);
+    assert.equal(again.json.code, 'job_not_found');
+  } finally {
+    await w.api.close();
+  }
+});
+
+test('run/kill/log: the run lifecycle over the socket', async () => {
+  const w = await boot();
+  try {
+    await call(w.socketPath, 'POST', '/jobs', GOOD);
+
+    const empty = await call(w.socketPath, 'GET', '/jobs/nightly/runs');
+    assert.equal(empty.status, 200);
+    assert.deepEqual(empty.json, { runs: [] });
+
+    const run = await call(w.socketPath, 'POST', '/jobs/nightly/run', {});
+    assert.equal(run.status, 200);
+    assert.deepEqual(run.json, { name: 'nightly', session: 'webpi-nightly' });
+
+    // the previous run is still live (the fake tmux session exists)
+    const busy = await call(w.socketPath, 'POST', '/jobs/nightly/run', {});
+    assert.equal(busy.status, 409);
+    assert.equal(busy.json.code, 'run_active');
+
+    const runs = await call(w.socketPath, 'GET', '/jobs/nightly/runs');
+    assert.equal(runs.json.runs.length, 1);
+    const { firedAt, origin, hasLog } = runs.json.runs[0];
+    assert.equal(origin, 'manual');
+    assert.equal(hasLog, false);
+
+    // the kill: the live run dies, a repeat is run_not_active
+    const killed = await call(w.socketPath, 'POST', `/jobs/nightly/runs/${firedAt}/kill`, {});
+    assert.equal(killed.status, 200);
+    assert.deepEqual(killed.json, { name: 'nightly', firedAt });
+    const rekill = await call(w.socketPath, 'POST', `/jobs/nightly/runs/${firedAt}/kill`, {});
+    assert.equal(rekill.status, 409);
+    assert.equal(rekill.json.code, 'run_not_active');
+
+    // a second run can start now; killing the OLD fired_at names a run
+    // that is no longer the current one — never the newer run
+    const second = await call(w.socketPath, 'POST', '/jobs/nightly/run', {});
+    assert.equal(second.status, 200);
+    const staleKill = await call(w.socketPath, 'POST', `/jobs/nightly/runs/${firedAt}/kill`, {});
+    assert.equal(staleKill.status, 409);
+    assert.equal(staleKill.json.code, 'run_not_active');
+    const secondRuns = await call(w.socketPath, 'GET', '/jobs/nightly/runs');
+    assert.equal(secondRuns.json.runs.length, 2); // the newer run survived
+
+    // the log: written where the wrapper would, read back as the tail
+    const secondFiredAt = secondRuns.json.runs[0].firedAt;
+    const paths = runLogPaths(w.logDir, 'nightly', secondFiredAt);
+    fs.mkdirSync(path.dirname(paths.log), { recursive: true });
+    fs.writeFileSync(paths.log, 'line one\nline two\n');
+    const log = await call(w.socketPath, 'GET', `/jobs/nightly/runs/${secondFiredAt}/log`);
+    assert.equal(log.status, 200);
+    assert.equal(log.headers['content-type'], 'text/plain; charset=utf-8');
+    assert.equal(log.text, 'line one\nline two\n');
+    assert.equal(log.headers['x-run-log-truncated'], undefined);
+
+    const noRun = await call(w.socketPath, 'GET', '/jobs/nightly/runs/123/log');
+    assert.equal(noRun.status, 404);
+    assert.equal(noRun.json.code, 'run_not_found');
+  } finally {
+    await w.api.close();
+  }
+});
+
+test('the 1 MiB log tail cap, same as the browser verb', async () => {
+  const w = await boot();
+  try {
+    await call(w.socketPath, 'POST', '/jobs', GOOD);
+    const run = await call(w.socketPath, 'POST', '/jobs/nightly/run', {});
+    assert.equal(run.status, 200);
+    const runs = await call(w.socketPath, 'GET', '/jobs/nightly/runs');
+    const { firedAt } = runs.json.runs[0];
+    const paths = runLogPaths(w.logDir, 'nightly', firedAt);
+    fs.mkdirSync(path.dirname(paths.log), { recursive: true });
+    const MiB = 1024 * 1024;
+    fs.writeFileSync(paths.log, Buffer.alloc(MiB + 10, 0x61)); // 10 bytes over
+    const log = await call(w.socketPath, 'GET', `/jobs/nightly/runs/${firedAt}/log`);
+    assert.equal(log.status, 200);
+    assert.equal(Buffer.byteLength(log.text), MiB);
+    assert.equal(log.headers['x-run-log-truncated'], '1');
+  } finally {
+    await w.api.close();
+  }
+});
+
+test('unknown job on the run verbs: the browser job_not_found body', async () => {
+  const w = await boot();
+  try {
+    for (const [method, urlPath] of [
+      ['GET', '/jobs/ghost/runs'],
+      ['POST', '/jobs/ghost/run'],
+      ['POST', '/jobs/ghost/runs/123/kill'],
+      ['GET', '/jobs/ghost/runs/123/log'],
+    ]) {
+      const r = await call(w.socketPath, method, urlPath);
+      assert.equal(r.status, 404, `${method} ${urlPath}`);
+      assert.equal(r.json.code, 'job_not_found', `${method} ${urlPath}`);
+    }
+  } finally {
+    await w.api.close();
+  }
+});
+
+test('unknown paths and verbs answer 404 with a Result body, never HTML', async () => {
+  const w = await boot();
+  try {
+    for (const [method, urlPath] of [
+      ['GET', '/nope'],
+      ['GET', '/api/jobs'],
+      ['PUT', '/jobs'],
+      ['GET', '/jobs/validate'], // the validate route is POST-only
+      ['GET', '/jobs/a/b/c/d/e/f'],
+      ['POST', '/jobs/nightly/runs/123/restart'],
+    ]) {
+      const r = await call(w.socketPath, method, urlPath);
+      assert.equal(r.status, 404, `${method} ${urlPath}`);
+      assert.deepEqual(r.json, { error: 'not found', detail: null, code: 'not_found' });
+    }
+    // a bad %-escape in the path: a client error, 400
+    const badEscape = await call(w.socketPath, 'GET', '/jobs/%E0/runs');
+    assert.equal(badEscape.status, 400);
+    // a name that is not a JobName: the browser's invalid_job_name body
+    const badName = await call(w.socketPath, 'DELETE', '/jobs/webpi-x');
+    assert.equal(badName.status, 400);
+    assert.deepEqual(badName.json, {
+      error: 'invalid job name',
+      detail: null,
+      code: 'invalid_job_name',
+    });
+    // a fired_at that is not an integer: the browser's invalid_fired_at body
+    const badFiredAt = await call(w.socketPath, 'GET', '/jobs/nightly/runs/abc/log');
+    assert.equal(badFiredAt.status, 400);
+    assert.equal(badFiredAt.json.code, 'invalid_fired_at');
+  } finally {
+    await w.api.close();
+  }
+});
+
+// ---------- §3: the socket lifecycle ----------
+
+test('after listen the socket file is 0660; close() unlinks it', async () => {
+  const w = await boot();
+  const mode = fs.statSync(w.socketPath).mode & 0o777;
+  assert.equal(mode, 0o660);
+  await w.api.close();
+  assert.equal(fs.existsSync(w.socketPath), false);
+  // a request after close fails to connect
+  await assert.rejects(call(w.socketPath, 'GET', '/jobs'));
+});
+
+test('a stale socket file is unlinked and rebound at boot', async () => {
+  const w = await boot();
+  await w.api.close();
+  // leave a stale file behind (the crash case): dead socket → ECONNREFUSED
+  fs.writeFileSync(w.socketPath, '');
+  assert.equal(await probeSocketFile(w.socketPath), 'stale');
+  const again = await startInternalApi({
+    socketPath: w.socketPath,
+    scheduler: w.scheduler,
+    apps: w.apps,
+  });
+  try {
+    const r = await call(w.socketPath, 'GET', '/jobs');
+    assert.equal(r.status, 200);
+  } finally {
+    await again.close();
+  }
+});
+
+test('a live listener owns the socket: boot refuses', async () => {
+  const w = await boot();
+  try {
+    await assert.rejects(
+      startInternalApi({ socketPath: w.socketPath, scheduler: w.scheduler, apps: w.apps }),
+      err => {
+        assert.match(err.message, /another web-pi server owns the socket/);
+        return true;
+      },
+    );
+  } finally {
+    await w.api.close();
+  }
+});
+
+test('probeSocketFile: a plain foreign server on the socket counts as live', async () => {
+  const socketPath = path.join(fs.mkdtempSync(path.join(dir, 'probe-')), 'webpi.sock');
+  const server = net.createServer(() => {});
+  await new Promise(resolve => server.listen(socketPath, resolve));
+  try {
+    assert.equal(await probeSocketFile(socketPath), 'live');
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+// ---------- §3: WEB_PI_SOCK resolution (src/lib/env.ts) ----------
+
+/** readInternalApiSocket() in a child process (env.ts reads WEB_PI_* at
+ *  module load — the editor/storage test pattern). */
+function readSock(env) {
+  const clean = Object.fromEntries(
+    Object.entries(process.env).filter(([k]) => k !== 'WEB_PI_SOCK'),
+  );
+  try {
+    const out = execFileSync(
+      process.execPath,
+      [
+        '-e',
+        "process.stdout.write(JSON.stringify(require('./dist-server/src/lib/env.js').readInternalApiSocket()))",
+      ],
+      { env: { ...clean, ...env }, stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    return { value: JSON.parse(out.toString()) };
+  } catch (err) {
+    return { error: err.stderr.toString() };
+  }
+}
+
+test('env: a non-absolute WEB_PI_SOCK stops the boot, like the S3 vars', () => {
+  const r = readSock({ WEB_PI_SOCK: 'webpi.sock' });
+  assert.match(r.error, /WEB_PI_SOCK="webpi.sock" must be an absolute socket path/);
+});
+
+test('env: EMPTY WEB_PI_SOCK is off — the listener is disabled', () => {
+  assert.deepEqual(readSock({ WEB_PI_SOCK: '' }).value, null);
+  assert.deepEqual(readSock({ WEB_PI_SOCK: '   ' }).value, null);
+});
+
+test('env: unset = the shape default; an absolute path wins', () => {
+  const stateDir = fs.mkdtempSync(path.join(dir, 'state-'));
+  const runWebPi = fs.existsSync('/run/web-pi');
+  const expected = runWebPi ? '/run/web-pi/webpi.sock' : path.join(stateDir, 'webpi.sock');
+  assert.equal(readSock({ WEB_PI_STATE_DIR: stateDir }).value, expected);
+  assert.equal(readSock({ WEB_PI_SOCK: '/tmp/other.sock' }).value, '/tmp/other.sock');
+});
+
+test('internalSocketDefault: /run/web-pi when the shared dir exists, else the state dir', () => {
+  assert.equal(internalSocketDefault('/state', true), '/run/web-pi/webpi.sock');
+  assert.equal(internalSocketDefault('/state', false), path.join('/state', 'webpi.sock'));
+});
