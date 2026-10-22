@@ -23,7 +23,6 @@ import {
   PI_SESSION_DIR,
   readObjectStoreConfig,
   readEditorUpstream,
-  RELEASES_DIR,
 } from '../src/lib/env';
 import { componentLogger, closeLogger } from '../src/lib/logger';
 import * as jobs from '../src/lib/jobs';
@@ -39,7 +38,6 @@ import {
   type EditorUpstream,
 } from '../src/lib/editor';
 import { createServices, type ServerConfig, type WebPiLocals } from '../src/lib/services';
-import { resolveServingDirs } from '../src/lib/releases';
 import { ObjectStore } from '../src/lib/storage';
 import type { ClientMsg, ServerMsg } from '../src/lib/types';
 import { loginBody } from '../src/schemas/api';
@@ -101,50 +99,6 @@ const CFG: ServerConfig = {
   command: ENV.WEB_PI_COMMAND.trim().split(/\s+/).filter(Boolean),
   trustProxy: Math.max(0, ENV.WEB_PI_TRUST_PROXY),
   editorUpstream: readEditorUpstream(),
-};
-
-// task/mgmt-page (docs/management-page.md §3.2): what THIS boot serves —
-// the release the serving pointer file names (on the releases volume;
-// serving/display state only, NEVER the enforcement's diff base — that is
-// always the image's baked version.json sha, docs §1.2/§1.5 #6; also
-// deliberately not the state db, which must keep opening lazily — db.ts),
-// when a valid one exists, else the image copy. Resolved once, before the
-// Astro entry import or any asset is served: the running process never
-// changes its mind mid-flight; a release becomes served only by the
-// restart below. An invalid/missing release falls back to the image —
-// loudly.
-const SERVING = resolveServingDirs({
-  imageClientDir: CFG.clientDir,
-  imageAstroEntry: CFG.astroEntry,
-  releasesDir: RELEASES_DIR,
-});
-const IMAGE_ASTRO_ENTRY = CFG.astroEntry; // the fallback below needs the pre-swap value
-const IMAGE_CLIENT_DIR = CFG.clientDir;
-CFG.clientDir = SERVING.dirs.clientDir;
-CFG.astroEntry = SERVING.dirs.astroEntry;
-if (SERVING.note !== 'serving the image copy') console.warn(`web-pi management: ${SERVING.note}`);
-// task/mgmt-page: what this process serves, LIVE — the boot snapshot, and
-// the import fallback below flips it to the image copy when a release's
-// SSR entry fails to load (the "serving now" card reports the truth).
-let servingNow: { kind: 'image' | 'release'; sha: string | null } = {
-  kind: SERVING.dirs.releaseDir === null ? 'image' : 'release',
-  sha: SERVING.dirs.sha,
-};
-
-// task/mgmt-page: the swap's restart. No docker socket exists anywhere in
-// webpi (it would be root on the host); instead the process exits through
-// its own graceful shutdown path and the container's restart policy (or a
-// host install's supervisor) brings it back on the new release. The delay
-// lets the activate response reach the browser first; shutdown() guards
-// re-entry itself.
-const RESTART_DELAY_MS = 1500;
-let mgmtRestartTimer: ReturnType<typeof setTimeout> | null = null;
-const requestRestart = (): void => {
-  if (mgmtRestartTimer) return;
-  mgmtRestartTimer = setTimeout(() => {
-    mgmtRestartTimer = null;
-    shutdown('management-activate');
-  }, RESTART_DELAY_MS);
 };
 
 /** Seed the runtime agent dir from the versioned template, only where the
@@ -262,11 +216,6 @@ const services = createServices({
   spawnSession: spawnTerminalSession,
   // task/ws-console (plan §5): /api/state's live diff source.
   liveSessionNames: tmux.liveSessionNames,
-  // task/mgmt-page: the swap service's restart trigger + the honest
-  // "serving now" LIVE snapshot (a getter: the import fallback above
-  // flips it; docs/management-page.md §3.2).
-  requestRestart,
-  bootServing: () => servingNow,
 });
 // The scheduler's single shutdown hook. The SIGTERM/SIGINT handler is a
 // sibling task (task/session-lifecycle, merged separately); at merge time
@@ -531,29 +480,9 @@ type AstroHandler = (
   locals?: WebPiLocals,
 ) => void;
 
-const astroReady: Promise<AstroHandler> = import(pathToFileURL(CFG.astroEntry).href)
-  .then((m: { handler: AstroHandler }) => m.handler)
-  // task/mgmt-page: a release's SSR entry that fails to LOAD (its own
-  // imports — the one failure class no layout check can see; activate
-  // probes for it, this is the belt-and-braces second line) must not
-  // take the app down: fall back to the IMAGE's entry + assets, loudly,
-  // and report the fallback (servingNow above feeds the page's
-  // "serving now" card — the now-working page can roll back). Only the
-  // image itself failing rethrows (the pre-existing behavior: every
-  // render 500s).
-  // task/winston-loki merge: the fallback line routes through the boot
-  // logger (the operational-logging migration covers this new code).
-  .catch(async (err: unknown): Promise<AstroHandler> => {
-    if (CFG.astroEntry === IMAGE_ASTRO_ENTRY) throw err;
-    bootLog.error(
-      `web-pi management: the release's SSR entry (${CFG.astroEntry}) failed to load — falling back to the image copy, rollback from the management page: ${(err as Error)?.message ?? err}`,
-    );
-    CFG.astroEntry = IMAGE_ASTRO_ENTRY;
-    CFG.clientDir = IMAGE_CLIENT_DIR;
-    servingNow = { kind: 'image', sha: null };
-    return ((await import(pathToFileURL(IMAGE_ASTRO_ENTRY).href)) as { handler: AstroHandler })
-      .handler;
-  });
+const astroReady: Promise<AstroHandler> = import(pathToFileURL(CFG.astroEntry).href).then(
+  (m: { handler: AstroHandler }) => m.handler,
+);
 astroReady.catch(err =>
   bootLog.error(
     `astro SSR entry failed to load (${CFG.astroEntry}) — did 'npm run build' run?): ${(err as Error)?.message ?? err}`,

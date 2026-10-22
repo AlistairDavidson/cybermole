@@ -22,9 +22,6 @@ export type WorkspaceId = Brand<string, 'WorkspaceId'>;
 export type TerminalId = Brand<string, 'TerminalId'>;
 /** An object's key in the storage bucket (src/lib/storage.ts). */
 export type ObjectKey = Brand<string, 'ObjectKey'>;
-/** A full (40-hex) git commit sha of the workspace checkout — the
- *  management page's apply target (src/lib/releases.ts). */
-export type CommitSha = Brand<string, 'CommitSha'>;
 
 export function asTmuxSessionName(value: string): TmuxSessionName {
   return value as TmuxSessionName;
@@ -56,8 +53,4 @@ export function asTerminalId(value: string): TerminalId {
 
 export function asObjectKey(value: string): ObjectKey {
   return value as ObjectKey;
-}
-
-export function asCommitSha(value: string): CommitSha {
-  return value as CommitSha;
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // dev-server-watch.mjs — `npm run dev:server`: build once, boot the
 // compiled server on :3001, then keep it current. The data pages
-// (/settings, /jobs, /management) render only inside that process
+// (/settings, /jobs) render only inside that process
 // (assertWebPiLocals in their frontmatter — astro dev's own render has
 // no services), so its build inputs changing IS the dev loop for them.
 //

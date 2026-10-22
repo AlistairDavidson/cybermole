@@ -9,7 +9,7 @@ interface Props {
   /** Renders the global header bar above the page (every signed-in
    *  page) and marks that section's link aria-current="page". Omitted on
    *  /login (not signed in yet) and the offline shell. */
-  header?: "console" | "jobs" | "management" | "settings";
+  header?: "console" | "jobs" | "settings";
 }
 
 const { title, header } = Astro.props;

@@ -35,7 +35,7 @@ body {
 /* Base.astro adds .app-chrome to <body> when it renders <app-header>: the
    page becomes bar + content. The console's fixed-height shell then fills
    what remains of the viewport instead of all of it; the scrollable pages
-   (jobs, settings, management) fill at least the remainder and grow with
+   (jobs, settings) fill at least the remainder and grow with
    their content — the body scrolls, the bar stays put (sticky; it is NOT
    wa-page's header slot because only the console page uses <wa-page> —
    the bar must sit above every shell alike). z-index 5 matches the layer
@@ -45,8 +45,7 @@ body.app-chrome { display: flex; flex-direction: column; }
 body.app-chrome > app-header { flex: none; }
 body.app-chrome > console-app { flex: 1 1 0; min-height: 0; height: auto; }
 body.app-chrome > jobs-app,
-body.app-chrome > settings-app,
-body.app-chrome > management-app { flex: 1 0 auto; }
+body.app-chrome > settings-app { flex: 1 0 auto; }
 
 app-header {
   position: sticky; top: 0; z-index: 5;
@@ -523,106 +522,3 @@ jobs-app { display: block; }
 .field-error { color: var(--wa-color-danger-on-quiet); }
 .field-error:empty { display: none; }
 
-/* ---- management page (<management-app>) ---- */
-management-app { display: block; }
-.mgmt-main { max-width: 48rem; margin: 0 auto; padding: var(--wa-space-m); }
-.mgmt-header { align-items: center; }
-.mgmt-header h1 {
-  display: flex; align-items: center; gap: var(--wa-space-2xs);
-  font-size: var(--wa-font-size-l); margin: 0;
-}
-.mgmt-header h1 wa-icon { color: var(--wa-color-brand-on-quiet); }
-.mgmt-card .card-title { font-size: var(--wa-font-size-m); }
-.mgmt-card .v code, .mgmt-protected code, .mgmt-changed code, .mgmt-commit code, .mgmt-table code {
-  font-family: var(--wa-font-family-code); font-size: var(--wa-font-size-2xs);
-  overflow-wrap: anywhere;
-}
-.mgmt-commits { list-style: none; margin: 0; padding: 0; max-height: 40vh; overflow-y: auto; }
-.mgmt-commit {
-  display: block; width: 100%; text-align: start; cursor: pointer;
-  padding: var(--wa-space-2xs) var(--wa-space-s);
-  background: none; color: inherit; border: none;
-  border-left: var(--wa-border-width-m) solid transparent;
-  border-bottom: var(--wa-border-width-s) solid var(--wa-color-surface-border);
-  font: inherit;
-}
-.mgmt-commit:last-child { border-bottom: none; }
-.mgmt-commit:hover { background: color-mix(in oklab, var(--wa-color-text-normal) 6%, transparent); }
-.mgmt-commit[data-selected='true'] {
-  border-left-color: var(--wa-color-brand-on-quiet);
-  background: color-mix(in oklab, var(--wa-color-brand-on-quiet) 10%, transparent);
-}
-.mgmt-commit .t { display: block; }
-.mgmt-commit .d {
-  display: block; color: var(--wa-color-text-quiet);
-  font-size: var(--wa-font-size-2xs);
-  margin-block-start: var(--wa-space-3xs);
-}
-.mgmt-verdict {
-  display: inline-flex; align-items: center; gap: var(--wa-space-2xs);
-  font-size: var(--wa-font-size-s);
-}
-.mgmt-verdict.ok { color: var(--wa-color-success-on-quiet); }
-.mgmt-verdict.blocked { color: var(--wa-color-danger-on-quiet); }
-.mgmt-protected {
-  list-style: none; margin: 0; padding: var(--wa-space-2xs) var(--wa-space-s);
-  border: var(--wa-border-width-s) solid var(--wa-color-danger-on-quiet);
-  border-radius: var(--wa-border-radius-m);
-  color: var(--wa-color-danger-on-quiet); font-size: var(--wa-font-size-xs);
-}
-.mgmt-protected li { margin-block: var(--wa-space-3xs); }
-.mgmt-changed {
-  list-style: none; margin: 0; padding: 0;
-  max-height: 24vh; overflow-y: auto;
-  font-size: var(--wa-font-size-xs);
-}
-.mgmt-changed li {
-  display: flex; align-items: baseline; gap: var(--wa-space-2xs);
-  padding-block: var(--wa-space-3xs);
-  border-bottom: var(--wa-border-width-s) solid var(--wa-color-surface-border);
-}
-.mgmt-changed li:last-child { border-bottom: none; }
-.mgmt-changed .st {
-  flex: none; font-family: var(--wa-font-family-code);
-  font-size: var(--wa-font-size-2xs); min-width: 2ch; text-align: center;
-  border-radius: var(--wa-border-radius-s); padding: 0 var(--wa-space-3xs);
-}
-.mgmt-changed .st-a { color: var(--wa-color-success-on-quiet); }
-.mgmt-changed .st-d { color: var(--wa-color-danger-on-quiet); }
-.mgmt-changed .st-m { color: var(--wa-color-warning-on-quiet); }
-.mgmt-changed .st-t { color: var(--wa-color-warning-on-quiet); }
-.mgmt-cta {
-  cursor: pointer; font: inherit; font-size: var(--wa-font-size-xs);
-  color: var(--wa-color-brand-on-quiet);
-  background: color-mix(in oklab, var(--wa-color-brand-on-quiet) 12%, transparent);
-  border: var(--wa-border-width-s) solid var(--wa-color-brand-on-quiet);
-  border-radius: var(--wa-border-radius-m);
-  padding: var(--wa-space-2xs) var(--wa-space-s);
-}
-.mgmt-cta:hover { background: color-mix(in oklab, var(--wa-color-brand-on-quiet) 22%, transparent); }
-.mgmt-cta.danger {
-  color: var(--wa-color-danger-on-quiet);
-  border-color: var(--wa-color-danger-on-quiet);
-  background: color-mix(in oklab, var(--wa-color-danger-on-quiet) 12%, transparent);
-}
-.mgmt-cta.danger:hover { background: color-mix(in oklab, var(--wa-color-danger-on-quiet) 22%, transparent); }
-.mgmt-table { width: 100%; border-collapse: collapse; font-size: var(--wa-font-size-xs); }
-.mgmt-table th {
-  text-align: start; color: var(--wa-color-text-quiet);
-  font-size: var(--wa-font-size-2xs); text-transform: uppercase; letter-spacing: .08em;
-  padding: var(--wa-space-3xs) var(--wa-space-2xs);
-  border-bottom: var(--wa-border-width-s) solid var(--wa-color-surface-border);
-}
-.mgmt-table td {
-  padding: var(--wa-space-3xs) var(--wa-space-2xs);
-  border-bottom: var(--wa-border-width-s) solid var(--wa-color-surface-border);
-  overflow-wrap: anywhere;
-}
-.mgmt-table tr:last-child td { border-bottom: none; }
-.mgmt-status {
-  font-family: var(--wa-font-family-code); font-size: var(--wa-font-size-2xs);
-}
-.mgmt-status.st-applied, .mgmt-status.st-built { color: var(--wa-color-success-on-quiet); }
-.mgmt-status.st-requested, .mgmt-status.st-pending, .mgmt-status.st-building { color: var(--wa-color-warning-on-quiet); }
-.mgmt-status.st-failed { color: var(--wa-color-danger-on-quiet); }
-management-app .dialog-text { margin: 0 0 var(--wa-space-2xs); }

@@ -16,7 +16,6 @@ import {
   invalidTerminalIdResponse,
   invalidWorkspaceIdResponse,
   jobFailureResponse,
-  managementFailureResponse,
   piUpdateResponse,
   runLogResponse,
   piUpdateStatus,
@@ -179,50 +178,6 @@ test('firstIssueText: "field: message", the bare message at the root, a fallback
   assert.equal(firstIssueText({ name: 'required', other: 'x' }), 'name: required');
   assert.equal(firstIssueText({ '': 'invalid session id' }), 'invalid session id');
   assert.equal(firstIssueText({}), 'bad request');
-});
-
-// task/mgmt-page: every management code → its status + the { error, code }
-// body /management reads (docs/management-page.md §5). The families share
-// the mapper, so the codes are exercised through the union directly.
-test('managementFailureResponse: every code → status, with the { error, code } body', async () => {
-  const cases = [
-    ['management_state', 'database_error', 500],
-    ['list_commits', 'checkout_missing', 404],
-    ['list_commits', 'git_error', 500],
-    ['enforcement_preview', 'base_unknown', 409],
-    ['enforcement_preview', 'base_not_in_checkout', 409],
-    ['enforcement_preview', 'target_not_found', 404],
-    ['enforcement_preview', 'checkout_missing', 404],
-    ['enforcement_preview', 'git_error', 500],
-    ['request_build', 'invalid_credentials', 401],
-    ['request_build', 'reauth_limited', 429],
-    ['request_build', 'enforcement_rejected', 422],
-    ['request_build', 'releases_not_configured', 503],
-    ['request_build', 'build_active', 409],
-    ['request_build', 'marker_error', 500],
-    ['request_build', 'database_error', 500],
-    ['activate_release', 'invalid_credentials', 401],
-    ['activate_release', 'reauth_limited', 429],
-    ['activate_release', 'release_not_built', 404],
-    ['activate_release', 'release_invalid', 409],
-  ];
-  for (const [resultType, code, status] of cases) {
-    const res = managementFailureResponse(
-      failure(resultType, code, { errorMessage: `msg ${code}` }),
-    );
-    assert.equal(res.status, status, code);
-    const body = await res.json();
-    assert.equal(body.code, code);
-    assert.equal(body.error, `msg ${code}`);
-  }
-  // THE refusal carries the offending paths in its message
-  const refused = managementFailureResponse(
-    failure('request_build', 'enforcement_rejected', {
-      errorMessage: 'refused: changes the protected set (compose.yaml, Dockerfile)',
-    }),
-  );
-  assert.equal(refused.status, 422);
-  assert.match((await refused.json()).error, /compose\.yaml/);
 });
 
 // ---------- workspaces-plan §6: apps / workspaces / terminals (task/ws-schema) ----------

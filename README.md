@@ -171,7 +171,7 @@ What that command brings up:
   — everything renders exactly as production does. Everything is real:
   `webpi.db` login, the workspace tree, live attach — new workspaces
   under an app with its `cwd` set to `/app` (the repo) start there, so
-  terminals work in the checkout, self-modification included.
+  terminals work in the checkout.
 - **dev-editor** — the editor, ON by default: the same image as prod's
   `editor` but as the *host* uid over the same `/app` bind, so the editor
   tab opens the checkout dev workspaces live in and writes it as its
@@ -279,8 +279,6 @@ directly.
 | `WEB_PI_DB_FILE` | `<state dir>/webpi.db` | sqlite state db (0600): login credential, login sessions (`auth_sessions`), the workspace tree (`apps`, `workspaces`, `terminals`), scheduled-job tables (`jobs`, `job_runs` — the in-process scheduler + run logs), `settings` kv (the pi auto-update toggle + outcomes). Fresh setup: `npm run set-password` creates it |
 | `WEB_PI_CLIENT_DIR` | `<app root>/dist/client` | Astro hashed assets |
 | `WEB_PI_ASTRO_ENTRY` | `<app root>/dist/server/entry.mjs` | Astro SSR handler |
-| `WEB_PI_RELEASES_DIR` | *(unset: swap off)* | the `/management` page's releases volume — where the builder sidecar writes built releases and web reads them (`/releases` in compose). Unset, the swap half of `/management` is off (build/activate answer 503); the page still shows state and dry-run enforcement verdicts — see [docs/management-page.md](docs/management-page.md) |
-| `WEB_PI_MANAGEMENT_CHECKOUT` | *(unset)* | the workspace checkout `/management` reads commits from and applies (`/workspace/web-pi` in compose; the dev profile points it at `/app`). Unset, the checkout half answers `checkout_missing` (404). Read-only on web's mount — the checkout is what you (or an agent) edit in the workspace, the page builds from it |
 | `WEB_PI_S3_ENDPOINT` | *(unset: no storage)* | S3 API URL of the object store (`http://seaweedfs:8333` in compose). Unset, `POST /api/files` answers 503. Set, it needs both keys below — a half-set or non-http value stops the server at boot |
 | `WEB_PI_S3_ACCESS_KEY` / `WEB_PI_S3_SECRET_KEY` | *(unset)* | the store's credentials. In compose, generated once by `seaweedfs-init` and loaded by the entrypoint — not set in `compose.yaml` |
 | `WEB_PI_S3_BUCKET` | `webpi` | bucket for uploads (created on first use when missing) |
@@ -702,9 +700,7 @@ Front it with TLS — [`deploy/`](deploy/) has:
   runs with `WEB_PI_TRUST_PROXY=1` (compose sets it; set it yourself for a
   host install behind nginx)
 - `fail2ban-filter-webpi.conf` + `fail2ban-jail.conf` — fail2ban watching
-  the nginx access log for failed logins (401/429 on the login POST) and
-  failed /management password re-confirmations (401/429 on the management
-  build/activate POSTs)
+  the nginx access log for failed logins (401/429 on the login POST)
 
 State is split by owner, like everything else in the two-container shape:
 `webpi.db` (login credential, login sessions, the workspace tree, jobs) lives
@@ -787,9 +783,9 @@ a single definition point:
   (marked with a comment; `proxy_pass` forwards the client's path
   unchanged, so the one literal both selects and names the prefix).
 - **[`deploy/fail2ban-filter-webpi.conf`](deploy/fail2ban-filter-webpi.conf)**
-  — the POST paths inside `failregex` (the login POST and the management
-  re-auth POSTs), likewise the file's only occurrences; the NOTE above it
-  points here and at the nginx capture.
+  — the POST path inside `failregex` (the login POST), likewise the
+  file's only occurrence; the NOTE above it points here and at the nginx
+  capture.
 
 Change it at all three definition points, then rebuild the image (it's
 baked in — `docker compose build`), reload nginx, and restart fail2ban.
@@ -881,22 +877,15 @@ from the lockfile on every boot, so nothing auto-updated persists there.
 running copy anymore. Volumes (`webpi-state`, `webpi-workspace`) never
 re-seed when image content changes.
 
-**Git-owned checkout (self-modification, durable local edits):** the
-image copy is root-owned by design — a terminal can't edit it, you edit
-a checkout in the workspace instead. That is the self-modification story:
-an agent edits `/workspace/<checkout>`, and the `/management` page builds
-and swaps what web serves (the web-side apply step — see
-[docs/management-page.md](docs/management-page.md)). To work that way
-today, keep a checkout on the workspace volume (building it is a dev-image
-or host concern — the slim workspace container has no compiler):
-
-```sh
-docker compose exec workspace git clone <your-fork> /workspace/web-pi
-```
-
-Terminals keep running the image's vendored pi (or the standalone install
-above — point `WEB_PI_COMMAND` at either); the checkout is the tree you
-(or an agent) edit and /management builds from.
+**Git-owned checkout:** the image copy is root-owned by design — a
+terminal can't edit it, and nothing inside a container (human or agent)
+can change what the web container serves: the webapp is an appliance,
+redeployed the normal way (edit on the host → build the image → `docker
+compose up -d`). A git checkout on the workspace volume is still where
+you (or an agent) keep projects — including a checkout of web-pi itself
+for reading or forking — but it no longer feeds any build-and-swap flow;
+if you want terminals to run pi from such a checkout, use the
+standalone-workspace install above (`WEB_PI_COMMAND`).
 
 ## Security model
 

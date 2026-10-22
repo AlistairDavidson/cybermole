@@ -7,11 +7,8 @@
 // src/lib/apps.ts, src/lib/workspaces.ts; the pi-session `sessions`
 // overlay died with the scan that read it, plan §11),
 // the scheduled-jobs tables (`jobs` definitions,
-// `job_runs` bookkeeping — src/lib/jobs.ts), a small `settings` kv
-// (src/lib/auto-update.ts), and the management page's `releases` history
-// (src/lib/releases.ts — the SERVING pointer is deliberately NOT db
-// state: it is a file on the releases volume, resolved at main.ts boot
-// before any db use; see releases.ts). pi's own store (sessions/,
+// `job_runs` bookkeeping — src/lib/jobs.ts) and a small `settings` kv
+// (src/lib/auto-update.ts). pi's own store (sessions/,
 // provider creds under WEB_PI_AGENT_DIR) is not web-pi state and stays
 // untouched.
 //
@@ -203,18 +200,6 @@ const SCHEMA = `
     expires_at INTEGER NOT NULL,     -- sliding idle expiry (renewal writes throttled)
     cookie_at  INTEGER NOT NULL      -- when a Set-Cookie last re-armed the browser's Max-Age
   );
-  -- Release history for the management page (docs/management-page.md §3.3,
-  -- src/lib/releases.ts). One row per built source sha; the served
-  -- release is the pointer file on the releases volume (or the image
-  -- copy when absent) — these rows are the history/audit trail.
-  CREATE TABLE IF NOT EXISTS releases (
-    sha          TEXT    PRIMARY KEY,  -- full 40-hex source sha
-    status       TEXT    NOT NULL,     -- 'requested' | 'built' | 'failed' | 'applied'
-    requested_at INTEGER NOT NULL,     -- epoch ms
-    built_at     INTEGER,              -- epoch ms the builder finished
-    applied_at   INTEGER,              -- epoch ms it first became the served release
-    log          TEXT                  -- capped builder output tail
-  );
 `;
 
 // ---------- the schema, as Kysely sees it (keep in step with SCHEMA) ----------
@@ -295,16 +280,6 @@ export interface AuthSessionsTable {
   expires_at: number;
   cookie_at: number;
 }
-/** A release row's lifecycle (releases.status). */
-export type ReleaseStatus = 'requested' | 'built' | 'failed' | 'applied';
-export interface ReleasesTable {
-  sha: string;
-  status: ReleaseStatus;
-  requested_at: number;
-  built_at: number | null;
-  applied_at: number | null;
-  log: string | null;
-}
 export interface StateSchema {
   credential: CredentialTable;
   apps: AppsTable;
@@ -314,7 +289,6 @@ export interface StateSchema {
   job_runs: JobRunsTable;
   settings: SettingsTable;
   auth_sessions: AuthSessionsTable;
-  releases: ReleasesTable;
 }
 
 /** Kysely's DummyDriver answers every execute() with zero rows — a query
@@ -392,8 +366,10 @@ export class StateDb {
       db.exec(SCHEMA);
       migrateToV6(db);
       // user_version: 1 = credential + sessions; 2 adds the job tables;
-      // 3 adds the settings kv table; 4 adds auth_sessions; 5 adds the
-      // releases table (management page); 6 adds apps/workspaces/terminals
+      // 3 adds the settings kv table; 4 adds auth_sessions; 5 added the
+      // releases table (gone again with the management page — a `releases`
+      // table left in an old db is an orphan, harmless); 6 adds
+      // apps/workspaces/terminals
       // + the jobs/job_runs columns above and drops the pi-session
       // overlay (workspaces plan §2/§11 — the one destructive step,
       // idempotent in SCHEMA itself); apps.cwd rides the same v6 shape

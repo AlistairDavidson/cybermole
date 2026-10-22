@@ -8,7 +8,7 @@ separately.*
 
 **Bottom line:** web-pi is a good single-user, single-host tool, and that
 is the shape it should commit to. The decisions worth making now, before
-apps and self-modification are built on top:
+apps are built on top:
 
 1. Stop running the agent with write access to the server and its
    credential.
@@ -52,10 +52,12 @@ by the process it protects against.
   - **workspace:** uid B. Runs the tmux server and pi, with the project
     checkouts on a volume. tmux 3.3+ can admit another user's clients
     (`server-access`); check the version in the base image.
-  - **Self-modification** becomes: pi edits a git checkout in the
-    workspace, and a deploy step outside the workspace (the "panic /
-    rollback" endpoint) builds and swaps. That is the TODO's design, made
-    enforceable.
+  - **Self-modification** (later note: retired outright, before it ever
+    shipped — the webapp is an appliance, changed only by rebuilding the
+    image on the host). The split's promise is now unconditional: web
+    serves root-owned code and owns its state; the workspace uid owns
+    everything it can touch. No "except the one page that swaps the
+    server" carve-out.
 - **Cheaper interim:** keep one container, but run the server from a
   root-owned, read-only copy instead of the `node`-owned `/app` volume.
   `/opt/web-pi` is already the image copy; drop the `--chown=node:node`
@@ -231,5 +233,5 @@ state paths into it. That is also the precondition for the ECS layout in 2.
 3. The state directory (3.3).
 4. Decide the jobs/deployment question (3.1), and whether ECS is a real
    target (2).
-5. The serving/working privilege split (1.1), before building the apps and
-   self-modification features on top.
+5. The serving/working privilege split (1.1), before building the apps
+   features on top.

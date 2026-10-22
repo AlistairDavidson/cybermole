@@ -15,11 +15,10 @@ import type { Auth } from './auth';
 import type { AutoUpdater } from './auto-update';
 import { autoUpdateEnabled, lastCheck, lastUpdate } from './auto-update';
 import type { StateDb } from './db';
-import { APP_ROOT, MANAGEMENT_CHECKOUT, RELEASES_DIR } from './env';
+import { APP_ROOT } from './env';
 import { checkCron, type Scheduler } from './jobs';
 import { Apps } from './apps';
 import { Workspaces } from './workspaces';
-import { Releases } from './releases';
 import type { ObjectStore } from './storage';
 import {
   PI_PACKAGE,
@@ -90,9 +89,6 @@ export interface WebPiServices {
   autoUpdater: AutoUpdater;
   /** Object storage (S3-compatible): POST /api/files stores uploads here. */
   objectStore: ObjectStore;
-  // task/mgmt-page: the management page's service — enforcement, git
-  // reads, release bookkeeping, the swap (docs/management-page.md).
-  management: Releases;
   // task/ws-schema (docs/workspaces-plan.md §3): the app and
   // workspace/terminal domains, constructed once here and reached by the
   // /api/apps, /api/workspaces, /api/terminals routes.
@@ -143,29 +139,10 @@ export interface ServiceDeps {
   /** Live tmux session names (tmux.liveSessionNames) — /api/state's live
    *  diff, injected into the workspaces domain like its siblings. */
   liveSessionNames: () => Promise<Set<TmuxSessionName>>;
-  // task/mgmt-page: graceful-restart trigger for the swap step (the
-  // server's own shutdown path — no docker socket anywhere), and the
-  // LIVE snapshot of what this process serves (a GETTER: main.ts falls
-  // back to the image copy if a release's SSR entry fails to load at
-  // boot, and the "serving now" card must report the fallback).
-  requestRestart: () => void;
-  bootServing: () => { kind: 'image' | 'release'; sha: string | null };
 }
 
 export function createServices(deps: ServiceDeps): WebPiServices {
-  const { cfg, stateDb, auth, scheduler, autoUpdater, objectStore, requestRestart } = deps;
-  // task/mgmt-page: the management page's domain service. Its verify
-  // callback is auth.verify (re-auth for the dangerous verbs); its
-  // requestRestart is main.ts's own shutdown path.
-  const management = new Releases({
-    db: stateDb,
-    checkout: MANAGEMENT_CHECKOUT,
-    releasesDir: RELEASES_DIR,
-    appRoot: APP_ROOT,
-    bootServing: deps.bootServing,
-    requestRestart,
-    verify: (username, password) => auth.verify(username, password),
-  });
+  const { cfg, stateDb, auth, scheduler, autoUpdater, objectStore } = deps;
   // task/ws-schema: the app + workspace domains. The username dep reads
   // the credential row through Auth (created_by/updated_by — plan §2);
   // killSession is main.ts's tmux.killSession; defaultCwd is
@@ -189,7 +166,6 @@ export function createServices(deps: ServiceDeps): WebPiServices {
     scheduler,
     autoUpdater,
     objectStore,
-    management,
     apps,
     workspaces,
 
