@@ -480,8 +480,9 @@ type AstroHandler = (
   locals?: WebPiLocals,
 ) => void;
 
-const astroReady: Promise<AstroHandler> = import(pathToFileURL(CFG.astroEntry).href)
-  .then((m: { handler: AstroHandler }) => m.handler);
+const astroReady: Promise<AstroHandler> = import(pathToFileURL(CFG.astroEntry).href).then(
+  (m: { handler: AstroHandler }) => m.handler,
+);
 astroReady.catch(err =>
   bootLog.error(
     `astro SSR entry failed to load (${CFG.astroEntry}) — did 'npm run build' run?): ${(err as Error)?.message ?? err}`,

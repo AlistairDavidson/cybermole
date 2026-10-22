@@ -401,4 +401,3 @@ export function databaseUpdateFailureResponse(f: DatabaseUpdateFailure, error: s
   const code: 'database_error' = f.errorCode;
   return jsonResponse({ error, code }, 500);
 }
-
