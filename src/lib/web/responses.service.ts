@@ -154,8 +154,18 @@ export function jobFailureResponse(f: JobFailure): Response {
     // re-reading the runs list.
     case 'run_not_active':
       return jsonResponse(body(f.errorMessage ?? 'the run is not running'), 409);
+    // task/jobs-socket (plan §4): the kill verb — the run-open text would
+    // be wrong for a failed kill; the family discriminates the top line.
     case 'tmux_error':
-      return jsonResponse(body('could not open run session', f.errorMessage ?? null), 500);
+      return jsonResponse(
+        body(
+          f.resultType === 'kill_run'
+            ? 'could not kill the run session'
+            : 'could not open run session',
+          f.errorMessage ?? null,
+        ),
+        500,
+      );
     case 'read_error':
       return jsonResponse(body(f.errorMessage ?? 'could not read the run log'), 500);
     case 'database_error':

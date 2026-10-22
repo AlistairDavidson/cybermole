@@ -56,6 +56,7 @@ case "$sub" in
     ;;
   kill-session)
     [ -e "$dir/up" ] || exit 1
+    [ -e "$dir/kill-fail" ] && exit 1
     while [ $# -gt 0 ]; do [ "$1" = "-t" ] && { grep -vx "$2" "$sessions" > "$sessions.x" 2>/dev/null || : > "$sessions.x"; mv "$sessions.x" "$sessions"; exit 0; }; shift; done
     exit 1
     ;;
@@ -63,6 +64,16 @@ case "$sub" in
 esac
 `;
 fs.writeFileSync(path.join(fakeBin, 'tmux'), FAKE_TMUX, { mode: 0o755 });
+
+/** The app domain over a db (light deps: apps.ts needs no tmux for
+ *  reads). */
+function appsFor(db) {
+  return new Apps({
+    db,
+    username: () => ({ ok: true, data: { value: 'unit' } }),
+    killSession: async () => true,
+  });
+}
 
 /** One case's world: fresh db + scheduler + apps domain + the API booted
  *  on its own socket. The fake tmux server is "up" from the start so
@@ -72,11 +83,7 @@ async function boot() {
   const logDir = path.join(root, 'job-logs');
   const db = new StateDb(path.join(root, 'webpi.db'));
   const scheduler = new Scheduler(db, { cwd: root, env: {}, logDir });
-  const apps = new Apps({
-    db,
-    username: () => ({ ok: true, data: { value: 'unit' } }),
-    killSession: async () => true,
-  });
+  const apps = appsFor(db);
   // the fake tmux's live-session list is shared across cases (it stands
   // in for the one tmux server); each case starts with none.
   fs.writeFileSync(path.join(dir, 'sessions'), '');
@@ -396,6 +403,20 @@ test('run/kill/log: the run lifecycle over the socket', async () => {
     assert.equal(origin, 'manual');
     assert.equal(hasLog, false);
 
+    // a failing kill-session (the fake tmux's kill-fail marker, session
+    // still live): the kill family's own tmux_error body — never the
+    // run-open text
+    fs.writeFileSync(path.join(dir, 'kill-fail'), '');
+    try {
+      const failed = await call(w.socketPath, 'POST', `/jobs/nightly/runs/${firedAt}/kill`, {});
+      assert.equal(failed.status, 500);
+      assert.equal(failed.json.code, 'tmux_error');
+      assert.equal(failed.json.error, 'could not kill the run session');
+      assert.equal(failed.json.detail, 'could not kill the run session webpi-nightly');
+    } finally {
+      fs.rmSync(path.join(dir, 'kill-fail'), { force: true });
+    }
+
     // the kill: the live run dies, a repeat is run_not_active
     const killed = await call(w.socketPath, 'POST', `/jobs/nightly/runs/${firedAt}/kill`, {});
     assert.equal(killed.status, 200);
@@ -403,6 +424,11 @@ test('run/kill/log: the run lifecycle over the socket', async () => {
     const rekill = await call(w.socketPath, 'POST', `/jobs/nightly/runs/${firedAt}/kill`, {});
     assert.equal(rekill.status, 409);
     assert.equal(rekill.json.code, 'run_not_active');
+
+    // a firedAt no run recorded under: run_not_found (404), not run_active
+    const noSuchRun = await call(w.socketPath, 'POST', '/jobs/nightly/runs/123/kill', {});
+    assert.equal(noSuchRun.status, 404);
+    assert.equal(noSuchRun.json.code, 'run_not_found');
 
     // a second run can start now; killing the OLD fired_at names a run
     // that is no longer the current one — never the newer run
@@ -451,6 +477,44 @@ test('the 1 MiB log tail cap, same as the browser verb', async () => {
     assert.equal(log.headers['x-run-log-truncated'], '1');
   } finally {
     await w.api.close();
+  }
+});
+
+test('a broken state db answers 500 database_error on the read verbs', async () => {
+  // jobs-runs.test.mjs's broken-db trick: the db's parent is a file, so
+  // every lazy open fails — the boundary turns it into database_error
+  // results, and the routes map them like the browser API does.
+  const root = fs.mkdtempSync(path.join(dir, 'broken-'));
+  const notADir = path.join(root, 'not-a-dir');
+  fs.writeFileSync(notADir, '');
+  const scheduler = new Scheduler(new StateDb(path.join(notADir, 'webpi.db')), {
+    cwd: root,
+    env: {},
+    logDir: path.join(root, 'job-logs'),
+  });
+  const socketPath = path.join(root, 'webpi.sock');
+  const api = await startInternalApi({
+    socketPath,
+    scheduler,
+    apps: appsFor(new StateDb(path.join(root, 'good.db'))),
+  });
+  try {
+    for (const [method, urlPath] of [
+      ['GET', '/jobs'],
+      ['PATCH', '/jobs/nightly'],
+      ['POST', '/jobs/nightly/runs/123/kill'],
+    ]) {
+      const r = await call(
+        socketPath,
+        method,
+        urlPath,
+        method === 'PATCH' ? { schedule: '0 4 * * *' } : undefined,
+      );
+      assert.equal(r.status, 500, `${method} ${urlPath}`);
+      assert.equal(r.json.code, 'database_error', `${method} ${urlPath}`);
+    }
+  } finally {
+    await api.close();
   }
 });
 
