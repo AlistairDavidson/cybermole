@@ -7,7 +7,7 @@
 // browser shows (console toasts, /jobs, /settings read it).
 // Type-only imports from the domain modules: safe for the Astro bundle.
 import type { DatabaseUpdateFailure } from '../db';
-import type { DeleteAppFailure, SaveAppFailure } from '../apps';
+import type { DeleteAppFailure, ListAppsFailure, SaveAppFailure } from '../apps';
 import type {
   DeleteJobFailure,
   GetJobFailure,
@@ -207,11 +207,14 @@ export function runLogResponse(data: RunLogData): Response {
 // terminal family cannot fire until the spawn lands (task/ws-terminal)
 // but are mapped now — the union is closed.
 
-export type AppFailure = SaveAppFailure | DeleteAppFailure;
+export type AppFailure = SaveAppFailure | DeleteAppFailure | ListAppsFailure;
 
 /** Apps failures → status. duplicate_slug is the derived slug's collision
  *  (409); a slug that no longer resolves is 404; a bad cwd is the
- *  caller's (400 — task/app-cwd, the workspace cwd's own code). */
+ *  caller's (400 — task/app-cwd, the workspace cwd's own code).
+ *  task/jobs-mcp (plan §6): ListAppsFailure joins the union for the
+ *  internal API's GET /apps — its one code (database_error) is mapped by
+ *  the case below, so the apps_list tool reads the family's own body. */
 export function appFailureResponse(f: AppFailure): Response {
   switch (f.errorCode) {
     case 'invalid_name':
