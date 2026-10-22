@@ -25,6 +25,7 @@ SHARED_GROUP=${WEB_PI_TMUX_GROUP:-webpi}
 CONF=${WEB_PI_TMUX_CONF:-/opt/web-pi/tmux.conf}
 AGENT_DIR=${WEB_PI_AGENT_DIR:-/workspace/pi-agent}
 TEMPLATE=/opt/web-pi/pi
+ROOT_TEMPLATE=/opt/web-pi/root-agents/AGENTS.md
 
 umask 0007
 
@@ -63,6 +64,18 @@ if [ -d "$TEMPLATE" ]; then
       cp "$TEMPLATE/$f" "$AGENT_DIR/$f"
     fi
   done
+fi
+
+# jobs-agent-plan §9: the workspace-root AGENTS.md — the root agent's
+# standing instructions (scheduled work belongs in jobs; a fired run is
+# started-not-finished; the CLI + MCP surface) — seeded from the repo's
+# one-file template into the default workspace cwd (the root: /workspace
+# in this shape; WEB_PI_NEW_SESSION_CWD names the same path web-side),
+# same only-where-absent policy: an existing file (the operator's own, a
+# checkout that IS the cwd) always wins.
+ROOT_AGENTS="${WEB_PI_NEW_SESSION_CWD:-/workspace}/AGENTS.md"
+if [ -f "$ROOT_TEMPLATE" ] && [ ! -e "$ROOT_AGENTS" ]; then
+  cp "$ROOT_TEMPLATE" "$ROOT_AGENTS"
 fi
 
 # Server conf: the app's tmux.conf + exit-empty off (see header). The

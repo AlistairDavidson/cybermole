@@ -50,7 +50,7 @@ job exit-code notification hooks (deferred — jobs-agent-plan.md §11)
 
 ## Jobs
 
-implement the jobs agent plan (docs/jobs-agent-plan.md)
+implement the jobs agent plan — DONE (docs/jobs-agent-plan.md, shipped: all seven §10 branches merged — the internal socket + API, the webpi CLI, the MCP server, the live jobs page, log caps, root-agent AGENTS.md seeding)
 
 ## Apps
 Build out apps feature properly (its own future epic — apps own their lifecycle

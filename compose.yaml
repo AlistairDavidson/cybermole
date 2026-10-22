@@ -200,6 +200,11 @@ services:
     environment:
       WEB_PI_TMUX_SOCKET: /run/web-pi/tmux
       WEB_PI_AGENT_DIR: /workspace/pi-agent
+      # jobs-agent-plan §9: the workspace root's AGENTS.md target — the
+      # same path the web side's WEB_PI_NEW_SESSION_CWD names (path
+      # agreement, like the socket and the agent dir): the entrypoint
+      # seeds <this>/AGENTS.md from the image's root-agents/ template.
+      WEB_PI_NEW_SESSION_CWD: /workspace
       WEB_PI_TMUX_WEB_USER: node # admitted as a tmux client by NAME
       WEB_PI_TMUX_GROUP: webpi # socket group after chgrp (gid 2001 in-image)
     volumes:

@@ -31,6 +31,7 @@
     "dist/",
     "dist-server/",
     "pi/",
+    "root-agents/",
     "tmux.conf"
   ],
   "dependencies": {

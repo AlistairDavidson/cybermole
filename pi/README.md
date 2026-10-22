@@ -59,6 +59,21 @@ boot — an existing runtime file always wins over the template.
 Template updates here reach the runtime dir at the next seeding boot
 and an open session only via `/reload`.
 
+## The workspace-root AGENTS.md — a sibling one-file template
+
+The root agent's standing instructions are NOT part of this dir: they
+live in the repo's [`root-agents/AGENTS.md`](../root-agents/AGENTS.md),
+seeded only-where-absent into the **default workspace cwd**
+(`WEB_PI_NEW_SESSION_CWD` — `/workspace` in the compose split), so
+app checkouts under the workspace root read them by upward walk
+(docs/jobs-agent-plan.md §9). Same policy, same seeder halves as this
+template (the workspace entrypoint in the split, the server's boot
+seeding single-user); different target — the workspace root, not the
+runtime agent dir. Its content is the jobs conventions (scheduled work
+belongs in jobs; a fired run is started-not-finished — check exit
+codes) and the tool surface: the `webpi` CLI's verbs and the
+webpi-jobs MCP tools registered by the `mcp.json` above.
+
 ## Shipping resources to every session
 
 - **MCP servers** — `mcp.json`:
