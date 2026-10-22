@@ -22,6 +22,9 @@ import 'validation-enhancer/zod';
 import type { ValidationEnhancerZod } from 'validation-enhancer/zod';
 import { JobSaveSchema } from '../../schemas/jobs';
 import type { JobRunView } from '../../lib/jobs';
+import { subscribeJobsEvents } from '../jobs-events';
+import { RunLogViewer } from './run-log';
+import { fmtDuration, fmtRunTime } from './run-format';
 
 type WaDialog = HTMLElement & { open: boolean };
 /** wa-input / wa-textarea / wa-select surface used here. An empty
@@ -52,30 +55,16 @@ interface AppChoice {
   name: string;
 }
 
-/** One history row's display fields. */
-const fmtRunTime = (ms: number): string => {
-  const d = new Date(ms);
-  const p = (n: number): string => String(n).padStart(2, '0');
-  return (
-    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
-    `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
-  );
-};
-
-/** A run's duration, finish-observed minus fired (tick granularity). */
-const fmtDuration = (from: number, to: number): string => {
-  const s = Math.max(0, (to - from) / 1000);
-  return s < 60
-    ? `${s.toFixed(1)}s`
-    : `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, '0')}s`;
-};
-
 export class JobsApp extends HTMLElement {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private validateTimer: ReturnType<typeof setTimeout> | null = null;
+  /** /ws/events teardown (plan §7's live consistency — jobs-events.ts). */
+  private unsubscribeEvents: (() => void) | null = null;
   private deleting: string | null = null;
   /** The job whose history the runs dialog shows. */
   private runsJob: string | null = null;
+  /** The shared log-tail viewer (run-log.ts) over the dialog's box. */
+  private logViewer = new RunLogViewer(this, () => this.runsJob);
   private inflight = false;
 
   connectedCallback(): void {
@@ -97,13 +86,13 @@ export class JobsApp extends HTMLElement {
         });
       else if (del) this.confirmDelete(del);
       else if (runs) void this.openRuns(runs);
-      else if (log) void this.showLog(log);
+      else if (log) void this.logViewer.show(Number(log));
     });
     // The footer button lives outside the form (dialog footer slot):
     // submit the form so <validation-enhancer-zod> validates it first.
     (this.querySelector('#job-save') as HTMLElement).onclick = () => this.jobForm().requestSubmit();
     (this.querySelector('#job-delete-confirm') as HTMLElement).onclick = () => this.deleteJob();
-    (this.querySelector('#run-log-close') as HTMLElement).onclick = () => this.hideLog();
+    // #run-log-close is wired by the shared RunLogViewer (run-log.ts).
     (this.querySelector('#job-schedule') as WaFormControl).addEventListener('input', () =>
       this.queueValidate(),
     );
@@ -129,11 +118,38 @@ export class JobsApp extends HTMLElement {
     this.pollTimer = setInterval(() => {
       void this.load();
     }, 15000);
+    // task/jobs-page (plan §7): live consistency — the /ws/events
+    // subscription runs the SAME partial refresh the poll runs (load),
+    // debounced inside jobs-events.ts. Whoever mutated the job (this
+    // page, another tab, an agent over the internal socket API of plan
+    // §4), the list follows within a moment instead of up to 15 s; the
+    // poll above stays as the safety net.
+    this.unsubscribeEvents = subscribeJobsEvents(() => void this.load());
+    // The job detail page's edit entry lands here with the dialog open
+    // (ONE editor — the /jobs dialog — reused, no second form to drift):
+    // /jobs?edit=<name>. The URL is cleaned so a reload does not reopen
+    // the dialog; a name that has no card (deleted, bad link) is a no-op.
+    const wanted = new URLSearchParams(location.search).get('edit');
+    if (wanted) {
+      history.replaceState(null, '', `${BASE}/jobs`);
+      const button = this.querySelector<HTMLElement>(
+        `#jobs-list [data-edit="${CSS.escape(wanted)}"]`,
+      );
+      if (button)
+        this.openDialog({
+          name: wanted,
+          schedule: button.dataset.schedule ?? '',
+          command: button.dataset.command ?? '',
+          app: button.dataset.app ?? '',
+        });
+    }
   }
 
   disconnectedCallback(): void {
     if (this.pollTimer) clearInterval(this.pollTimer);
     if (this.validateTimer) clearTimeout(this.validateTimer);
+    this.unsubscribeEvents?.();
+    this.unsubscribeEvents = null;
   }
 
   private toast(message: string, variant: string, icon: string): void {
@@ -414,7 +430,7 @@ export class JobsApp extends HTMLElement {
    *  untrusted is templated). */
   private async openRuns(name: string): Promise<void> {
     this.runsJob = name;
-    this.hideLog();
+    this.logViewer.hide();
     const dlg = this.querySelector('#runs-dialog') as WaDialog;
     const body = this.querySelector('#runs-body') as HTMLElement;
     dlg.setAttribute('label', `run history — ${name}`);
@@ -466,42 +482,6 @@ export class JobsApp extends HTMLElement {
       '<span class="run-duration">duration</span><span class="run-exit">exit</span>' +
       '<span class="run-log-cell"></span></div>' +
       runs.map(row).join('');
-  }
-
-  /** Fetch and show one run's log tail (GET …/runs/:fired_at/log,
-   *  text/plain) under the history rows. */
-  private async showLog(firedAt: string): Promise<void> {
-    const name = this.runsJob;
-    if (!name) return;
-    const box = this.querySelector('#run-log-box') as HTMLElement;
-    const pre = this.querySelector('#run-log') as HTMLElement;
-    const title = this.querySelector('#run-log-title') as HTMLElement;
-    pre.textContent = 'loading…';
-    title.textContent = `log tail — run at ${fmtRunTime(Number(firedAt))}`;
-    box.classList.remove('hidden');
-    const sent = await signedInFetch(
-      `${BASE}/api/jobs/${encodeURIComponent(name)}/runs/${encodeURIComponent(firedAt)}/log`,
-    );
-    if (!sent.ok) {
-      this.notAnswered(sent, 'could not load the run log');
-      return;
-    }
-    const r = sent.data.response;
-    if (!r.ok) {
-      const body = (await r.json().catch(() => ({}))) as { error?: string; detail?: string | null };
-      this.errorToast('could not load the run log', body);
-      return;
-    }
-    const text = await r.text();
-    if (r.headers.get('X-Run-Log-Truncated') === '1') {
-      title.textContent += ' (larger than 1 MiB — showing the tail)';
-    }
-    pre.textContent = text === '' ? '(no output)' : text;
-    pre.scrollTop = 0;
-  }
-
-  private hideLog(): void {
-    (this.querySelector('#run-log-box') as HTMLElement).classList.add('hidden');
   }
 }
 
