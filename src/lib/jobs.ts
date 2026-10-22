@@ -6,8 +6,9 @@
 // jobs page can show a run as live and link its console view (/?run=)
 // at it. Since plan §9 every fire also persists a DURABLE run log + exit
 // code under the workspace-side log dir: the wrapper argv (runCommandArgv)
-// tees output to a log file and captures the command's exit INSIDE the
-// pipeline; the tick's finish observation reads the exit file back into
+// appends output to a log file through a write-time-capped appender
+// (job-log-appender.ts, plan §8) and captures the command's exit INSIDE
+// the pipeline; the tick's finish observation reads the exit file back into
 // job_runs (exit_code/finished_at), and pruning (RUN_HISTORY) unlinks
 // the pruned runs' files. Replaces the old systemd user-timer backend
 // (DESIGN_REVIEW §3.1): jobs now work wherever the app runs, container
@@ -195,8 +196,10 @@ export function checkCron(spec: string, nowMs: number = Date.now()): CalendarChe
 
 // ---------- run files (plan §9) ----------
 
-/** The log tail cap (GET …/log): the last 1 MiB, no size cap on the file
- *  itself in v1 (plan §9 — a truncating wrapper can come later). */
+/** The log tail cap (GET …/log): the newest 1 MiB. Independent of the
+ *  FILE's own write-time cap (plan §8, ctx.logMaxBytes): the read tail
+ *  bounds what a response carries, the appender bounds what a run may
+ *  put on disk while it lives. */
 const LOG_TAIL_BYTES = 1024 * 1024;
 
 /** Log + exit file paths for one run. Pure and shared by every side of
@@ -215,25 +218,45 @@ export function runLogPaths(
   };
 }
 
+/** The bundled log appender (src/lib/job-log-appender.ts), compiled next
+ *  to this module. Resolved from THIS module's own location at load — the
+ *  CommonJS build's equivalent of import.meta.url — never from cwd: the
+ *  server process's cwd is unrelated, and the script must sit at a stable
+ *  absolute path for the wrapper, which executes it inside the WORKSPACE
+ *  container's tmux session (both containers of the split ship the same
+ *  image at /opt/web-pi, so this module's directory there is this one). */
+const LOG_APPENDER = path.join(__dirname, 'job-log-appender.js');
+
 /** The wrapper every fire runs instead of the bare command (plan §9's
- *  exact argv — unit-tested as a pure function). The user command is
- *  $1, an ARGV element of an inner /bin/sh -c — never string-embedded
- *  into the wrapper (`{ <command>; }` breaks on a `#` comment, and any
- *  interpolation is a quoting lottery). NO pipefail: dash rejects
- *  `set -o pipefail`, and without it `$?` after `cmd | tee` is TEE's —
- *  so the exit code is captured INSIDE the pipeline, before tee, into
- *  $3. The wrapper's own exit (tee's) is irrelevant — the code is read
- *  from the file. A failed mkdir/tee must not kill the run: output is
+ *  exact argv shape, §8's sink — unit-tested as a pure function). The user
+ *  command is $1, an ARGV element of an inner /bin/sh -c — never
+ *  string-embedded into the wrapper (`{ <command>; }` breaks on a `#`
+ *  comment, and any interpolation is a quoting lottery). NO pipefail:
+ *  dash rejects `set -o pipefail`, and without it `$?` after
+ *  `cmd | appender` is the APPENDER's — so the exit code is captured
+ *  INSIDE the pipeline, before the appender, into $3. The wrapper's own
+ *  exit (the appender's) is irrelevant — the code is read from the file.
+ *  The appender ($4) caps the log at maxBytes ($5, ctx.logMaxBytes —
+ *  WEB_PI_JOB_LOG_MAX) and never closes the pipe early, so a chatty or
+ *  runaway job can neither fill the disk mid-run nor die of a SIGPIPE
+ *  (plan §8). A failed mkdir/appender must not kill the run: output is
  *  lost, the exit file never appears, the run's result stays 'unknown'. */
-export function runCommandArgv(command: string, logPath: string, exitPath: string): string[] {
+export function runCommandArgv(
+  command: string,
+  logPath: string,
+  exitPath: string,
+  maxBytes: number,
+): string[] {
   return [
     '/bin/sh',
     '-c',
-    'mkdir -p "$(dirname "$2")"; { /bin/sh -c "$1" 2>&1; echo $? > "$3"; } | tee "$2"',
+    'mkdir -p "$(dirname "$2")"; { /bin/sh -c "$1" 2>&1; echo $? > "$3"; } | node "$4" "$2" "$5"',
     'sh',
     command,
     logPath,
     exitPath,
+    LOG_APPENDER,
+    String(maxBytes),
   ];
 }
 
@@ -253,6 +276,11 @@ export interface JobContext {
   /** Run-log root (WEB_PI_JOB_LOG_DIR; /workspace/.webpi/job-logs in the
    *  compose split — a path that exists in BOTH containers, plan §9). */
   logDir: string;
+  /** The write-time cap each run's log is appended under (plan §8,
+   *  WEB_PI_JOB_LOG_MAX): the wrapper's appender stops writing past this
+   *  many bytes — one "[truncated at N bytes]" marker — while still
+   *  draining the job's output. */
+  logMaxBytes: number;
 }
 
 const log = componentLogger('scheduler');
@@ -546,8 +574,8 @@ export class Scheduler {
 
   /** A run session left the live set: fill its row's exit_code +
    *  finished_at from the exit file the wrapper wrote (plan §9). The
-   *  exit code lives in the FILE — the wrapper's own exit status is
-   *  tee's — and a missing/unreadable file leaves exit_code NULL: the
+   *  exit code lives in the FILE — the wrapper's own exit status is the
+   *  appender's — and a missing/unreadable file leaves exit_code NULL: the
    *  run's result stays 'unknown' (never guessed). finished_at is the
    *  observation time (tick granularity, ≤ TICK_MS after the end). */
   private observeFinish(session: TmuxSessionName, armed: ArmedRun): void {
@@ -607,8 +635,9 @@ export class Scheduler {
    *  recorded FIRST: even a failed spawn must count the fire as spent, or
    *  the next tick would retry it forever — so a fire that cannot be
    *  recorded is not spawned either. The command runs wrapped
-   *  (runCommandArgv): its output is teed to the run's log file and its
-   *  exit code captured for the finish observation. */
+   *  (runCommandArgv): its output is appended to the run's log file through
+   *  the capped appender (plan §8) and its exit code captured for the
+   *  finish observation. */
   private async fire(row: JobRow, origin: JobRunOrigin) {
     const recorded = this.recordRun(row.name, origin);
     if (!recorded.ok) {
@@ -624,7 +653,12 @@ export class Scheduler {
     const opened = await newSession(
       session,
       this.ctx.cwd,
-      runCommandArgv(row.command, recorded.paths.log, recorded.paths.exit),
+      runCommandArgv(
+        row.command,
+        recorded.paths.log,
+        recorded.paths.exit,
+        this.ctx.logMaxBytes,
+      ),
       this.ctx.env,
     );
     if (!opened.ok)

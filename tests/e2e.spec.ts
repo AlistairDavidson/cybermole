@@ -1573,7 +1573,7 @@ test('jobs: app tag chip, persisted run logs, run history + log view (task/ws-jo
   expect(typeof after.json.runs[0].finishedAt).toBe('number');
 
   // The history dialog renders the run (fired/origin/duration/exit) and
-  // the log viewer shows the wrapper's tee'd tail.
+  // the log viewer shows the wrapper's appended tail.
   await page.goto('/jobs');
   await page.click('jobs-app wa-button[data-runs="e2e-job"]');
   await expect(page.locator('#runs-dialog .run-row:not(.run-head)')).toHaveCount(1);
