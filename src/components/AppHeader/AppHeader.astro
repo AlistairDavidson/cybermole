@@ -14,7 +14,7 @@ import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
 /** The bar's sections — `current` marks one link aria-current="page". */
-type Section = 'console' | 'jobs' | 'management' | 'settings';
+type Section = 'console' | 'jobs' | 'settings';
 interface Props {
   current: Section;
 }
@@ -26,7 +26,6 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/+$/, '');
 const links: Array<{ section: Section; label: string; href: string; icon: string }> = [
   { section: 'console', label: 'webpi', href: `${base}/`, icon: 'terminal' },
   { section: 'jobs', label: 'jobs', href: `${base}/jobs`, icon: 'clock' },
-  { section: 'management', label: 'management', href: `${base}/management`, icon: 'arrows-rotate' },
   { section: 'settings', label: 'settings', href: `${base}/settings`, icon: 'gear' },
 ];
 // Left of the split: the console brand + jobs (the apps list joins them
