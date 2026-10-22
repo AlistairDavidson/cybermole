@@ -10,6 +10,8 @@ import type { DatabaseUpdateFailure } from '../db';
 import type { DeleteAppFailure, SaveAppFailure } from '../apps';
 import type {
   DeleteJobFailure,
+  GetJobFailure,
+  KillRunFailure,
   ListJobsFailure,
   ListRunsFailure,
   RunJobFailure,
@@ -113,7 +115,9 @@ export type JobFailure =
   | RunJobFailure
   | ListJobsFailure
   | ListRunsFailure
-  | RunLogFailure;
+  | RunLogFailure
+  | GetJobFailure
+  | KillRunFailure;
 
 /** Jobs failures → status + the { error, detail } body /jobs reads. */
 export function jobFailureResponse(f: JobFailure): Response {
@@ -137,8 +141,24 @@ export function jobFailureResponse(f: JobFailure): Response {
         body(f.errorMessage ?? 'previous run is still active', f.data?.session ?? null),
         409,
       );
+    // task/jobs-socket (plan §4): the internal API's kill verb — the
+    // named run is not the job's live one (already ended, or a newer
+    // run is the live one). Same 409 as run_active: retryable by
+    // re-reading the runs list.
+    case 'run_not_active':
+      return jsonResponse(body(f.errorMessage ?? 'the run is not running'), 409);
+    // task/jobs-socket (plan §4): the kill verb — the run-open text would
+    // be wrong for a failed kill; the family discriminates the top line.
     case 'tmux_error':
-      return jsonResponse(body('could not open run session', f.errorMessage ?? null), 500);
+      return jsonResponse(
+        body(
+          f.resultType === 'kill_run'
+            ? 'could not kill the run session'
+            : 'could not open run session',
+          f.errorMessage ?? null,
+        ),
+        500,
+      );
     case 'read_error':
       return jsonResponse(body(f.errorMessage ?? 'could not read the run log'), 500);
     case 'database_error':
@@ -146,6 +166,13 @@ export function jobFailureResponse(f: JobFailure): Response {
     default:
       return f satisfies never;
   }
+}
+
+/** GET /jobs?app=<slug> over the internal socket (task/jobs-socket,
+ *  plan §4): the filter names an app that does not exist. Same body
+ *  family and status the jobs routes give app_not_found. */
+export function appFilterNotFoundResponse(): Response {
+  return jsonResponse({ error: 'no such app', detail: null, code: 'app_not_found' }, 404);
 }
 
 /** A job name from the path that is not a valid JobName. */

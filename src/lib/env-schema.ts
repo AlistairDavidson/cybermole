@@ -73,6 +73,14 @@ export const envSchema = {
   // shell — $SHELL -l, /bin/sh -l when SHELL is unset.
   WEB_PI_COMMAND: { type: 'string', context: 'server', access: 'secret', optional: true },
   WEB_PI_TMUX_CONF: { type: 'string', context: 'server', access: 'secret', optional: true },
+  // task/jobs-socket (docs/jobs-agent-plan.md §3): the internal jobs
+  // API's unix socket path. Unset = the shape default (env.ts
+  // readInternalApiSocket: /run/web-pi/webpi.sock when that shared dir
+  // exists — the compose privilege-split shape — else <state
+  // dir>/webpi.sock). EMPTY = the listener is off (the workspace side
+  // then has no jobs socket). A set-but-non-absolute value stops the
+  // server at boot, like the S3 vars.
+  WEB_PI_SOCK: { type: 'string', context: 'server', access: 'secret', optional: true },
   // task/winston-loki: log aggregation — push URL of a Grafana Loki (the
   // compose `observability` profile runs one; e.g. http://loki:3100).
   // Unset = console-only logging, byte-for-byte today's behaviour (env.ts

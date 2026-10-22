@@ -59,6 +59,8 @@ test('jobFailureResponse: every jobs code → status, with the { error, detail }
     ['run_not_found', 404],
     ['log_missing', 404],
     ['read_error', 500],
+    // task/jobs-socket (plan §4): the kill family's own code.
+    ['run_not_active', 409],
   ];
   for (const [code, status] of cases) {
     const res = jobFailureResponse(
@@ -81,6 +83,12 @@ test('jobFailureResponse: every jobs code → status, with the { error, detail }
   assert.deepEqual(
     await jobFailureResponse(failure('run_job', 'tmux_error', { errorMessage: 'boom' })).json(),
     { error: 'could not open run session', detail: 'boom', code: 'tmux_error' },
+  );
+  // task/jobs-socket (plan §4): the kill verb's tmux_error must not read
+  // as a run-OPEN failure — the family discriminates the top line.
+  assert.deepEqual(
+    await jobFailureResponse(failure('kill_run', 'tmux_error', { errorMessage: 'boom' })).json(),
+    { error: 'could not kill the run session', detail: 'boom', code: 'tmux_error' },
   );
   const invalid = invalidJobNameResponse();
   assert.equal(invalid.status, 400);

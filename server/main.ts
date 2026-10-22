@@ -21,6 +21,7 @@ import {
   PI_BIN,
   PI_AGENT_DIR,
   PI_SESSION_DIR,
+  readInternalApiSocket,
   readObjectStoreConfig,
   readEditorUpstream,
 } from '../src/lib/env';
@@ -38,6 +39,7 @@ import {
   type EditorUpstream,
 } from '../src/lib/editor';
 import { createServices, type ServerConfig, type WebPiLocals } from '../src/lib/services';
+import { startInternalApi, type InternalApiHandle } from './internal-api';
 import { ObjectStore } from '../src/lib/storage';
 import type { ClientMsg, ServerMsg } from '../src/lib/types';
 import { loginBody } from '../src/schemas/api';
@@ -225,6 +227,30 @@ const services = createServices({
 // spot. Uncalled until then on purpose: the default signal exit tears the
 // process (and the tick interval) down anyway.
 const shutdownScheduler = (): void => scheduler.stop();
+
+// ---------- internal API (task/jobs-socket, plan §3/§4) ----------
+// A second HTTP listener, on a unix domain socket, serving the WORKSPACE
+// side (agents) the same jobs service functions the browser routes use —
+// same Result JSON, no cookie/CSRF/rate-limit layer (the socket's file
+// mode is the gate; docs/jobs-agent-plan.md §2–§4). WEB_PI_SOCK: unset =
+// the shape default (/run/web-pi/webpi.sock when that shared dir exists,
+// else <state dir>/webpi.sock); empty = off; a non-absolute value stops
+// the boot (env.ts, like the S3 vars). A stale socket file is removed; a
+// LIVE one fails the boot — two servers must never share a socket.
+const INTERNAL_SOCK = readInternalApiSocket();
+let internalApi: InternalApiHandle | null = null;
+if (INTERNAL_SOCK === null) {
+  bootLog.info('internal API: off (WEB_PI_SOCK is empty) — the workspace side has no jobs socket');
+} else {
+  startInternalApi({ socketPath: INTERNAL_SOCK, scheduler, apps: services.apps })
+    .then(api => {
+      internalApi = api;
+    })
+    .catch(err => {
+      bootLog.error(`internal API failed to start on ${INTERNAL_SOCK}: ${(err as Error).message}`);
+      process.exit(1); // a boot failure, not a degraded mode: fail loudly
+    });
+}
 const loginLimiter = new RateLimiter(10, 15 * 60 * 1000);
 const wsLimiter = new RateLimiter(Math.max(1, ENV.WEB_PI_WS_UPGRADES_PER_MIN), 60 * 1000);
 // Password hashes in flight at once. Each scrypt holds 16 MiB and a libuv
@@ -1445,6 +1471,12 @@ const shutdownSteps: Array<() => void | Promise<void>> = [
   () => {
     autoUpdater.stop();
   }, // 0.5 stop the auto-update loop
+  () => {
+    // task/jobs-socket: stop the internal listener and unlink the socket
+    // file — the workspace side stops getting new job calls before the
+    // public surface goes dark; in-flight requests drain inside close().
+    return internalApi?.close();
+  }, // 0.6 internal API off
   () => {
     server.close();
   }, // 1. stop listening

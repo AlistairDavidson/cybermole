@@ -1,3 +1,4 @@
+import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { envSchema, type EnvValue, type ServerEnvField } from './env-schema';
@@ -92,6 +93,40 @@ export const ENV = {
   WEB_PI_COMMAND: RAW_ENV.WEB_PI_COMMAND ?? `${process.env.SHELL ?? '/bin/sh'} -l`,
   WEB_PI_TMUX_CONF: RAW_ENV.WEB_PI_TMUX_CONF ?? path.join(APP_ROOT, 'tmux.conf'),
 };
+
+/** Internal API socket default (task/jobs-socket, plan §3): the shared
+ *  /run/web-pi dir (the compose privilege split — the same setgid dir the
+ *  tmux socket lives in) when it exists, else the state dir (plain host).
+ *  Pure — the fs probe is injected, so the heuristic is testable without
+ *  the real /run. */
+export function internalSocketDefault(stateDir: string, runWebPiExists: boolean): string {
+  return runWebPiExists ? '/run/web-pi/webpi.sock' : path.join(stateDir, 'webpi.sock');
+}
+
+/** The internal jobs API's socket path (task/jobs-socket, plan §3), or
+ *  null when WEB_PI_SOCK is EMPTY — the listener is off entirely (the
+ *  workspace side then has no jobs socket; CLI/MCP clients answer "the
+ *  internal API is disabled"). Unset = the shape default
+ *  (internalSocketDefault); a set value must be an ABSOLUTE path or the
+ *  boot stops, like the S3/editor vars: WEB_PI_SOCK is shared-filesystem
+ *  wiring, and a quietly-ignored typo would strand the workspace side.
+ *  A function, not an ENV constant, so other entry points (set-password)
+ *  never trip over it. */
+export function readInternalApiSocket(): string | null {
+  const raw = RAW_ENV.WEB_PI_SOCK;
+  if (raw === undefined) {
+    const runWebPiExists = fs.existsSync('/run/web-pi') && fs.statSync('/run/web-pi').isDirectory();
+    return internalSocketDefault(stateDir, runWebPiExists);
+  }
+  if (raw.trim() === '') return null;
+  if (!path.isAbsolute(raw)) {
+    throw new Error(
+      `WEB_PI_SOCK=${JSON.stringify(raw)} must be an absolute socket path ` +
+        '(or empty to disable the internal API)',
+    );
+  }
+  return raw;
+}
 
 /** Loki push config for the winston-loki transport (src/lib/logger.ts), or
  *  null when WEB_PI_LOKI_URL is unset — console-only logging, identical to
