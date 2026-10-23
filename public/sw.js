@@ -5,6 +5,9 @@ const PRECACHE = [
   'offline',
   'manifest.webmanifest',
   'icons/icon.svg',
+  // The global light/dark boot script (task/theme-browser): the offline
+  // shell must render in the BROWSER's mode with no network at all.
+  'theme-boot.js',
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/icon-maskable-192.png',

@@ -1,15 +1,52 @@
 /* console.css — cybermole chrome on Web Awesome tokens + <wa-page>.
-   The app's identity lives entirely in the :root semantic-token overrides
-   below (the one place hex is allowed); every component, utility class and
-   rule follows from them. Unlayered on purpose: it must win over the
-   @layer'd Web Awesome styles. */
+   The app's identity lives entirely in the per-mode semantic-token sets
+   below, scoped to the html.wa-dark / html.wa-light classes Base.astro's
+   blocking script sets from prefers-color-scheme (the one place hex is
+   allowed); every component, utility class and rule follows from them.
+   Unlayered on purpose: it must win over the @layer'd Web Awesome
+   styles. */
 
-:root {
-  /* cybermole brand overrides — Tokyo-Night-ish surfaces over WA dark */
+/* Native widgets, scrollbars and form controls follow the resolved mode.
+   The bare html rule is the no-JS fallback (neither class set): Web
+   Awesome's default light tokens, so the UA widgets stay light to match. */
+html { color-scheme: light; }
+html.wa-dark { color-scheme: dark; }
+html.wa-light { color-scheme: light; }
+
+/* ---- cybermole brand, dark: Tokyo-Night-ish surfaces over WA dark ---- */
+html.wa-dark {
   --wa-color-surface-default: #11131a;
   --wa-color-surface-raised: #181b24;
   --wa-color-surface-lowered: #0d0f15;
   --wa-color-surface-border: #262a36;
+
+  /* xterm palette (agent-terminal.ts resolves these at pane creation and
+     on every mode flip — xterm's theme wants literal #RRGGBB, so the
+     values live here next to the surfaces they sit on). Glyph colors are
+     the Tokyo Night terminal palette; the background repeats the app
+     surface so a terminal pane reads as a page surface, not a foreign
+     island (the pre-mode-era look, kept). */
+  --cybermole-xterm-background: #11131a;
+  --cybermole-xterm-foreground: #c0caf5;
+  --cybermole-xterm-cursor: #c0caf5;
+  --cybermole-xterm-cursor-accent: #11131a;
+  --cybermole-xterm-selection-background: #33467c;
+  --cybermole-xterm-black: #15161e;
+  --cybermole-xterm-red: #f7768e;
+  --cybermole-xterm-green: #9ece6a;
+  --cybermole-xterm-yellow: #e0af68;
+  --cybermole-xterm-blue: #7aa2f7;
+  --cybermole-xterm-magenta: #bb9af7;
+  --cybermole-xterm-cyan: #7dcfff;
+  --cybermole-xterm-white: #a9b1d6;
+  --cybermole-xterm-black-bright: #414868;
+  --cybermole-xterm-red-bright: #ff899d;
+  --cybermole-xterm-green-bright: #9fe044;
+  --cybermole-xterm-yellow-bright: #faba4a;
+  --cybermole-xterm-blue-bright: #8db0ff;
+  --cybermole-xterm-magenta-bright: #c7a9ff;
+  --cybermole-xterm-cyan-bright: #a4daff;
+  --cybermole-xterm-white-bright: #c0caf5;
 
   /* find-bar search highlights (terminal find, agent-terminal.ts): the
      xterm search addon paints match/active backgrounds onto the canvas —
@@ -20,6 +57,47 @@
   --cybermole-find-match-active: #3e96ff;
   --cybermole-find-overview: #888c96;
   --cybermole-find-overview-active: #3e96ff;
+}
+
+/* ---- cybermole brand, light: the Tokyo-Night Day counterpart ----
+   Same structure as the dark set, colors from Tokyo Night Day (the
+   theme's light face): bg/bg_dark/bg_highlight for the surfaces, the
+   Day terminal palette for xterm, bg_visual + bg_search for find
+   highlights. RAISED goes lighter (WA light semantics: elevation lifts)
+   where Tokyo Night Day darkens its chrome — the one value not lifted
+   verbatim from the palette. */
+html.wa-light {
+  --wa-color-surface-default: #e1e2e7;
+  --wa-color-surface-raised: #e9eaf2;
+  --wa-color-surface-lowered: #d0d5e3;
+  --wa-color-surface-border: #c4c8da;
+
+  --cybermole-xterm-background: #e1e2e7;
+  --cybermole-xterm-foreground: #3760bf;
+  --cybermole-xterm-cursor: #3760bf;
+  --cybermole-xterm-cursor-accent: #e1e2e7;
+  --cybermole-xterm-selection-background: #b7c1e3;
+  --cybermole-xterm-black: #b4b5b9;
+  --cybermole-xterm-red: #f52a65;
+  --cybermole-xterm-green: #587539;
+  --cybermole-xterm-yellow: #8c6c3e;
+  --cybermole-xterm-blue: #2e7de9;
+  --cybermole-xterm-magenta: #9854f1;
+  --cybermole-xterm-cyan: #007197;
+  --cybermole-xterm-white: #6172b0;
+  --cybermole-xterm-black-bright: #a1a6c5;
+  --cybermole-xterm-red-bright: #ff4774;
+  --cybermole-xterm-green-bright: #5c8524;
+  --cybermole-xterm-yellow-bright: #a27629;
+  --cybermole-xterm-blue-bright: #358aff;
+  --cybermole-xterm-magenta-bright: #a463ff;
+  --cybermole-xterm-cyan-bright: #007ea8;
+  --cybermole-xterm-white-bright: #3760bf;
+
+  --cybermole-find-match: #b7c1e3;
+  --cybermole-find-match-active: #7890dd;
+  --cybermole-find-overview: #6172b0;
+  --cybermole-find-overview-active: #7890dd;
 }
 
 * { box-sizing: border-box; }
@@ -59,8 +137,8 @@ app-header {
    h1s); the current section's link reads brand-coloured + bold.
    Foreground accents use the *-on-quiet text tokens throughout this
    file: the fill-* family is background fills, near-black in wa-dark
-   (the app is permanently dark) — dark blue on the dark bar without
-   this. */
+   (near-white in wa-light) — brand-blue-on-the-bar without this in
+   either mode. */
 app-header wa-button.app-brand::part(button) { font-weight: var(--wa-font-weight-bold); }
 app-header wa-button.app-brand wa-icon { color: var(--wa-color-brand-on-quiet); }
 app-header wa-button.app-nav-link[aria-current='page']::part(button) {
@@ -528,7 +606,7 @@ jobs-app { display: block; }
    hint text, then the validation message validation-enhancer writes
    into .field-error. */
 .field-hint { display: flex; flex-direction: column; gap: var(--wa-space-3xs); }
-/* on-quiet: the text token (fill-normal is a background fill — near-black red in dark mode) */
+/* on-quiet: the text token (fill-normal is a background fill — near-black red in wa-dark, pale red in wa-light) */
 .field-error { color: var(--wa-color-danger-on-quiet); }
 .field-error:empty { display: none; }
 

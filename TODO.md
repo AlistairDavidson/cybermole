@@ -22,9 +22,6 @@ ability to configure which terminal is used (zsh default)
 
 hideable nav on desktop
 
-global light/dark mode from browser, not hard coded
-vscodium follow global light/dark mode
-
 Rename "Console" -> "Cybermole"
 
 link to logs (page with grafana in an iframe)

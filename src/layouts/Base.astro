@@ -13,18 +13,33 @@ interface Props {
 }
 
 const { title, header } = Astro.props;
-// Mirrors --wa-color-surface-default
-const THEME_COLOR = "#11131a";
+// The two surfaces the browser chrome (theme-color metas below) takes
+// from each mode's --wa-color-surface-default — console.css owns the
+// values (the one sanctioned home of hex); these mirror them so the
+// browser UI can't ship a color the app doesn't render.
+const THEME_COLOR_DARK = "#11131a";
+const THEME_COLOR_LIGHT = "#e1e2e7";
 ---
 
 <!doctype html>
-<html
-  lang="en"
-  class="wa-theme-default wa-palette-default wa-brand-blue wa-dark"
->
+<html lang="en" class="wa-theme-default wa-palette-default wa-brand-blue">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Global light/dark follows the BROWSER, not a hardcoded dark. The
+         render-blocking classic script below (public/theme-boot.js, served
+         pre-auth like sw.js) sets exactly one of wa-dark/wa-light on the
+         root element from matchMedia BEFORE first paint — the class is what
+         console.css's two brand token sets, color-scheme and every
+         mode-aware consumer key off. Its 'change' listener flips the classes
+         live; agent-terminal re-themes live panes and the editor pane
+         reloads (they observe the class, not this script). It is an
+         external FILE, not a literal inline script, because the server's
+         CSP is `script-src 'self'` with no 'unsafe-inline' — an inline
+         script would be refused. No-JS fallback: no class means Web
+         Awesome's default light tokens — the app is JS-dependent anyway;
+         only login works without it, rendered light. -->
+    <script is:inline src={`${BASE}/theme-boot.js`}></script>
     <title>{title}</title>
     <link rel="icon" href={`${BASE}/icons/icon.svg`} type="image/svg+xml" />
     <link
@@ -34,7 +49,11 @@ const THEME_COLOR = "#11131a";
       sizes="192x192"
     />
     <link rel="manifest" href={`${BASE}/manifest.webmanifest`} />
-    <meta name="theme-color" content={THEME_COLOR} />
+    <!-- Both modes' surfaces, one meta each: the browser picks by the same
+         prefers-color-scheme the script above follows, so the chrome around
+         the app always matches the page under it. -->
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content={THEME_COLOR_DARK} />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content={THEME_COLOR_LIGHT} />
     <link rel="apple-touch-icon" href={`${BASE}/icons/icon-maskable-192.png`} />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
