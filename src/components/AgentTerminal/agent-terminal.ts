@@ -194,8 +194,8 @@ function armSharedFind(): void {
  * palettes as --cybermole-xterm-* literals, and this reads them back
  * through getComputedStyle — no hex in the TS, and whichever class the
  * blocking theme-boot script (Base.astro → public/theme-boot.js) set
- * decides the palette. Keys whose token
- * doesn't resolve (console.css missing) are simply absent: xterm falls
+ * decides the palette. Keys whose token doesn't resolve (console.css
+ * missing) are simply absent: xterm falls
  * back to its own defaults for them, at creation and on flips alike. */
 function resolveXtermTheme(): ITheme {
   const cs = getComputedStyle(document.documentElement);

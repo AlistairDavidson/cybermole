@@ -129,6 +129,19 @@ without booting the server; the transport lives in `server/main.ts`:
   `frame-src 'self'`, `connect-src 'self' ws: wss:` — marketplaces
   deliberately absent; `editorSecurityHeaders()` is the single place to
   flip that). Assets keep the global security headers.
+- **Editor HTML is also the one buffered, REWRITTEN body**
+  (task/theme-browser): the boot document's
+  `vscode-workbench-web-configuration` meta gets
+  `configurationDefaults` injected (`window.autoDetectColorScheme` + the
+  preferred dark/light themes — `injectWorkbenchThemeDefaults` in
+  src/lib/editor.ts), so the workbench opens in the BROWSER's color
+  scheme. Verified against the vendored build: it parses only
+  folder/workspace/ew URL params (no `?theme=`), and window-scope theme
+  settings live browser-side, so neither a URL param nor home-volume
+  settings.json can do it — the construction options are the one channel
+  that works. The console reloads the iframe pane on a scheme flip
+  (terminal-tabs.ts). Capped at `EDITOR_HTML_REWRITE_MAX_BYTES`; a shape
+  change upstream degrades to passing the bytes through untouched.
 - **Bodies**: editor routes keep a large cap (`EDITOR_MAX_BODY_BYTES` =
   the upload cap — sized to a large editor save, not the JSON API's
   10 KiB), ACCEPT length-less/chunked bodies (never 411), and swap the

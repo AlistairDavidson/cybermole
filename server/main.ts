@@ -671,12 +671,12 @@ function proxyEditorRequest(
         let overflowed = false;
         upstreamRes.on('data', (chunk: Buffer) => {
           if (overflowed) return; // already streaming from below
+          chunks.push(chunk);
           buffered += chunk.length;
-          if (buffered <= EDITOR_HTML_REWRITE_MAX_BYTES) chunks.push(chunk);
-          else {
-            // Not the boot document: flush what's buffered verbatim and
-            // stream the rest (content-length, if any, is still exact —
-            // the bytes pass through unchanged).
+          if (buffered > EDITOR_HTML_REWRITE_MAX_BYTES) {
+            // Not the boot document: flush what's buffered — the crossing
+            // chunk INCLUDED — and stream the rest (content-length, if any,
+            // is still exact: every byte passes through unchanged).
             overflowed = true;
             res.writeHead(upstreamRes.statusCode ?? 502, out);
             res.write(Buffer.concat(chunks));
