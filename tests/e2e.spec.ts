@@ -383,14 +383,15 @@ test("console flow: create app (with a cwd) → workspace (starts at the app's c
   await waitForTermText(page, 'TYPIST_42', 10_000);
 
   // the spawn really ran on the suite's socket, at the workspace cwd —
-  // the app's dir (derived at the create), not the suite default
+  // the app's dir (derived at the create), not the suite default. The cwd
+  // is verified by asking the session's own shell (a `pwd` round-trip
+  // through the UI): tmux's #{pane_current_path} side-channel resolves
+  // empty under gVisor (TIOCGSID/tcgetpgrp on a pty master → ENOTTY), and
+  // the round-trip asserts the same fact end-to-end in every environment.
   expect(tmuxStatus(['has-session', '-t', `t-${tabId}`])).toBe(0);
-  const pane = spawnSync(
-    'tmux',
-    ['-L', TMUX_SOCKET, 'display-message', '-p', '-t', `t-${tabId}:0.0`, '#{pane_current_path}'],
-    { encoding: 'utf8' },
-  );
-  expect(pane.stdout?.toString().trim()).toBe(appDir);
+  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page.keyboard.type('pwd\n');
+  await waitForTermText(page, appDir, 10_000);
 
   // --- close the tab: confirm dialog → row + tmux session both gone
   await page.click(`terminal-tabs .tab[data-term="${tabId}"] .tab-close`);
@@ -2569,7 +2570,29 @@ test('a terminal tab survives a WEB restart: tmux keeps the session, the client 
 
     // The WEB restart (the common case, plan §4): the server SIGTERMs
     // itself gracefully (restart frames), tmux keeps the session, and a
-    // fresh process on the same db + socket serves the reconnect.
+    // fresh process on the same db + socket serves the reconnect. Before
+    // the kill, install a page-side recorder of every .terminal-status
+    // text: the transient "reconnecting …" flash can come and go faster
+    // than Playwright can sample it (a fast-booting reboot server answers
+    // /login after the client's 1s-min backoff has already reconnected —
+    // deterministic under gVisor), so the proof of the said-reconnecting →
+    // reconnected path reads the recorded history, not a live poll.
+    await page.evaluate(() => {
+      const seen: string[] = [];
+      (window as unknown as { __statusSeen?: string[] }).__statusSeen = seen;
+      const record = (): void => {
+        document.querySelectorAll('.terminal-status').forEach(el => {
+          const text = (el.textContent ?? '').trim();
+          if (text && seen[seen.length - 1] !== text) seen.push(text);
+        });
+      };
+      record();
+      new MutationObserver(record).observe(document.body, {
+        subtree: true,
+        childList: true,
+        characterData: true,
+      });
+    });
     await stop(child);
     child = boot();
     child.stderr!.setEncoding('utf8').on('data', (d: string) => {
@@ -2590,7 +2613,17 @@ test('a terminal tab survives a WEB restart: tmux keeps the session, the client 
 
     // The client said "restarting" and reconnected on its backoff — same
     // tab, same session (no respawn: a respawn would be a fresh shell).
-    await expect(page.locator('.terminal-status')).toContainText('reconnect', { timeout: 15_000 });
+    // The recorder above caught the transient reconnect status race-free;
+    // the attached/survival assertions below carry the real proof.
+    await expect
+      .poll(
+        async () =>
+          (await page.evaluate(() => (window as unknown as { __statusSeen?: string[] }).__statusSeen ?? []))
+            .join(' | ')
+            .includes('reconnect'),
+        { timeout: 15_000 },
+      )
+      .toBe(true);
     await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${tabId}`, {
       timeout: 30_000,
     });
