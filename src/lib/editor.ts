@@ -147,7 +147,7 @@ const decodeAttribute = (value: string): string =>
     .replaceAll('&quot;', '"')
     .replaceAll('&lt;', '<')
     .replaceAll('&gt;', '>')
-    .replaceAll('&amp;', '&'); // eslint-disable-line unicorn/prefer-string-replace-all -- &amp; LAST, like HTML
+    .replaceAll('&amp;', '&'); // LAST: &amp; must not re-decode the entities above
 const encodeAttribute = (value: string): string =>
   value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 

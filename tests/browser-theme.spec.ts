@@ -32,8 +32,9 @@ const modeState = (page: Page) =>
     const cls = document.documentElement.classList;
     const cs = getComputedStyle(document.documentElement);
     const meta = (media: string): string =>
-      document.querySelector(`meta[name="theme-color"][media="${media}"]`)?.getAttribute('content') ??
-      '';
+      document
+        .querySelector(`meta[name="theme-color"][media="${media}"]`)
+        ?.getAttribute('content') ?? '';
     return {
       dark: cls.contains('wa-dark'),
       light: cls.contains('wa-light'),
@@ -58,7 +59,8 @@ async function login(page: Page): Promise<void> {
     await page.fill('wa-input#password input', PASSWORD);
     await page.click('wa-button:has-text("sign in")');
     await page.waitForURL(u => u.pathname === '/');
-    sessionCookie = (await page.context().cookies()).find(c => c.name === 'cybermole_session') ?? null;
+    sessionCookie =
+      (await page.context().cookies()).find(c => c.name === 'cybermole_session') ?? null;
   }
   await page.waitForSelector('workspace-sidebar .nav');
 }
@@ -116,7 +118,7 @@ test.describe('browser scheme light', () => {
 test.describe('live scheme flip', () => {
   test.use({ colorScheme: 'dark' });
 
-  test('a live flip flips the class and the attached pane\'s xterm theme', async ({ page }) => {
+  test("a live flip flips the class and the attached pane's xterm theme", async ({ page }) => {
     await login(page);
     // The auto-selected fixture tab is a live session: the pane attaches.
     await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText(
@@ -180,7 +182,8 @@ const BASE = `http://127.0.0.1:${PORT}`;
 function bareEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined && !k.startsWith('CYBERMOLE_') && !k.startsWith('PI_CODING_AGENT')) env[k] = v;
+    if (v !== undefined && !k.startsWith('CYBERMOLE_') && !k.startsWith('PI_CODING_AGENT'))
+      env[k] = v;
   }
   return { ...env, ...extra };
 }
@@ -289,7 +292,6 @@ test.describe('editor pane (private server, dead upstream)', () => {
       body: JSON.stringify({ name: 'theme', cwd: server!.dir }),
     });
     expect(ws.status).toBe(200);
-    const wsId = (await ws.json()) as { id: string };
 
     await page.context().addCookies([
       {
@@ -312,7 +314,12 @@ test.describe('editor pane (private server, dead upstream)', () => {
     // proxy's configurationDefaults injection (src/lib/editor.ts) plus
     // this pane's reload-on-flip below.
     await expect
-      .poll(async () => page.evaluate(() => document.querySelector('iframe.editor-frame')?.src ?? ''))
+      .poll(async () =>
+        page.evaluate(
+          () =>
+            (document.querySelector('iframe.editor-frame') as HTMLIFrameElement | null)?.src ?? '',
+        ),
+      )
       .toContain(`/editor/?folder=${encodeURIComponent(server!.dir)}`);
 
     // A live scheme flip reloads the iframe (the workbench reads the
@@ -327,22 +334,23 @@ test.describe('editor pane (private server, dead upstream)', () => {
       });
     });
     await page.emulateMedia({ colorScheme: 'light' });
-    await expect
-      .poll(async () => (await modeState(page)).light, { timeout: 15_000 })
-      .toBe(true);
+    await expect.poll(async () => (await modeState(page)).light, { timeout: 15_000 }).toBe(true);
     await expect
       .poll(
         async () =>
-          page.evaluate(
-            () => (window as unknown as { __editorLoads?: number }).__editorLoads ?? 0,
-          ),
+          page.evaluate(() => (window as unknown as { __editorLoads?: number }).__editorLoads ?? 0),
         { timeout: 15_000 },
       )
       .toBeGreaterThan(0);
     // ...and the src is unchanged by the flip (the folder is still the
     // folder; there is no per-mode src to carry).
     await expect
-      .poll(async () => page.evaluate(() => document.querySelector('iframe.editor-frame')?.src ?? ''))
+      .poll(async () =>
+        page.evaluate(
+          () =>
+            (document.querySelector('iframe.editor-frame') as HTMLIFrameElement | null)?.src ?? '',
+        ),
+      )
       .toContain(`/editor/?folder=${encodeURIComponent(server!.dir)}`);
   });
 });

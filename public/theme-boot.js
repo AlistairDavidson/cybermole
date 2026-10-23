@@ -17,12 +17,12 @@
 // acceptable because the app is JS-dependent anyway; only login works
 // without it (rendered light).
 (function () {
-  var scheme = window.matchMedia("(prefers-color-scheme: dark)");
+  var scheme = window.matchMedia('(prefers-color-scheme: dark)');
   var apply = function () {
     var cls = document.documentElement.classList;
-    cls.toggle("wa-dark", scheme.matches);
-    cls.toggle("wa-light", !scheme.matches);
+    cls.toggle('wa-dark', scheme.matches);
+    cls.toggle('wa-light', !scheme.matches);
   };
   apply();
-  scheme.addEventListener("change", apply);
+  scheme.addEventListener('change', apply);
 })();
