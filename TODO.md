@@ -6,7 +6,6 @@ preact signals - make this available for any frontend state needs apps might hav
 lit?
 
 ## Quality
-fleet agents need the ability to run e2e tests, dependencies set up for them so they don't churn
 make flakey tests not flakey
 playwright fuzzer/monkeys? fuzz based integration testing
 automatically set dev credentials to `test`/`test`
@@ -47,10 +46,6 @@ editor extension/marketplace configuration beyond the VSCodium defaults (Open VS
 pi-session resume as a workspace action ("resume a past agent session into a new terminal tab")
 
 job exit-code notification hooks (deferred — jobs-agent-plan.md §11)
-
-## Jobs
-
-implement the jobs agent plan — DONE (docs/jobs-agent-plan.md, shipped: all seven §10 branches merged — the internal socket + API, the webpi CLI, the MCP server, the live jobs page, log caps, root-agent AGENTS.md seeding)
 
 ## Apps
 Build out apps feature properly (its own future epic — apps own their lifecycle
