@@ -396,7 +396,9 @@ services:
       - cybermole-editor-home:/home/workspace
 
   # One-shot: empty named volumes are created root-owned; the dev service
-  # runs as ${UID:-1000} and must write node_modules. Runs on every `up` — a
+  # runs as ${UID:-1000} and must write node_modules and /state (its
+  # CYBERMOLE_STATE_DIR — the credential seed in dev's command then runs as
+  # that same uid, right after this chown). Runs on every `up` — a
   # no-op chown once ownership is right. (Entrypoint overridden: without the
   # repo bind there's no /app/package.json, and the seed logic must not run.)
   dev-init:
@@ -411,16 +413,20 @@ services:
         CYBERMOLE_BASE: ${CYBERMOLE_BASE:-/}
     image: cybermole:local-dev
     user: "0:0"
-    entrypoint: ["sh", "-c", "chown -R ${UID:-1000}:${GID:-1000} /app/node_modules"]
+    entrypoint:
+      ["sh", "-c", "chown -R ${UID:-1000}:${GID:-1000} /app/node_modules /state"]
     restart: "no"
     volumes:
       - cybermole-dev-node-modules:/app/node_modules
+      - cybermole-dev-state:/state
 
-  # Dev object storage: throwaway, fixed keys (the dev service and the
-  # host flow use the same pair), loopback-published so `npm run
-  # dev:server` on the host can reach it too — `docker compose --profile
-  # dev up -d dev-seaweedfs`, then the CYBERMOLE_S3_* values below with
-  # http://127.0.0.1:8333 (README "Developing").
+  # Dev object storage: fixed keys (the dev service and the host flow use
+  # the same pair), loopback-published so `npm run dev:server` on the host
+  # can reach it too — `docker compose --profile dev up -d dev-seaweedfs`,
+  # then the CYBERMOLE_S3_* values below with http://127.0.0.1:8333 (README
+  # "Developing"). Its own volume (prod's seaweedfs has one too): dev state
+  # — the db and the content that references uploads — survives recreates
+  # now, so the objects must too.
   dev-seaweedfs:
     <<: *seaweedfs
     profiles: ["dev"]
@@ -429,6 +435,8 @@ services:
       AWS_SECRET_ACCESS_KEY: cybermole-dev-secret
     ports:
       - "127.0.0.1:8333:8333" # S3 API only
+    volumes:
+      - cybermole-dev-seaweedfs:/data
 
   # The editor for dev — the same image as prod's `editor`, but as the
   # HOST uid over the SAME repo bind as `dev`: the editor tab opens the
@@ -507,10 +515,26 @@ services:
     # container builds its own native deps (node-pty) without touching the
     # host's. npm install runs every boot — seconds when current, and it
     # self-heals (e.g. after a NODE_ENV change) unlike a marker-file check.
+    # Then the dev credential seed — test/test, but ONLY when no credential
+    # row exists yet (set-password --if-unset): the first boot of a fresh
+    # state volume gets a known login, and a password later set with
+    # dev:set-password is never re-seeded over, across any number of
+    # recreates. Folded into this command rather than a one-shot seed
+    # service: same uid as the state volume's owner (dev-init just chowned
+    # it), no second npm install, and idempotent on every boot. The seeder
+    # runs from dist-server, so the server half is tsc'd first — a cold
+    # checkout has none (dev:server's build runs only after the exec), and
+    # the extra pass is the same compile dev:server runs each boot anyway.
     # Then ONE server: dev:server (build + serve :3001 + rebuild/restart on
     # change) renders everything production does — no astro dev half.
     command:
-      ["sh", "-c", "npm install --no-audit --no-fund; exec npm run dev:server"]
+      - sh
+      - -c
+      - >-
+        npm install --no-audit --no-fund
+        && ./node_modules/.bin/tsc -p tsconfig.server.json
+        && printf 'test\ntest\ntest\n' | node dist-server/server/set-password.js --if-unset
+        ; exec npm run dev:server
     ports:
       - "127.0.0.1:3001:3001" # the whole app: API+WS+SSR (npm run dev:server)
     environment:
@@ -520,9 +544,16 @@ services:
       CYBERMOLE_NEW_SESSION_CWD: /app
       # HOME is unwritable for non-1000 uids (see npm_config_cache below) and
       # /app is the host bind — so the $CYBERMOLE_HOME/.local/state default
-      # won't do here. Dev state (login db, dev pi-agent) is throwaway: it
-      # lives in the container's /tmp and re-set-password after a recreate.
-      CYBERMOLE_STATE_DIR: /tmp/cybermole-state
+      # won't do here. /state mirrors prod's CYBERMOLE_STATE_DIR shape, on
+      # the cybermole-dev-state volume: the login db, the dev pi-agent and
+      # job run logs survive recreates (dev-init chowns the fresh volume to
+      # this uid; the seed above never overwrites a changed password).
+      CYBERMOLE_STATE_DIR: /state
+      # Dev has no /workspace, so CYBERMOLE_JOB_LOG_DIR's default would
+      # leave job runs with no logs at all (their results stay 'unknown');
+      # keep them with the rest of dev state instead — the run wrapper
+      # creates the dir itself.
+      CYBERMOLE_JOB_LOG_DIR: /state/job-logs
       # A non-1000 uid has no passwd entry → HOME=/ → npm's cache is unwritable there
       npm_config_cache: /tmp/.npm
       CYBERMOLE_S3_ENDPOINT: http://dev-seaweedfs:8333
@@ -541,6 +572,9 @@ services:
       # files in a home-dir checkout.
       - .:/app:z
       - cybermole-dev-node-modules:/app/node_modules # shadow: container-built native deps
+      # Durable dev state (see CYBERMOLE_STATE_DIR above) — prod's /state
+      # shape on dev's own volume, chowned by dev-init on every up.
+      - cybermole-dev-state:/state
     # no restart policy: dev is an interactive foreground thing
 
 volumes:
@@ -564,6 +598,16 @@ volumes:
     name: cybermole-job-logs
   cybermole-dev-node-modules:
     name: cybermole-dev-node-modules
+  # Dev's durable state at /state — the login db, the dev pi-agent, job run
+  # logs. Dev's counterpart of prod's cybermole-state, kept apart from it
+  # so a dev checkout never shadows a deployed db (dev-init chowns it on
+  # up, like the node_modules shadow above).
+  cybermole-dev-state:
+    name: cybermole-dev-state
+  # Dev uploads — the dev object store's /data, persisted like prod's
+  # cybermole-seaweedfs (fixed dev keys, so nothing to generate).
+  cybermole-dev-seaweedfs:
+    name: cybermole-dev-seaweedfs
   # task/ws-editor: the DEV editor's home (the host uid) — kept apart from
   # prod's uid-2000 cybermole-editor-home (dev-editor-init chowns it on up).
   cybermole-dev-editor-home:

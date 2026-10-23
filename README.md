@@ -158,8 +158,9 @@ npm run dev    # = docker compose --profile dev up --build dev
                #   → http://127.0.0.1:3001 — Ctrl-C stops the stack
 ```
 
-On a fresh state db, set the throwaway login once (in a second terminal,
-while `npm run dev` is attached):
+The dev login is `test`/`test`, seeded automatically the first time dev
+boots on a fresh state volume — and only then: set your own (in a second
+terminal, while `npm run dev` is attached) and it survives every recreate.
 
 ```sh
 docker compose --profile dev exec dev npm run set-password
@@ -182,13 +183,17 @@ What that command brings up:
   owner (prod's uid-2000 editor edits the `cybermole-workspace` volume
   instead — path + uid agreement is per shape). Boot dev without it by
   setting `CYBERMOLE_EDITOR_UPSTREAM=` empty in `.env`.
-- **dev-seaweedfs** — uploads (throwaway, fixed dev keys, S3 on loopback
-  `:8333`), plus the one-shot `dev-init`/`dev-editor-init` chowns.
+- **dev-seaweedfs** — uploads (persisted on their own volume, fixed dev
+  keys, S3 on loopback `:8333`), plus the one-shot `dev-init`/
+  `dev-editor-init` chowns.
 
-Dev state (`cybermole.db`, `pi-agent/`) lives in the container's `/tmp`
-(`CYBERMOLE_STATE_DIR: /tmp/cybermole-state`) — throwaway: recreate the dev
-service and you re-run set-password; production's `cybermole-state` volume is
-untouched by the profile.
+Dev state (`cybermole.db`, `pi-agent/`, job run logs) persists across
+recreates: it lives on the `cybermole-dev-state` volume at `/state` — the
+same `CYBERMOLE_STATE_DIR` shape as production, on its own volume
+(production's `cybermole-state` volume is untouched by the profile). Job
+runs log to `/state/job-logs` (`CYBERMOLE_JOB_LOG_DIR` — dev has no
+`/workspace`, the default's home), and dev uploads persist on the
+`cybermole-dev-seaweedfs` volume.
 
 Notes:
 - Dev runs as `${UID:-1000}:${GID:-1000}` so the container user matches
