@@ -2179,12 +2179,23 @@ test('log out everywhere ends every signed-in session', async ({ page, browser }
 
   // Both tokens are rejected — the token this browser used and the second
   // context's independent one (in-page fetch: the cookie is Secure).
-  // page2 races its own signed-out navigation: an evaluate whose execution
-  // context dies mid-fetch reads -1 and is retried (expect.poll retries a
-  // bad value, not a thrown callback) — the answer is 401 either side.
+  // page2 races its own signed-out navigation, and that navigation can
+  // abort the very fetch this poll issues: the TypeError is caught
+  // INSIDE the page (Failed to fetch → 0, "not 401 yet") so expect.poll
+  // retries instead of dying on the throw (it retries a bad value, not a
+  // thrown callback — the churn probe's flake). An evaluate whose
+  // execution context dies before the script runs still throws out
+  // here and reads -1 — same retry. Either side of the navigation, a
+  // dead token answers 401.
   const state = async (p: Page): Promise<number> => {
     try {
-      return await p.evaluate(async () => (await fetch('/api/state')).status);
+      return await p.evaluate(async () => {
+        try {
+          return (await fetch('/api/state')).status;
+        } catch {
+          return 0; // aborted by the racing navigation — retried, not failed
+        }
+      });
     } catch (e) {
       if (/destroyed/.test(String((e as Error).message))) return -1;
       throw e;

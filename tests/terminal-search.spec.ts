@@ -276,6 +276,37 @@ async function expectSeqOnceEach(page: Page): Promise<void> {
   expect(markers, 'the cmd.sh banner must appear exactly once').toBe(1);
 }
 
+/** The first exact-once violation in `lines` — null when every line of
+ *  the seq 1 60 and the banner sit in the buffer exactly once. The
+ *  settle poll's value: a timeout surfaces it as the Received line,
+ *  naming the first offender, while expectSeqOnceEach above stays the
+ *  one-shot reporter (every line, its own precise message). */
+function firstSeqViolation(lines: string[]): string | null {
+  for (let n = 1; n <= 60; n++) {
+    const want = String(n);
+    const got = lines.filter(l => l === want).length;
+    if (got !== 1) return `line "${want}" must appear exactly once (got ${got})`;
+  }
+  const markers = lines.filter(l => l.includes(MARKER)).length;
+  if (markers !== 1) return `the cmd.sh banner must appear exactly once (got ${markers})`;
+  return null;
+}
+
+/** Wait for a reloaded buffer to SETTLE. waitForTermLine('1') proves
+ *  only that the backfill history landed: xterm.js parses writes in
+ *  chunks on its own cadence, so the attach redraw that repaints the
+ *  current screen BELOW that history can still be in flight, and a
+ *  one-shot sample taken between the two reads a mid-screen line
+ *  ('24') as 0 — the transient the churn probes flaked on, not a lost
+ *  line. Poll the full exact-once condition instead (expect.poll
+ *  retries a bad value, not a thrown callback): a genuine double cannot
+ *  heal (it stays 2 forever → timeout, the first offender named) and a
+ *  genuinely lost line times out the same way — expectSeqOnceEach
+ *  after it still walks every line for the complete message. */
+async function waitForSeqOnceEach(page: Page, timeout = 10_000): Promise<void> {
+  await expect.poll(async () => firstSeqViolation(await bufferLines(page)), { timeout }).toBe(null);
+}
+
 test('backfill: reload brings the scrollback back under the redraw — nothing doubled, nothing lost', async ({
   page,
 }) => {
@@ -308,6 +339,9 @@ test('backfill: reload brings the scrollback back under the redraw — nothing d
     { timeout: 15_000 },
   );
   await waitForTermLine(page, '1');
+  // '1' proves the backfill landed; the redraw under it can still be in
+  // flight this early — settle before the one-shot assert.
+  await waitForSeqOnceEach(page);
   await expectSeqOnceEach(page);
 
   // A second reload: same proof against a history that now includes
@@ -319,6 +353,7 @@ test('backfill: reload brings the scrollback back under the redraw — nothing d
     { timeout: 15_000 },
   );
   await waitForTermLine(page, '1');
+  await waitForSeqOnceEach(page); // every reload races the same settle
   await expectSeqOnceEach(page);
 });
 
