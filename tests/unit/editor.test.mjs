@@ -139,9 +139,7 @@ const BOOT_DOC = `<!DOCTYPE html>
 
 const injectedDoc = injectWorkbenchThemeDefaults(BOOT_DOC);
 const injectedMeta = /data-settings="([^"]*)"/.exec(injectedDoc)?.[1] ?? '';
-const injectedConfig = JSON.parse(
-  injectedMeta.replaceAll('&quot;', '"').replaceAll('&amp;', '&'),
-);
+const injectedConfig = JSON.parse(injectedMeta.replaceAll('&quot;', '"').replaceAll('&amp;', '&'));
 
 test('injectWorkbenchThemeDefaults: the color-scheme defaults land in the construction options, everything else intact', () => {
   assert.equal(
@@ -171,12 +169,14 @@ test('injectWorkbenchThemeDefaults: the color-scheme defaults land in the constr
 test('injectWorkbenchThemeDefaults: attribute escaping round-trips (&amp; in, &amp; out)', () => {
   // a value that exercises the escaping both ways: & in the JSON must
   // survive as & (not double-escape, not eat the following chars)
-  const doc = BOOT_DOC.replace('&quot;serverBasePath&quot;:&quot;/&quot;', '&quot;serverBasePath&quot;:&quot;/a&amp;b&quot;');
+  const doc = BOOT_DOC.replace(
+    '&quot;serverBasePath&quot;:&quot;/&quot;',
+    '&quot;serverBasePath&quot;:&quot;/a&amp;b&quot;',
+  );
   const out = JSON.parse(
-    (/data-settings="([^"]*)"/.exec(injectWorkbenchThemeDefaults(doc))?.[1] ?? '').replaceAll(
-      '&quot;',
-      '"',
-    ).replaceAll('&amp;', '&'),
+    (/data-settings="([^"]*)"/.exec(injectWorkbenchThemeDefaults(doc))?.[1] ?? '')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&amp;', '&'),
   );
   assert.equal(out.serverBasePath, '/a&b');
 });
@@ -187,10 +187,9 @@ test('injectWorkbenchThemeDefaults: existing configurationDefaults are kept (a d
     'enableWorkspaceTrust&quot;:false,&quot;configurationDefaults&quot;:{&quot;workbench.preferredDarkColorTheme&quot;:&quot;Abyss&quot;,&quot;editor.fontSize&quot;:14}',
   );
   const out = JSON.parse(
-    (/data-settings="([^"]*)"/.exec(injectWorkbenchThemeDefaults(doc))?.[1] ?? '').replaceAll(
-      '&quot;',
-      '"',
-    ).replaceAll('&amp;', '&'),
+    (/data-settings="([^"]*)"/.exec(injectWorkbenchThemeDefaults(doc))?.[1] ?? '')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&amp;', '&'),
   );
   assert.equal(out.configurationDefaults['editor.fontSize'], 14, 'unrelated keys pass through');
   // ours wins for OUR keys only — the embedder's is the base, ours the

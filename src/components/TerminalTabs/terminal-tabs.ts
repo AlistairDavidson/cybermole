@@ -55,10 +55,12 @@ const editorSrc = (cwd: string): string => `${BASE}/editor/?folder=${encodeURICo
 // Base.astro's blocking script flips html's wa-dark/wa-light classes, an
 // existing editor pane re-navigates. Re-assigning src (even the same
 // value) is a reload per the iframe spec — the workbench re-boots in the
-// now-current mode; an editor reload on a theme change is the accepted
-// cost (VS Code's own web player reloads on scheme flips its settings
-// can't follow live). Workspace state is server-side; nothing is lost
-// but the pane's scroll position.
+// now-current mode. The injected autoDetectColorScheme default
+// (src/lib/editor.ts) sometimes re-themes a booted workbench live too,
+// but not reliably (it rides a theme-file fetch); the reload is the
+// deterministic path and is task-sanctioned — the two converge on the
+// same theme either way. Workspace state is server-side; nothing is
+// lost but the pane's scroll position.
 let editorThemeArmed = false;
 function armEditorThemeReload(): void {
   if (editorThemeArmed) return;

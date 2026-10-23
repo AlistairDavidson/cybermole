@@ -120,8 +120,14 @@ export const EDITOR_HTML_REWRITE_MAX_BYTES = 262_144;
  *    vscode-workbench-web-configuration meta tag, and its
  *    configurationDefaults are honored — verified end to end against a
  *    real booting workbench: with autoDetectColorScheme defaulted on, the
- *    workbench opens dark/light matching the browser's scheme at boot
- *    (a live flip needs a reload; the console reloads the iframe pane).
+ *    workbench opens dark/light matching the browser's scheme at boot,
+ *    and (its installPreferredSchemeListener armed by the same default)
+ *    often re-themes live on a flip too. That live follow was NOT
+ *    reliable in testing (it rides a theme-file fetch and can lag by
+ *    seconds), so the console RELOADS the editor pane on flips
+ *    (terminal-tabs.ts) — deterministic, and task-sanctioned; the
+ *    workbench's own live follow, when it wins the race, lands the same
+ *    theme either way.
  *
  *  They are DEFAULTS: a user who picks their own theme in the workbench
  *  overrides colorTheme in their browser-side settings, and can turn the
@@ -140,7 +146,8 @@ export const EDITOR_THEME_CONFIGURATION_DEFAULTS: Record<string, unknown> = {
  *  HTML attribute escapes (&quot; / &amp;) — exactly the escaping the
  *  server applies, so the round-trip is lossless for the JSON we parse
  *  and re-stringify. */
-const WORKBENCH_CONFIG_META = /(<meta\s+id="vscode-workbench-web-configuration"\s+data-settings=")([^"]*)(")/;
+const WORKBENCH_CONFIG_META =
+  /(<meta\s+id="vscode-workbench-web-configuration"\s+data-settings=")([^"]*)(")/;
 
 const decodeAttribute = (value: string): string =>
   value
@@ -149,7 +156,11 @@ const decodeAttribute = (value: string): string =>
     .replaceAll('&gt;', '>')
     .replaceAll('&amp;', '&'); // LAST: &amp; must not re-decode the entities above
 const encodeAttribute = (value: string): string =>
-  value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+  value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
 
 /** Inject EDITOR_THEME_CONFIGURATION_DEFAULTS into a workbench boot
  *  document's construction options (see the constant for the why). Pure
