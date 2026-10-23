@@ -115,7 +115,9 @@ export function defaultAgentCommand(piBin: string, piBinExists: boolean): string
  *  Pure — the fs probe is injected, so the heuristic is testable without
  *  the real /run. */
 export function internalSocketDefault(stateDir: string, runCybermoleExists: boolean): string {
-  return runCybermoleExists ? '/run/cybermole/cybermole.sock' : path.join(stateDir, 'cybermole.sock');
+  return runCybermoleExists
+    ? '/run/cybermole/cybermole.sock'
+    : path.join(stateDir, 'cybermole.sock');
 }
 
 /** The internal jobs API's socket path (task/jobs-socket, plan §3), or
@@ -130,7 +132,8 @@ export function internalSocketDefault(stateDir: string, runCybermoleExists: bool
 export function readInternalApiSocket(): string | null {
   const raw = RAW_ENV.CYBERMOLE_SOCK;
   if (raw === undefined) {
-    const runCybermoleExists = fs.existsSync('/run/cybermole') && fs.statSync('/run/cybermole').isDirectory();
+    const runCybermoleExists =
+      fs.existsSync('/run/cybermole') && fs.statSync('/run/cybermole').isDirectory();
     return internalSocketDefault(stateDir, runCybermoleExists);
   }
   if (raw.trim() === '') return null;

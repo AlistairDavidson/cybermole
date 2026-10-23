@@ -29,7 +29,9 @@ const {
 const { defaultAgentCommand, PI_BIN } = await import('../../dist-server/src/lib/env.js');
 
 function freshDb() {
-  return new StateDb(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-td-')), 'cybermole.db'));
+  return new StateDb(
+    path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-td-')), 'cybermole.db'),
+  );
 }
 
 function brokenDb() {
@@ -66,7 +68,8 @@ test("defaultAgentCommand (env.ts): the vendored pi binary when the install has 
   assert.equal(defaultAgentCommand('/app/node_modules/.bin/pi', true), '/app/node_modules/.bin/pi');
   assert.equal(defaultAgentCommand('/app/node_modules/.bin/pi', false), 'pi');
   // this repo vendors pi, so the shipped built-in is the absolute PI_BIN
-  if (fs.existsSync(PI_BIN)) assert.equal(defaultAgentCommand(PI_BIN, fs.existsSync(PI_BIN)), PI_BIN);
+  if (fs.existsSync(PI_BIN))
+    assert.equal(defaultAgentCommand(PI_BIN, fs.existsSync(PI_BIN)), PI_BIN);
 });
 
 // ---------- the db-backed chain (env pinned above) ----------

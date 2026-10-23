@@ -278,7 +278,9 @@ const shutdownScheduler = (): void => scheduler.stop();
 const INTERNAL_SOCK = readInternalApiSocket();
 let internalApi: InternalApiHandle | null = null;
 if (INTERNAL_SOCK === null) {
-  bootLog.info('internal API: off (CYBERMOLE_SOCK is empty) — the workspace side has no jobs socket');
+  bootLog.info(
+    'internal API: off (CYBERMOLE_SOCK is empty) — the workspace side has no jobs socket',
+  );
 } else {
   startInternalApi({ socketPath: INTERNAL_SOCK, scheduler, apps: services.apps })
     .then(api => {
@@ -288,7 +290,7 @@ if (INTERNAL_SOCK === null) {
       if (err instanceof InternalSocketOwnedError) {
         bootLog.error(
           `internal API DISABLED on this instance: ${err.message} — ` +
-            'the workspace side\'s jobs tools (CLI/MCP) will fail until this instance owns the socket',
+            "the workspace side's jobs tools (CLI/MCP) will fail until this instance owns the socket",
         );
         return;
       }

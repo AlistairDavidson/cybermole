@@ -104,12 +104,12 @@ export function terminalDefaults(db: StateDb): TerminalDefaultsResult {
   });
   return read.ok
     ? { ok: true, resultType: 'terminal_defaults', data: read.data.value }
-    : {
+    : ({
         ok: false,
         resultType: 'terminal_defaults',
         errorCode: 'database_error',
         errorMessage: read.errorMessage,
-      } satisfies TerminalDefaultsFailure;
+      } satisfies TerminalDefaultsFailure);
 }
 
 // ---------- the save (POST /api/settings) ----------
@@ -146,30 +146,30 @@ export function saveTerminalDefaults(
   if (input.agentCommand !== undefined) {
     const saved = write(KEY_AGENT, input.agentCommand);
     if (!saved.ok)
-      return ({
+      return {
         ok: false,
         resultType: 'save_terminal_defaults',
         errorCode: 'database_error',
         errorMessage: saved.errorMessage,
-      }) satisfies SaveTerminalDefaultsFailure;
+      } satisfies SaveTerminalDefaultsFailure;
   }
   if (input.shellCommand !== undefined) {
     const saved = write(KEY_SHELL, input.shellCommand);
     if (!saved.ok)
-      return ({
+      return {
         ok: false,
         resultType: 'save_terminal_defaults',
         errorCode: 'database_error',
         errorMessage: saved.errorMessage,
-      }) satisfies SaveTerminalDefaultsFailure;
+      } satisfies SaveTerminalDefaultsFailure;
   }
   const after = terminalDefaults(db);
   if (!after.ok)
-    return ({
+    return {
       ok: false,
       resultType: 'save_terminal_defaults',
       errorCode: 'database_error',
       errorMessage: after.errorMessage ?? 'could not read the terminal defaults',
-    }) satisfies SaveTerminalDefaultsFailure;
+    } satisfies SaveTerminalDefaultsFailure;
   return { ok: true, resultType: 'save_terminal_defaults', data: after.data };
 }

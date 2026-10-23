@@ -244,7 +244,8 @@ export function createServices(deps: ServiceDeps): CybermoleServices {
       // ?? env — never a boot-time snapshot), so the /settings form
       // prefills what the NEXT tab would actually run.
       const defaults = terminalDefaults(stateDb);
-      if (!defaults.ok) return fail(defaults.errorMessage ?? 'could not read the terminal defaults');
+      if (!defaults.ok)
+        return fail(defaults.errorMessage ?? 'could not read the terminal defaults');
       return {
         ok: true,
         resultType: 'settings_state',
