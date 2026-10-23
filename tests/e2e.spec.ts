@@ -114,7 +114,7 @@ async function login(page: Page): Promise<void> {
     await page.goto('/login');
     await signIn(page);
     await page.waitForURL(u => u.pathname === '/');
-    sessionCookie = (await page.context().cookies()).find(c => c.name === 'webpi_session') ?? null;
+    sessionCookie = (await page.context().cookies()).find(c => c.name === 'cybermole_session') ?? null;
   }
   await page.waitForSelector('workspace-sidebar .nav');
 }
@@ -129,7 +129,7 @@ function tmuxStatus(args: string[]): number {
  *  plain-http origin), refresh the console's state, return its id. A
  *  distinct cwd (when the caller needs one) is set through the PATCH
  *  route — the create DERIVES it now (task/app-cwd: the parent app's
- *  cwd, else WEB_PI_NEW_SESSION_CWD — WORKSPACE in this suite). */
+ *  cwd, else CYBERMOLE_NEW_SESSION_CWD — WORKSPACE in this suite). */
 async function makeWorkspace(page: Page, name: string, cwd?: string): Promise<string> {
   const made = await api(page, 'POST', '/api/workspaces', { name });
   expect(made.status, JSON.stringify(made.json)).toBe(200);
@@ -357,7 +357,7 @@ test("console flow: create app (with a cwd) → workspace (starts at the app's c
   // selected: the tab bar's no-terminals prompt carries its own +
   await expect(page.locator('.tabs-empty-terminals')).toBeVisible();
   // the workspace's cwd IS the app's (the server derived it — the row's
-  // title carries w.cwd) — not the suite default (WEB_PI_NEW_SESSION_CWD)
+  // title carries w.cwd) — not the suite default (CYBERMOLE_NEW_SESSION_CWD)
   const flowRow = page.locator('workspace-sidebar li[data-ws].active');
   await expect(flowRow).toContainText('flow ws');
   await expect(flowRow).toHaveAttribute('title', appDir);
@@ -436,7 +436,7 @@ test('a paste bigger than one WebSocket frame reaches the session whole', async 
 
   // Raw mode + no echo on the pane's tty so head sees the paste byte for
   // byte (a canonical-mode line is capped at 4 KiB by the kernel, which
-  // would make this a test of the tty rather than of web-pi).
+  // would make this a test of the tty rather than of cybermole).
   await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
   await page.keyboard.type(
     `stty raw -echo; echo RAW_$((40+2)); head -c ${size} > ${out}; stty sane\n`,
@@ -593,7 +593,7 @@ test('dead tab: an out-of-band kill shows not-live in the poll; clicking the tab
 }) => {
   test.setTimeout(60_000);
   await login(page);
-  // The workspace cwd is deliberately NOT WEB_PI_NEW_SESSION_CWD's default
+  // The workspace cwd is deliberately NOT CYBERMOLE_NEW_SESSION_CWD's default
   // (both are WORKSPACE here) — a distinct dir proves the respawn targets
   // the workspace row's cwd, not the configured default.
   const cwd = `${WORKSPACE}/dead-tab-cwd`;
@@ -796,7 +796,7 @@ test('files: upload streams into object storage; downloads come back as resumabl
   ).toBe(415);
 
   // Raw requests from Node with the session cookie, for what a browser won't send.
-  const cookie = (await page.context().cookies()).find(c => c.name === 'webpi_session')!;
+  const cookie = (await page.context().cookies()).find(c => c.name === 'cybermole_session')!;
   const port = new URL(page.url()).port;
   const raw = (path: string, headers: Record<string, string>, body?: string[]): Promise<number> =>
     new Promise((resolve, reject) => {
@@ -804,7 +804,7 @@ test('files: upload streams into object storage; downloads come back as resumabl
         `http://127.0.0.1:${port}${path}`,
         {
           method: 'POST',
-          headers: { Cookie: `webpi_session=${cookie.value}`, ...headers },
+          headers: { Cookie: `cybermole_session=${cookie.value}`, ...headers },
         },
         res => {
           res.resume();
@@ -1263,9 +1263,9 @@ test('jobs: validate, save, run now, delete', async ({ page }) => {
   await expect(page.locator('jobs-app .job-name')).toContainText('itest-job');
   await expect(page.locator('jobs-app .job-meta')).toContainText('*/5 * * * *');
 
-  // Run now: a live webpi-<name> tmux session on the suite's socket.
+  // Run now: a live cybermole-<name> tmux session on the suite's socket.
   const run = await api(page, 'POST', '/api/jobs/itest-job/run');
-  expect(run.json).toMatchObject({ name: 'itest-job', session: 'webpi-itest-job' });
+  expect(run.json).toMatchObject({ name: 'itest-job', session: 'cybermole-itest-job' });
   const live = () => {
     try {
       return execFileSync('tmux', ['-L', TMUX_SOCKET, 'list-sessions', '-F', '#{session_name}'], {
@@ -1275,12 +1275,12 @@ test('jobs: validate, save, run now, delete', async ({ page }) => {
       return '';
     } // no tmux server yet
   };
-  await expect.poll(live, { timeout: 10_000 }).toContain('webpi-itest-job');
+  await expect.poll(live, { timeout: 10_000 }).toContain('cybermole-itest-job');
 
   // The run is live in the listing and the card says so.
   const listed = await api(page, 'GET', '/api/jobs');
   const job = listed.json.jobs.find((j: { name: string }) => j.name === 'itest-job');
-  expect(job).toMatchObject({ running: true, session: 'webpi-itest-job' });
+  expect(job).toMatchObject({ running: true, session: 'cybermole-itest-job' });
   expect(job.last).toBeTruthy();
   await page.reload();
   await expect(page.locator('jobs-app .job wa-badge:has-text("running")')).toHaveCount(1);
@@ -1292,8 +1292,8 @@ test('jobs: validate, save, run now, delete', async ({ page }) => {
   expect((await api(page, 'DELETE', '/api/jobs/itest-job')).status).toBe(200);
   expect((await api(page, 'DELETE', '/api/jobs/itest-job')).status).toBe(404);
   expect((await api(page, 'GET', '/api/jobs')).json.jobs).toEqual([]);
-  expect(live()).toContain('webpi-itest-job');
-  execFileSync('tmux', ['-L', TMUX_SOCKET, 'kill-session', '-t', 'webpi-itest-job']);
+  expect(live()).toContain('cybermole-itest-job');
+  execFileSync('tmux', ['-L', TMUX_SOCKET, 'kill-session', '-t', 'cybermole-itest-job']);
 });
 
 test('the jobs dialog validates against the shared schema: per-field errors, no request until valid', async ({
@@ -1348,8 +1348,8 @@ test('jobs persist across a server restart; missed runs catch up', async () => {
   // (new) server was "down". The job lives ONLY in the copy: the webServer's
   // own ticking scheduler must not be able to fire it, so the catch-up run
   // is attributable to the restarted server alone.
-  const dbCopy = `${WORKSPACE}/webpi-restart.db`;
-  fs.copyFileSync(`${WORKSPACE}/webpi.db`, dbCopy);
+  const dbCopy = `${WORKSPACE}/cybermole-restart.db`;
+  fs.copyFileSync(`${WORKSPACE}/cybermole.db`, dbCopy);
   const backdate = Date.now() - 3 * 60_000;
   const w = new DatabaseSync(dbCopy);
   w.prepare(
@@ -1366,13 +1366,13 @@ test('jobs persist across a server restart; missed runs catch up', async () => {
   const child = spawn('node', ['dist-server/server/main.js'], {
     env: {
       ...process.env,
-      WEB_PI_PORT: String(PORT2),
-      WEB_PI_HOST: '127.0.0.1',
-      WEB_PI_DB_FILE: dbCopy,
-      WEB_PI_AGENT_DIR: `${WORKSPACE}/pi-agent`,
-      WEB_PI_NEW_SESSION_CWD: WORKSPACE,
-      WEB_PI_TMUX_SOCKET: TMUX_SOCKET,
-      WEB_PI_COMMAND: `${WORKSPACE}/cmd.sh`,
+      CYBERMOLE_PORT: String(PORT2),
+      CYBERMOLE_HOST: '127.0.0.1',
+      CYBERMOLE_DB_FILE: dbCopy,
+      CYBERMOLE_AGENT_DIR: `${WORKSPACE}/pi-agent`,
+      CYBERMOLE_NEW_SESSION_CWD: WORKSPACE,
+      CYBERMOLE_TMUX_SOCKET: TMUX_SOCKET,
+      CYBERMOLE_COMMAND: `${WORKSPACE}/cmd.sh`,
     },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
@@ -1417,8 +1417,8 @@ test('jobs persist across a server restart; missed runs catch up', async () => {
     expect(state.jobs.map(j => j.name)).toContain('itest-persist');
 
     // Catch-up: the first scheduler tick (≤30s after boot) sees the missed
-    // window and fires ONE run — a live webpi-<name> session on the socket.
-    await expect.poll(sessions, { timeout: 45_000 }).toContain('webpi-itest-persist');
+    // window and fires ONE run — a live cybermole-<name> session on the socket.
+    await expect.poll(sessions, { timeout: 45_000 }).toContain('cybermole-itest-persist');
 
     // ...and the fire is recorded (newer than the backdated row, as catchup).
     const r = new DatabaseSync(dbCopy);
@@ -1434,8 +1434,8 @@ test('jobs persist across a server restart; missed runs catch up', async () => {
   } finally {
     child.kill('SIGKILL');
     await new Promise<void>(resolve => child.once('exit', () => resolve()));
-    if (sessions().includes('webpi-itest-persist')) {
-      execFileSync('tmux', ['-L', TMUX_SOCKET, 'kill-session', '-t', 'webpi-itest-persist']);
+    if (sessions().includes('cybermole-itest-persist')) {
+      execFileSync('tmux', ['-L', TMUX_SOCKET, 'kill-session', '-t', 'cybermole-itest-persist']);
     }
     fs.rmSync(dbCopy, { force: true });
     if (bootLog && !/ExperimentalWarning/.test(bootLog))
@@ -1515,10 +1515,10 @@ test('jobs: app tag chip, persisted run logs, run history + log view (task/ws-jo
     json: { runs: [] },
   });
 
-  // Run now (the card's button): a live webpi-<name> session whose
-  // wrapper tees output to a durable log under WEB_PI_JOB_LOG_DIR.
+  // Run now (the card's button): a live cybermole-<name> session whose
+  // wrapper tees output to a durable log under CYBERMOLE_JOB_LOG_DIR.
   await page.click('jobs-app wa-button[data-run="e2e-job"]');
-  await expect(page.locator('jobs-app .job-view')).toHaveAttribute('href', /\?run=webpi-e2e-job$/);
+  await expect(page.locator('jobs-app .job-view')).toHaveAttribute('href', /\?run=cybermole-e2e-job$/);
   // expect.poll retries a bad VALUE, not a thrown callback — ENOENT while
   // the pane's mkdir -p lands must read as 0 so the window keeps polling.
   const logDirEntries = () => {
@@ -1540,7 +1540,7 @@ test('jobs: app tag chip, persisted run logs, run history + log view (task/ws-jo
       return '';
     }
   };
-  await expect.poll(live, { timeout: 10_000 }).toContain('webpi-e2e-job');
+  await expect.poll(live, { timeout: 10_000 }).toContain('cybermole-e2e-job');
   const runsLive = await api(page, 'GET', '/api/jobs/e2e-job/runs');
   expect(runsLive.json.runs[0]).toMatchObject({
     origin: 'manual',
@@ -1639,7 +1639,7 @@ test('an internal-socket mutation updates an open /jobs page without the poll (j
   await expect(page.locator('jobs-app')).toBeVisible();
 
   // The agent transport: plain node:http over the suite webServer's
-  // internal socket (WEB_PI_SOCK in playwright.config — the file mode is
+  // internal socket (CYBERMOLE_SOCK in playwright.config — the file mode is
   // the gate). Same Result JSON shapes as the browser API (plan §4).
   const internalApi = (
     method: string,
@@ -1735,7 +1735,7 @@ test('the workspace filter matches names, hides empty groups, and survives the p
 
   // Name-only match (the plan's locked shape): a cwd fragment of a
   // fixture workspace's directory matches nothing.
-  await search.fill('web-pi-itest');
+  await search.fill('cybermole-itest');
   await expect(rows).toHaveCount(0);
   await expect(groups).toHaveCount(0);
   await search.fill('scratch');
@@ -1823,7 +1823,7 @@ test('nav groups collapse per app: rows hide, state survives poll re-render + re
   await expect(toggle).toBeFocused();
 
   // Persisted under the app's stable slug in the namespaced localStorage key.
-  const stored = await page.evaluate(() => localStorage.getItem('webpi:nav-collapsed'));
+  const stored = await page.evaluate(() => localStorage.getItem('cybermole:nav-collapsed'));
   expect(JSON.parse(stored ?? '{}')).toEqual({ 'alpha-app': true });
 
   // The 15s poll re-render keeps the group collapsed (no flicker open).
@@ -1858,7 +1858,7 @@ test('nav groups collapse per app: rows hide, state survives poll re-render + re
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   await expect(rows).toBeVisible();
   const storedAfterExpand =
-    (await page.evaluate(() => localStorage.getItem('webpi:nav-collapsed'))) ?? '{}';
+    (await page.evaluate(() => localStorage.getItem('cybermole:nav-collapsed'))) ?? '{}';
   expect(JSON.parse(storedAfterExpand)).toEqual({});
 });
 
@@ -1898,10 +1898,10 @@ test('settings dashboard shows effective config; update dry-run is check-only', 
   const cfg = page.locator('#config');
   await expect(cfg.locator('.cfg-row')).toHaveCount(11);
   const text = await cfg.innerText();
-  expect(text).toContain('web-pi-itest'); // tmux socket (config env)
+  expect(text).toContain('cybermole-itest'); // tmux socket (config env)
   expect(text).toContain('cmd.sh'); // the shell a new terminal tab runs
   expect(text).toContain('default workspace cwd'); // relabeled (plan §10)
-  expect(text).toContain('/tmp/web-pi-itest/webpi.db'); // state db path — path only, never contents
+  expect(text).toContain('/tmp/cybermole-itest/cybermole.db'); // state db path — path only, never contents
   await expect(page.locator('#pi-badge')).toContainText(/pi /);
   await expect(page.locator('#pi-declared')).toContainText('declared');
 
@@ -1977,7 +1977,7 @@ test('WS upgrades demand a matching Origin — missing or foreign destroys the s
   page,
 }) => {
   await login(page);
-  const token = (await page.context().cookies()).find(c => c.name === 'webpi_session')?.value ?? '';
+  const token = (await page.context().cookies()).find(c => c.name === 'cybermole_session')?.value ?? '';
   const wsOrigin = new URL(page.url()).origin;
 
   // Raw ws client from the test process: browsers can't omit or forge
@@ -2010,7 +2010,7 @@ test('WS upgrades demand a matching Origin — missing or foreign destroys the s
   // A matching Origin without a session gets the 401 handshake, and with
   // the session cookie the upgrade completes.
   expect(await attempt({ Origin: wsOrigin })).toBe('rejected');
-  expect(await attempt({ Origin: wsOrigin, Cookie: `webpi_session=${token}` })).toBe('open');
+  expect(await attempt({ Origin: wsOrigin, Cookie: `cybermole_session=${token}` })).toBe('open');
 
   // The 401 handshake is written by hand on the raw socket (the upgrade
   // path has no ServerResponse helpers) — pin that the security-header
@@ -2213,23 +2213,23 @@ test('SIGTERM: every socket gets restart, closes, and the process exits 0', asyn
   // The suite's webServer is managed by Playwright — spawn our own
   // short-lived server instead (suite env pattern from playwright.config,
   // own port + tmp dir so nothing collides with the shared instance).
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-sigterm-'));
-  const dbFile = path.join(dir, 'webpi.db');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-sigterm-'));
+  const dbFile = path.join(dir, 'cybermole.db');
   expect(setCredential(new StateDb(dbFile), USERNAME, PASSWORD).ok).toBe(true);
   const port = 3481;
   // Per-run socket: a server left over from an interrupted run would
   // hold the derived t-<uuid> session name of a leftover row.
-  const tmuxSocket = `webpi-itest-sig-${process.pid}`;
+  const tmuxSocket = `cybermole-itest-sig-${process.pid}`;
   const child = spawn(process.execPath, ['dist-server/server/main.js'], {
     env: {
       ...process.env,
-      WEB_PI_PORT: String(port),
-      WEB_PI_HOST: '127.0.0.1',
-      WEB_PI_DB_FILE: dbFile,
-      WEB_PI_AGENT_DIR: path.join(dir, 'pi-agent'),
-      WEB_PI_NEW_SESSION_CWD: dir,
-      WEB_PI_TMUX_SOCKET: tmuxSocket,
-      WEB_PI_COMMAND: '/bin/sh',
+      CYBERMOLE_PORT: String(port),
+      CYBERMOLE_HOST: '127.0.0.1',
+      CYBERMOLE_DB_FILE: dbFile,
+      CYBERMOLE_AGENT_DIR: path.join(dir, 'pi-agent'),
+      CYBERMOLE_NEW_SESSION_CWD: dir,
+      CYBERMOLE_TMUX_SOCKET: tmuxSocket,
+      CYBERMOLE_COMMAND: '/bin/sh',
     },
     stdio: 'ignore',
   });
@@ -2281,7 +2281,7 @@ test('SIGTERM: every socket gets restart, closes, and the process exits 0', asyn
       const w = await fetch('/api/workspaces', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'sig ws' }), // cwd derived: this server's WEB_PI_NEW_SESSION_CWD is dir
+        body: JSON.stringify({ name: 'sig ws' }), // cwd derived: this server's CYBERMOLE_NEW_SESSION_CWD is dir
       });
       return (await w.json()) as { id: string };
     });
@@ -2351,7 +2351,7 @@ test('auto-update setting: default OFF, toggle persists across reload, status li
   // The dashboard arrives server-rendered: the config rows and the status
   // lines are in the HTML itself, not filled in by a script.
   const html = await page.evaluate(async () => (await fetch('/settings')).text());
-  expect(html).toContain(`${WORKSPACE}/webpi.db`);
+  expect(html).toContain(`${WORKSPACE}/cybermole.db`);
   expect(html).toContain('not checked yet');
   await page.goto('/settings');
 
@@ -2384,7 +2384,7 @@ test('auto-update setting: default OFF, toggle persists across reload, status li
   await expect
     .poll(async () => (await api(page, 'GET', '/api/settings')).json.piAutoUpdate.enabled)
     .toBe(true);
-  const db = new DatabaseSync(`${WORKSPACE}/webpi.db`);
+  const db = new DatabaseSync(`${WORKSPACE}/cybermole.db`);
   const setting = () =>
     (
       db.prepare("SELECT value FROM settings WHERE key = 'piAutoUpdate.enabled'").get() as {
@@ -2417,7 +2417,7 @@ test('auto-update setting: default OFF, toggle persists across reload, status li
 });
 
 test('the editor stays absent when unconfigured (task/ws-editor)', async ({ page, request }) => {
-  // This suite never sets WEB_PI_EDITOR_UPSTREAM, so the selected
+  // This suite never sets CYBERMOLE_EDITOR_UPSTREAM, so the selected
   // workspace's tab bar renders no editor tab (the only editor
   // affordance now — the sidebar's ⌷ buttons died with the Live/past
   // lists), no editor iframe is ever built, /api/state reports editor:
@@ -2443,7 +2443,7 @@ test("deep link ?t=<uuid> opens the terminal's workspace with its tab selected; 
   page,
 }) => {
   // Runs before the rate-limit test (last). The shared webServer spawns
-  // the suite's cmd.sh on the webpi-itest socket; the terminal-mode WS
+  // the suite's cmd.sh on the cybermole-itest socket; the terminal-mode WS
   // attach (plan §4/§7) is exercised through the real page wiring:
   // console-app's pendingTerminal → the workspace opens → the tab gets
   // its pane.
@@ -2504,8 +2504,8 @@ test('a terminal tab survives a WEB restart: tmux keeps the session, the client 
   // spare port with its own db + tmux socket, so the shared login budget
   // and the shared socket are untouched (the private server's limiter is
   // its own; sign-in goes through its login form, in-page).
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-restart-survive-'));
-  const dbFile = path.join(dir, 'webpi.db');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-restart-survive-'));
+  const dbFile = path.join(dir, 'cybermole.db');
   expect(setCredential(new StateDb(dbFile), USERNAME, PASSWORD).ok).toBe(true);
   const cwd = path.join(dir, 'work');
   fs.mkdirSync(cwd, { recursive: true });
@@ -2513,16 +2513,16 @@ test('a terminal tab survives a WEB restart: tmux keeps the session, the client 
   fs.writeFileSync(cmd, `#!/bin/sh\necho '${MARKER}'\nexec /bin/sh\n`);
   fs.chmodSync(cmd, 0o755);
   const port = 3482; // clear of the shared :3470 and the specs' 3471–3485
-  const tmuxSocket = `webpi-itest-survive-${process.pid}`;
+  const tmuxSocket = `cybermole-itest-survive-${process.pid}`;
   const env = {
     ...process.env,
-    WEB_PI_PORT: String(port),
-    WEB_PI_HOST: '127.0.0.1',
-    WEB_PI_DB_FILE: dbFile,
-    WEB_PI_AGENT_DIR: path.join(dir, 'pi-agent'),
-    WEB_PI_NEW_SESSION_CWD: cwd,
-    WEB_PI_TMUX_SOCKET: tmuxSocket,
-    WEB_PI_COMMAND: cmd,
+    CYBERMOLE_PORT: String(port),
+    CYBERMOLE_HOST: '127.0.0.1',
+    CYBERMOLE_DB_FILE: dbFile,
+    CYBERMOLE_AGENT_DIR: path.join(dir, 'pi-agent'),
+    CYBERMOLE_NEW_SESSION_CWD: cwd,
+    CYBERMOLE_TMUX_SOCKET: tmuxSocket,
+    CYBERMOLE_COMMAND: cmd,
   };
   const boot = (): ChildProcess =>
     spawn(process.execPath, ['dist-server/server/main.js'], {
@@ -2564,7 +2564,7 @@ test('a terminal tab survives a WEB restart: tmux keeps the session, the client 
     await page.waitForURL(u => u.pathname === '/');
 
     // One workspace + terminal tab, attached through the real UI. No cwd on
-    // the create (task/app-cwd): this server's WEB_PI_NEW_SESSION_CWD is the
+    // the create (task/app-cwd): this server's CYBERMOLE_NEW_SESSION_CWD is the
     // same dir, so the derivation lands there.
     const wsMade = await api(page, 'POST', '/api/workspaces', { name: 'survive' });
     expect(wsMade.status, JSON.stringify(wsMade.json)).toBe(200);
@@ -2675,7 +2675,7 @@ test('login rate limit kicks in (10 per 15 min per IP) and ignores a spoofed X-F
 }) => {
   // Runs last: earlier tests already spent part of the shared budget.
   // Every attempt claims a different client IP. The server runs with
-  // WEB_PI_TRUST_PROXY unset (0), so the header must be ignored and every
+  // CYBERMOLE_TRUST_PROXY unset (0), so the header must be ignored and every
   // attempt counted against the real peer — regression: the leftmost XFF
   // entry was trusted, so rotating it never hit 429.
   let saw429 = false;

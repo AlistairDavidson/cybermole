@@ -10,7 +10,7 @@ type Brand<T, B extends string> = T & { readonly [__brand]: B };
 export type TmuxSessionName = Brand<string, 'TmuxSessionName'>;
 /** A scheduled job's (normalized) name. */
 export type JobName = Brand<string, 'JobName'>;
-/** A login session token (the webpi_session cookie value). */
+/** A login session token (the cybermole_session cookie value). */
 export type SessionToken = Brand<string, 'SessionToken'>;
 /** An app row's id (uuid v4) — the workspace-grouping container (src/lib/apps.ts). */
 export type AppId = Brand<string, 'AppId'>;

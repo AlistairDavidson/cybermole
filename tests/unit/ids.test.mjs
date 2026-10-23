@@ -27,7 +27,7 @@ test('TmuxSessionNameSchema: tmux-safe charset, 1..64', () => {
   for (const good of [
     'dev',
     'r-019f4706-0000-7000-8000-000000000001',
-    'webpi-' + 'x'.repeat(40),
+    'cybermole-' + 'x'.repeat(40),
     'A_b-9',
   ]) {
     assert.equal(ok(TmuxSessionNameSchema, good), true, good);
@@ -37,11 +37,11 @@ test('TmuxSessionNameSchema: tmux-safe charset, 1..64', () => {
   }
 });
 
-test('JobNameSchema: lowercase charset up to 40, never webpi-*', () => {
+test('JobNameSchema: lowercase charset up to 40, never cybermole-*', () => {
   for (const good of ['nightly', 'a', 'x'.repeat(40), 'a_b-c', '9lives']) {
     assert.equal(ok(JobNameSchema, good), true, good);
   }
-  for (const bad of ['', 'x'.repeat(41), 'Upper', '-lead', '_lead', 'webpi-x', 'a b', 'a.b']) {
+  for (const bad of ['', 'x'.repeat(41), 'Upper', '-lead', '_lead', 'cybermole-x', 'a b', 'a.b']) {
     assert.equal(ok(JobNameSchema, bad), false, bad);
   }
 });

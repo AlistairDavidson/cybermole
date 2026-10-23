@@ -12,7 +12,7 @@ import { updateResultBody } from '../../dist-server/src/lib/web/responses.servic
 
 /** An app tree with pi installed at `installed`. */
 function fakeAppRoot(installed) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-settings-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-settings-'));
   const manifest = path.join(root, 'node_modules', PI_PACKAGE, 'package.json');
   fs.mkdirSync(path.dirname(manifest), { recursive: true });
   fs.writeFileSync(manifest, JSON.stringify({ name: PI_PACKAGE, version: installed }));
@@ -23,7 +23,7 @@ function fakeAppRoot(installed) {
  *  sleeps FAKE_NPM_SLEEP, then bumps the manifest to FAKE_NPM_INSTALLS_TO
  *  and exits FAKE_NPM_EXIT. */
 function withFakeNpm(t, env) {
-  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-npmbin-'));
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-npmbin-'));
   fs.writeFileSync(
     path.join(bin, 'npm'),
     `#!/bin/sh
@@ -48,7 +48,7 @@ exit "\${FAKE_NPM_EXIT:-0}"
 test('npm_missing: no npm on PATH (real and dry run)', async t => {
   const { root } = fakeAppRoot('1.0.1');
   const saved = process.env.PATH;
-  process.env.PATH = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-emptypath-'));
+  process.env.PATH = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-emptypath-'));
   t.after(() => {
     process.env.PATH = saved;
   });

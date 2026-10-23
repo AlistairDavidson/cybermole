@@ -1,5 +1,5 @@
 // cli.test.mjs — task/jobs-cli (docs/jobs-agent-plan.md §5) units: the
-// `webpi` CLI, driven against a REAL internal API booted on a tmp-dir
+// `cybermole-cli` CLI, driven against a REAL internal API booted on a tmp-dir
 // socket (the internal-api.test.mjs pattern, including its fake-tmux
 // stand-in for run/kill). The command layer runs IN-PROCESS — runCli
 // with captured stdout/stderr, exit codes as return values — and the
@@ -17,18 +17,18 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-cli-'));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-cli-'));
 const fakeBin = path.join(dir, 'bin');
 fs.mkdirSync(fakeBin);
-process.env.WEB_PI_TMUX_SOCKET = path.join(dir, 'tmux');
+process.env.CYBERMOLE_TMUX_SOCKET = path.join(dir, 'tmux');
 process.env.FAKE_TMUX_DIR = dir;
 process.env.PATH = `${fakeBin}:${process.env.PATH}`;
-// One socket path for the whole file (env.ts reads WEB_PI_* at module
+// One socket path for the whole file (env.ts reads CYBERMOLE_* at module
 // load): each case boots its own world — db, scheduler, apps, API — on
 // it, closing the previous listener first, like internal-api.test.mjs
 // boots per case.
-const SOCKET = path.join(dir, 'webpi.sock');
-process.env.WEB_PI_SOCK = SOCKET;
+const SOCKET = path.join(dir, 'cybermole.sock');
+process.env.CYBERMOLE_SOCK = SOCKET;
 
 const { startInternalApi } = await import('../../dist-server/server/internal-api.js');
 const { Scheduler, runLogPaths } = await import('../../dist-server/src/lib/jobs.js');
@@ -47,7 +47,7 @@ while [ $# -gt 0 ]; do case "$1" in -f|-S|-L) shift 2 ;; *) break ;; esac; done
 sub="$1"; shift
 case "$sub" in
   list-sessions)
-    [ -e "$dir/up" ] || { echo "error connecting to $WEB_PI_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
+    [ -e "$dir/up" ] || { echo "error connecting to $CYBERMOLE_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
     fmt=""
     while [ $# -gt 0 ]; do [ "$1" = "-F" ] && { fmt="$2"; shift 2; continue; }; shift; done
     while IFS= read -r name; do [ "$fmt" = '#{session_name}' ] && echo "$name" || echo "$name|1|0||"; done < "$sessions"
@@ -58,7 +58,7 @@ case "$sub" in
     exit 1
     ;;
   new-session)
-    [ -e "$dir/up" ] || { echo "error connecting to $WEB_PI_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
+    [ -e "$dir/up" ] || { echo "error connecting to $CYBERMOLE_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
     while [ $# -gt 0 ]; do [ "$1" = "-s" ] && { echo "$2" >> "$sessions"; exit 0; }; shift; done
     exit 1
     ;;
@@ -91,7 +91,7 @@ function capture() {
 async function boot() {
   const root = fs.mkdtempSync(path.join(dir, 'case-'));
   const logDir = path.join(root, 'job-logs');
-  const db = new StateDb(path.join(root, 'webpi.db'));
+  const db = new StateDb(path.join(root, 'cybermole.db'));
   const scheduler = new Scheduler(db, {
     cwd: root,
     env: {},
@@ -147,7 +147,7 @@ function call(method, urlPath, body) {
  *  pattern). Returns {status, stdout, stderr} for ANY exit code. */
 function bin(args, env) {
   const clean = Object.fromEntries(
-    Object.entries(process.env).filter(([k]) => k !== 'WEB_PI_SOCK'),
+    Object.entries(process.env).filter(([k]) => k !== 'CYBERMOLE_SOCK'),
   );
   try {
     const stdout = execFileSync(
@@ -165,18 +165,18 @@ const run = (args, io) => runCli(['jobs', ...args], io);
 
 // ---------- the help surface (plan §5: the agent-facing docs) ----------
 
-test('webpi --help / webpi: the top-level documentation, exit 0', async () => {
+test('cybermole-cli --help / cybermole-cli: the top-level documentation, exit 0', async () => {
   for (const argv of [[], ['--help'], ['-h']]) {
     const io = capture();
     assert.equal(await runCli(argv, io), 0);
-    assert.match(io.stdout(), /webpi — the web-pi command line/);
-    assert.match(io.stdout(), /WEB_PI_SOCK/);
+    assert.match(io.stdout(), /cybermole-cli — the cybermole command line/);
+    assert.match(io.stdout(), /CYBERMOLE_SOCK/);
     assert.match(io.stdout(), /Exit codes:/);
     assert.equal(io.stderr(), '');
   }
 });
 
-test('webpi jobs: the group help names every verb, one example line each', async () => {
+test('cybermole-cli jobs: the group help names every verb, one example line each', async () => {
   const io = capture();
   assert.equal(await runCli(['jobs'], io), 0);
   const help = io.stdout();
@@ -192,7 +192,7 @@ test('webpi jobs: the group help names every verb, one example line each', async
     'validate',
   ]) {
     assert.match(help, new RegExp(`\\b${verb}\\b`), `${verb} in the group help`);
-    assert.match(help, new RegExp(`webpi jobs ${verb} `), `an example line for ${verb}`);
+    assert.match(help, new RegExp(`cybermole-cli jobs ${verb} `), `an example line for ${verb}`);
   }
   assert.match(help, /parity with the \/jobs page/);
 });
@@ -213,7 +213,7 @@ test('every verb answers --help (and -h) without needing a server', async () => 
     for (const helpFlag of ['--help', '-h']) {
       const io = capture();
       assert.equal(await run([verb, helpFlag], io), 0);
-      assert.match(io.stdout(), new RegExp(`webpi jobs ${verb}`), `${verb} --help synopsis`);
+      assert.match(io.stdout(), new RegExp(`cybermole-cli jobs ${verb}`), `${verb} --help synopsis`);
       assert.equal(io.stderr(), '');
     }
   }
@@ -248,52 +248,52 @@ test('usage errors: unknown group/verb/option, wrong arity — exit 2', async ()
 
 // ---------- no server on the socket (the friendly knob-naming error) ----------
 
-test('in-process: no server on the socket — exit 1, the error names WEB_PI_SOCK', async () => {
+test('in-process: no server on the socket — exit 1, the error names CYBERMOLE_SOCK', async () => {
   const io = capture();
   assert.equal(await run(['list'], io), 1);
   assert.match(io.stderr(), /cannot reach the internal API/);
   assert.match(io.stderr(), new RegExp(SOCKET));
-  assert.match(io.stderr(), /WEB_PI_SOCK/);
+  assert.match(io.stderr(), /CYBERMOLE_SOCK/);
 });
 
 test('bin: a missing socket file (ENOENT) — exit 1, friendly, names the knob', () => {
-  const r = bin(['jobs', 'list'], { WEB_PI_SOCK: path.join(dir, 'gone', 'webpi.sock') });
+  const r = bin(['jobs', 'list'], { CYBERMOLE_SOCK: path.join(dir, 'gone', 'cybermole.sock') });
   assert.equal(r.status, 1);
   assert.match(r.stderr, /cannot reach the internal API/);
   assert.match(r.stderr, /ENOENT/);
-  assert.match(r.stderr, /WEB_PI_SOCK/);
+  assert.match(r.stderr, /CYBERMOLE_SOCK/);
 });
 
 test('bin: a stale socket file (ECONNREFUSED — the dead-server case)', () => {
-  const stale = path.join(fs.mkdtempSync(path.join(dir, 'stale-')), 'webpi.sock');
+  const stale = path.join(fs.mkdtempSync(path.join(dir, 'stale-')), 'cybermole.sock');
   fs.writeFileSync(stale, '');
-  const r = bin(['jobs', 'list'], { WEB_PI_SOCK: stale });
+  const r = bin(['jobs', 'list'], { CYBERMOLE_SOCK: stale });
   assert.equal(r.status, 1);
   assert.match(r.stderr, /ECONNREFUSED/);
-  assert.match(r.stderr, /no web-pi server is listening there/);
-  assert.match(r.stderr, /WEB_PI_SOCK/);
+  assert.match(r.stderr, /no cybermole server is listening there/);
+  assert.match(r.stderr, /CYBERMOLE_SOCK/);
 });
 
-test('bin: EMPTY WEB_PI_SOCK — the listener is off, and the CLI says so', () => {
-  const r = bin(['jobs', 'list'], { WEB_PI_SOCK: '' });
+test('bin: EMPTY CYBERMOLE_SOCK — the listener is off, and the CLI says so', () => {
+  const r = bin(['jobs', 'list'], { CYBERMOLE_SOCK: '' });
   assert.equal(r.status, 1);
   assert.match(r.stderr, /internal API is disabled/);
-  assert.match(r.stderr, /WEB_PI_SOCK/);
+  assert.match(r.stderr, /CYBERMOLE_SOCK/);
 });
 
-test("bin: a set-but-non-absolute WEB_PI_SOCK is env.ts's own error, as text", () => {
-  const r = bin(['jobs', 'list'], { WEB_PI_SOCK: 'webpi.sock' });
+test("bin: a set-but-non-absolute CYBERMOLE_SOCK is env.ts's own error, as text", () => {
+  const r = bin(['jobs', 'list'], { CYBERMOLE_SOCK: 'cybermole.sock' });
   assert.equal(r.status, 1);
   assert.match(r.stderr, /must be an absolute socket path/);
 });
 
-test('bin: unset WEB_PI_SOCK = the shape default (env.ts, reused not duplicated)', () => {
+test('bin: unset CYBERMOLE_SOCK = the shape default (env.ts, reused not duplicated)', () => {
   const stateDir = fs.mkdtempSync(path.join(dir, 'state-'));
-  const r = bin(['jobs', 'list'], { WEB_PI_STATE_DIR: stateDir });
+  const r = bin(['jobs', 'list'], { CYBERMOLE_STATE_DIR: stateDir });
   assert.equal(r.status, 1);
-  const expected = fs.existsSync('/run/web-pi')
-    ? '/run/web-pi/webpi.sock'
-    : path.join(stateDir, 'webpi.sock');
+  const expected = fs.existsSync('/run/cybermole')
+    ? '/run/cybermole/cybermole.sock'
+    : path.join(stateDir, 'cybermole.sock');
   assert.ok(r.stderr.includes(expected), `names the default ${expected}`);
 });
 
@@ -425,29 +425,29 @@ test('create failure paths: invalid schedule and invalid name (issues printed)',
     );
     assert.match(schedule.stderr(), /invalid_schedule/);
 
-    // "webpi-…" is reserved (JOB_NAME_RE) — the 400 carries per-field issues
+    // "cybermole-…" is reserved (JOB_NAME_RE) — the 400 carries per-field issues
     const name = capture();
     assert.equal(
       await run(
-        ['create', '--name', 'webpi-x', '--schedule', '0 4 * * *', '--command', 'true'],
+        ['create', '--name', 'cybermole-x', '--schedule', '0 4 * * *', '--command', 'true'],
         name,
       ),
       1,
     );
-    assert.match(name.stderr(), /webpi: name: use letters, digits, - and _/);
+    assert.match(name.stderr(), /cybermole-cli: name: use letters, digits, - and _/);
     assert.match(name.stderr(), /code: validation_failure/);
 
     // --json on failure prints the raw failure body, exit still nonzero
     const json = capture();
     assert.equal(
       await run(
-        ['create', '--name', 'webpi-x', '--schedule', '0 4 * * *', '--command', 'true', '--json'],
+        ['create', '--name', 'cybermole-x', '--schedule', '0 4 * * *', '--command', 'true', '--json'],
         json,
       ),
       1,
     );
     const raw = await call('POST', '/jobs', {
-      name: 'webpi-x',
+      name: 'cybermole-x',
       schedule: '0 4 * * *',
       command: 'true',
     });
@@ -531,9 +531,9 @@ test('run: ok means FIRED — the output says so; run_active while one is live',
 
     const io = capture();
     assert.equal(await run(['run', 'nightly'], io), 0);
-    assert.match(io.stdout(), /job nightly fired — run session webpi-nightly is open/);
+    assert.match(io.stdout(), /job nightly fired — run session cybermole-nightly is open/);
     assert.match(io.stdout(), /fired = the session opened, not the command finished/);
-    assert.match(io.stdout(), /webpi jobs runs nightly/);
+    assert.match(io.stdout(), /cybermole-cli jobs runs nightly/);
 
     // the previous run is still live in the fake tmux
     const busy = capture();
@@ -657,7 +657,7 @@ test('kill: the live run dies; every failure code of the family', async () => {
       const failed = capture();
       assert.equal(await run(['kill', 'nightly', String(firedAt)], failed), 1);
       assert.match(failed.stderr(), /could not kill the run session \(code: tmux_error\)/);
-      assert.match(failed.stderr(), /webpi-nightly/); // the detail line
+      assert.match(failed.stderr(), /cybermole-nightly/); // the detail line
     } finally {
       fs.rmSync(path.join(dir, 'kill-fail'), { force: true });
     }
@@ -702,7 +702,7 @@ test('database_error: a broken state db answers through the CLI, exit 1', async 
   const root = fs.mkdtempSync(path.join(dir, 'broken-'));
   const notADir = path.join(root, 'not-a-dir');
   fs.writeFileSync(notADir, '');
-  const scheduler = new Scheduler(new StateDb(path.join(notADir, 'webpi.db')), {
+  const scheduler = new Scheduler(new StateDb(path.join(notADir, 'cybermole.db')), {
     cwd: root,
     env: {},
     logDir: path.join(root, 'job-logs'),
@@ -823,7 +823,7 @@ test('the agent flow: validate → create → run → runs → log → kill → 
 // ---------- the Content-Length discipline (the internal API's 411) ----------
 
 test('client layer: body-carrying requests declare Content-Length; bodyless stay bodyless', async () => {
-  const sock = path.join(fs.mkdtempSync(path.join(dir, 'rec-')), 'webpi.sock');
+  const sock = path.join(fs.mkdtempSync(path.join(dir, 'rec-')), 'cybermole.sock');
   const seen = [];
   const server = http.createServer((req, res) => {
     seen.push({
@@ -869,7 +869,7 @@ test('client layer: body-carrying requests declare Content-Length; bodyless stay
 test('bin: argv → exit code wiring, and the shebang entry runs unaided', () => {
   const r = bin(['--help'], {});
   assert.equal(r.status, 0);
-  assert.match(r.stdout, /webpi — the web-pi command line/);
+  assert.match(r.stdout, /cybermole-cli — the cybermole command line/);
 
   const bad = bin(['jobs', 'nope'], {});
   assert.equal(bad.status, 2);

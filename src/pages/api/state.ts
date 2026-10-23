@@ -3,13 +3,13 @@
 // the sliding window (auth.cookieRefresh decides — see the justification
 // there).
 import type { APIRoute } from 'astro';
-import { assertWebPiLocals } from '../../lib/web/locals';
+import { assertCybermoleLocals } from '../../lib/web/locals';
 import { consoleStateFailureResponse, jsonResponse } from '../../lib/web/responses.service';
 
 export const GET: APIRoute = async ({ locals }) => {
-  const { webpi, session } = assertWebPiLocals(locals);
-  const refresh = webpi.auth.cookieRefresh(session, webpi.cfg.base);
-  const state = await webpi.consoleState();
+  const { cybermole, session } = assertCybermoleLocals(locals);
+  const refresh = cybermole.auth.cookieRefresh(session, cybermole.cfg.base);
+  const state = await cybermole.consoleState();
   if (!state.ok) return consoleStateFailureResponse(state);
   return jsonResponse(state.data, 200, refresh === null ? undefined : { 'Set-Cookie': refresh });
 };

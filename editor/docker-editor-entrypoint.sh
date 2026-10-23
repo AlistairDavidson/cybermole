@@ -6,9 +6,9 @@
 # discipline as the workspace half of the split).
 #
 # Flags are pinned by the spike (docs/editor-spike.md):
-#   --server-base-path ${WEB_PI_BASE%/}/editor  the proxy mounts the app at
+#   --server-base-path ${CYBERMOLE_BASE%/}/editor  the proxy mounts the app at
 #       <base>/editor and the workbench's asset URLs must line up;
-#   --without-connection-token  auth is upstream — web-pi's session gate;
+#   --without-connection-token  auth is upstream — cybermole's session gate;
 #   --disable-workspace-trust  every folder opens trusted, no dialog. The
 #       trust feature's threat model (running tasks/builds from checkouts
 #       you don't control) is already this container's status quo: the
@@ -22,7 +22,7 @@
 #
 # Server data (user-data, extensions, logs) lands under $HOME
 # (.vscodium-server, .local/state/VSCodium) — the persistent
-# webpi-editor-home volume — so settings and installed extensions survive
+# cybermole-editor-home volume — so settings and installed extensions survive
 # recreations.
 set -eu
 
@@ -39,27 +39,27 @@ mkdir -p "$HOME"
 # theirs: the marker only ever (re)adds the bundled set. A failure here
 # degrades to an editor without the bundle, not to a dead container.
 BUNDLED_DIR=/opt/editor-bundled-extensions
-MARKER="$HOME/.vscodium-server/.webpi-bundled-extensions"
+MARKER="$HOME/.vscodium-server/.cybermole-bundled-extensions"
 if [ -d "$BUNDLED_DIR" ] && ls "$BUNDLED_DIR"/*.vsix >/dev/null 2>&1; then
   WANT="$(sha256sum "$BUNDLED_DIR"/*.vsix | sha256sum | cut -d' ' -f1)"
   if [ "$(cat "$MARKER" 2>/dev/null || true)" != "$WANT" ]; then
-    echo "web-pi editor: installing bundled extensions" >&2
+    echo "cybermole editor: installing bundled extensions" >&2
     mkdir -p "$HOME/.vscodium-server"
     ok=0
     for vsix in "$BUNDLED_DIR"/*.vsix; do
       /opt/editor/bin/codium-server --install-extension "$vsix" >/dev/null \
-        && ok=$((ok + 1)) || echo "web-pi editor: extension install failed: $vsix" >&2
+        && ok=$((ok + 1)) || echo "cybermole editor: extension install failed: $vsix" >&2
     done
     [ "$ok" -eq "$(ls "$BUNDLED_DIR"/*.vsix | wc -l)" ] \
       && printf '%s\n' "$WANT" > "$MARKER" \
-      || echo "web-pi editor: incomplete bundle install; will retry next boot" >&2
+      || echo "cybermole editor: incomplete bundle install; will retry next boot" >&2
   fi
 fi
 
 exec /opt/editor/bin/codium-server \
   --host 0.0.0.0 \
   --port 3000 \
-  --server-base-path "${WEB_PI_BASE%/}/editor" \
+  --server-base-path "${CYBERMOLE_BASE%/}/editor" \
   --without-connection-token \
   --disable-workspace-trust \
   --telemetry-level off

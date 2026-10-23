@@ -11,7 +11,7 @@
 // if missing — before the first upload, so a fresh server needs no setup
 // step.
 //
-// Built once by server/main.ts and reached through locals.webpi
+// Built once by server/main.ts and reached through locals.cybermole
 // (src/lib/services.ts) — Astro code never imports this module at runtime.
 import { randomUUID } from 'node:crypto';
 import { Readable, Transform, pipeline } from 'node:stream';
@@ -30,7 +30,7 @@ import type { ResultFailure, ResultSuccess } from '../types/result';
 
 const log = componentLogger('storage');
 
-/** readObjectStoreConfig() (src/lib/env.ts) — the WEB_PI_S3_* variables. */
+/** readObjectStoreConfig() (src/lib/env.ts) — the CYBERMOLE_S3_* variables. */
 export interface ObjectStoreConfig {
   /** http(s) URL of the S3 API, e.g. http://seaweedfs:8333 */
   endpoint: string;
@@ -49,7 +49,7 @@ export interface UploadInput {
 }
 
 export type StoreUploadData = { key: ObjectKey; name: string; size: number; contentType: string };
-/** storage_not_configured: no WEB_PI_S3_ENDPOINT. storage_error: the S3
+/** storage_not_configured: no CYBERMOLE_S3_ENDPOINT. storage_error: the S3
  *  server refused or failed the write, could not be reached, or the body
  *  failed while streaming (nothing is stored then). */
 export type StoreUploadErrorCode = 'storage_not_configured' | 'storage_error';
@@ -110,7 +110,7 @@ type EnsureBucketResult =
   | ResultSuccess<'ensure_bucket', { bucket: string }>
   | ResultFailure<'ensure_bucket', { bucket: string }, 'storage_error'>;
 
-const NOT_CONFIGURED = 'object storage is not configured (WEB_PI_S3_ENDPOINT)';
+const NOT_CONFIGURED = 'object storage is not configured (CYBERMOLE_S3_ENDPOINT)';
 
 /** RFC 5987 ext-value: percent-encode everything outside attr-char
  *  (encodeURIComponent leaves ' ( ) * alone). */

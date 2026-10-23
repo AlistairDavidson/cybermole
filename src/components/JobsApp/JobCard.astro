@@ -15,7 +15,7 @@ interface Props {
 }
 const { job } = Astro.props;
 
-// Matches the server's WEB_PI_BASE ('' for root, else '/foo').
+// Matches the server's CYBERMOLE_BASE ('' for root, else '/foo').
 const base = (import.meta.env.BASE_URL ?? '/').replace(/\/+$/, '');
 const last = job.last
   ? `${job.last}${job.lastResult === 'success' ? ' · ok' : job.lastResult === 'failed' ? ' · failed' : ''}`

@@ -4,7 +4,7 @@ Replaces the Zed/KasmVNC webapp (docs/zed-webapp.md, deleted): streaming a
 desktop GUI was the poor fit — separate basic auth, one instance, no
 per-folder URLs, a launcher container. The editor is now **VSCodium's
 reh-web build** ("`codium serve-web`" — self-hosted VS Code in the browser
-with server-side files), served through web-pi's **same-origin
+with server-side files), served through cybermole's **same-origin
 `/editor` proxy** behind the session gate. The spike that pinned this
 design (against a real browser, through a real proxy) is
 **docs/editor-spike.md** — read it first; this document describes what
@@ -15,11 +15,11 @@ shipped.
 ```
                 browser (one origin, the console's)
       ┌──────────┴────────────────┐
-      │ https://webpi…/           │  /  (console)      /editor/?folder=…  (iframe)
+      │ https://cybermole…/           │  /  (console)      /editor/?folder=…  (iframe)
       └──────────┬────────────────┘
-        nginx TLS│ (one vhost — deploy/nginx-webpi.conf; ws upgrades already mapped)
+        nginx TLS│ (one vhost — deploy/nginx-cybermole.conf; ws upgrades already mapped)
       ┌──────────┴───────────────────────────┐
-      │ webpi (uid node)                     │ server/main.ts
+      │ cybermole (uid node)                     │ server/main.ts
       │  origin check + session gate         │
       │  /editor/* ──HTTP stream + raw WS──┼─┼──▶ editor:3000 (compose network)
       │  per-token tunnel tracking          │ │
@@ -43,21 +43,21 @@ touches the tmux socket or web state.
 A thin in-repo image (the `zed/` precedent): Debian bookworm-slim + the
 **pinned** `vscodium-reh-web-linux-{x64,arm64}-<version>.tar.gz`
 (sha256-verified at build, both hashes as `ARG`s) extracted intact to
-`/opt/editor`. uid 2000 / gid 2001 (`workspace`/`webpi`, the split's
+`/opt/editor`. uid 2000 / gid 2001 (`workspace`/`cybermole`, the split's
 users), umask 0007. The entrypoint runs the tarball's own
 `bin/codium-server`:
 
 ```
 --host 0.0.0.0 --port 3000 \
---server-base-path "${WEB_PI_BASE%/}/editor" \
+--server-base-path "${CYBERMOLE_BASE%/}/editor" \
 --without-connection-token \
 --disable-workspace-trust \
 --telemetry-level off
 ```
 
-- auth is upstream — web-pi's session gate; there is no connection token,
+- auth is upstream — cybermole's session gate; there is no connection token,
   no launcher, no token file.
-- the base path interpolates from `WEB_PI_BASE` exactly like the webpi
+- the base path interpolates from `CYBERMOLE_BASE` exactly like the cybermole
   service's, so asset URLs line up with the proxy.
 - **workspace trust is off** (`--disable-workspace-trust` → the served
   workbench embeds `enableWorkspaceTrust:false` → every folder opens
@@ -86,7 +86,7 @@ The image also carries what the workbench needs to know the stack:
 
 Server data (user-data, extensions, logs) lives under `$HOME`
 (`.vscodium-server`, `.local/state/VSCodium`) on the persistent
-`webpi-editor-home` volume; `editor-init` (the `zed-init` precedent) chowns
+`cybermole-editor-home` volume; `editor-init` (the `zed-init` precedent) chowns
 it on first up — empty named volumes start root-owned and uid 2000 must
 write `$HOME`. The workspace volume mounts at the same `/workspace` path
 the tmux split uses (path agreement).
@@ -98,17 +98,17 @@ it with `VSCODE_GALLERY_*` env vars if they want the marketplace fully off.
 ## compose (part of the plain stack)
 
 The editor container ships in the plain `docker compose up -d` / `npm
-start` stack, and webpi's `WEB_PI_EDITOR_UPSTREAM` defaults to
+start` stack, and cybermole's `CYBERMOLE_EDITOR_UPSTREAM` defaults to
 `http://editor:3000` — the editor tab works out of the box. Opt out by
 setting the variable EMPTY in `.env` next to compose.yaml (the `-`
 interpolation form honors an explicit empty): editor off everywhere,
-web-pi boots clean, `/editor/*` answers 404, the console hides its
+cybermole boots clean, `/editor/*` answers 404, the console hides its
 affordances — the idle editor container is cheap to leave running.
 Nothing publishes a port: the compose network is the only door.
 
 ## The proxy (server/main.ts + src/lib/editor.ts)
 
-`WEB_PI_EDITOR_UPSTREAM` (e.g. `http://editor:3000`; origin only, validated
+`CYBERMOLE_EDITOR_UPSTREAM` (e.g. `http://editor:3000`; origin only, validated
 at boot by `readEditorUpstream`) is the single switch, replacing the Zed
 triple. Everything under `${BASE}/editor` — HTTP and WS — proxies to it,
 behind the origin check and the session gate, after the auth branch and
@@ -157,12 +157,12 @@ page); unconfigured answers **404**.
   `partials/`: VS Code's asset paths are unhashed, so stale-while-
   revalidate would serve mixed-version workbench assets after an upgrade,
   authed editor content would stay cached beyond logout, and the offline
-  shell would render inside the iframe. (Version bumped to `web-pi-v3` so
+  shell would render inside the iframe. (Version bumped to `cybermole-v3` so
   old caches drop on activate.)
 - `astro.config.mjs`'s dev proxy forwards `<base>editor` (ws: true) to the
   dev services server, which owns the proxy.
 - `GET /api/state` (old shape, until task/ws-console) carries
-  `editor: boolean` — `WEB_PI_EDITOR_UPSTREAM` set? The sidebar's ⌷ buttons
+  `editor: boolean` — `CYBERMOLE_EDITOR_UPSTREAM` set? The sidebar's ⌷ buttons
   and `<console-app>`'s `open-editor` handler use it; a click is
   `window.open(`${BASE}/editor/?folder=${encodeURIComponent(cwd)}`)` —
   a folder opens by URL, no POST, no server call.

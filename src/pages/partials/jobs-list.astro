@@ -6,13 +6,13 @@
 // what it shows. The app options ride along in the fragment's root (the
 // tag picker re-reads them on open), so a refresh renews both.
 import JobsList from '../../components/JobsApp/JobsList.astro';
-import { assertWebPiLocals } from '../../lib/web/locals';
+import { assertCybermoleLocals } from '../../lib/web/locals';
 
 export const partial = true;
 
-const { webpi } = assertWebPiLocals(Astro.locals);
-const listed = await webpi.scheduler.listJobs();
-const appsListed = webpi.apps.listApps();
+const { cybermole } = assertCybermoleLocals(Astro.locals);
+const listed = await cybermole.scheduler.listJobs();
+const appsListed = cybermole.apps.listApps();
 Astro.response.headers.set('Cache-Control', 'no-store');
 if (!listed.ok || !appsListed.ok) {
   // console.error on purpose, not src/lib/logger.ts: frontmatter is

@@ -115,10 +115,10 @@ function resolveFindDecorations(): ISearchDecorationOptions | undefined {
   if (findDecorations === undefined) {
     const cs = getComputedStyle(document.documentElement);
     const pick = (name: string): string => cs.getPropertyValue(name).trim();
-    const match = pick('--webpi-find-match');
-    const active = pick('--webpi-find-match-active');
-    const overview = pick('--webpi-find-overview');
-    const activeOverview = pick('--webpi-find-overview-active');
+    const match = pick('--cybermole-find-match');
+    const active = pick('--cybermole-find-match-active');
+    const overview = pick('--cybermole-find-overview');
+    const activeOverview = pick('--cybermole-find-overview-active');
     findDecorations =
       match !== '' && active !== '' && overview !== '' && activeOverview !== ''
         ? {
@@ -478,7 +478,7 @@ export class AgentTerminal extends HTMLElement {
    *  alternate screen (see terminalPlainText — the client-side reality
    *  until task/terminal-search's backfill); the normal buffer and its
    *  scrollback ride along whenever one exists. Named after the attached
-   *  session (t-<uuid>, or the run's webpi-<name>) — the tab's identity
+   *  session (t-<uuid>, or the run's cybermole-<name>) — the tab's identity
    *  on both attach modes. */
   private downloadTranscript(): void {
     const content = this.serializeXtermAddon ? this.serializeXtermAddon.serialize() : '';

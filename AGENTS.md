@@ -35,9 +35,9 @@ compiled `dist-server` — `npm run build` first (tsc-only is enough:
 
 `npm run test:e2e` — Playwright integration tests (chromium; browser must
 exist in ~/.cache/ms-playwright). Fully hermetic: the config boots
-`dist-server/server/main.js` against a `/tmp/web-pi-itest` workspace (own
+`dist-server/server/main.js` against a `/tmp/cybermole-itest` workspace (own
 state db, fixture workspace tree (apps/workspaces/terminal rows, live tabs
-on a dedicated `webpi-itest` tmux socket), a deterministic `cmd.sh`
+on a dedicated `cybermole-itest` tmux socket), a deterministic `cmd.sh`
 terminal command). Tests must stay serial
 (workers: 1): they share the per-IP login rate-limit budget and the tmux
 socket, and the rate-limit test must run last. `login()` signs in through
@@ -161,4 +161,4 @@ base). Integration is ONE BRANCH AT A TIME. Fleet sandboxes are e2e-capable
 (see Testing): workers should self-test with the full suite before reporting
 done on UI- or server-touching work — a run is a few minutes and needs no
 setup. The orchestrator still runs e2e as the integration gate per merged
-branch; host runs are serial (one `/tmp/web-pi-itest` at a time).
+branch; host runs are serial (one `/tmp/cybermole-itest` at a time).

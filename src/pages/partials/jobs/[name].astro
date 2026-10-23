@@ -6,25 +6,25 @@
 // no fragment — the element keeps what it shows; a missing job answers
 // 404 with no fragment — the element returns to /jobs.
 import JobDetailBody from '../../../components/JobDetail/JobDetailBody.astro';
-import { assertWebPiLocals } from '../../../lib/web/locals';
+import { assertCybermoleLocals } from '../../../lib/web/locals';
 import { JobNameSchema } from '../../../schemas/ids';
 import type { JobRunView } from '../../../lib/jobs';
 import type { ScheduledJob } from '../../../lib/types';
 
 export const partial = true;
 
-const { webpi } = assertWebPiLocals(Astro.locals);
+const { cybermole } = assertCybermoleLocals(Astro.locals);
 const parsed = JobNameSchema.safeParse(Astro.params.name);
 let job: ScheduledJob | null = null;
 let runs: JobRunView[] | null = null;
 if (parsed.success) {
-  const listed = await webpi.scheduler.listJobs();
+  const listed = await cybermole.scheduler.listJobs();
   if (listed.ok) job = listed.data.jobs.find(j => j.name === parsed.data) ?? null;
   // console.error on purpose, not src/lib/logger.ts: frontmatter is
   // Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
   else console.error(`job detail partial: ${listed.errorMessage}`);
   if (job) {
-    const listedRuns = webpi.scheduler.listRuns(parsed.data);
+    const listedRuns = cybermole.scheduler.listRuns(parsed.data);
     if (listedRuns.ok) runs = listedRuns.data.runs;
     else console.error(`job detail partial: ${listedRuns.errorMessage}`);
   }

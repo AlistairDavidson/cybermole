@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- web-pi: terminal prompt glyph. Colors mirror src/styles/console.css. -->
+  <!-- cybermole: terminal prompt glyph. Colors mirror src/styles/console.css. -->
   <rect x="16" y="16" width="480" height="480"
     rx="112" fill="#11131a" stroke="#262a36" stroke-width="8"/>
   <path d="M168 172 L252 256 L168 340" fill="none" stroke="#3e96ff"

@@ -37,27 +37,27 @@ export default defineConfig({
       stdout: 'ignore',
       stderr: 'pipe',
       env: {
-        WEB_PI_PORT: String(PORT),
-        WEB_PI_HOST: '127.0.0.1',
+        CYBERMOLE_PORT: String(PORT),
+        CYBERMOLE_HOST: '127.0.0.1',
         // The suite is serial from one IP and legitimately upgrades far more
         // than a human (every terminal test attaches/pops/reconnects) — the
         // production default of 30/min refuses the jobs test's run attach.
-        WEB_PI_WS_UPGRADES_PER_MIN: '300',
-        WEB_PI_DB_FILE: `${WORKSPACE}/webpi.db`,
-        WEB_PI_AGENT_DIR: `${WORKSPACE}/pi-agent`,
-        WEB_PI_NEW_SESSION_CWD: WORKSPACE,
-        WEB_PI_TMUX_SOCKET: TMUX_SOCKET,
-        WEB_PI_COMMAND: `${WORKSPACE}/cmd.sh`,
-        WEB_PI_JOB_LOG_DIR: `${WORKSPACE}/job-logs`,
+        CYBERMOLE_WS_UPGRADES_PER_MIN: '300',
+        CYBERMOLE_DB_FILE: `${WORKSPACE}/cybermole.db`,
+        CYBERMOLE_AGENT_DIR: `${WORKSPACE}/pi-agent`,
+        CYBERMOLE_NEW_SESSION_CWD: WORKSPACE,
+        CYBERMOLE_TMUX_SOCKET: TMUX_SOCKET,
+        CYBERMOLE_COMMAND: `${WORKSPACE}/cmd.sh`,
+        CYBERMOLE_JOB_LOG_DIR: `${WORKSPACE}/job-logs`,
         // The internal jobs socket (jobs-agent-plan §3) — OUTSIDE WORKSPACE:
         // global-setup rm -rf's WORKSPACE AFTER this server boots, and the
         // listener is created eagerly (unlike the db / tmux, opened lazily).
         // A sibling file; SIGTERM unlinks it, the stale-probe covers crashes.
-        WEB_PI_SOCK: `${WORKSPACE}.sock`,
-        WEB_PI_S3_ENDPOINT: `http://127.0.0.1:${S3_PORT}`,
-        WEB_PI_S3_ACCESS_KEY: S3_ACCESS_KEY,
-        WEB_PI_S3_SECRET_KEY: 'itest-secret',
-        WEB_PI_S3_BUCKET: S3_BUCKET,
+        CYBERMOLE_SOCK: `${WORKSPACE}.sock`,
+        CYBERMOLE_S3_ENDPOINT: `http://127.0.0.1:${S3_PORT}`,
+        CYBERMOLE_S3_ACCESS_KEY: S3_ACCESS_KEY,
+        CYBERMOLE_S3_SECRET_KEY: 'itest-secret',
+        CYBERMOLE_S3_BUCKET: S3_BUCKET,
       },
     },
   ],

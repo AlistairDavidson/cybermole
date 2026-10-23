@@ -3,7 +3,7 @@
 // workspace/terminal structure lives in workspaces.ts; apps are the
 // grouping, the ordering and the URL identity (slug, stable once
 // created). Constructed once per process (services.ts, fed by
-// server/main.ts) and reached by routes through locals.webpi — never
+// server/main.ts) and reached by routes through locals.cybermole — never
 // runtime-imported by Astro code (docs/CODE_STYLE.md §6).
 //
 // Deletion is cascade-first: the FK chain (apps → workspaces → terminals,

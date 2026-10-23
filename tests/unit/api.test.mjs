@@ -77,7 +77,7 @@ test('JobSaveSchema: normalizes the name, trims, and names each failing field', 
   assert.equal(ok(JobSaveSchema, { name: 'n', schedule: 'daily 08:00', command: 'true' }), true);
   const cases = [
     [{ name: '!!!', schedule: 's', command: 'c' }, 'name: name is required'],
-    [{ name: 'webpi-x', schedule: 's', command: 'c' }, /^name: use letters/],
+    [{ name: 'cybermole-x', schedule: 's', command: 'c' }, /^name: use letters/],
     // too long as typed: rejected, never silently cut to 40
     [{ name: 'x'.repeat(41), schedule: 's', command: 'c' }, 'name: name is too long (max 40)'],
     [{ name: 'n', schedule: '  ', command: 'c' }, 'schedule: schedule is required'],

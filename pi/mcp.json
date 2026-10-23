@@ -1,9 +1,9 @@
 {
   "mcpServers": {
-    "webpi-jobs": {
+    "cybermole-jobs": {
       "command": "node",
-      "args": ["/opt/web-pi/dist-server/server/mcp.js"],
-      "description": "web-pi's scheduled jobs: list, create, edit, delete and validate jobs, read run history and logs, run now, kill a live run, and list apps for the job tag picker.",
+      "args": ["/opt/cybermole/dist-server/server/mcp.js"],
+      "description": "cybermole's scheduled jobs: list, create, edit, delete and validate jobs, read run history and logs, run now, kill a live run, and list apps for the job tag picker.",
       "exposure": "direct"
     }
   }

@@ -1,28 +1,28 @@
 ---
 import Base from '../layouts/Base.astro';
 import JobsApp from '../components/JobsApp/JobsApp.astro';
-import { assertWebPiLocals } from '../lib/web/locals';
+import { assertCybermoleLocals } from '../lib/web/locals';
 // Server-rendered (docs/CODE_STYLE.md §7): the job list arrives as HTML
 // from the scheduler server/main.ts passes in locals; <jobs-app> enhances
 // it (actions, dialogs, a 15 s refresh from /partials/jobs-list). A page
 // without the services is a broken invariant, not a state to render
-// around — assertWebPiLocals throws (in dev, browse the `npm run
+// around — assertCybermoleLocals throws (in dev, browse the `npm run
 // dev:server` process: `astro dev`'s own render has none). A failed
 // listing renders the empty state's message; the poll keeps trying.
-const { webpi } = assertWebPiLocals(Astro.locals);
-const listed = await webpi.scheduler.listJobs();
+const { cybermole } = assertCybermoleLocals(Astro.locals);
+const listed = await cybermole.scheduler.listJobs();
 const jobs = listed.ok ? listed.data.jobs : null;
 // The dialog's app-tag picker options (plan §9) — the same render that
 // lists the jobs, no second fetch. A failed read keeps the page alive:
 // the picker just offers no apps until a good render comes through the
 // partial refresh.
-const appsListed = webpi.apps.listApps();
+const appsListed = cybermole.apps.listApps();
 const apps = appsListed.ok ? appsListed.data.apps : [];
 // console.error on purpose, not src/lib/logger.ts: frontmatter is
 // Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
 if (!listed.ok) console.error(`jobs page: ${listed.errorMessage}`);
 if (!appsListed.ok) console.error(`jobs page: ${appsListed.errorMessage}`);
 ---
-<Base title="web-pi — jobs" header="jobs">
+<Base title="cybermole — jobs" header="jobs">
   <JobsApp jobs={jobs} apps={apps} />
 </Base>

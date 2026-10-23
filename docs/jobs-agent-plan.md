@@ -41,10 +41,10 @@ Remove, outright:
   preview).
 - `src/lib/releases.ts` and everything only it used (incl. the password
   re-verification helper if `/management` was its only caller — verify in
-  the task; `webpi-set-password` stays).
+  the task; `cybermole-set-password` stays).
 - compose: the `builder` and `releases-init` services, the
-  `webpi-releases` volume, and the dev-profile references.
-- env knobs `WEB_PI_RELEASES_DIR`, `WEB_PI_MANAGEMENT_CHECKOUT`
+  `cybermole-releases` volume, and the dev-profile references.
+- env knobs `CYBERMOLE_RELEASES_DIR`, `CYBERMOLE_MANAGEMENT_CHECKOUT`
   (README env table, env-schema, entrypoint loading).
 - `docs/management-page.md` (superseded), the README `/management`
   sections, DESIGN_REVIEW threat-model paragraphs about the protected set
@@ -78,11 +78,11 @@ owns its state; the workspace uid owns everything it can touch. No more
 - A second HTTP listener on a **unix domain socket**, served by the same
   Node process (`server/main.ts`), JSON only. Same-origin by being local;
   nginx / the TLS proxy never see it.
-- Paths, mirroring the `WEB_PI_TMUX_SOCKET` convention: compose —
-  `/run/web-pi/webpi.sock` (the shared setgid-group-`webpi` dir the tmux
+- Paths, mirroring the `CYBERMOLE_TMUX_SOCKET` convention: compose —
+  `/run/cybermole/cybermole.sock` (the shared setgid-group-`cybermole` dir the tmux
   socket already lives in — the two web↔workspace IPC surfaces side by
-  side); plain host — `<state dir>/webpi.sock`.
-- Created `0660` group `webpi` (explicit chmod after listen — the tmux
+  side); plain host — `<state dir>/cybermole.sock`.
+- Created `0660` group `cybermole` (explicit chmod after listen — the tmux
   0600-umask dance, server-side); a stale socket file is removed at boot
   like the workspace entrypoint does for tmux. **Amended in integration:**
   a socket a LIVE server answers on no longer fails the boot — the
@@ -91,7 +91,7 @@ owns its state; the workspace uid owns everything it can touch. No more
   Two servers sharing one state dir (dev box, tests) is a real shape, and
   the web app must not die over an auxiliary IPC listener; every other
   start failure still stops the boot.
-- Env: `WEB_PI_SOCK` — absolute path override; unset = the default for
+- Env: `CYBERMOLE_SOCK` — absolute path override; unset = the default for
   the shape; **empty = the listener is off** (CLI/MCP then fail with a
   clear "internal API disabled" error). A set-but-crazy value stops the
   server at boot, like the S3/editor vars.
@@ -125,21 +125,21 @@ anything changes it, whoever changed it.
 
 ## 5. The CLI
 
-- A third bin: `webpi` → `dist-server/cli/main.js` (alongside
-  `web-pi` / `webpi-set-password`). Zero runtime deps: `node:http` with
+- A third bin: `cybermole-cli` → `dist-server/cli/main.js` (alongside
+  `cybermole` / `cybermole-set-password`). Zero runtime deps: `node:http` with
   `socketPath`, the same Result types.
-- `webpi jobs <verb>`: `list [-a app]`, `runs <name>`,
+- `cybermole-cli jobs <verb>`: `list [-a app]`, `runs <name>`,
   `log <name> <firedAt>`, `create`, `set`, `delete`, `run`, `kill`,
   `validate` — options mirroring the form fields. **Parity line: every
   user action on `/jobs` has a verb.**
-- Discovery: `$WEB_PI_SOCK` → `/run/web-pi/webpi.sock` →
-  `<state dir>/webpi.sock`; a friendly error names the knob when off.
+- Discovery: `$CYBERMOLE_SOCK` → `/run/cybermole/cybermole.sock` →
+  `<state dir>/cybermole.sock`; a friendly error names the knob when off.
 - `--help` is the agent-facing documentation — self-describing, no MCP
   round-trip needed to discover the surface.
 
 ## 6. The MCP server
 
-- `webpi mcp` — a stdio MCP server subcommand of the same bin, over the
+- `cybermole-cli mcp` — a stdio MCP server subcommand of the same bin, over the
   same socket client layer as the verbs. New dependency:
   `@modelcontextprotocol/sdk`.
 - Tools 1:1 with the verbs: `jobs_list`, `jobs_create`, `jobs_set`,
@@ -187,7 +187,7 @@ anything changes it, whoever changed it.
 
 - **Write-time cap:** the run wrapper appends through a small bundled
   node appender (node is in the workspace container's image) that stops
-  writing past `WEB_PI_JOB_LOG_MAX` (default 20 MiB), keeps draining the
+  writing past `CYBERMOLE_JOB_LOG_MAX` (default 20 MiB), keeps draining the
   pipe, and writes a `[truncated at N bytes]` marker line. Post-run
   truncation was considered and rejected — a chatty or runaway job must
   not be able to fill the disk mid-run.

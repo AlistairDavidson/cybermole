@@ -1,5 +1,5 @@
 {
-  "name": "web-pi",
+  "name": "cybermole",
   "version": "0.1.0",
   "description": "pi coding-agent sessions in the browser — Astro SSR (Node middleware) + Web Awesome web components + one small Node server (terminal over WebSocket → tmux)",
   "license": "MIT",
@@ -23,9 +23,9 @@
     "prepack": "npm run build && node tools/prepack.mjs"
   },
   "bin": {
-    "web-pi": "dist-server/server/main.js",
-    "webpi-set-password": "dist-server/server/set-password.js",
-    "webpi": "dist-server/cli/main.js"
+    "cybermole": "dist-server/server/main.js",
+    "cybermole-set-password": "dist-server/server/set-password.js",
+    "cybermole-cli": "dist-server/cli/main.js"
   },
   "files": [
     "dist/",

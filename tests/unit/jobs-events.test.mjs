@@ -5,7 +5,7 @@
 // (created/updated/deleted) run in-process; the run lifecycle
 // (started/killed/finished) needs tmux — real tmux for the happy path
 // (private ABSOLUTE socket, set before the import so nothing can touch a
-// real web-pi socket), and a stand-in tmux on PATH for killRun's error
+// real cybermole socket), and a stand-in tmux on PATH for killRun's error
 // codes (deterministic, no server needed).
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,9 +14,9 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-jobs-events-'));
-process.env.WEB_PI_TMUX_SOCKET = path.join(dir, 'tmux');
-const SOCKET = process.env.WEB_PI_TMUX_SOCKET;
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-jobs-events-'));
+process.env.CYBERMOLE_TMUX_SOCKET = path.join(dir, 'tmux');
+const SOCKET = process.env.CYBERMOLE_TMUX_SOCKET;
 
 const { Scheduler } = await import('../../dist-server/src/lib/jobs.js');
 const { StateDb } = await import('../../dist-server/src/lib/db.js');
@@ -37,7 +37,7 @@ const haveTmux = (() => {
 
 /** Scheduler + its db handle (to read fired_at rows back). */
 function fresh() {
-  const db = new StateDb(path.join(fs.mkdtempSync(path.join(dir, 'db-')), 'webpi.db'));
+  const db = new StateDb(path.join(fs.mkdtempSync(path.join(dir, 'db-')), 'cybermole.db'));
   return {
     db,
     s: new Scheduler(db, { cwd: dir, env: {}, logDir: path.join(dir, 'job-logs') }),
@@ -48,7 +48,7 @@ function fresh() {
 function brokenScheduler() {
   const file = path.join(fs.mkdtempSync(path.join(dir, 'broken-')), 'not-a-dir');
   fs.writeFileSync(file, '');
-  return new Scheduler(new StateDb(path.join(file, 'webpi.db')), {
+  return new Scheduler(new StateDb(path.join(file, 'cybermole.db')), {
     cwd: dir,
     env: {},
     logDir: path.join(dir, 'job-logs'),
@@ -162,7 +162,7 @@ exit 0
       assert.equal((await s.killRun('nightly', 1000)).errorCode, 'run_not_active');
 
       fs.writeFileSync(path.join(fakeDir, 'up'), '');
-      fs.writeFileSync(path.join(fakeDir, 'sessions'), 'webpi-nightly\n');
+      fs.writeFileSync(path.join(fakeDir, 'sessions'), 'cybermole-nightly\n');
       // the named run is not the live one: a NEWER row exists
       db.db()
         .prepare('INSERT INTO job_runs (job, fired_at, origin) VALUES (?, ?, ?)')

@@ -1,5 +1,5 @@
 // responses.service.ts — Results → HTTP Responses (the relevant half of
-// soothing-booking's responses service, plus web-pi's domain mappers).
+// soothing-booking's responses service, plus cybermole's domain mappers).
 // The ONLY place an error code becomes a status (docs/CODE_STYLE.md §3):
 // every mapper is an exhaustive switch, so a new code is a type error
 // here until it gets a status. Failure bodies are

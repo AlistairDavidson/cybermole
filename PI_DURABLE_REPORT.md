@@ -1,4 +1,4 @@
-# Pi Durable — research report & implications for web-pi
+# Pi Durable — research report & implications for cybermole
 
 *Research date: 2026-10-03. Package investigated: `@earendil-works/pi-durable@1.0.1` (published alongside Pi 1.0, ~1 day old at time of writing).*
 
@@ -29,14 +29,14 @@ Notable gaps vs the pi coding agent (as of 1.0.1): built-in coding tools are onl
 
 Maturity: explicitly **experimental** — the README's first line is *"The API changes without notice between releases."* Deps: `@earendil-works/chord`, `@earendil-works/pi-ai`, `diff`, `typebox` (notably *not* pi-agent-core — the tooling is its own implementation).
 
-## What tmux does for web-pi today
+## What tmux does for cybermole today
 
 Four distinct jobs:
 
-1. **Process host** — keeps pi alive when the browser tab (or our Node server) goes away; on a bare host the tmux server is a separate daemon, so a web-pi crash doesn't touch sessions. In the container it doesn't hold: the Node server is init's only child, so when it exits the container stops and tmux goes with it.
+1. **Process host** — keeps pi alive when the browser tab (or our Node server) goes away; on a bare host the tmux server is a separate daemon, so a cybermole crash doesn't touch sessions. In the container it doesn't hold: the Node server is init's only child, so when it exits the container stops and tmux goes with it.
 2. **Attach/detach multiplexer** — live attach via `attach -d`; planned `capture-pane` scrollback backfill on attach.
 3. **Terminal backend** — the medium for pi's TUI itself: scrollback, resize, the thing xterm.js talks to through node-pty.
-4. **Generic process runner** — `WEB_PI_COMMAND` can be any CLI; the TODO's Zed-webapp / raw-terminal / app-preview tabs need this too.
+4. **Generic process runner** — `CYBERMOLE_COMMAND` can be any CLI; the TODO's Zed-webapp / raw-terminal / app-preview tabs need this too.
 
 ## Would pi-durable remove the need for tmux?
 
@@ -74,4 +74,4 @@ The TODO's instinct ("when it stabilises") is right — **don't migrate now**. L
 2. **Abstract the sidebar's data source** behind a "list/query conversations" interface so a durable storage can later feed the same UI.
 3. **Prototype out-of-tree**: a SQLite harness sidecar exposing one conversation via `watchEvents()` over WS, rendered as a transcript pane behind a flag — as an extra "app" in the planned apps folder. Validates the UI shape and the API before committing.
 
-And watch for the cheapest path of all: **pi-the-CLI gaining a durable mode or RPC bridge** — that would give web-pi durability while keeping tmux and the TUI, with no UI rewrite. The announcement says lessons from pi-durable "flow back into Pi the coding agent as they prove themselves valuable," so convergence is likely.
+And watch for the cheapest path of all: **pi-the-CLI gaining a durable mode or RPC bridge** — that would give cybermole durability while keeping tmux and the TUI, with no UI rewrite. The announcement says lessons from pi-durable "flow back into Pi the coding agent as they prove themselves valuable," so convergence is likely.

@@ -3,7 +3,7 @@
 // error code, the bucket check/create on first use, streamed and
 // multipart uploads (and the abort when a stream fails midway), and the
 // responses objectStoreFailureResponse / fileDownloadResponse build. Plus
-// the WEB_PI_S3_* boot checks in src/lib/env.ts, which read RAW_ENV at
+// the CYBERMOLE_S3_* boot checks in src/lib/env.ts, which read RAW_ENV at
 // module load (child processes).
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -410,12 +410,12 @@ test('fileDownloadResponse: always an attachment, sandboxed, allowlisted type or
   assert.equal(head.headers.get('content-disposition'), "attachment; filename*=UTF-8''a.txt");
 });
 
-// ---------- WEB_PI_S3_* boot checks (src/lib/env.ts) ----------
+// ---------- CYBERMOLE_S3_* boot checks (src/lib/env.ts) ----------
 
 /** readObjectStoreConfig() in a fresh process (RAW_ENV is read at module load), or its error. */
 function bootConfig(env) {
   const clean = Object.fromEntries(
-    Object.entries(process.env).filter(([k]) => !k.startsWith('WEB_PI_S3_')),
+    Object.entries(process.env).filter(([k]) => !k.startsWith('CYBERMOLE_S3_')),
   );
   try {
     const out = execFileSync(
@@ -432,9 +432,9 @@ function bootConfig(env) {
   }
 }
 
-test('env: no WEB_PI_S3_* (or only empty ones) is "not configured"', () => {
+test('env: no CYBERMOLE_S3_* (or only empty ones) is "not configured"', () => {
   assert.deepEqual(bootConfig({}), { config: null });
-  assert.deepEqual(bootConfig({ WEB_PI_S3_ENDPOINT: '', WEB_PI_S3_ACCESS_KEY: '' }), {
+  assert.deepEqual(bootConfig({ CYBERMOLE_S3_ENDPOINT: '', CYBERMOLE_S3_ACCESS_KEY: '' }), {
     config: null,
   });
 });
@@ -442,16 +442,16 @@ test('env: no WEB_PI_S3_* (or only empty ones) is "not configured"', () => {
 test('env: endpoint + both keys configure the store, with bucket/region defaults', () => {
   assert.deepEqual(
     bootConfig({
-      WEB_PI_S3_ENDPOINT: 'http://seaweedfs:8333',
-      WEB_PI_S3_ACCESS_KEY: 'a',
-      WEB_PI_S3_SECRET_KEY: 's',
+      CYBERMOLE_S3_ENDPOINT: 'http://seaweedfs:8333',
+      CYBERMOLE_S3_ACCESS_KEY: 'a',
+      CYBERMOLE_S3_SECRET_KEY: 's',
     }),
     {
       config: {
         endpoint: 'http://seaweedfs:8333',
         accessKeyId: 'a',
         secretAccessKey: 's',
-        bucket: 'webpi',
+        bucket: 'cybermole',
         region: 'us-east-1',
       },
     },
@@ -459,22 +459,22 @@ test('env: endpoint + both keys configure the store, with bucket/region defaults
 });
 
 test('env: a half-configured, non-http or misnamed store stops the boot', () => {
-  const keys = { WEB_PI_S3_ACCESS_KEY: 'a', WEB_PI_S3_SECRET_KEY: 's' };
+  const keys = { CYBERMOLE_S3_ACCESS_KEY: 'a', CYBERMOLE_S3_SECRET_KEY: 's' };
   assert.match(
-    bootConfig({ WEB_PI_S3_ENDPOINT: 'http://seaweedfs:8333', WEB_PI_S3_ACCESS_KEY: 'a' }).error,
+    bootConfig({ CYBERMOLE_S3_ENDPOINT: 'http://seaweedfs:8333', CYBERMOLE_S3_ACCESS_KEY: 'a' }).error,
     /must be set together/,
   );
   assert.match(bootConfig(keys).error, /must be set together/);
   assert.match(
-    bootConfig({ ...keys, WEB_PI_S3_ENDPOINT: 'seaweedfs:8333' }).error,
+    bootConfig({ ...keys, CYBERMOLE_S3_ENDPOINT: 'seaweedfs:8333' }).error,
     /is not an http\(s\) URL/,
   );
   assert.match(
-    bootConfig({ ...keys, WEB_PI_S3_ENDPOINT: 'ftp://seaweedfs' }).error,
+    bootConfig({ ...keys, CYBERMOLE_S3_ENDPOINT: 'ftp://seaweedfs' }).error,
     /is not an http\(s\) URL/,
   );
   assert.match(
-    bootConfig({ ...keys, WEB_PI_S3_ENDPOINT: 'http://seaweedfs:8333', WEB_PI_S3_BUCKET: 'Web_Pi' })
+    bootConfig({ ...keys, CYBERMOLE_S3_ENDPOINT: 'http://seaweedfs:8333', CYBERMOLE_S3_BUCKET: 'Cybermole' })
       .error,
     /is not a valid bucket name/,
   );

@@ -73,7 +73,7 @@ export const appPatchBody = z.object({
 /** POST /api/workspaces — appId null (or absent) = the console group. No
  *  cwd (task/app-cwd — "no folder setting when creating workspace": the
  *  app does that): the server DERIVES it — the parent app's cwd when it
- *  has one, else WEB_PI_NEW_SESSION_CWD (the domain validates the
+ *  has one, else CYBERMOLE_NEW_SESSION_CWD (the domain validates the
  *  winner, absolute + existing directory). */
 export const workspaceCreateBody = z.object({
   appId: AppIdSchema.nullable().optional(),

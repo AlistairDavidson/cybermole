@@ -2,11 +2,11 @@
 # docs/editor-webapp.md + docs/editor-spike.md): self-hosted VS Code in the
 # browser with server-side files. Thin on purpose — the pinned upstream
 # tarball plus a user; everything else (auth, TLS, the base path, framing)
-# is web-pi's same-origin /editor proxy in front of it.
+# is cybermole's same-origin /editor proxy in front of it.
 #
-# Runs as uid 2000 / gid 2001 (the workspace user, matching the web-pi
-# image's split) so it edits the checkouts on the shared webpi-workspace
-# volume at the same /workspace path the webpi + workspace containers use
+# Runs as uid 2000 / gid 2001 (the workspace user, matching the cybermole
+# image's split) so it edits the checkouts on the shared cybermole-workspace
+# volume at the same /workspace path the cybermole + workspace containers use
 # (path agreement, like the tmux split). The server is the reh-web build's
 # own entrypoint (bin/codium-server — `codium serve-web` is the desktop
 # CLI's door to the same component; spike-verified), NOT started from a
@@ -50,7 +50,7 @@ RUN case "$TARGETARCH" in \
     && rm -f /tmp/codium.tar.gz \
     && /opt/editor/bin/codium-server --version
 
-# Bundled extensions — the editor should know web-pi's stack out of the
+# Bundled extensions — the editor should know cybermole's stack out of the
 # box: pinned Open VSX .vsixs, sha256-verified at build exactly like the
 # tarball above, baked read-only at /opt/editor-bundled-extensions. The
 # entrypoint installs them into the persistent home volume's extensions
@@ -87,11 +87,11 @@ RUN case "$TARGETARCH" in \
       "https://open-vsx.org/api/redhat/vscode-yaml/${YAML_EXT_VERSION}/file/redhat.vscode-yaml-${YAML_EXT_VERSION}.vsix" \
     && echo "${YAML_EXT_SHA256}  /opt/editor-bundled-extensions/redhat.vscode-yaml.vsix" | sha256sum -c -
 
-# uid 2000 / gid 2001 — the workspace user and the webpi shared group,
-# matching the web-pi image's split; the webpi group lets this user read
+# uid 2000 / gid 2001 — the workspace user and the cybermole shared group,
+# matching the cybermole image's split; the cybermole group lets this user read
 # group-shared files on the workspace volume (umask 0007 keeps what it
 # writes group-shared in turn — set in the entrypoint).
-RUN groupadd -g 2001 webpi \
+RUN groupadd -g 2001 cybermole \
     && useradd -u 2000 -g 2001 -m -s /bin/bash workspace
 
 COPY docker-editor-entrypoint.sh /usr/local/bin/docker-editor-entrypoint.sh

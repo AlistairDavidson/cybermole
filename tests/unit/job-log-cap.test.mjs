@@ -9,7 +9,7 @@
 // chatty capped run still records its REAL exit code (no SIGPIPE), and a
 // failing short run its nonzero one. Last, the env knob: schema shape,
 // default and fail-closed boot validation (the fresh-process pattern of
-// the WEB_PI_LOKI_* / S3 boot checks — RAW_ENV is read at module load).
+// the CYBERMOLE_LOKI_* / S3 boot checks — RAW_ENV is read at module load).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
@@ -19,7 +19,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { once } from 'node:events';
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-log-cap-'));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-log-cap-'));
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 const APPENDER = fileURLToPath(
@@ -208,20 +208,20 @@ test('wrapper: a short failing run passes through whole and records its exit cod
 const { envSchema } = await import('../../dist-server/src/lib/env-schema.js');
 
 /** env.js in a fresh process (RAW_ENV is read at module load — the same
- *  pattern as the WEB_PI_LOKI_* boot checks in observability.test.mjs):
+ *  pattern as the CYBERMOLE_LOKI_* boot checks in observability.test.mjs):
  *  the resolved ENV value, or the boot error. */
 function bootEnv(value) {
   const clean = Object.fromEntries(
-    Object.entries(process.env).filter(([k]) => k !== 'WEB_PI_JOB_LOG_MAX'),
+    Object.entries(process.env).filter(([k]) => k !== 'CYBERMOLE_JOB_LOG_MAX'),
   );
   try {
     const out = execFileSync(
       process.execPath,
       [
         '-e',
-        "process.stdout.write(String(require('./dist-server/src/lib/env.js').ENV.WEB_PI_JOB_LOG_MAX))",
+        "process.stdout.write(String(require('./dist-server/src/lib/env.js').ENV.CYBERMOLE_JOB_LOG_MAX))",
       ],
-      { env: value === undefined ? clean : { ...clean, WEB_PI_JOB_LOG_MAX: value } },
+      { env: value === undefined ? clean : { ...clean, CYBERMOLE_JOB_LOG_MAX: value } },
     );
     return { value: out.toString() };
   } catch (err) {
@@ -229,8 +229,8 @@ function bootEnv(value) {
   }
 }
 
-test('WEB_PI_JOB_LOG_MAX: declared in the shared env schema with the 20 MiB default', () => {
-  assert.deepEqual(envSchema.WEB_PI_JOB_LOG_MAX, {
+test('CYBERMOLE_JOB_LOG_MAX: declared in the shared env schema with the 20 MiB default', () => {
+  assert.deepEqual(envSchema.CYBERMOLE_JOB_LOG_MAX, {
     type: 'number',
     context: 'server',
     access: 'secret',
@@ -238,11 +238,11 @@ test('WEB_PI_JOB_LOG_MAX: declared in the shared env schema with the 20 MiB defa
   });
 });
 
-test('WEB_PI_JOB_LOG_MAX: default / integer override resolve; malformed stops the boot', () => {
+test('CYBERMOLE_JOB_LOG_MAX: default / integer override resolve; malformed stops the boot', () => {
   assert.equal(bootEnv(undefined).value, '20971520');
   assert.equal(bootEnv('1048576').value, '1048576');
   assert.equal(bootEnv('0').value, '0', 'zero is a valid (spartan) cap');
-  assert.match(bootEnv('abc').error, /WEB_PI_JOB_LOG_MAX="abc" is not an integer/);
+  assert.match(bootEnv('abc').error, /CYBERMOLE_JOB_LOG_MAX="abc" is not an integer/);
   assert.match(bootEnv('1.5').error, /is not an integer/);
   assert.match(bootEnv('-1').error, /must not be negative/);
 });

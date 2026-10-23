@@ -1,7 +1,7 @@
 import { defineConfig } from 'astro/config';
 import node from '@astrojs/node';
 import lit from '@awesome.me/astro-lit';
-// Typed env-var contract for every WEB_PI_* variable the server reads —
+// Typed env-var contract for every CYBERMOLE_* variable the server reads —
 // the single source of truth, shared with src/lib/env.ts (the compiled
 // server's typed reads; see that file for why the server cannot import
 // 'astro:env/server' directly). Plain data in envField() output shape.
@@ -13,11 +13,11 @@ import { UPLOAD_MAX_BODY_BYTES } from './src/schemas/uploads';
 // gates every request (origin, session) before calling into it, and keeps
 // login/logout and the WS→node-pty bridge itself. One process.
 //
-// WEB_PI_BASE is baked into the pages at build time — for subpath deploys
+// CYBERMOLE_BASE is baked into the pages at build time — for subpath deploys
 // (e.g. /console on a dedicated vhost; the app wants its own hostname,
 // see README "Security model") set it before `npm run build`
 // AND at server runtime; the pages and the server must agree.
-const base = process.env.WEB_PI_BASE ?? '/';
+const base = process.env.CYBERMOLE_BASE ?? '/';
 
 // Dev (`astro dev`) only: the JSON API needs the services server/main.ts
 // builds (src/middleware.ts answers 503 without them), and the terminal WS
@@ -29,7 +29,7 @@ const base = process.env.WEB_PI_BASE ?? '/';
 // NOTE: `server.proxy` is inert outside `astro dev` (build never runs a
 // dev server; prod is dist-server/server/main.js), and Astro has no
 // command-conditional config form — so it is simply always declared.
-const devApiTarget = process.env.WEB_PI_DEV_API ?? 'http://127.0.0.1:3001';
+const devApiTarget = process.env.CYBERMOLE_DEV_API ?? 'http://127.0.0.1:3001';
 const pageMethodsOnly = req =>
   req.method === 'GET' || req.method === 'HEAD' ? req.url : undefined;
 const devProxy = {
@@ -55,7 +55,7 @@ export default defineConfig({
   adapter: node({ mode: 'middleware', bodySizeLimit: UPLOAD_MAX_BODY_BYTES }),
   // Astro's own origin check is OFF on purpose: server/main.ts already
   // rejects every cross-origin non-GET before a request reaches Astro
-  // (originOk(), WEB_PI_TRUST_PROXY-aware). Astro's check derives the
+  // (originOk(), CYBERMOLE_TRUST_PROXY-aware). Astro's check derives the
   // expected origin from the request URL, which behind a TLS-terminating
   // proxy is http:// — it would 403 same-origin form posts and every
   // bodyless POST/DELETE (run job, delete job). One authoritative check;

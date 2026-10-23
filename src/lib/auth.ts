@@ -366,16 +366,16 @@ export class Auth {
 
   cookieHeader(token: SessionToken, path = '/'): string {
     return (
-      `webpi_session=${token}; HttpOnly; Secure; SameSite=Strict; ` +
+      `cybermole_session=${token}; HttpOnly; Secure; SameSite=Strict; ` +
       `Path=${path}; Max-Age=${Math.floor(this.idleMs / 1000)}`
     );
   }
 
-  /** The session token a request carries (its webpi_session cookie), as
+  /** The session token a request carries (its cybermole_session cookie), as
    *  the brand the session APIs take — the one place a cookie value
    *  becomes a SessionToken. Whether it is VALID is valid()'s call. */
   static sessionToken(cookieHeader: string | undefined): SessionToken | undefined {
-    const raw = Auth.parseCookies(cookieHeader).webpi_session;
+    const raw = Auth.parseCookies(cookieHeader).cybermole_session;
     return raw === undefined ? undefined : asSessionToken(raw);
   }
 

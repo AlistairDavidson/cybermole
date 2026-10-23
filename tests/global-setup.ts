@@ -18,12 +18,12 @@ export default async function globalSetup(): Promise<void> {
 
   // Login credential in the state db (Auth reads the row per attempt;
   // the server opens the db lazily — only after this reset).
-  const db = new StateDb(path.join(WORKSPACE, 'webpi.db'));
+  const db = new StateDb(path.join(WORKSPACE, 'cybermole.db'));
   const saved = setCredential(db, USERNAME, PASSWORD);
   if (!saved.ok) throw new Error(`global-setup: ${saved.errorMessage}`);
 
   // Deterministic command for new terminal tabs: banner + a shell we can
-  // type into. WEB_PI_COMMAND is whitespace-split, so it must be one path.
+  // type into. CYBERMOLE_COMMAND is whitespace-split, so it must be one path.
   const cmd = path.join(WORKSPACE, 'cmd.sh');
   fs.writeFileSync(cmd, `#!/bin/sh\necho '${MARKER}'\nexec /bin/sh\n`);
   fs.chmodSync(cmd, 0o755);

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// main.ts — web-pi server.
+// main.ts — cybermole server.
 // One process: serves the Astro SSR build (pages via the middleware handler,
 // hashed assets statically), the REST API, and the WS→node-pty→tmux
 // terminal. Loopback by default; put it behind a TLS reverse proxy
-// (deploy/nginx-webpi.conf). Config: WEB_PI_* env (README table).
+// (deploy/nginx-cybermole.conf). Config: CYBERMOLE_* env (README table).
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -40,7 +40,7 @@ import {
   isEditorUpgradePath,
   type EditorUpstream,
 } from '../src/lib/editor';
-import { createServices, type ServerConfig, type WebPiLocals } from '../src/lib/services';
+import { createServices, type ServerConfig, type CybermoleLocals } from '../src/lib/services';
 import { startInternalApi, InternalSocketOwnedError, type InternalApiHandle } from './internal-api';
 import { ObjectStore } from '../src/lib/storage';
 import type { ClientMsg, ServerMsg } from '../src/lib/types';
@@ -51,7 +51,7 @@ import { UPLOAD_MAX_BODY_BYTES } from '../src/schemas/uploads';
 import type { SessionToken, TmuxSessionName } from '../src/types/branded';
 
 // Operational logging (src/lib/logger.ts): console always; a winston-loki
-// push transport when WEB_PI_LOKI_URL is set. Component children give every
+// push transport when CYBERMOLE_LOKI_URL is set. Component children give every
 // line its [component] console prefix / loki label. set-password.ts keeps
 // plain console.* — CLI output for a human at a terminal, no server.
 const bootLog = componentLogger('boot');
@@ -69,7 +69,7 @@ function normalizeBase(raw: string): string {
   return b;
 }
 
-const home = ENV.WEB_PI_HOME;
+const home = ENV.CYBERMOLE_HOME;
 
 // Controlled pi config. `pi/` in the repo is the versioned template
 // (settings.json, mcp.json, skills/, extensions/, …); the runtime agent dir
@@ -78,11 +78,11 @@ const home = ENV.WEB_PI_HOME;
 // NB: PI_CODING_AGENT_DIR in the *server's* environment is deliberately NOT
 // a fallback — on an operator's box that's their real agent dir, and seeding
 // it would overwrite their config.
-const agentDir = ENV.WEB_PI_AGENT_DIR;
-if (PI_AGENT_DIR && !RAW_ENV.WEB_PI_AGENT_DIR) {
+const agentDir = ENV.CYBERMOLE_AGENT_DIR;
+if (PI_AGENT_DIR && !RAW_ENV.CYBERMOLE_AGENT_DIR) {
   bootLog.warn(
     `PI_CODING_AGENT_DIR is set (${PI_AGENT_DIR}) — ignoring it; ` +
-      `web-pi uses its own runtime agent dir (${agentDir}). Set WEB_PI_AGENT_DIR to move it.`,
+      `cybermole uses its own runtime agent dir (${agentDir}). Set CYBERMOLE_AGENT_DIR to move it.`,
   );
 }
 const agentTemplate = path.join(APP_ROOT, 'pi');
@@ -93,20 +93,20 @@ const agentTemplate = path.join(APP_ROOT, 'pi');
 const rootAgentsTemplate = path.join(APP_ROOT, 'root-agents', 'AGENTS.md');
 
 const CFG: ServerConfig = {
-  host: ENV.WEB_PI_HOST,
-  port: ENV.WEB_PI_PORT,
-  base: normalizeBase(ENV.WEB_PI_BASE),
+  host: ENV.CYBERMOLE_HOST,
+  port: ENV.CYBERMOLE_PORT,
+  base: normalizeBase(ENV.CYBERMOLE_BASE),
   home,
   agentDir,
-  dbFile: ENV.WEB_PI_DB_FILE,
-  clientDir: ENV.WEB_PI_CLIENT_DIR,
-  astroEntry: ENV.WEB_PI_ASTRO_ENTRY,
-  newSessionCwd: ENV.WEB_PI_NEW_SESSION_CWD,
-  jobLogDir: ENV.WEB_PI_JOB_LOG_DIR,
+  dbFile: ENV.CYBERMOLE_DB_FILE,
+  clientDir: ENV.CYBERMOLE_CLIENT_DIR,
+  astroEntry: ENV.CYBERMOLE_ASTRO_ENTRY,
+  newSessionCwd: ENV.CYBERMOLE_NEW_SESSION_CWD,
+  jobLogDir: ENV.CYBERMOLE_JOB_LOG_DIR,
   // whitespace-split command line a new terminal tab runs (plan §4;
   // default a login shell — src/lib/env.ts)
-  command: ENV.WEB_PI_COMMAND.trim().split(/\s+/).filter(Boolean),
-  trustProxy: Math.max(0, ENV.WEB_PI_TRUST_PROXY),
+  command: ENV.CYBERMOLE_COMMAND.trim().split(/\s+/).filter(Boolean),
+  trustProxy: Math.max(0, ENV.CYBERMOLE_TRUST_PROXY),
   editorUpstream: readEditorUpstream(),
 };
 
@@ -152,7 +152,7 @@ function seedRootAgents(): void {
   bootLog.warn(`could not seed the workspace-root AGENTS.md: ${seeded.errorMessage}`);
 }
 // Privilege split (DESIGN_REVIEW §1.1): with an absolute-path
-// WEB_PI_TMUX_SOCKET the tmux server — and every pi session — runs as
+// CYBERMOLE_TMUX_SOCKET the tmux server — and every pi session — runs as
 // ANOTHER uid (the workspace half). The runtime agent dir belongs to
 // that uid, so seeding happens workspace-side at its boot
 // (docker-workspace-entrypoint.sh): web-side cp's would leave node-owned
@@ -183,7 +183,7 @@ if (PI_SESSION_DIR) {
 /** Route path under the configured base ('/login' → '/foo/login'). */
 const route = (p: string): string => (CFG.base === '/' ? p : CFG.base + p);
 
-// web-pi's own persisted state: one sqlite db (login credential, login
+// cybermole's own persisted state: one sqlite db (login credential, login
 // sessions, the apps/workspaces/terminals tree, jobs) at CFG.dbFile,
 // opened lazily on first use (src/lib/db.ts).
 const stateDb = new StateDb(CFG.dbFile);
@@ -196,7 +196,7 @@ const scheduler = new jobs.Scheduler(stateDb, {
   env: sessionEnv,
   logDir: CFG.jobLogDir,
   // task/job-log-caps (plan §8): the run wrapper's write-time log cap.
-  logMaxBytes: ENV.WEB_PI_JOB_LOG_MAX,
+  logMaxBytes: ENV.CYBERMOLE_JOB_LOG_MAX,
 });
 scheduler.start();
 // pi auto-update (src/lib/auto-update.ts): when the persisted setting is
@@ -212,12 +212,12 @@ autoUpdater.start();
 const objectStore = new ObjectStore(readObjectStoreConfig());
 bootLog.info(
   objectStore.describe() === null
-    ? 'object storage: not configured (WEB_PI_S3_ENDPOINT unset) — uploads answer 503'
+    ? 'object storage: not configured (CYBERMOLE_S3_ENDPOINT unset) — uploads answer 503'
     : `object storage: ${objectStore.describe()}`,
 );
 bootLog.info(
   CFG.editorUpstream === null
-    ? 'editor: not configured (WEB_PI_EDITOR_UPSTREAM unset) — /editor answers 404'
+    ? 'editor: not configured (CYBERMOLE_EDITOR_UPSTREAM unset) — /editor answers 404'
     : `editor: proxying ${CFG.base === '/' ? '' : CFG.base}/editor/ → ${CFG.editorUpstream.origin}`,
 );
 // task/ws-terminal (plan §4): a terminal tab's spawn/respawn — one
@@ -258,9 +258,9 @@ const shutdownScheduler = (): void => scheduler.stop();
 // A second HTTP listener, on a unix domain socket, serving the WORKSPACE
 // side (agents) the same jobs service functions the browser routes use —
 // same Result JSON, no cookie/CSRF/rate-limit layer (the socket's file
-// mode is the gate; docs/jobs-agent-plan.md §2–§4). WEB_PI_SOCK: unset =
-// the shape default (/run/web-pi/webpi.sock when that shared dir exists,
-// else <state dir>/webpi.sock); empty = off; a non-absolute value stops
+// mode is the gate; docs/jobs-agent-plan.md §2–§4). CYBERMOLE_SOCK: unset =
+// the shape default (/run/cybermole/cybermole.sock when that shared dir exists,
+// else <state dir>/cybermole.sock); empty = off; a non-absolute value stops
 // the boot (env.ts, like the S3 vars). A stale socket file is removed and
 // rebound. A LIVE socket (another instance owns it — two servers sharing
 // one state dir on a dev box, tests) DEGRADES: this instance serves on,
@@ -270,7 +270,7 @@ const shutdownScheduler = (): void => scheduler.stop();
 const INTERNAL_SOCK = readInternalApiSocket();
 let internalApi: InternalApiHandle | null = null;
 if (INTERNAL_SOCK === null) {
-  bootLog.info('internal API: off (WEB_PI_SOCK is empty) — the workspace side has no jobs socket');
+  bootLog.info('internal API: off (CYBERMOLE_SOCK is empty) — the workspace side has no jobs socket');
 } else {
   startInternalApi({ socketPath: INTERNAL_SOCK, scheduler, apps: services.apps })
     .then(api => {
@@ -289,7 +289,7 @@ if (INTERNAL_SOCK === null) {
     });
 }
 const loginLimiter = new RateLimiter(10, 15 * 60 * 1000);
-const wsLimiter = new RateLimiter(Math.max(1, ENV.WEB_PI_WS_UPGRADES_PER_MIN), 60 * 1000);
+const wsLimiter = new RateLimiter(Math.max(1, ENV.CYBERMOLE_WS_UPGRADES_PER_MIN), 60 * 1000);
 // Password hashes in flight at once. Each scrypt holds 16 MiB and a libuv
 // threadpool thread (4 by default, shared with fs) — past this, logins get
 // 503 instead of queueing without bound.
@@ -369,7 +369,7 @@ function readBody(
 /** Client IP for the rate limiters. X-Forwarded-For is client-controlled
  *  except for the entries our own proxies appended (nginx's
  *  $proxy_add_x_forwarded_for and ALB both append), so with
- *  WEB_PI_TRUST_PROXY=N the client is the Nth entry from the right — never
+ *  CYBERMOLE_TRUST_PROXY=N the client is the Nth entry from the right — never
  *  the leftmost, which anyone can set to get a fresh bucket per request.
  *  N=0 (default): the header is ignored and the socket peer is the client. */
 function ipOf(req: http.IncomingMessage): string {
@@ -391,7 +391,7 @@ function ipOf(req: http.IncomingMessage): string {
 // trusted proxy (the same right-most-untrusted-hop selection ipOf() uses
 // for X-Forwarded-For — direct connections assume plain http).
 
-/** Request scheme per WEB_PI_TRUST_PROXY: the Nth X-Forwarded-Proto entry
+/** Request scheme per CYBERMOLE_TRUST_PROXY: the Nth X-Forwarded-Proto entry
  *  from the right when proxies are trusted, else http. */
 function protoOf(req: http.IncomingMessage): string {
   if (CFG.trustProxy === 0) return 'http';
@@ -406,7 +406,7 @@ function protoOf(req: http.IncomingMessage): string {
 
 /** Origin normalised for comparison: lowercase scheme+host, default ports
  *  (http:80, https:443) stripped — https://x:443 ≡ https://x. Origin never
- *  carries a path, so only scheme+host+port are compared (WEB_PI_BASE
+ *  carries a path, so only scheme+host+port are compared (CYBERMOLE_BASE
  *  mounts don't affect it). Null for anything unparseable (including the
  *  literal "null" some browsers send from sandboxed frames). */
 function normalizeOrigin(origin: string): string | null {
@@ -532,7 +532,7 @@ function underBase(url: string): boolean {
 }
 /** Header that clears the browser's session cookie (logout, log out everywhere). */
 const clearSessionCookie = (): string =>
-  `webpi_session=; HttpOnly; Secure; SameSite=Strict; Path=${CFG.base}; Max-Age=0`;
+  `cybermole_session=; HttpOnly; Secure; SameSite=Strict; Path=${CFG.base}; Max-Age=0`;
 
 // ---------- Astro SSR (middleware) ----------
 // The Astro build emits an ESM handler (dist/server/entry.mjs); loaded once
@@ -542,7 +542,7 @@ type AstroHandler = (
   req: http.IncomingMessage,
   res: http.ServerResponse,
   next: (err?: unknown) => void,
-  locals?: WebPiLocals,
+  locals?: CybermoleLocals,
 ) => void;
 
 const astroReady: Promise<AstroHandler> = import(pathToFileURL(CFG.astroEntry).href).then(
@@ -560,7 +560,7 @@ astroReady.catch(err =>
 function renderAstro(
   req: http.IncomingMessage,
   res: http.ServerResponse,
-  locals?: WebPiLocals,
+  locals?: CybermoleLocals,
 ): void {
   astroReady
     .then(handler => handler(req, res, () => send(res, 404, 'not found'), locals))
@@ -620,7 +620,7 @@ function hardenResponse(res: http.ServerResponse): void {
 }
 
 // ---------- editor reverse proxy (task/ws-editor, docs/editor-webapp.md) ----------
-// Same-origin `${BASE}/editor/*` → WEB_PI_EDITOR_UPSTREAM (HTTP + WS),
+// Same-origin `${BASE}/editor/*` → CYBERMOLE_EDITOR_UPSTREAM (HTTP + WS),
 // behind the origin check and the session gate like every other
 // authenticated route — the console frames it in an iframe, so auth is
 // the existing session cookie and no cross-origin anything applies.
@@ -1039,7 +1039,7 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     disarmBodyDeadline();
     guardUploadStall(req);
   }
-  renderAstro(req, res, { webpi: services, session: session.data.token });
+  renderAstro(req, res, { cybermole: services, session: session.data.token });
 }
 
 // ---------- WebSocket → node-pty → tmux attach ----------
@@ -1423,7 +1423,7 @@ function attach(ws: WebSocket, token: SessionToken): void {
         await spawnTmux(name);
       } else if (msg.mode === 'run') {
         // task/ws-terminal (plan §7): a live job run's tmux session
-        // (webpi-<name>) — the jobs view-run path. NEVER respawns: the
+        // (cybermole-<name>) — the jobs view-run path. NEVER respawns: the
         // run IS the session, it dies with the command, and a re-run is a
         // new session (jobs.ts), not a respawn of a dead one.
         const target = TmuxSessionNameSchema.safeParse(msg.target);
@@ -1513,7 +1513,7 @@ function attach(ws: WebSocket, token: SessionToken): void {
 
 server.listen(CFG.port, CFG.host, () => {
   bootLog.info(
-    `web-pi listening on ${CFG.host}:${CFG.port} base ${CFG.base} ` +
+    `cybermole listening on ${CFG.host}:${CFG.port} base ${CFG.base} ` +
       `(tmux socket ${tmux.SOCKET}, command "${CFG.command.join(' ')}", client ${CFG.clientDir})`,
   );
   // Best-effort vendored-pi version at boot — makes dependency drift visible.

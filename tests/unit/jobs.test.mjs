@@ -153,8 +153,8 @@ test('runCommandArgv: the exact wrapper argv — command as $1, never string-emb
 });
 
 test('runLogPaths: <logDir>/<job>/<firedAt>.{log,exit} — the pair every side derives', () => {
-  assert.deepEqual(runLogPaths('/workspace/.webpi/job-logs', 'nightly', 1730000000000), {
-    log: '/workspace/.webpi/job-logs/nightly/1730000000000.log',
-    exit: '/workspace/.webpi/job-logs/nightly/1730000000000.exit',
+  assert.deepEqual(runLogPaths('/workspace/.cybermole/job-logs', 'nightly', 1730000000000), {
+    log: '/workspace/.cybermole/job-logs/nightly/1730000000000.log',
+    exit: '/workspace/.cybermole/job-logs/nightly/1730000000000.exit',
   });
 });

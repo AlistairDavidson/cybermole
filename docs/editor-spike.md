@@ -1,4 +1,4 @@
-# Editor spike — VSCodium reh-web behind web-pi's same-origin proxy (task/ws-editor)
+# Editor spike — VSCodium reh-web behind cybermole's same-origin proxy (task/ws-editor)
 
 Plan §8 made this spike the branch's first task: same-origin-under-base-path
 is the CANDIDATE (microsoft/vscode#208278 — WebSocket subpath breakage under
@@ -8,7 +8,7 @@ observed, and what each shipped decision rests on.
 
 ## Verdict
 
-**Primary design confirmed: same-origin, under `WEB_PI_BASE`, no connection
+**Primary design confirmed: same-origin, under `CYBERMOLE_BASE`, no connection
 token.** The workbench loads in an iframe through a same-origin reverse
 proxy, its WebSockets dial back through that same proxy under the base
 path, folders open by URL param, and the integrated terminal round-trips.
@@ -105,7 +105,7 @@ Each item below was observed, not inferred:
 7. **First-open workspace-trust dialog.** "Do you trust the authors of the
    files in this folder?" with a "Trust Folder & Continue" button appears
    on first open of a folder; the choice persists in user data (the
-   persistent `webpi-editor-home` volume answers it once per folder).
+   persistent `cybermole-editor-home` volume answers it once per folder).
    Worth knowing for host-side verification — it is not an error.
    **[Superseded at merge: the shipped entrypoint passes
    `--disable-workspace-trust` — the served workbench embeds
@@ -148,7 +148,7 @@ Each item below was observed, not inferred:
 
 | Decision | Where it lives |
 |---|---|
-| Same-origin under `WEB_PI_BASE`, no token | `compose.yaml` (editor profile), `editor/docker-editor-entrypoint.sh` |
+| Same-origin under `CYBERMOLE_BASE`, no token | `compose.yaml` (editor profile), `editor/docker-editor-entrypoint.sh` |
 | Pin + sha256 | `editor/Dockerfile` `ARG`s (both arches) |
 | Original-Host forwarding | `proxyEditorRequest` / `upgradeEditorSocket` (server/main.ts) |
 | `?folder=` URI-encoded | `console-app.ts` open-editor listener |
@@ -172,7 +172,7 @@ same dance.
 ## Host-side verification (run these at merge time)
 
 1. `docker compose --profile editor up -d` with
-   `WEB_PI_EDITOR_UPSTREAM=http://editor:3000` — `/editor/` serves the
+   `CYBERMOLE_EDITOR_UPSTREAM=http://editor:3000` — `/editor/` serves the
    workbench through the console's origin; sign in, open a workspace
    folder from the sidebar's ⌷ button, expect files (no trust dialog —
    `--disable-workspace-trust`; git present — SCM view live; the bundled
@@ -181,8 +181,8 @@ same dance.
    a CSP violation naming `open-vsx.org` (see the pin above — flip the one
    constant if it appears).
 3. The integrated terminal as uid 2000: `touch /workspace/marker` in the
-   editor terminal appears owned by 2000 in a web-pi terminal.
+   editor terminal appears owned by 2000 in a cybermole terminal.
 4. Log out of the console with an editor tab open: its shells (terminal,
    extension host) must die within seconds (the per-token tunnel cut).
-5. `WEB_PI_BASE=/foo` deployment: the workbench under `/foo/editor/`
+5. `CYBERMOLE_BASE=/foo` deployment: the workbench under `/foo/editor/`
    (spike-verified at the proxy level; worth one host pass).

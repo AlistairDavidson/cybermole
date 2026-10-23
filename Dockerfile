@@ -15,8 +15,8 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 
-ARG WEB_PI_BASE=/
-RUN WEB_PI_BASE="${WEB_PI_BASE}" npm run build
+ARG CYBERMOLE_BASE=/
+RUN CYBERMOLE_BASE="${CYBERMOLE_BASE}" npm run build
 
 # ---------- runtime base: app + user, NO compiler toolchain ----------
 # Prod never compiles anything (node-pty arrives prebuilt in the seed copy);
@@ -29,21 +29,21 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # Privilege split (DESIGN_REVIEW §1.1), one image / two roles:
-#   web       — uid node (base image): serves HTTP/WS from /opt/web-pi,
+#   web       — uid node (base image): serves HTTP/WS from /opt/cybermole,
 #               ROOT-owned below (no --chown) so it is immutable to the
 #               app user; owns web state on /state; only a tmux CLIENT.
 #   workspace — uid 2000 (user `workspace`): runs the tmux server and
 #               every pi session (docker-workspace-entrypoint.sh).
-# `webpi` (fixed gid 2001) is the shared group: the socket dir is
-# 2770/setgid webpi, tmux's socket gets chmod 0660 + chgrp webpi, and
+# `cybermole` (fixed gid 2001) is the shared group: the socket dir is
+# 2770/setgid cybermole, tmux's socket gets chmod 0660 + chgrp cybermole, and
 # umask 0007 on the workspace side keeps pi's session files group-
 # readable so the web sidebar can list them. Both users exist in BOTH
 # containers (same image) — tmux's `server-access` admits by NAME.
-RUN groupadd -g 2001 webpi \
- && useradd -u 2000 -g webpi -m -s /bin/bash workspace \
- && usermod -aG webpi node
+RUN groupadd -g 2001 cybermole \
+ && useradd -u 2000 -g cybermole -m -s /bin/bash workspace \
+ && usermod -aG cybermole node
 
-# /state is where compose points WEB_PI_STATE_DIR (webpi.db — web-side
+# /state is where compose points CYBERMOLE_STATE_DIR (cybermole.db — web-side
 # state) — created node-owned here so a fresh named volume mounted on it
 # inherits that ownership instead of the root:root an empty volume starts
 # with.
@@ -51,30 +51,30 @@ RUN mkdir /state && chown node:node /state
 
 # Root-owned app copy (immutable to the node user — the split's point;
 # the old --chown=node:node made the server rewriteable by its own
-# sessions). Workspace mounts/checkouts live on the webpi-workspace
+# sessions). Workspace mounts/checkouts live on the cybermole-workspace
 # volume instead. The entrypoints stay root-owned — exec needs only the
 # mode bit — and the chmod guards contexts that drop mode bits.
-COPY --from=build /repo /opt/web-pi
+COPY --from=build /repo /opt/cybermole
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY docker-workspace-entrypoint.sh /usr/local/bin/docker-workspace-entrypoint.sh
 RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh /usr/local/bin/docker-workspace-entrypoint.sh
 
 USER node
 # /app stays the dev profile's bind target (WORKDIR auto-creates it); the
-# web service runs from /opt/web-pi via compose `working_dir` — no volume
+# web service runs from /opt/cybermole via compose `working_dir` — no volume
 # shadows either copy anymore.
 WORKDIR /app
 EXPOSE 3000
 ENV NODE_ENV=production
-ENV WEB_PI_HOST=0.0.0.0
+ENV CYBERMOLE_HOST=0.0.0.0
 
 # Persist the build-time base as the runtime default, so plain `docker run`
 # doesn't have to repeat it (compose env still wins).
-ARG WEB_PI_BASE=/
-ENV WEB_PI_BASE=${WEB_PI_BASE}
+ARG CYBERMOLE_BASE=/
+ENV CYBERMOLE_BASE=${CYBERMOLE_BASE}
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:'+(process.env.WEB_PI_PORT||'3000')+(process.env.WEB_PI_BASE||'/').replace(/\\/+$/,'')+'/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+  CMD ["node", "-e", "fetch('http://127.0.0.1:'+(process.env.CYBERMOLE_PORT||'3000')+(process.env.CYBERMOLE_BASE||'/').replace(/\\/+$/,'')+'/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["node", "dist-server/server/main.js"]

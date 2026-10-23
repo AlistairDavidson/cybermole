@@ -1,4 +1,4 @@
-// eslint.config.mjs — ESLint 9 flat config for web-pi's hand-written code.
+// eslint.config.mjs — ESLint 9 flat config for cybermole's hand-written code.
 //
 // Scope: the TypeScript surfaces (src/, server/, cli/, tests/, playwright.config.ts)
 // and the plain-JS ones (tools/, tests/unit/*.test.mjs, the .mjs config files,

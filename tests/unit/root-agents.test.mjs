@@ -17,7 +17,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-root-agents-'));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-root-agents-'));
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 const { seedRootAgentsFile } = await import('../../dist-server/src/lib/root-agents.js');
@@ -103,12 +103,12 @@ test("the repo's own template seeds (root-agents/AGENTS.md ships the file)", () 
   // the template's load-bearing claims (plan §9's content): the jobs
   // convention, the fired-not-finished line, the CLI verbs, the MCP
   // server + /reload, the trust note.
-  assert.match(seeded, /web-pi jobs/);
+  assert.match(seeded, /cybermole jobs/);
   assert.match(seeded, /Fired means started, not finished/);
-  assert.match(seeded, /webpi jobs run <name>/);
-  assert.match(seeded, /webpi jobs runs <name>/);
-  assert.match(seeded, /webpi jobs log <name> <firedAt>/);
-  assert.match(seeded, /webpi-jobs/);
+  assert.match(seeded, /cybermole-cli jobs run <name>/);
+  assert.match(seeded, /cybermole-cli jobs runs <name>/);
+  assert.match(seeded, /cybermole-cli jobs log <name> <firedAt>/);
+  assert.match(seeded, /cybermole-jobs/);
   assert.match(seeded, /\/reload/);
   assert.match(seeded, /upward walk/);
 });

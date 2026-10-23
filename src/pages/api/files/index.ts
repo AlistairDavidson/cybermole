@@ -8,7 +8,7 @@
 // UPLOAD_MAX_BODY_BYTES, and main.ts trades its whole-request deadline
 // for a stall timeout here.
 import type { APIRoute } from 'astro';
-import { assertWebPiLocals } from '../../../lib/web/locals';
+import { assertCybermoleLocals } from '../../../lib/web/locals';
 import { streamFileUpload } from '../../../lib/web/parsing.service';
 import {
   failureResponse,
@@ -18,12 +18,12 @@ import {
 import { UPLOAD_ALLOWED_MIME_TYPES, UPLOAD_MAX_FILE_BYTES } from '../../../schemas/uploads';
 
 export const POST: APIRoute = async ({ locals, request }) => {
-  const { webpi } = assertWebPiLocals(locals);
+  const { cybermole } = assertCybermoleLocals(locals);
   const stored = await streamFileUpload(
     request,
     { maxSize: UPLOAD_MAX_FILE_BYTES, allowedMimeTypes: UPLOAD_ALLOWED_MIME_TYPES },
     file =>
-      webpi.objectStore.storeUpload({
+      cybermole.objectStore.storeUpload({
         name: file.name,
         contentType: file.contentType,
         body: file.stream,

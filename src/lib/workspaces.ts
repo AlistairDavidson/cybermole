@@ -8,7 +8,7 @@
 // (plan §4: a dead tab — the first attach retries the spawn).
 //
 // Constructed once per process (services.ts, fed by server/main.ts) and
-// reached by routes through locals.webpi (docs/CODE_STYLE.md §6).
+// reached by routes through locals.cybermole (docs/CODE_STYLE.md §6).
 // Deletion cascades through FKs; the deleted terminals' tmux sessions are
 // killed best-effort, logged, never failing the delete.
 import { randomUUID } from 'node:crypto';
@@ -165,7 +165,7 @@ export interface WorkspacesDeps {
     name: TmuxSessionName,
     cwd: string,
   ) => Promise<TmuxSessionSuccess | TmuxSessionFailure>;
-  /** WEB_PI_NEW_SESSION_CWD — the default when the create carries no cwd
+  /** CYBERMOLE_NEW_SESSION_CWD — the default when the create carries no cwd
    *  of its own AND the parent app has none (plan §6, task/app-cwd). */
   defaultCwd: string;
   /** Live tmux session names (tmux.liveSessionNames) — the tree read's
@@ -224,7 +224,7 @@ export class Workspaces {
    *  setting at the dialog or on the wire — the app does that): an
    *  explicit one (an internal caller; the POST body no longer carries
    *  one) wins, then the parent app's cwd, then the configured default
-   *  (WEB_PI_NEW_SESSION_CWD). Whatever wins is validated (absolute +
+   *  (CYBERMOLE_NEW_SESSION_CWD). Whatever wins is validated (absolute +
    *  existing dir) — the parent app's cwd included: the dir may have
    *  gone since the app was saved. */
   async saveWorkspace(input: {

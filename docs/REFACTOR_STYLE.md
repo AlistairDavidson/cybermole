@@ -1,6 +1,6 @@
 # REFACTOR_STYLE.md
 
-Supplement to `docs/CODE_STYLE.md`, for porting existing web-pi code into
+Supplement to `docs/CODE_STYLE.md`, for porting existing cybermole code into
 those conventions. Correctness only; formatting stays as the surrounding
 code has it.
 
@@ -28,7 +28,7 @@ code has it.
 4. **Validation scattered through handlers → a schema in `src/schemas/`**
    used by both the server and the browser.
 5. **Hand-routed endpoints in `server/main.ts` → thin Astro routes** that
-   get services from `locals.webpi`. Keep the main.ts gate in front.
+   get services from `locals.cybermole`. Keep the main.ts gate in front.
 
 ## Recipe (per module)
 

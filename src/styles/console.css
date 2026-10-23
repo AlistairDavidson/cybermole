@@ -1,11 +1,11 @@
-/* console.css — web-pi chrome on Web Awesome tokens + <wa-page>.
+/* console.css — cybermole chrome on Web Awesome tokens + <wa-page>.
    The app's identity lives entirely in the :root semantic-token overrides
    below (the one place hex is allowed); every component, utility class and
    rule follows from them. Unlayered on purpose: it must win over the
    @layer'd Web Awesome styles. */
 
 :root {
-  /* web-pi brand overrides — Tokyo-Night-ish surfaces over WA dark */
+  /* cybermole brand overrides — Tokyo-Night-ish surfaces over WA dark */
   --wa-color-surface-default: #11131a;
   --wa-color-surface-raised: #181b24;
   --wa-color-surface-lowered: #0d0f15;
@@ -16,10 +16,10 @@
      literal #RRGGBB only, no var() chains (a custom-property read returns
      the raw token stream, unresolved). Mirror of the dark surfaces +
      brand-60 accent. */
-  --webpi-find-match: #313648;
-  --webpi-find-match-active: #3e96ff;
-  --webpi-find-overview: #888c96;
-  --webpi-find-overview-active: #3e96ff;
+  --cybermole-find-match: #313648;
+  --cybermole-find-match-active: #3e96ff;
+  --cybermole-find-overview: #888c96;
+  --cybermole-find-overview-active: #3e96ff;
 }
 
 * { box-sizing: border-box; }

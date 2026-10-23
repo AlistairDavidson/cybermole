@@ -18,11 +18,11 @@ const ROOT = path.resolve(__dirname, '..');
 const PORT = 3483;
 const BASE = `http://127.0.0.1:${PORT}`;
 
-/** Child env with the WEB_PI_ / PI_CODING_AGENT_ overrides stripped. */
+/** Child env with the CYBERMOLE_ / PI_CODING_AGENT_ overrides stripped. */
 function bareEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined && !k.startsWith('WEB_PI_') && !k.startsWith('PI_CODING_AGENT')) env[k] = v;
+    if (v !== undefined && !k.startsWith('CYBERMOLE_') && !k.startsWith('PI_CODING_AGENT')) env[k] = v;
   }
   return { ...env, ...extra };
 }
@@ -31,10 +31,10 @@ async function boot(dir: string): Promise<ChildProcess> {
   const child = spawn('node', ['dist-server/server/main.js'], {
     cwd: ROOT,
     env: bareEnv({
-      WEB_PI_PORT: String(PORT),
-      WEB_PI_HOST: '127.0.0.1',
-      WEB_PI_STATE_DIR: dir,
-      WEB_PI_TMUX_SOCKET: `webpi-restart-itest-${process.pid}`,
+      CYBERMOLE_PORT: String(PORT),
+      CYBERMOLE_HOST: '127.0.0.1',
+      CYBERMOLE_STATE_DIR: dir,
+      CYBERMOLE_TMUX_SOCKET: `cybermole-restart-itest-${process.pid}`,
     }),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -46,7 +46,7 @@ async function boot(dir: string): Promise<ChildProcess> {
     );
     child.stdout!.on('data', (d: Buffer) => {
       out += d.toString();
-      if (out.includes('web-pi listening')) {
+      if (out.includes('cybermole listening')) {
         clearTimeout(timer);
         resolve();
       }
@@ -66,8 +66,8 @@ async function stop(child: ChildProcess): Promise<void> {
 }
 
 test('a login survives a server restart; a password change revokes it', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-restart-'));
-  const dbFile = path.join(dir, 'webpi.db');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-restart-'));
+  const dbFile = path.join(dir, 'cybermole.db');
   expect(setCredential(new StateDb(dbFile), USERNAME, PASSWORD).ok).toBe(true);
 
   let child = await boot(dir);
@@ -79,7 +79,7 @@ test('a login survives a server restart; a password change revokes it', async ()
     });
     expect(login.status).toBe(200);
     const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
-    expect(cookie).toMatch(/^webpi_session=[0-9a-f]{64}$/);
+    expect(cookie).toMatch(/^cybermole_session=[0-9a-f]{64}$/);
     const state = () => fetch(`${BASE}/api/state`, { headers: { cookie } });
     expect((await state()).status).toBe(200);
 

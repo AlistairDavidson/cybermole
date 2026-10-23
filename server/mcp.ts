@@ -16,17 +16,17 @@
 // not an MCP error: the model must read it (a kill answered
 // `run_not_active` is information, not a tool malfunction). The only
 // isError results are TRANSPORT failures — the socket unreachable, or
-// the listener off (WEB_PI_SOCK empty, plan §3) — which are no answer at
+// the listener off (CYBERMOLE_SOCK empty, plan §3) — which are no answer at
 // all, never a domain code.
 //
 // stdout is the protocol channel: this process logs NOTHING (no logger —
 // componentLogger's winston console transport writes to stdout and would
-// corrupt the stream); the one boot-time diagnostic (a bad WEB_PI_SOCK)
+// corrupt the stream); the one boot-time diagnostic (a bad CYBERMOLE_SOCK)
 // goes to stderr.
 //
 // Importable standalone (tests, a future in-process wiring) and runnable
 // as an entry: `node dist-server/server/mcp.js` — the pi template's
-// mcp.json registers exactly that (pi/mcp.json), and the `webpi mcp`
+// mcp.json registers exactly that (pi/mcp.json), and the `cybermole-cli mcp`
 // subcommand (task/jobs-cli, merged by the orchestrator) execs the same
 // main().
 import * as http from 'node:http';
@@ -117,7 +117,7 @@ async function answerToolResult(
         {
           type: 'text',
           text:
-            'the internal API is disabled (WEB_PI_SOCK is empty on this web-pi instance) ' +
+            'the internal API is disabled (CYBERMOLE_SOCK is empty on this cybermole instance) ' +
             '— the jobs tools cannot work until the operator turns the socket on; ' +
             'until then the console /jobs page is the only surface',
         },
@@ -140,7 +140,7 @@ async function answerToolResult(
           type: 'text',
           text:
             `could not reach the internal API at ${socketPath} ${why} ` +
-            '— is the web-pi server running, and does it serve this socket?',
+            '— is the cybermole server running, and does it serve this socket?',
         },
       ],
       isError: true,
@@ -162,13 +162,13 @@ const firedAtSchema = z
   .describe('the run, by fired_at — the epoch-ms id jobs_runs reported');
 
 /** The job name, exactly as jobs_list reported it (the API's own
- *  JobNameSchema: letters, digits, - and _; run sessions reserve webpi-…). */
+ *  JobNameSchema: letters, digits, - and _; run sessions reserve cybermole-…). */
 const nameSchema = JobNameSchema.describe('the job name, as jobs_list reported it');
 
 /** Build the stdio MCP server. socketPath is the resolved internal API
  *  socket (src/lib/env.ts readInternalApiSocket — imported, not
- *  duplicated: the $WEB_PI_SOCK → /run/web-pi/webpi.sock → <state
- *  dir>/webpi.sock discovery is §5's rule and the server's, one logic)
+ *  duplicated: the $CYBERMOLE_SOCK → /run/cybermole/cybermole.sock → <state
+ *  dir>/cybermole.sock discovery is §5's rule and the server's, one logic)
  *  — or null when the listener is off, in which case every tool call
  *  answers the clear "disabled" error instead of the server dying
  *  (§3: the operator's knob, not the session's). */
@@ -178,7 +178,7 @@ export function createJobsMcpServer(deps: { socketPath: string | null }): McpSer
   const jobPath = (name: string, rest: string): string =>
     `/jobs/${encodeURIComponent(name)}${rest}`;
 
-  const server = new McpServer({ name: 'webpi-jobs', version: '0.1.0' });
+  const server = new McpServer({ name: 'cybermole-jobs', version: '0.1.0' });
 
   server.registerTool(
     'jobs_list',
@@ -308,7 +308,7 @@ export function createJobsMcpServer(deps: { socketPath: string | null }): McpSer
     {
       description:
         'Start a manual run of the job now — the console\'s Run now button. It opens ' +
-        'a live terminal session (webpi-<name>) and answers the Result JSON with ' +
+        'a live terminal session (cybermole-<name>) and answers the Result JSON with ' +
         'the session name. A previous run still being alive answers run_active: ' +
         'jobs never pile up — check jobs_runs and kill the old run first.',
       inputSchema: { name: nameSchema },
@@ -371,7 +371,7 @@ export function createJobsMcpServer(deps: { socketPath: string | null }): McpSer
 // ---------- the entry ----------
 
 /** Resolve the internal API socket and serve the tools over stdio.
- *  WEB_PI_SOCK's rules are env.ts's (§3): unset = the shape default,
+ *  CYBERMOLE_SOCK's rules are env.ts's (§3): unset = the shape default,
  *  empty = the listener off (serve on — every call answers the disabled
  *  error), a non-absolute value = operator wiring mistake, reported to
  *  stderr with exit 1 — the same stop-the-boot stance the web server
@@ -383,7 +383,7 @@ export async function main(): Promise<void> {
   try {
     socketPath = readInternalApiSocket();
   } catch (err) {
-    console.error(`webpi-jobs mcp: ${(err as Error).message}`);
+    console.error(`cybermole-jobs mcp: ${(err as Error).message}`);
     process.exitCode = 1;
     return;
   }
@@ -397,7 +397,7 @@ export async function main(): Promise<void> {
 // importable module and a runnable entry.
 if (require.main === module) {
   main().catch(err => {
-    console.error(`webpi-jobs mcp: ${(err as Error).stack ?? err}`);
+    console.error(`cybermole-jobs mcp: ${(err as Error).stack ?? err}`);
     process.exitCode = 1;
   });
 }

@@ -117,7 +117,7 @@ test('parseNpmViewVersion: single string, ascending array, junk', () => {
 
 test('state db settings kv: default null, write + overwrite', () => {
   const db = new StateDb(
-    path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-au-')), 'webpi.db'),
+    path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-au-')), 'cybermole.db'),
   );
   assert.equal(db.getSetting('nope'), null);
   assert.equal(value(autoUpdateEnabled(db)), false); // default OFF
@@ -132,10 +132,10 @@ test('state db settings kv: default null, write + overwrite', () => {
 /** A throwaway app tree: package.json declaring the pi range, and an
  *  installed manifest (what piInstalled reads). */
 function fakeAppRoot(installed) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-approot-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-approot-'));
   fs.writeFileSync(
     path.join(root, 'package.json'),
-    JSON.stringify({ name: 'web-pi', dependencies: { [PI]: '^1.0.1' } }, null, 2),
+    JSON.stringify({ name: 'cybermole', dependencies: { [PI]: '^1.0.1' } }, null, 2),
   );
   const manifest = path.join(root, 'node_modules', PI, 'package.json');
   fs.mkdirSync(path.dirname(manifest), { recursive: true });
@@ -148,7 +148,7 @@ function fakeAppRoot(installed) {
  *  (the spec under test), optionally sleeps, and flips the manifest to
  *  FAKE_NPM_INSTALLS_TO — simulating what npm would do to node_modules. */
 function fakeNpmBin() {
-  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-npmbin-'));
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-npmbin-'));
   const script = path.join(bin, 'npm');
   fs.writeFileSync(
     script,
@@ -194,7 +194,7 @@ test('performAutoUpdateCheck: newer in-range version installs via the declared-r
     '["1.0.1","1.0.2","1.1.0"]',
     '1.1.0',
   );
-  const db = new StateDb(path.join(root, 'webpi.db'));
+  const db = new StateDb(path.join(root, 'cybermole.db'));
 
   await performAutoUpdateCheck({ db, appRoot: root });
 
@@ -222,7 +222,7 @@ test('performAutoUpdateCheck: already newest in range → up-to-date, no install
     '["1.0.1","1.1.0"]',
     '1.1.0',
   );
-  const db = new StateDb(path.join(root, 'webpi.db'));
+  const db = new StateDb(path.join(root, 'cybermole.db'));
 
   await performAutoUpdateCheck({ db, appRoot: root });
 
@@ -244,7 +244,7 @@ test('performAutoUpdateCheck: installed above the range is left alone (never dow
     '["1.0.1","1.1.0"]',
     '1.1.0',
   );
-  const db = new StateDb(path.join(root, 'webpi.db'));
+  const db = new StateDb(path.join(root, 'cybermole.db'));
 
   await performAutoUpdateCheck({ db, appRoot: root });
   assert.equal(fs.existsSync(path.join(root, 'install-args.log')), false);
@@ -264,7 +264,7 @@ test('performAutoUpdateCheck: an unparseable installed version is never touched'
     '["1.0.1","1.1.0"]',
     '1.1.0',
   );
-  const db = new StateDb(path.join(root, 'webpi.db'));
+  const db = new StateDb(path.join(root, 'cybermole.db'));
 
   await performAutoUpdateCheck({ db, appRoot: root });
   assert.equal(fs.existsSync(path.join(root, 'install-args.log')), false);
@@ -287,7 +287,7 @@ test('performAutoUpdateCheck: npm view failure is recorded, nothing installed', 
     'npm error 404 No match found for version ^1.0.1',
     '1.1.0',
   );
-  const db = new StateDb(path.join(root, 'webpi.db'));
+  const db = new StateDb(path.join(root, 'cybermole.db'));
 
   await performAutoUpdateCheck({ db, appRoot: root });
 
@@ -312,7 +312,7 @@ test('performAutoUpdateCheck: a concurrent update is refused by the busy guard',
     '1.0.2',
     0.4 /* install takes a while */,
   );
-  const db = new StateDb(path.join(root, 'webpi.db'));
+  const db = new StateDb(path.join(root, 'cybermole.db'));
 
   const first = performAutoUpdateCheck({ db, appRoot: root }); // holds the lock
   // The fake npm writes the install's argv the moment the install STARTS —
@@ -339,7 +339,7 @@ test('performAutoUpdateCheck: a concurrent update is refused by the busy guard',
 test('AutoUpdater: OFF schedules nothing; ON checks after the first delay, then on the interval', async t => {
   t.mock.timers.enable({ now: 0 });
   const db = new StateDb(
-    path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-au-')), 'webpi.db'),
+    path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-au-')), 'cybermole.db'),
   );
   let checks = 0;
   const up = new AutoUpdater({
@@ -389,8 +389,8 @@ test('AutoUpdater: OFF schedules nothing; ON checks after the first delay, then 
 
 test('AutoUpdater: boot with the setting already ON checks after the delay', async t => {
   t.mock.timers.enable({ now: 0 });
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-au-'));
-  const db = new StateDb(path.join(dir, 'webpi.db'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-au-'));
+  const db = new StateDb(path.join(dir, 'cybermole.db'));
   setAutoUpdateEnabled(db, true); // e.g. the server restarted with it ON
   let checks = 0;
   const up = new AutoUpdater({
@@ -414,9 +414,9 @@ test('AutoUpdater: boot with the setting already ON checks after the delay', asy
 test('setEnabled: a failed save answers database_error and leaves the timers alone', async t => {
   t.mock.timers.enable({ now: 0 });
   // A state db that can never open: its parent path is a regular file.
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-au-')), 'not-a-dir');
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-au-')), 'not-a-dir');
   fs.writeFileSync(file, '');
-  const db = new StateDb(path.join(file, 'webpi.db'));
+  const db = new StateDb(path.join(file, 'cybermole.db'));
   let checks = 0;
   const up = new AutoUpdater({
     db,
@@ -439,7 +439,7 @@ test('setEnabled: a failed save answers database_error and leaves the timers alo
 
 test('setEnabled / setAutoUpdateEnabled: success is a database_update result', () => {
   const db = new StateDb(
-    path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-au-')), 'webpi.db'),
+    path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-au-')), 'cybermole.db'),
   );
   assert.deepEqual(setAutoUpdateEnabled(db, true), {
     ok: true,
@@ -453,9 +453,9 @@ test('setEnabled / setAutoUpdateEnabled: success is a database_update result', (
 });
 
 test('reads: an unreadable db is database_error (never "off" / "never"); a corrupt row reads as never', () => {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-au-')), 'not-a-dir');
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-au-')), 'not-a-dir');
   fs.writeFileSync(file, '');
-  const broken = new StateDb(path.join(file, 'webpi.db'));
+  const broken = new StateDb(path.join(file, 'cybermole.db'));
   for (const r of [autoUpdateEnabled(broken), lastCheck(broken), lastUpdate(broken)]) {
     assert.equal(r.ok, false);
     assert.equal(r.resultType, 'database_read');
@@ -464,7 +464,7 @@ test('reads: an unreadable db is database_error (never "off" / "never"); a corru
   assert.match(autoUpdateEnabled(broken).errorMessage, /^could not read the auto-update setting: /);
 
   const db = new StateDb(
-    path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-au-')), 'webpi.db'),
+    path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-au-')), 'cybermole.db'),
   );
   db.setSetting('piAutoUpdate.lastCheck', '{not json');
   db.setSetting('piAutoUpdate.lastUpdate', '"a string, not an outcome"');
@@ -475,7 +475,7 @@ test('reads: an unreadable db is database_error (never "off" / "never"); a corru
 test('AutoUpdater: an unreadable setting at the probe neither checks nor gives up — it re-probes', async t => {
   t.mock.timers.enable({ now: 0 });
   const db = new StateDb(
-    path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-au-')), 'webpi.db'),
+    path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-au-')), 'cybermole.db'),
   );
   db.db().prepare('DROP TABLE settings').run(); // every settings read now fails
   let checks = 0;

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the web-pi Web Awesome documentation skills from the installed package.
+"""Build the cybermole Web Awesome documentation skills from the installed package.
 
 Web Awesome (this app's UI toolkit) ships two Agent Skills inside the npm
 package, generated from the Custom Elements Manifest on every release — so

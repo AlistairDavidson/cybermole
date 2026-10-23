@@ -44,15 +44,15 @@ test('accepts each frame shape, stripping unknown extra keys', () => {
     mode: 'terminal',
     id: 'junk-still-parses',
   });
-  assert.deepEqual(parseClientMsg('{"type":"attach","mode":"run","target":"webpi-nightly"}'), {
+  assert.deepEqual(parseClientMsg('{"type":"attach","mode":"run","target":"cybermole-nightly"}'), {
     type: 'attach',
     mode: 'run',
-    target: 'webpi-nightly',
+    target: 'cybermole-nightly',
   });
   // a stray target on terminal / id on run is ignored; mode decides
   assert.deepEqual(
-    parseClientMsg('{"type":"attach","mode":"run","target":"webpi-nightly","id":"x"}'),
-    { type: 'attach', mode: 'run', target: 'webpi-nightly' },
+    parseClientMsg('{"type":"attach","mode":"run","target":"cybermole-nightly","id":"x"}'),
+    { type: 'attach', mode: 'run', target: 'cybermole-nightly' },
   );
 });
 

@@ -21,7 +21,7 @@ import { StateDb } from '../../dist-server/src/lib/db.js';
 
 function freshDb() {
   return new StateDb(
-    path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-auth-unit-')), 'webpi.db'),
+    path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-auth-unit-')), 'cybermole.db'),
   );
 }
 
@@ -135,7 +135,7 @@ test('cookieRefresh() re-arms the Max-Age only after half the idle window', t =>
   t.mock.timers.setTime(501);
   assert.equal(auth.valid(tok).ok, true);
   const header = auth.cookieRefresh(tok);
-  assert.match(header, /^webpi_session=/);
+  assert.match(header, /^cybermole_session=/);
   assert.match(header, /Max-Age=1\b/); // idleMs, in seconds
   assert.match(header, /SameSite=Strict/);
   t.mock.timers.setTime(700);
@@ -238,9 +238,9 @@ test('an unreadable db is database_error everywhere — never read as "no sessio
   // A state db that can never open: everything fails closed, but says
   // why — so callers answer 503 instead of 401 / signed-out — and a login
   // reports the failure instead of minting a token it can't keep.
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-auth-unit-')), 'not-a-dir');
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-auth-unit-')), 'not-a-dir');
   fs.writeFileSync(file, '');
-  const state = new StateDb(path.join(file, 'webpi.db'));
+  const state = new StateDb(path.join(file, 'cybermole.db'));
   const broken = new Auth(state);
   const tok = 'a'.repeat(64);
   for (const r of [broken.valid(tok), broken.alive(tok)]) {

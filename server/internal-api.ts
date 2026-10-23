@@ -18,7 +18,7 @@
 // single source of truth is what keeps every surface consistent.
 //
 // Importable without server/main.ts — unit tests boot this module alone
-// on a tmp-dir socket. WEB_PI_SOCK's resolution rules live in
+// on a tmp-dir socket. CYBERMOLE_SOCK's resolution rules live in
 // src/lib/env.ts (readInternalApiSocket); this module takes a resolved
 // absolute path.
 import * as http from 'node:http';
@@ -77,7 +77,7 @@ export interface InternalApiHandle {
   close(): Promise<void>;
 }
 
-/** The socket file exists AND answers — another web-pi server owns it.
+/** The socket file exists AND answers — another cybermole server owns it.
  *  main.ts treats this one specially (plan §3, amended in integration):
  *  the web app SERVES ON, with this listener disabled and a loud boot
  *  line — crashing the whole web server over an auxiliary IPC listener
@@ -87,8 +87,8 @@ export interface InternalApiHandle {
 export class InternalSocketOwnedError extends Error {
   constructor(readonly socketPath: string) {
     super(
-      `another web-pi server owns the socket (${socketPath}) — ` +
-        'this instance serves without the internal API; stop the other server, or point WEB_PI_SOCK elsewhere',
+      `another cybermole server owns the socket (${socketPath}) — ` +
+        'this instance serves without the internal API; stop the other server, or point CYBERMOLE_SOCK elsewhere',
     );
     this.name = 'InternalSocketOwnedError';
   }
@@ -122,15 +122,15 @@ export function probeSocketFile(socketPath: string, timeoutMs = 500): Promise<'l
 /** Boot the internal API: claim the socket (stale file → unlink, live
  *  listener → InternalSocketOwnedError), listen, then chmod the file
  *  0660 — group access is the gate in the compose split (the setgid
- *  /run/web-pi dir gives the file the shared group; on a plain host the
+ *  /run/cybermole dir gives the file the shared group; on a plain host the
  *  process's own group), mirroring the workspace entrypoint's tmux-socket
  *  chmod. Resolves once the listener is up. */
 export async function startInternalApi(deps: InternalApiDeps): Promise<InternalApiHandle> {
   // The socket's parent dir is created if missing: the state-dir default
-  // (~/.local/state/web-pi) is only otherwise materialized by the db / agent
+  // (~/.local/state/cybermole) is only otherwise materialized by the db / agent
   // dir (main.ts mkdirs the agent dir), so a server booted with those pointed
   // elsewhere — the e2e specs' spawned second servers, a dev's first run —
-  // would otherwise die on listen EACCES/ENOENT. The /run/web-pi shape is
+  // would otherwise die on listen EACCES/ENOENT. The /run/cybermole shape is
   // only ever chosen when that dir already exists (env.ts probes), so the
   // recursive mkdir is a no-op there and never tries to conjure a root path.
   fs.mkdirSync(path.dirname(deps.socketPath), { recursive: true });

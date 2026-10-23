@@ -21,13 +21,13 @@ const PASSWORD = 'correct-horse-9';
 const MARKER = 'TWS_MARKER_READY';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
-/** Child env with the WEB_PI_ / PI_CODING_AGENT_ overrides stripped: the
+/** Child env with the CYBERMOLE_ / PI_CODING_AGENT_ overrides stripped: the
  *  values under test must not see this machine's (or the suite
  *  webServer's) explicit settings. */
 function bareEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined && !k.startsWith('WEB_PI_') && !k.startsWith('PI_CODING_AGENT')) env[k] = v;
+    if (v !== undefined && !k.startsWith('CYBERMOLE_') && !k.startsWith('PI_CODING_AGENT')) env[k] = v;
   }
   return { ...env, ...extra };
 }
@@ -49,19 +49,19 @@ async function bootServer(
   const pw = spawnSync('node', ['dist-server/server/set-password.js'], {
     cwd: ROOT,
     input: `${USERNAME}\n${PASSWORD}\n${PASSWORD}\n`,
-    env: bareEnv({ WEB_PI_PORT: '0', WEB_PI_STATE_DIR: dir }),
+    env: bareEnv({ CYBERMOLE_PORT: '0', CYBERMOLE_STATE_DIR: dir }),
   });
   expect(pw.status, pw.stderr?.toString()).toBe(0);
 
   const child = spawn('node', ['dist-server/server/main.js'], {
     cwd: ROOT,
     env: bareEnv({
-      WEB_PI_PORT: String(PORT),
-      WEB_PI_HOST: '127.0.0.1',
-      WEB_PI_STATE_DIR: dir,
-      WEB_PI_TMUX_SOCKET: socket,
-      WEB_PI_NEW_SESSION_CWD: os.tmpdir(), // deliberately NOT the workspace cwd
-      WEB_PI_COMMAND: cmd,
+      CYBERMOLE_PORT: String(PORT),
+      CYBERMOLE_HOST: '127.0.0.1',
+      CYBERMOLE_STATE_DIR: dir,
+      CYBERMOLE_TMUX_SOCKET: socket,
+      CYBERMOLE_NEW_SESSION_CWD: os.tmpdir(), // deliberately NOT the workspace cwd
+      CYBERMOLE_COMMAND: cmd,
     }),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -78,7 +78,7 @@ async function bootServer(
       15_000,
     );
     child.stdout!.on('data', () => {
-      if (boot.includes('web-pi listening')) {
+      if (boot.includes('cybermole listening')) {
         clearTimeout(timer);
         resolve();
       }
@@ -92,7 +92,7 @@ async function bootServer(
   });
   expect(login.status).toBe(200);
   const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
-  expect(cookie).toContain('webpi_session=');
+  expect(cookie).toContain('cybermole_session=');
 
   const tmuxArgs = (args: string[]) =>
     (socket.startsWith('/') ? ['-S', socket] : ['-L', socket]).concat(args);
@@ -203,8 +203,8 @@ const closeWs = (ws: WebSocket | undefined): void => {
 };
 
 test('terminal route spawns; WS terminal mode attaches, round-trips input, RESPAWNS after an out-of-band kill', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-tws-'));
-  const socket = 'webpi-itest-tws'; // relative: single-user fork-to-start
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-tws-'));
+  const socket = 'cybermole-itest-tws'; // relative: single-user fork-to-start
   const server = await bootServer(dir, socket);
   try {
     // Create the workspace + a terminal tab through the new routes. No cwd
@@ -254,7 +254,7 @@ test('terminal route spawns; WS terminal mode attaches, round-trips input, RESPA
 
     // Out-of-band kill (the workspace-container-loss story): the row is
     // the structure, the next attach RESPAWNS — a fresh command at the
-    // WORKSPACE cwd (not WEB_PI_NEW_SESSION_CWD, deliberately different).
+    // WORKSPACE cwd (not CYBERMOLE_NEW_SESSION_CWD, deliberately different).
     expect(tmux(socket, ['kill-session', '-t', session]).status).toBe(0);
     expect(tmux(socket, ['has-session', '-t', session]).status).not.toBe(0);
     const respawned = await attachWs(server.cookie, {
@@ -274,24 +274,24 @@ test('terminal route spawns; WS terminal mode attaches, round-trips input, RESPA
 
     // 'run' mode NEVER respawns: a session that died answers an error,
     // not a fresh one (job runs are the session — a re-run is a new one).
-    expect(tmux(socket, ['new-session', '-d', '-s', 'webpi-probe', '-c', dir]).status).toBe(0);
+    expect(tmux(socket, ['new-session', '-d', '-s', 'cybermole-probe', '-c', dir]).status).toBe(0);
     const run = await attachWs(server.cookie, {
       type: 'attach',
       mode: 'run',
-      target: 'webpi-probe',
+      target: 'cybermole-probe',
     });
-    expect(run.outcome).toEqual({ type: 'attached', target: 'webpi-probe' });
+    expect(run.outcome).toEqual({ type: 'attached', target: 'cybermole-probe' });
     closeWs(run.ws);
-    expect(tmux(socket, ['kill-session', '-t', 'webpi-probe']).status).toBe(0);
+    expect(tmux(socket, ['kill-session', '-t', 'cybermole-probe']).status).toBe(0);
     const runDead = await attachWs(server.cookie, {
       type: 'attach',
       mode: 'run',
-      target: 'webpi-probe',
+      target: 'cybermole-probe',
     });
     expect(runDead.outcome).toEqual({ type: 'error', message: 'no such run session' });
     closeWs(runDead.ws);
     // and no session got respawned under that name
-    expect(tmux(socket, ['has-session', '-t', 'webpi-probe']).status).not.toBe(0);
+    expect(tmux(socket, ['has-session', '-t', 'cybermole-probe']).status).not.toBe(0);
 
     // Close the tab: row + session both gone.
     const closed = await api(server.cookie, 'DELETE', `/api/terminals/${termId}`);
@@ -305,7 +305,7 @@ test('terminal route spawns; WS terminal mode attaches, round-trips input, RESPA
 });
 
 test('split shape (absolute socket, no server): the create still returns its row (503) and the attach surfaces the guard, then respawns once the server is up', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-tws-split-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-tws-split-'));
   const socket = path.join(dir, 'tmux'); // absolute ⇒ split mode: -S + never-fork guard
   const server = await bootServer(dir, socket);
   try {

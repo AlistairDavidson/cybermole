@@ -6,7 +6,7 @@ order: `task/ws-schema` (3de0fdb), `task/ws-terminal` (cce609e),
 (cec51ae), and `task/ws-docs` (this branch — the docs refresh that
 flipped this header; README/TODO/docs now describe the shipped
 system). The editor shipped as VSCodium's reh-web build,
-same-origin-proxied through web-pi. The "Disassociate sessions from
+same-origin-proxied through cybermole. The "Disassociate sessions from
 pi" / "Apps" sketches it superseded are gone from TODO.md. The body
 below is the plan as agreed — the historical record, unchanged.
 
@@ -18,7 +18,7 @@ below is the plan as agreed — the historical record, unchanged.
   editor (VSCodium reh-web) tab. Belongs to the console (`app_id NULL` —
   the console is *not* an app row) or to exactly one app.
 - **TerminalSession** — one terminal tab = one tmux session on the
-  existing socket. The web-pi state db owns the identity (uuid); pi is
+  existing socket. The cybermole state db owns the identity (uuid); pi is
   demoted from "what a session is" to "a command you can run in a
   terminal".
 
@@ -27,7 +27,7 @@ Hierarchy: `apps 1—M workspaces 1—M terminals`, console = the NULL app.
 Locked decisions (from the design discussion):
 
 1. New terminal tabs run a **login shell** (`$SHELL -l`), not pi.
-   `WEB_PI_COMMAND` is repurposed: "the command a new terminal tab
+   `CYBERMOLE_COMMAND` is repurposed: "the command a new terminal tab
    runs", default the login shell. pi stays a vendored dependency
    (update button, auto-update) because terminals still run it by hand.
 2. The sidebar **is** the app switcher: workspaces grouped by app
@@ -46,7 +46,7 @@ Locked decisions (from the design discussion):
    self-hosted VS Code in the browser with server-side files), replacing
    the Zed/KasmVNC webapp: streaming a desktop GUI was the poor fit
    (separate basic auth, one instance, no per-folder URLs, launcher
-   container). The editor is same-origin-proxied through web-pi behind
+   container). The editor is same-origin-proxied through cybermole behind
    the session gate (§8). openvscode-server is ruled out — unmaintained
    upstream.
 
@@ -164,8 +164,8 @@ Notes:
 - **Wiring (CODE_STYLE §6)**: the domains live in `src/lib/apps.ts` +
   `src/lib/workspaces.ts` (terminals live there — they are meaningless
   outside a workspace), are constructed ONCE in `server/main.ts`, exposed
-  on `WebPiServices`, and reached by routes only via
-  `locals.webpi` — never runtime-imported by Astro code (Vite would
+  on `CybermoleServices`, and reached by routes only via
+  `locals.cybermole` — never runtime-imported by Astro code (Vite would
   bundle a second `StateDb`/domain copy). `services.ts` gains the
   members; `ServiceDeps` gains what they need (stateDb, tmux access,
   `cfg`, `sessionEnv`).
@@ -194,7 +194,7 @@ Notes:
   `resumeSessionName` (deleted).
 - **Create** (`new_terminal`): insert row (sort_order = max+10) →
   best-effort `tmux new-session -d -s t-<uuid> -c <workspace.cwd>` with
-  today's `sessionEnv` and `WEB_PI_COMMAND` argv. The row exists even
+  today's `sessionEnv` and `CYBERMOLE_COMMAND` argv. The row exists even
   when the spawn fails (split shape: workspace container down) — the tab
   renders as not-live and the first attach retries the spawn. Rows never
   block on tmux; **no eager spawns at server boot**.
@@ -213,7 +213,7 @@ Notes:
   model stays 1 WS = 1 session, and tmux's active-window is session
   state — two browser tabs on two windows of one session would fight.
 - Default terminal command: `$SHELL -l` when `SHELL` is set, else
-  `/bin/sh -l`; whitespace-split like today's `WEB_PI_COMMAND` (in
+  `/bin/sh -l`; whitespace-split like today's `CYBERMOLE_COMMAND` (in
   `env.ts`, replacing the vendored-pi default). `sessionEnv`
   (`PI_CODING_AGENT_DIR` etc.) is unchanged and keeps a manually-run pi
   on the controlled agent dir.
@@ -226,9 +226,9 @@ Notes:
 {
   "me": "ok",
   "configured": true,
-  "editor": true,                  // WEB_PI_EDITOR_UPSTREAM set? same-origin ${BASE}/editor/;
+  "editor": true,                  // CYBERMOLE_EDITOR_UPSTREAM set? same-origin ${BASE}/editor/;
                                    // false hides the editor tab (§8)
-  "defaultCwd": "/workspace",      // WEB_PI_NEW_SESSION_CWD, prefills the dialog
+  "defaultCwd": "/workspace",      // CYBERMOLE_NEW_SESSION_CWD, prefills the dialog
   "apps": [ { "id": "…", "name": "…", "slug": "…", "order": 10 } ],
   "workspaces": [                   // flat; the client groups by appId
     {
@@ -254,7 +254,7 @@ Thin Astro routes, parse → one service call → response (CODE_STYLE §6):
 | `POST /api/apps` | `{name}` | slug derived (`normalizeSlug`); `duplicate_slug` → 409 |
 | `PATCH /api/apps/:slug` | `{name?}` | slug stable once created (v1) |
 | `DELETE /api/apps/:slug` | — | cascades + tmux kills; jobs un-tagged |
-| `POST /api/workspaces` | `{appId?: string\|null, name, cwd?}` | cwd defaults to `WEB_PI_NEW_SESSION_CWD`; validated absolute + existing dir (like `zed.ts` does) |
+| `POST /api/workspaces` | `{appId?: string\|null, name, cwd?}` | cwd defaults to `CYBERMOLE_NEW_SESSION_CWD`; validated absolute + existing dir (like `zed.ts` does) |
 | `PATCH /api/workspaces/:id` | `{name?, cwd?}` | |
 | `DELETE /api/workspaces/:id` | — | kills terminals' sessions, cascades |
 | `POST /api/workspaces/:id/terminals` | `{title?}` | §4 create; returns the row + `live` |
@@ -325,19 +325,19 @@ URL's `?folder=` param, not a server call.
       `vscodium-reh-web-linux-x64-<version>.tar.gz` (lowercase — the
       release asset name) as uid 2000 / gid 2001 (linuxserver's
       `docker-vscodium-web` is the off-the-shelf alternative — the same
-      reh-web component), mounting `webpi-workspace` at the same
+      reh-web component), mounting `cybermole-workspace` at the same
       `/workspace` path (path agreement, like the tmux split), umask
-      0007, PLUS a persistent `webpi-editor-home` volume for
+      0007, PLUS a persistent `cybermole-editor-home` volume for
       VSCodium's user-data/extensions with an init chown (the
-      `webpi-zed-home`/`zed-init` precedent — empty named volumes start
+      `cybermole-zed-home`/`zed-init` precedent — empty named volumes start
       root-owned and uid 2000 must write `$HOME`).
     - entrypoint: the tarball's server binary (`bin/codium-server`;
       `codium serve-web` is the desktop CLI's door to the same
       component) with `--host 0.0.0.0 --port 3000 --server-base-path
-      ${WEB_PI_BASE%/}/editor --without-connection-token` — auth is
-      upstream (web-pi's session gate); the base path matches the proxy
-      so asset URLs line up (`WEB_PI_BASE` interpolates into the
-      service like the webpi service's). The exact entrypoint name and
+      ${CYBERMOLE_BASE%/}/editor --without-connection-token` — auth is
+      upstream (cybermole's session gate); the base path matches the proxy
+      so asset URLs line up (`CYBERMOLE_BASE` interpolates into the
+      service like the cybermole service's). The exact entrypoint name and
       the `?folder=` param shape (plain path vs URI-encoded) are PINNED
       BY THE SPIKE, not assumed.
     - `server/main.ts` reverse-proxies `${BASE}/editor/*` → the upstream
@@ -416,7 +416,7 @@ URL's `?folder=` param, not a server call.
   optional app picker; the jobs list shows the tag chip — `listJobs`
   LEFT JOINs `apps` and carries `{appId, appName}` per job (the page
   makes no second fetch). No behavioral coupling — cwd/env stay global,
-  runs stay `webpi-<name>` sessions.
+  runs stay `cybermole-<name>` sessions.
 - **Run logs**: the fire wraps the command — the user command is passed
   as **argv to an inner shell**, never string-embedded (`{ <command>; }`
   breaks on a `#` comment; and NO pipefail: dash rejects `set -o
@@ -439,10 +439,10 @@ URL's `?folder=` param, not a server call.
   result stays 'unknown').
 - **Log location**: under the WORKSPACE volume, not the state dir — the
   wrapper runs as uid 2000 in the workspace container, where
-  `WEB_PI_STATE_DIR` is not even mounted (compose split), so a
+  `CYBERMOLE_STATE_DIR` is not even mounted (compose split), so a
   state-dir placement silently no-ops the whole feature in the
-  flagship deployment. Pin `/workspace/.webpi/job-logs/<job>/…`: the
-  parent created by `workspace-init` as `workspace:webpi`, mode 2770
+  flagship deployment. Pin `/workspace/.cybermole/job-logs/<job>/…`: the
+  parent created by `workspace-init` as `workspace:cybermole`, mode 2770
   (setgid + group write; umask 0007 below it), so the web uid can read
   (the `GET …/log` route) and unlink (pruning) everything under it.
 - The tick's existing run-finish observation (session left the live set)
@@ -457,27 +457,27 @@ URL's `?folder=` param, not a server call.
 - **Viewing**: the jobs page gains, per job, an expandable run history
   (fired_at, origin, duration, exit) with a log viewer for the tail
   (`GET …/log`). A **live** run gets "view" → console deep link
-  `/?run=webpi-<name>` → terminal attach in `run` mode. This replaces
+  `/?run=cybermole-<name>` → terminal attach in `run` mode. This replaces
   the dropped Live section's run visibility.
 
 ## 10. Env / settings surface
 
-- `WEB_PI_COMMAND`: default becomes `$SHELL -l` (fallback `/bin/sh -l`);
+- `CYBERMOLE_COMMAND`: default becomes `$SHELL -l` (fallback `/bin/sh -l`);
   docs re-label it "command a new terminal tab runs". (Name kept to
-  limit churn; renaming to `WEB_PI_TERMINAL_COMMAND` is a docs-only
+  limit churn; renaming to `CYBERMOLE_TERMINAL_COMMAND` is a docs-only
   option while greenfield.)
-- `WEB_PI_NEW_SESSION_CWD`: demotes to the default cwd pre-filled in the
+- `CYBERMOLE_NEW_SESSION_CWD`: demotes to the default cwd pre-filled in the
   new-workspace dialog (and the fallback when a POST omits `cwd`).
 - `/settings` dashboard: label updates only (command shown is the shell;
   `newSessionCwd` → "default workspace cwd"). The "sessions dir" row and
-  `WEB_PI_SESSIONS_DIR` die with the pi-session scan (§11).
-- The Zed env contract — `WEB_PI_ZED_URL` / `WEB_PI_ZED_LAUNCH_URL` /
-  `WEB_PI_ZED_LAUNCH_TOKEN` (three vars, half-set boot validation,
+  `CYBERMOLE_SESSIONS_DIR` die with the pi-session scan (§11).
+- The Zed env contract — `CYBERMOLE_ZED_URL` / `CYBERMOLE_ZED_LAUNCH_URL` /
+  `CYBERMOLE_ZED_LAUNCH_TOKEN` (three vars, half-set boot validation,
   zed-init's generated token file) — is **replaced by one**:
-  `WEB_PI_EDITOR_UPSTREAM` (e.g. `http://editor:3000`; unset = editor
+  `CYBERMOLE_EDITOR_UPSTREAM` (e.g. `http://editor:3000`; unset = editor
   off). No token, no launcher URL: auth is the web session, folders are
   URL params.
-- e2e's deterministic `cmd.sh` keeps working as `WEB_PI_COMMAND`.
+- e2e's deterministic `cmd.sh` keeps working as `CYBERMOLE_COMMAND`.
 
 ## 11. Deletions (greenfield — remove, don't deprecate; the Zed
 integration dies in branch 3 `task/ws-editor`, everything else in branch
@@ -500,7 +500,7 @@ Core list:
   already covers the need.
 - The **Zed webapp integration, wholesale** (replaced by §8's editor):
   `zed/` (Dockerfile, entrypoint, `kasmvnc.yaml`, `zed-launcher.py`),
-  compose's `zed` + `zed-init` services and the `webpi-zed-credentials`
+  compose's `zed` + `zed-init` services and the `cybermole-zed-credentials`
   volume, `src/lib/zed.ts`, `POST /api/zed/open` + `zedOpenBody`,
   `readZedConfig` (env.ts / env-schema.ts), the `openInZed` service
   member, `ConsoleState.zed`, `zedOpenFailureResponse`
@@ -525,7 +525,7 @@ and `grep -ri zed` for the editor swap):
   `ids.test.mjs` (`SESSION_ID_RE`/`PiSessionIdSchema`),
   `tmux.test.mjs` (`resumeSession*`), plus delete
   `hidden-sessions.test.mjs`.
-- `WEB_PI_SESSIONS_DIR` (env-schema.ts + env.ts), `cfg.sessionsDir`
+- `CYBERMOLE_SESSIONS_DIR` (env-schema.ts + env.ts), `cfg.sessionsDir`
   (services.ts), the /settings "sessions dir" row (SettingsView.astro).
 - `services.ts`: `hiddenSessions` dep + member; the `newSession` service
   method.
@@ -576,7 +576,7 @@ and `grep -ri zed` for the editor swap):
 1. **task/ws-schema** — **additive only**: db v6 (new tables +
    table_info-guarded ALTERs; `sessions` untouched), new brands /
    patterns / ids / api schemas ADDED (nothing removed), the
-   `apps.ts`/`workspaces.ts` domains wired through `WebPiServices` +
+   `apps.ts`/`workspaces.ts` domains wired through `CybermoleServices` +
    their CRUD routes + unit tests. `/api/state` still serves the old
    shape. `npm run check`, units, and e2e all stay green.
 2. **task/ws-terminal** — WS `terminal`/`run` attach modes + respawn +
@@ -587,7 +587,7 @@ and `grep -ri zed` for the editor swap):
    in-repo image, pinned reh-web tarball, home volume + init chown),
    the `main.ts` same-origin proxy behind the gate (streaming, WS
    routing + per-token tracking, body-cap/deadline exemption, editor
-   header set, SW bypass, quiet-path), `WEB_PI_EDITOR_UPSTREAM`, the
+   header set, SW bypass, quiet-path), `CYBERMOLE_EDITOR_UPSTREAM`, the
    astro dev-proxy entry, and the §11 Zed-integration deletions — with
    today's "open in Zed" affordances retargeted to `window.open` of
    the editor URL (the tab UI comes with branch 4). **The spike decides

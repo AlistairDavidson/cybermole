@@ -4,7 +4,7 @@
 //
 // Transports: a console transport ALWAYS (pretty, human-readable — the boot
 // log and the e2e webServer stderr are read by humans), and a winston-loki
-// transport ONLY when WEB_PI_LOKI_URL is configured (src/lib/env.ts,
+// transport ONLY when CYBERMOLE_LOKI_URL is configured (src/lib/env.ts,
 // readLokiConfig). Unset, the logger is console-only and behaves exactly
 // like the console.* calls it replaced: no network, no retries, no startup
 // delay. Set, a down loki degrades silently: winston-loki batches on a 5 s
@@ -21,7 +21,7 @@
 // cheap).
 //
 // Loki label scheme (low cardinality by design — labels index streams):
-//   job       static, from WEB_PI_LOKI_JOB (default 'webpi')
+//   job       static, from CYBERMOLE_LOKI_JOB (default 'cybermole')
 //   level     winston-loki adds it from the log level
 //   component the module that emitted the line (componentLogger() below)
 // Everything else (paths, durations, session names, usernames) rides in
@@ -114,7 +114,7 @@ export function createLogger(loki: LokiConfig | null): winston.Logger {
 }
 
 /** The server's logger, configured once from the env at module load. A bad
- *  WEB_PI_LOKI_* value throws here — the boot stops, same contract as the
+ *  CYBERMOLE_LOKI_* value throws here — the boot stops, same contract as the
  *  S3 vars (src/lib/env.ts). */
 export const logger: winston.Logger = createLogger(readLokiConfig());
 

@@ -1,6 +1,6 @@
 // mcp.test.mjs — task/jobs-mcp (docs/jobs-agent-plan.md §6) units: the
 // jobs MCP server as a REAL child process over stdio (node
-// dist-server/server/mcp.js, WEB_PI_SOCK pointed at a real internal API
+// dist-server/server/mcp.js, CYBERMOLE_SOCK pointed at a real internal API
 // booted in-process on a tmp socket — the internal-api.test.mjs world +
 // its fake-tmux stand-in), spoken to with the SDK's client: the
 // initialize handshake, tools/list (the full tool set, the input schemas
@@ -8,7 +8,7 @@
 // happy call + one failure-code call per tool — asserting the tool text
 // carries the internal API's Result JSON verbatim (its `code` field is
 // the vocabulary; no second MCP result set) — and the transport failures
-// (socket gone, WEB_PI_SOCK empty). The Content-Length discipline is
+// (socket gone, CYBERMOLE_SOCK empty). The Content-Length discipline is
 // asserted from the far side: every body the tools send is lengthed, so
 // no request is refused 411 — an oversized body answers the 413
 // body_too_large code that only a DECLARED over-cap length produces.
@@ -22,10 +22,10 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-mcp-'));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-mcp-'));
 const fakeBin = path.join(dir, 'bin');
 fs.mkdirSync(fakeBin);
-process.env.WEB_PI_TMUX_SOCKET = path.join(dir, 'tmux');
+process.env.CYBERMOLE_TMUX_SOCKET = path.join(dir, 'tmux');
 process.env.FAKE_TMUX_DIR = dir;
 process.env.PATH = `${fakeBin}:${process.env.PATH}`;
 
@@ -47,7 +47,7 @@ while [ $# -gt 0 ]; do case "$1" in -f|-S|-L) shift 2 ;; *) break ;; esac; done
 sub="$1"; shift
 case "$sub" in
   list-sessions)
-    [ -e "$dir/up" ] || { echo "error connecting to $WEB_PI_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
+    [ -e "$dir/up" ] || { echo "error connecting to $CYBERMOLE_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
     while [ $# -gt 0 ]; do [ "$1" = "-F" ] && shift 2 && continue; shift; done
     cat "$sessions"
     ;;
@@ -57,7 +57,7 @@ case "$sub" in
     exit 1
     ;;
   new-session)
-    [ -e "$dir/up" ] || { echo "error connecting to $WEB_PI_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
+    [ -e "$dir/up" ] || { echo "error connecting to $CYBERMOLE_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
     while [ $# -gt 0 ]; do [ "$1" = "-s" ] && { echo "$2" >> "$sessions"; exit 0; }; shift; done
     exit 1
     ;;
@@ -88,19 +88,19 @@ function appsFor(db) {
 async function boot() {
   const root = fs.mkdtempSync(path.join(dir, 'case-'));
   const logDir = path.join(root, 'job-logs');
-  const db = new StateDb(path.join(root, 'webpi.db'));
+  const db = new StateDb(path.join(root, 'cybermole.db'));
   const scheduler = new Scheduler(db, { cwd: root, env: {}, logDir });
   const apps = appsFor(db);
   fs.writeFileSync(path.join(dir, 'sessions'), '');
   fs.writeFileSync(path.join(dir, 'up'), '');
-  const socketPath = path.join(root, 'webpi.sock');
+  const socketPath = path.join(root, 'cybermole.sock');
   const api = await startInternalApi({ socketPath, scheduler, apps });
   const client = new Client({ name: 'mcp-unit', version: '0' });
   await client.connect(
     new StdioClientTransport({
       command: process.execPath,
       args: [MCP_CHILD],
-      env: { WEB_PI_SOCK: socketPath },
+      env: { CYBERMOLE_SOCK: socketPath },
     }),
   );
   return { root, logDir, db, scheduler, apps, api, socketPath, client };
@@ -118,18 +118,18 @@ async function bootBrokenApps() {
     env: {},
     logDir: path.join(root, 'job-logs'),
   });
-  const socketPath = path.join(root, 'webpi.sock');
+  const socketPath = path.join(root, 'cybermole.sock');
   const api = await startInternalApi({
     socketPath,
     scheduler,
-    apps: appsFor(new StateDb(path.join(notADir, 'webpi.db'))),
+    apps: appsFor(new StateDb(path.join(notADir, 'cybermole.db'))),
   });
   const client = new Client({ name: 'mcp-unit', version: '0' });
   await client.connect(
     new StdioClientTransport({
       command: process.execPath,
       args: [MCP_CHILD],
-      env: { WEB_PI_SOCK: socketPath },
+      env: { CYBERMOLE_SOCK: socketPath },
     }),
   );
   return { api, socketPath, client };
@@ -167,7 +167,7 @@ test('initialize handshake + tools/list: the full tool set, schemas from the sha
   try {
     // connect() did the MCP initialize; the server's identity rode it back
     assert.deepEqual(w.client.getServerVersion(), {
-      name: 'webpi-jobs',
+      name: 'cybermole-jobs',
       version: '0.1.0',
     });
     const { tools } = await w.client.listTools();
@@ -352,7 +352,7 @@ test('jobs_run_now: the session answer; run_active while the previous run lives'
   try {
     await callJson(w.client, 'jobs_create', GOOD);
     const run = await callJson(w.client, 'jobs_run_now', { name: 'nightly' });
-    assert.deepEqual(run.json, { name: 'nightly', session: 'webpi-nightly' });
+    assert.deepEqual(run.json, { name: 'nightly', session: 'cybermole-nightly' });
 
     // the fake tmux session is live → the 409 answer, the plan's no-pile-up rule
     const busy = await callJson(w.client, 'jobs_run_now', { name: 'nightly' });
@@ -498,20 +498,20 @@ test('the socket gone: the tool answers an isError transport message', async () 
     const r = await call(w.client, 'jobs_list', {});
     assert.equal(r.isError, true);
     assert.match(r.text, /could not reach the internal API at .*\(ENOENT\)/);
-    assert.match(r.text, /is the web-pi server running/);
+    assert.match(r.text, /is the cybermole server running/);
   } finally {
     await w.client.close();
   }
 });
 
-test('WEB_PI_SOCK empty: every tool answers the clear disabled error', async () => {
+test('CYBERMOLE_SOCK empty: every tool answers the clear disabled error', async () => {
   // no world needed — the server is up with the listener off (§3)
   const client = new Client({ name: 'mcp-unit', version: '0' });
   await client.connect(
     new StdioClientTransport({
       command: process.execPath,
       args: [MCP_CHILD],
-      env: { WEB_PI_SOCK: '' },
+      env: { CYBERMOLE_SOCK: '' },
     }),
   );
   try {
@@ -522,18 +522,18 @@ test('WEB_PI_SOCK empty: every tool answers the clear disabled error', async () 
     ]) {
       const r = await call(client, name, args);
       assert.equal(r.isError, true, name);
-      assert.match(r.text, /the internal API is disabled \(WEB_PI_SOCK is empty/, name);
+      assert.match(r.text, /the internal API is disabled \(CYBERMOLE_SOCK is empty/, name);
     }
   } finally {
     await client.close();
   }
 });
 
-test('a bad WEB_PI_SOCK stops the MCP server at boot, like the web server', async () => {
+test('a bad CYBERMOLE_SOCK stops the MCP server at boot, like the web server', async () => {
   // env.ts's absolute-path rule (§3): the same operator-wiring-mistake
   // stance main.ts takes — stderr + exit 1, never a silent no-tools serve
   const child = spawn(process.execPath, [MCP_CHILD], {
-    env: { ...process.env, WEB_PI_SOCK: 'webpi.sock' },
+    env: { ...process.env, CYBERMOLE_SOCK: 'cybermole.sock' },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
   let stderr = '';
@@ -542,7 +542,7 @@ test('a bad WEB_PI_SOCK stops the MCP server at boot, like the web server', asyn
   });
   const code = await new Promise(resolve => child.on('close', resolve));
   assert.equal(code, 1);
-  assert.match(stderr, /WEB_PI_SOCK="webpi.sock" must be an absolute socket path/);
+  assert.match(stderr, /CYBERMOLE_SOCK="cybermole.sock" must be an absolute socket path/);
 });
 
 // ---------- the input contract ----------
@@ -550,15 +550,15 @@ test('a bad WEB_PI_SOCK stops the MCP server at boot, like the web server', asyn
 test("the input contract: a value the shared schema rejects never leaves the client", async () => {
   const w = await boot();
   try {
-    // 'webpi-…' is reserved for run sessions (JobNameSchema/JobSaveSchema's
+    // 'cybermole-…' is reserved for run sessions (JobNameSchema/JobSaveSchema's
     // name rule) — the SAME definition the API validates with rejects it
     // at the tool boundary, with the rule's own text, not a new vocabulary
-    const r = await call(w.client, 'jobs_delete', { name: 'webpi-x' });
+    const r = await call(w.client, 'jobs_delete', { name: 'cybermole-x' });
     assert.equal(r.isError, true);
     assert.match(r.text, /invalid job name/);
 
     const create = await call(w.client, 'jobs_create', {
-      name: 'webpi-x',
+      name: 'cybermole-x',
       schedule: '0 4 * * *',
       command: 'echo hello',
     });

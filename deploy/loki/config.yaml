@@ -1,7 +1,7 @@
-# web-pi's Loki — compose `observability` profile, mounted read-only into
+# cybermole's Loki — compose `observability` profile, mounted read-only into
 # the loki container (-config.file). Single binary (target: all is the
-# default), no auth: it publishes no port and only webpi/grafana reach it
-# over the compose network. Storage is the filesystem on the webpi-loki
+# default), no auth: it publishes no port and only cybermole/grafana reach it
+# over the compose network. Storage is the filesystem on the cybermole-loki
 # volume; the compactor enforces the 14-day retention. Based on the
 # upstream cmd/loki/loki-local-config.yaml of grafana/loki 3.7 (keys
 # checked against the configuration reference; validated statically by
@@ -48,7 +48,7 @@ compactor:
 
 limits_config:
   # Reject instead of store: entries too old or too large, label names or
-  # values too long, too many labels per series. web-pi's own lines are
+  # values too long, too many labels per series. cybermole's own lines are
   # far under every cap (entries are one log line, labels are
   # job/level/component) — the caps exist so a runaway caller can't bloat
   # the index or stream.

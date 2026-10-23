@@ -4,7 +4,7 @@
 // every other path param; the file path is built server-side from the
 // run's row — the client only ever names the run, never a path.
 import type { APIRoute } from 'astro';
-import { assertWebPiLocals } from '../../../../../../lib/web/locals';
+import { assertCybermoleLocals } from '../../../../../../lib/web/locals';
 import {
   invalidFiredAtResponse,
   invalidJobNameResponse,
@@ -15,12 +15,12 @@ import { JobNameSchema } from '../../../../../../schemas/ids';
 import { FiredAtSchema } from '../../../../../../schemas/jobs';
 
 export const GET: APIRoute = async ({ locals, params }) => {
-  const { webpi } = assertWebPiLocals(locals);
+  const { cybermole } = assertCybermoleLocals(locals);
   const name = JobNameSchema.safeParse(params.name);
   if (!name.success) return invalidJobNameResponse();
   const firedAt = FiredAtSchema.safeParse(params.fired_at);
   if (!firedAt.success) return invalidFiredAtResponse();
-  const log = webpi.scheduler.readRunLog(name.data, firedAt.data);
+  const log = cybermole.scheduler.readRunLog(name.data, firedAt.data);
   if (!log.ok) return jobFailureResponse(log);
   return runLogResponse(log.data);
 };

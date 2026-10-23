@@ -4,7 +4,7 @@
 // (absolute + existing dir — the same rule a workspace cwd passes). A
 // duplicate slug is 409, an unusable name 400.
 import type { APIRoute } from 'astro';
-import { assertWebPiLocals } from '../../../lib/web/locals';
+import { assertCybermoleLocals } from '../../../lib/web/locals';
 import { parseAndValidateAPIRequest } from '../../../lib/web/parsing.service';
 import {
   appFailureResponse,
@@ -14,10 +14,10 @@ import {
 import { appCreateBody } from '../../../schemas/api';
 
 export const POST: APIRoute = async ({ locals, request }) => {
-  const { webpi } = assertWebPiLocals(locals);
+  const { cybermole } = assertCybermoleLocals(locals);
   const parsed = await parseAndValidateAPIRequest(request, appCreateBody);
   if (!parsed.ok) return failureResponse(parsed);
-  const saved = await webpi.apps.saveApp(parsed.data.name, parsed.data.cwd);
+  const saved = await cybermole.apps.saveApp(parsed.data.name, parsed.data.cwd);
   if (!saved.ok) return appFailureResponse(saved);
   return jsonResponse(saved.data, 200);
 };

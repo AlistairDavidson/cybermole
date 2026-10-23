@@ -11,7 +11,7 @@ import { setCredential } from '../src/lib/auth';
 import { StateDb } from '../src/lib/db';
 import { ENV } from '../src/lib/env';
 
-const stateDb = new StateDb(ENV.WEB_PI_DB_FILE);
+const stateDb = new StateDb(ENV.CYBERMOLE_DB_FILE);
 
 // Interactive prompt (TTY): prompt printed BEFORE muting output (else the
 // prompt itself is swallowed and it looks hung — fixed 2026-09-30).
@@ -92,5 +92,5 @@ void (async (): Promise<void> => {
     console.error(saved.errorMessage);
     process.exit(1);
   }
-  console.log('written:', ENV.WEB_PI_DB_FILE);
+  console.log('written:', ENV.CYBERMOLE_DB_FILE);
 })();

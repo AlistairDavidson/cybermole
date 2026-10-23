@@ -1,31 +1,31 @@
-# web-pi — one image; in prod, two containers (privilege split,
+# cybermole — one image; in prod, two containers (privilege split,
 # DESIGN_REVIEW §1.1) + a one-shot init; in dev, a single-user container.
 #
 #   prod:  docker compose up -d   → loopback :3000, reverse-proxy TLS in front
 #
-#     webpi      uid node   — serves HTTP/WS from the image's root-owned
-#                            /opt/web-pi (immutable to the app user); owns
-#                            web state (webpi.db) on /state; only a tmux
+#     cybermole      uid node   — serves HTTP/WS from the image's root-owned
+#                            /opt/cybermole (immutable to the app user); owns
+#                            web state (cybermole.db) on /state; only a tmux
 #                            CLIENT on the shared socket.
 #     workspace  uid 2000   — owns the tmux server and every pi session;
 #                            checkouts + pi-agent live on the
-#                            webpi-workspace volume; the web user is
+#                            cybermole-workspace volume; the web user is
 #                            admitted as a tmux client via server-access.
 #     workspace-init (one-shot) — chowns/chmods the shared volumes: socket
-#                            dir 2770 setgid webpi, /workspace owned by
+#                            dir 2770 setgid cybermole, /workspace owned by
 #                            uid 2000 (same pattern as dev-init below),
 #                            and the job-run log dir laid out the same
 #                            way (plan §9; see the workspace-init service).
 #     seaweedfs  object storage (S3 API, src/lib/storage.ts) — on the
-#                            internal `storage` network with webpi ONLY:
+#                            internal `storage` network with cybermole ONLY:
 #                            workspace (pi sessions) can't reach it.
 #     seaweedfs-init (one-shot) — generates the S3 credentials both sides
 #                            load, once, onto their own volume.
 #     editor     uid 2000 — the VSCodium reh-web editor (docs/
 #                            editor-webapp.md): self-hosted VS Code in the
 #                            browser with server-side files, served through
-#                            web-pi's same-origin /editor proxy behind the
-#                            session gate. Edits the same webpi-workspace
+#                            cybermole's same-origin /editor proxy behind the
+#                            session gate. Edits the same cybermole-workspace
 #                            volume at the same /workspace path as the
 #                            workspace container.
 #     editor-init (one-shot) — chowns the editor home volume (VSCodium
@@ -33,15 +33,15 @@
 #                            root-owned and uid 2000 must write $HOME).
 #
 #   The editor ships in the plain stack (`npm start` / docker compose up -d):
-#   webpi's WEB_PI_EDITOR_UPSTREAM defaults to http://editor:3000 below. Opt
+#   cybermole's CYBERMOLE_EDITOR_UPSTREAM defaults to http://editor:3000 below. Opt
 #   out by setting it EMPTY in a .env next to compose.yaml — the console
 #   hides the editor tab and /editor answers 404 (the idle container is
 #   cheap to leave running).
 #
 #   observability (opt-in):  docker compose --profile observability up -d
 #          → loki + grafana + a one-shot loki-init. Loki (log aggregation,
-#          winston-loki push API) publishes NO port — webpi reaches it as
-#          http://loki:3100 over the compose network (set WEB_PI_LOKI_URL
+#          winston-loki push API) publishes NO port — cybermole reaches it as
+#          http://loki:3100 over the compose network (set CYBERMOLE_LOKI_URL
 #          when bringing the profile up). Grafana is loopback-published on
 #          :3300 with the datasource provisioned. Plain `up` and the dev
 #          profile start none of it — the server logs console-only when
@@ -59,7 +59,7 @@
 # alongside.
 #
 # pi is an npm dependency pinned by the lockfile, vendored in the image at
-# /opt/web-pi/node_modules — the workspace container runs it from there
+# /opt/cybermole/node_modules — the workspace container runs it from there
 # (same image ⇒ same path); updating pi in the split is an image rebuild
 # or a workspace-side checkout (README "Updating").
 #
@@ -67,7 +67,7 @@
 # host checkout's owner (bash doesn't export UID/GID — `export UID GID`
 # first, or put them in a .env next to this file).
 
-name: web-pi
+name: cybermole
 
 # SeaweedFS `weed mini`: master + volume + filer + S3 in one process. Only
 # the S3 API is wanted — the rest of what mini starts by default (admin
@@ -87,15 +87,15 @@ x-seaweedfs: &seaweedfs
     - -s3.port.iceberg=0
     - -s3.port.lance=0
 
-x-webpi-build: &webpi-build
+x-cybermole-build: &cybermole-build
   context: .
   target: prod # slim: no compiler toolchain (dev target has it)
   args:
     # Baked into the pages at build time AND needed at runtime — keep in sync.
-    WEB_PI_BASE: ${WEB_PI_BASE:-/}
+    CYBERMOLE_BASE: ${CYBERMOLE_BASE:-/}
 
 services:
-  webpi:
+  cybermole:
     depends_on:
       workspace-init:
         condition: service_completed_successfully
@@ -105,12 +105,12 @@ services:
       # an upload while it is still booting is a retryable 502.
       seaweedfs:
         condition: service_started
-    build: *webpi-build
-    # web-pi:local is built on this box (below). To run a CI-built image
-    # instead (release tags publish ghcr.io/<owner>/web-pi), set WEB_PI_IMAGE
-    # and `docker compose pull webpi` before `up -d` — README "Deploying".
-    # The pulled image's build-time WEB_PI_BASE still applies.
-    image: ${WEB_PI_IMAGE:-web-pi:local}
+    build: *cybermole-build
+    # cybermole:local is built on this box (below). To run a CI-built image
+    # instead (release tags publish ghcr.io/<owner>/cybermole), set CYBERMOLE_IMAGE
+    # and `docker compose pull cybermole` before `up -d` — README "Deploying".
+    # The pulled image's build-time CYBERMOLE_BASE still applies.
+    image: ${CYBERMOLE_IMAGE:-cybermole:local}
     # tini as PID 1: reaps reparented processes, and relays signals to node
     # as PID 1's direct child (the SIGTERM handler drains websockets +
     # stops the scheduler and exits 0 within ~5s; without an init, PID-1
@@ -123,63 +123,63 @@ services:
     security_opt: ["no-new-privileges:true"]
     ports:
       - "127.0.0.1:3000:3000" # loopback publish; TLS reverse proxy in front (deploy/)
-    working_dir: /opt/web-pi # serve the image copy — no /app volume anymore
+    working_dir: /opt/cybermole # serve the image copy — no /app volume anymore
     environment:
-      WEB_PI_BASE: ${WEB_PI_BASE:-/}
-      # One proxy hop (deploy/nginx-webpi.conf): rate limits key on the IP
+      CYBERMOLE_BASE: ${CYBERMOLE_BASE:-/}
+      # One proxy hop (deploy/nginx-cybermole.conf): rate limits key on the IP
       # nginx appended to X-Forwarded-For. Safe with the loopback-only
       # publish below — only local processes can reach the port directly.
-      WEB_PI_TRUST_PROXY: 1
+      CYBERMOLE_TRUST_PROXY: 1
       # Web state only (login db, hidden sessions, jobs) on its own volume.
-      WEB_PI_STATE_DIR: /state
+      CYBERMOLE_STATE_DIR: /state
       # --- privilege-split wiring. These paths resolve in the WORKSPACE
       # container (its tmux server spawns every session), so both
       # containers mount the shared volumes at the same mount points.
       # Absolute socket path ⇒ tmux -S + the never-fork guard
       # (src/lib/tmux.ts); the workspace entrypoint owns the server.
-      WEB_PI_TMUX_SOCKET: /run/web-pi/tmux
+      CYBERMOLE_TMUX_SOCKET: /run/cybermole/tmux
       # HOME handed to spawned pi — /home/workspace is uid 2000's home
       # over there (writable; the node image's /home/node is not).
-      WEB_PI_HOME: /home/workspace
+      CYBERMOLE_HOME: /home/workspace
       # pi's runtime dir (credentials + sessions) rides with the workspace
-      # uid; WEB_PI_SESSIONS_DIR derives to /workspace/pi-agent/sessions —
+      # uid; CYBERMOLE_SESSIONS_DIR derives to /workspace/pi-agent/sessions —
       # what the sidebar scans (web reads it via the shared group).
-      WEB_PI_AGENT_DIR: /workspace/pi-agent
-      WEB_PI_NEW_SESSION_CWD: /workspace
+      CYBERMOLE_AGENT_DIR: /workspace/pi-agent
+      CYBERMOLE_NEW_SESSION_CWD: /workspace
       # Object storage. The keys aren't here: seaweedfs-init generates them
-      # into /run/web-pi-s3/credentials.env and docker-entrypoint.sh loads
-      # them (WEB_PI_S3_ACCESS_KEY / WEB_PI_S3_SECRET_KEY).
-      WEB_PI_S3_ENDPOINT: http://seaweedfs:8333
+      # into /run/cybermole-s3/credentials.env and docker-entrypoint.sh loads
+      # them (CYBERMOLE_S3_ACCESS_KEY / CYBERMOLE_S3_SECRET_KEY).
+      CYBERMOLE_S3_ENDPOINT: http://seaweedfs:8333
       # task/winston-loki: winston-loki push URL — set on the host (or .env)
       # when you bring the observability profile up: 
-      #   WEB_PI_LOKI_URL=http://loki:3100 docker compose --profile observability up -d
-      # (up -d then recreates webpi to pick it up). Unset/empty = console-only
+      #   CYBERMOLE_LOKI_URL=http://loki:3100 docker compose --profile observability up -d
+      # (up -d then recreates cybermole to pick it up). Unset/empty = console-only
       # logging; the dev profile and plain hosts stay that way.
-      WEB_PI_LOKI_URL: ${WEB_PI_LOKI_URL:-}
+      CYBERMOLE_LOKI_URL: ${CYBERMOLE_LOKI_URL:-}
       # task/ws-editor (docs/editor-webapp.md): the editor webapp's
       # upstream on the compose network — THE single switch. The stack
       # ships the editor container (header note), so the default wires the
       # proxy on; set it EMPTY in .env to switch the editor off (the
       # console hides its affordances, /editor answers 404). No token or
       # launch URL: auth is the web session, folders are URL params.
-      WEB_PI_EDITOR_UPSTREAM: ${WEB_PI_EDITOR_UPSTREAM-http://editor:3000}
+      CYBERMOLE_EDITOR_UPSTREAM: ${CYBERMOLE_EDITOR_UPSTREAM-http://editor:3000}
     networks: [default, storage]
     volumes:
-      - webpi-state:/state
-      - webpi-s3-credentials:/run/web-pi-s3:ro
+      - cybermole-state:/state
+      - cybermole-s3-credentials:/run/cybermole-s3:ro
       # Read access to pi's session store (sidebar/resume); web never
       # writes here — hidden flags live in its own db on /state. :ro makes
       # that a container-level fact, not just a convention (the session
       # cwd /workspace only needs to exist, which :ro preserves).
-      - webpi-workspace:/workspace:ro
-      - webpi-tmux:/run/web-pi
+      - cybermole-workspace:/workspace:ro
+      - cybermole-tmux:/run/cybermole
       # task/ws-jobs (plan §9): job run logs, rw — web reads the tails
       # (GET /api/jobs/:name/runs/:fired_at/log) and unlinks pruned files.
       # A separate volume at the plan-pinned path, not the workspace volume
       # rw: /workspace above stays READ-ONLY (the container-level boundary
       # the comment there describes), while both containers see the logs at
       # the same path (path agreement, like the tmux socket split).
-      - webpi-job-logs:/workspace/.webpi/job-logs
+      - cybermole-job-logs:/workspace/.cybermole/job-logs
     restart: unless-stopped
 
   # The working half of the split: same image, uid 2000, owns the tmux
@@ -189,8 +189,8 @@ services:
     depends_on:
       workspace-init:
         condition: service_completed_successfully
-    build: *webpi-build # same build as webpi (BuildKit dedupes); declared so a cold machine never tries to PULL web-pi:local (cf. dev-init)
-    image: ${WEB_PI_IMAGE:-web-pi:local}
+    build: *cybermole-build # same build as cybermole (BuildKit dedupes); declared so a cold machine never tries to PULL cybermole:local (cf. dev-init)
+    image: ${CYBERMOLE_IMAGE:-cybermole:local}
     user: "workspace"
     init: true
     security_opt: ["no-new-privileges:true"]
@@ -198,44 +198,44 @@ services:
     healthcheck:
       disable: true # the image's healthcheck probes the web server; this container only runs tmux
     environment:
-      WEB_PI_TMUX_SOCKET: /run/web-pi/tmux
-      WEB_PI_AGENT_DIR: /workspace/pi-agent
+      CYBERMOLE_TMUX_SOCKET: /run/cybermole/tmux
+      CYBERMOLE_AGENT_DIR: /workspace/pi-agent
       # jobs-agent-plan §9: the workspace root's AGENTS.md target — the
-      # same path the web side's WEB_PI_NEW_SESSION_CWD names (path
+      # same path the web side's CYBERMOLE_NEW_SESSION_CWD names (path
       # agreement, like the socket and the agent dir): the entrypoint
       # seeds <this>/AGENTS.md from the image's root-agents/ template.
-      WEB_PI_NEW_SESSION_CWD: /workspace
-      WEB_PI_TMUX_WEB_USER: node # admitted as a tmux client by NAME
-      WEB_PI_TMUX_GROUP: webpi # socket group after chgrp (gid 2001 in-image)
+      CYBERMOLE_NEW_SESSION_CWD: /workspace
+      CYBERMOLE_TMUX_WEB_USER: node # admitted as a tmux client by NAME
+      CYBERMOLE_TMUX_GROUP: cybermole # socket group after chgrp (gid 2001 in-image)
     volumes:
-      - webpi-tmux:/run/web-pi # the shared socket (0660 webpi after the entrypoint's chmod/chgrp)
-      - webpi-workspace:/workspace # checkouts + pi-agent (umask 0007 keeps files group-shared)
+      - cybermole-tmux:/run/cybermole # the shared socket (0660 cybermole after the entrypoint's chmod/chgrp)
+      - cybermole-workspace:/workspace # checkouts + pi-agent (umask 0007 keeps files group-shared)
       # task/ws-jobs (plan §9): the run-log dir at the same path web sees
       # it — the wrapper (uid 2000, umask 0007) writes the logs here.
-      - webpi-job-logs:/workspace/.webpi/job-logs
+      - cybermole-job-logs:/workspace/.cybermole/job-logs
     restart: unless-stopped
 
   # One-shot: empty named volumes are created root-owned; the split needs
-  # the socket dir 2770 setgid webpi (socket creation + group inheritance)
+  # the socket dir 2770 setgid cybermole (socket creation + group inheritance)
   # and /workspace owned by uid 2000. Runs on every `up` — a no-op chown
   # once ownership is right. (Entrypoint overridden: the web entrypoint
   # must not run here.) It also lays out the job-run log dir (plan §9):
-  # /workspace/.webpi/job-logs is its own volume (see the webpi service —
+  # /workspace/.cybermole/job-logs is its own volume (see the cybermole service —
   # web mounts /workspace READ-ONLY, but must read AND prune run logs),
-  # owned workspace:webpi 2770 so the workspace uid's wrapper (umask 0007
+  # owned workspace:cybermole 2770 so the workspace uid's wrapper (umask 0007
   # under it) writes group-shared logs the web uid can read + unlink.
   workspace-init:
-    build: *webpi-build
-    image: ${WEB_PI_IMAGE:-web-pi:local}
+    build: *cybermole-build
+    image: ${CYBERMOLE_IMAGE:-cybermole:local}
     user: "0:0"
-    entrypoint: ["sh", "-c", "chown workspace:webpi /run/web-pi /workspace && chmod 2770 /run/web-pi /workspace && mkdir -p /workspace/.webpi/job-logs && chown workspace:webpi /workspace/.webpi/job-logs && chmod 2770 /workspace/.webpi/job-logs"]
+    entrypoint: ["sh", "-c", "chown workspace:cybermole /run/cybermole /workspace && chmod 2770 /run/cybermole /workspace && mkdir -p /workspace/.cybermole/job-logs && chown workspace:cybermole /workspace/.cybermole/job-logs && chmod 2770 /workspace/.cybermole/job-logs"]
     restart: "no"
     volumes:
-      - webpi-tmux:/run/web-pi
-      - webpi-workspace:/workspace
-      - webpi-job-logs:/workspace/.webpi/job-logs
+      - cybermole-tmux:/run/cybermole
+      - cybermole-workspace:/workspace
+      - cybermole-job-logs:/workspace/.cybermole/job-logs
 
-  # Object storage for the web side: only webpi shares its network (no
+  # Object storage for the web side: only cybermole shares its network (no
   # published port). Its gRPC/filer/master ports are unauthenticated —
   # the network is the boundary, and `internal` also leaves it no route
   # out. Takes the generated keys as its admin identity
@@ -250,44 +250,44 @@ services:
       - sh
       - -c
       - >-
-        set -a && . /run/web-pi-s3/credentials.env && set +a &&
-        export AWS_ACCESS_KEY_ID="$$WEB_PI_S3_ACCESS_KEY" AWS_SECRET_ACCESS_KEY="$$WEB_PI_S3_SECRET_KEY" &&
+        set -a && . /run/cybermole-s3/credentials.env && set +a &&
+        export AWS_ACCESS_KEY_ID="$$CYBERMOLE_S3_ACCESS_KEY" AWS_SECRET_ACCESS_KEY="$$CYBERMOLE_S3_SECRET_KEY" &&
         exec /entrypoint.sh "$$@"
       - sh
     networks: [storage]
     volumes:
-      - webpi-seaweedfs:/data
-      - webpi-s3-credentials:/run/web-pi-s3:ro
+      - cybermole-seaweedfs:/data
+      - cybermole-s3-credentials:/run/cybermole-s3:ro
     restart: unless-stopped
 
   # One-shot: generates the S3 credentials on first `up` (kept thereafter —
   # the store's data is only readable with them). One file, two readers:
-  # docker-entrypoint.sh (webpi, uid node — hence the owner) and the
+  # docker-entrypoint.sh (cybermole, uid node — hence the owner) and the
   # seaweedfs wrapper above (root before it drops to its own user).
   seaweedfs-init:
-    build: *webpi-build
-    image: ${WEB_PI_IMAGE:-web-pi:local}
+    build: *cybermole-build
+    image: ${CYBERMOLE_IMAGE:-cybermole:local}
     user: "0:0"
     entrypoint:
       - sh
       - -c
       - >-
-        f=/run/web-pi-s3/credentials.env;
+        f=/run/cybermole-s3/credentials.env;
         if [ ! -s "$$f" ]; then
         umask 077 &&
-        printf 'WEB_PI_S3_ACCESS_KEY=webpi\nWEB_PI_S3_SECRET_KEY=%s\n'
+        printf 'CYBERMOLE_S3_ACCESS_KEY=cybermole\nCYBERMOLE_S3_SECRET_KEY=%s\n'
         "$$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")" > "$$f.tmp" &&
         mv "$$f.tmp" "$$f";
         fi &&
         chown node:node "$$f" && chmod 0400 "$$f"
     restart: "no"
     volumes:
-      - webpi-s3-credentials:/run/web-pi-s3
+      - cybermole-s3-credentials:/run/cybermole-s3
 
   # task/winston-loki: log aggregation, opt-in via the `observability`
-  # profile. Single-binary Loki, filesystem storage on the webpi-loki
+  # profile. Single-binary Loki, filesystem storage on the cybermole-loki
   # volume (deploy/loki/config.yaml: retention 14d, hard caps on
-  # entry/label sizes, no telemetry). No published port — webpi pushes
+  # entry/label sizes, no telemetry). No published port — cybermole pushes
   # over the compose network; a down/restarted loki degrades silently on
   # the server side (batch drops + 60s retry backoff, src/lib/logger.ts).
   loki:
@@ -300,7 +300,7 @@ services:
     security_opt: ["no-new-privileges:true"]
     volumes:
       - ./deploy/loki/config.yaml:/etc/loki/config.yaml:ro
-      - webpi-loki:/loki
+      - cybermole-loki:/loki
     deploy:
       resources:
         limits: { memory: 512m, cpus: "1.0" }
@@ -312,16 +312,16 @@ services:
   # profile; a no-op chown once ownership is right.
   loki-init:
     profiles: ["observability"]
-    build: *webpi-build # same build as webpi (BuildKit dedupes; never PULLs web-pi:local)
-    image: ${WEB_PI_IMAGE:-web-pi:local}
+    build: *cybermole-build # same build as cybermole (BuildKit dedupes; never PULLs cybermole:local)
+    image: ${CYBERMOLE_IMAGE:-cybermole:local}
     user: "0:0"
     entrypoint: ["sh", "-c", "chown -R 10001:10001 /loki"]
     restart: "no"
     volumes:
-      - webpi-loki:/loki
+      - cybermole-loki:/loki
 
   # task/winston-loki: log UI, opt-in via the `observability` profile.
-  # Loopback-published on :3300 (3000/3001 are web-pi's). Auth:
+  # Loopback-published on :3300 (3000/3001 are cybermole's). Auth:
   # anonymous read-only browsing (it's loopback-only; no default-password
   # exposure), the admin account for edits — first login forces the
   # default-password change. No data volume: grafana state is disposable;
@@ -350,8 +350,8 @@ services:
   # (editor/) vendors the PINNED reh-web tarball and runs its server
   # component as the workspace uid (2000) so it edits the shared
   # checkouts; it never touches the tmux socket or web state, and it
-  # publishes NOTHING — web-pi's same-origin /editor proxy is the only
-  # door (webpi's WEB_PI_EDITOR_UPSTREAM default points here).
+  # publishes NOTHING — cybermole's same-origin /editor proxy is the only
+  # door (cybermole's CYBERMOLE_EDITOR_UPSTREAM default points here).
   editor:
     depends_on:
       editor-init:
@@ -362,18 +362,18 @@ services:
       context: ./editor
       args: # same pins as editor/Dockerfile's defaults; here so they drift visibly
         VSCODIUM_VERSION: ${VSCODIUM_VERSION:-1.140.06880}
-    image: web-pi-editor:local
+    image: cybermole-editor:local
     user: "workspace"
     init: true # signal reaping: the server spawns ptyHost/fileWatcher children
     security_opt: ["no-new-privileges:true"]
     entrypoint: ["/usr/local/bin/docker-editor-entrypoint.sh"]
     environment:
       # Interpolates into --server-base-path: the proxy mounts the app at
-      # ${WEB_PI_BASE%/}/editor, and the editor's asset URLs must line up.
-      WEB_PI_BASE: ${WEB_PI_BASE:-/}
+      # ${CYBERMOLE_BASE%/}/editor, and the editor's asset URLs must line up.
+      CYBERMOLE_BASE: ${CYBERMOLE_BASE:-/}
     volumes:
-      - webpi-workspace:/workspace # the checkouts — rw, as the workspace uid
-      - webpi-editor-home:/home/workspace # VSCodium user-data/extensions (persistent)
+      - cybermole-workspace:/workspace # the checkouts — rw, as the workspace uid
+      - cybermole-editor-home:/home/workspace # VSCodium user-data/extensions (persistent)
     restart: unless-stopped
 
   # task/ws-editor: one-shot — empty named volumes start root-owned and
@@ -388,12 +388,12 @@ services:
       # silently revert it on the next editor-init-only build).
       args:
         VSCODIUM_VERSION: ${VSCODIUM_VERSION:-1.140.06880}
-    image: web-pi-editor:local
+    image: cybermole-editor:local
     user: "0:0"
-    entrypoint: ["sh", "-c", "chown -R workspace:webpi /home/workspace"]
+    entrypoint: ["sh", "-c", "chown -R workspace:cybermole /home/workspace"]
     restart: "no"
     volumes:
-      - webpi-editor-home:/home/workspace
+      - cybermole-editor-home:/home/workspace
 
   # One-shot: empty named volumes are created root-owned; the dev service
   # runs as ${UID:-1000} and must write node_modules. Runs on every `up` — a
@@ -402,40 +402,40 @@ services:
   dev-init:
     profiles: ["dev"]
     # Own build (identical to dev's — BuildKit dedupes) so this service
-    # never tries to *pull* web-pi:local-dev on a cold machine or under
+    # never tries to *pull* cybermole:local-dev on a cold machine or under
     # partial invocations (compose --profile dev run dev-init).
     build:
       context: .
       target: dev
       args:
-        WEB_PI_BASE: ${WEB_PI_BASE:-/}
-    image: web-pi:local-dev
+        CYBERMOLE_BASE: ${CYBERMOLE_BASE:-/}
+    image: cybermole:local-dev
     user: "0:0"
     entrypoint: ["sh", "-c", "chown -R ${UID:-1000}:${GID:-1000} /app/node_modules"]
     restart: "no"
     volumes:
-      - webpi-dev-node-modules:/app/node_modules
+      - cybermole-dev-node-modules:/app/node_modules
 
   # Dev object storage: throwaway, fixed keys (the dev service and the
   # host flow use the same pair), loopback-published so `npm run
   # dev:server` on the host can reach it too — `docker compose --profile
-  # dev up -d dev-seaweedfs`, then the WEB_PI_S3_* values below with
+  # dev up -d dev-seaweedfs`, then the CYBERMOLE_S3_* values below with
   # http://127.0.0.1:8333 (README "Developing").
   dev-seaweedfs:
     <<: *seaweedfs
     profiles: ["dev"]
     environment:
-      AWS_ACCESS_KEY_ID: webpi-dev
-      AWS_SECRET_ACCESS_KEY: webpi-dev-secret
+      AWS_ACCESS_KEY_ID: cybermole-dev
+      AWS_SECRET_ACCESS_KEY: cybermole-dev-secret
     ports:
       - "127.0.0.1:8333:8333" # S3 API only
 
   # The editor for dev — the same image as prod's `editor`, but as the
   # HOST uid over the SAME repo bind as `dev`: the editor tab opens the
-  # workspace cwd verbatim as its ?folder= (WEB_PI_NEW_SESSION_CWD=/app),
+  # workspace cwd verbatim as its ?folder= (CYBERMOLE_NEW_SESSION_CWD=/app),
   # and dev workspaces live in the bind, so the editor must see /app at
   # /app AND write it as its owner (prod's uid-2000 editor edits the
-  # webpi-workspace volume instead — path + uid agreement is per shape).
+  # cybermole-workspace volume instead — path + uid agreement is per shape).
   # Like prod's: no published port — the dev container reaches it as
   # http://dev-editor:3000 over the compose network (the env above).
   dev-editor:
@@ -447,16 +447,16 @@ services:
       context: ./editor
       args: # same pins as editor/editor-init: one tag, one pin
         VSCODIUM_VERSION: ${VSCODIUM_VERSION:-1.140.06880}
-    image: web-pi-editor:local
+    image: cybermole-editor:local
     user: "${UID:-1000}:${GID:-1000}"
     init: true # signal reaping: the server spawns ptyHost/fileWatcher children
     security_opt: ["no-new-privileges:true"]
     entrypoint: ["/usr/local/bin/docker-editor-entrypoint.sh"]
     environment:
-      WEB_PI_BASE: ${WEB_PI_BASE:-/} # interpolates into --server-base-path
+      CYBERMOLE_BASE: ${CYBERMOLE_BASE:-/} # interpolates into --server-base-path
     volumes:
       - .:/app:z # the repo — the same bind, the same path, the same owner
-      - webpi-dev-editor-home:/home/workspace # VSCodium user-data/extensions
+      - cybermole-dev-editor-home:/home/workspace # VSCodium user-data/extensions
     # no restart policy: dev is an interactive foreground thing
 
   # One-shot, the dev-editor counterpart of editor-init/dev-init: empty
@@ -468,12 +468,12 @@ services:
       context: ./editor
       args: # same pins again — one tag, one pin (editor-init's note)
         VSCODIUM_VERSION: ${VSCODIUM_VERSION:-1.140.06880}
-    image: web-pi-editor:local
+    image: cybermole-editor:local
     user: "0:0"
     entrypoint: ["sh", "-c", "chown -R ${UID:-1000}:${GID:-1000} /home/workspace"]
     restart: "no"
     volumes:
-      - webpi-dev-editor-home:/home/workspace
+      - cybermole-dev-editor-home:/home/workspace
 
   dev:
     profiles: ["dev"]
@@ -490,12 +490,12 @@ services:
       context: .
       target: dev # runtime + build-essential/python3: the container npm-installs node-pty
       args:
-        WEB_PI_BASE: ${WEB_PI_BASE:-/}
-    image: web-pi:local-dev
+        CYBERMOLE_BASE: ${CYBERMOLE_BASE:-/}
+    image: cybermole:local-dev
     # Match the container user to the host checkout's owner so bind-mounted
     # files (and .astro/, dist-server/ writes) aren't permission-fought.
     user: "${UID:-1000}:${GID:-1000}"
-    # Same two guards as webpi: prompt stop/restart, no in-container
+    # Same two guards as cybermole: prompt stop/restart, no in-container
     # privilege elevation.
     init: true
     security_opt: ["no-new-privileges:true"]
@@ -516,23 +516,23 @@ services:
     environment:
       NODE_ENV: development # the image says production — npm would omit devDeps (tsc, @types/*)
       ASTRO_TELEMETRY_DISABLED: "1"
-      WEB_PI_BASE: ${WEB_PI_BASE:-/} # same value the pages were built with
-      WEB_PI_NEW_SESSION_CWD: /app
+      CYBERMOLE_BASE: ${CYBERMOLE_BASE:-/} # same value the pages were built with
+      CYBERMOLE_NEW_SESSION_CWD: /app
       # HOME is unwritable for non-1000 uids (see npm_config_cache below) and
-      # /app is the host bind — so the $WEB_PI_HOME/.local/state default
+      # /app is the host bind — so the $CYBERMOLE_HOME/.local/state default
       # won't do here. Dev state (login db, dev pi-agent) is throwaway: it
       # lives in the container's /tmp and re-set-password after a recreate.
-      WEB_PI_STATE_DIR: /tmp/web-pi-state
+      CYBERMOLE_STATE_DIR: /tmp/cybermole-state
       # A non-1000 uid has no passwd entry → HOME=/ → npm's cache is unwritable there
       npm_config_cache: /tmp/.npm
-      WEB_PI_S3_ENDPOINT: http://dev-seaweedfs:8333
-      WEB_PI_S3_ACCESS_KEY: webpi-dev
-      WEB_PI_S3_SECRET_KEY: webpi-dev-secret
+      CYBERMOLE_S3_ENDPOINT: http://dev-seaweedfs:8333
+      CYBERMOLE_S3_ACCESS_KEY: cybermole-dev
+      CYBERMOLE_S3_SECRET_KEY: cybermole-dev-secret
       # task/ws-editor: the dev-editor sibling below — the editor tab is
       # ON in dev by default (the dev profile's whole point is running the
-      # whole app). Set WEB_PI_EDITOR_UPSTREAM empty in .env to boot dev
+      # whole app). Set CYBERMOLE_EDITOR_UPSTREAM empty in .env to boot dev
       # without it (the `-` interpolation form keeps an explicit empty).
-      WEB_PI_EDITOR_UPSTREAM: ${WEB_PI_EDITOR_UPSTREAM-http://dev-editor:3000}
+      CYBERMOLE_EDITOR_UPSTREAM: ${CYBERMOLE_EDITOR_UPSTREAM-http://dev-editor:3000}
     healthcheck:
       disable: true # the prod image probes :3000; dev serves :3001
     volumes:
@@ -540,53 +540,53 @@ services:
       # (no-op elsewhere) — without it container processes can't even stat
       # files in a home-dir checkout.
       - .:/app:z
-      - webpi-dev-node-modules:/app/node_modules # shadow: container-built native deps
+      - cybermole-dev-node-modules:/app/node_modules # shadow: container-built native deps
     # no restart policy: dev is an interactive foreground thing
 
 volumes:
   # Explicit names (no project prefix) so the volumes stay stable across
   # checkouts with different directory names.
-  webpi-state:
-    name: webpi-state
+  cybermole-state:
+    name: cybermole-state
   # Split volumes: the shared tmux socket dir, and the workspace uid's
-  # tree (checkouts + pi-agent). The pre-split webpi-app volume is
+  # tree (checkouts + pi-agent). The pre-split cybermole-app volume is
   # obsolete (web serves from the image now) and is left in place,
   # unused, on existing hosts.
-  webpi-tmux:
-    name: webpi-tmux
-  webpi-workspace:
-    name: webpi-workspace
-  # task/ws-jobs (plan §9): job run logs. Mounted at /workspace/.webpi/
-  # job-logs in BOTH webpi (rw — read + prune) and workspace (rw — the
+  cybermole-tmux:
+    name: cybermole-tmux
+  cybermole-workspace:
+    name: cybermole-workspace
+  # task/ws-jobs (plan §9): job run logs. Mounted at /workspace/.cybermole/
+  # job-logs in BOTH cybermole (rw — read + prune) and workspace (rw — the
   # run wrapper writes them), laid out by workspace-init; keeping it off
-  # the workspace volume preserves webpi's read-only /workspace mount.
-  webpi-job-logs:
-    name: webpi-job-logs
-  webpi-dev-node-modules:
-    name: webpi-dev-node-modules
+  # the workspace volume preserves cybermole's read-only /workspace mount.
+  cybermole-job-logs:
+    name: cybermole-job-logs
+  cybermole-dev-node-modules:
+    name: cybermole-dev-node-modules
   # task/ws-editor: the DEV editor's home (the host uid) — kept apart from
-  # prod's uid-2000 webpi-editor-home (dev-editor-init chowns it on up).
-  webpi-dev-editor-home:
-    name: webpi-dev-editor-home
+  # prod's uid-2000 cybermole-editor-home (dev-editor-init chowns it on up).
+  cybermole-dev-editor-home:
+    name: cybermole-dev-editor-home
   # Object storage data, and the generated credentials that unlock it —
   # back them up together.
-  webpi-seaweedfs:
-    name: webpi-seaweedfs
-  webpi-s3-credentials:
-    name: webpi-s3-credentials
+  cybermole-seaweedfs:
+    name: cybermole-seaweedfs
+  cybermole-s3-credentials:
+    name: cybermole-s3-credentials
   # task/winston-loki: Loki's filesystem storage (chunks, index, WAL,
   # compactor working dir) — owned by the loki image's uid 10001
   # (loki-init chowns it on first up).
-  webpi-loki:
-    name: webpi-loki
+  cybermole-loki:
+    name: cybermole-loki
   # task/ws-editor: the editor's home (uid 2000) — VSCodium user-data,
   # extensions, server state (editor-init chowns it on first up).
-  webpi-editor-home:
-    name: webpi-editor-home
+  cybermole-editor-home:
+    name: cybermole-editor-home
 
 networks:
-  # webpi ↔ seaweedfs only. internal: no route out (and none in from
+  # cybermole ↔ seaweedfs only. internal: no route out (and none in from
   # outside the two containers' own stack).
   storage:
-    name: webpi-storage
+    name: cybermole-storage
     internal: true

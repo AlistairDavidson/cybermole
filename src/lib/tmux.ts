@@ -1,9 +1,9 @@
 // tmux.ts — typed helpers for the app's tmux socket.
-// The app owns ONE socket (default "web-pi"): the tmux server starts on
+// The app owns ONE socket (default "cybermole"): the tmux server starts on
 // first new-session and dies with the last session (exit-empty). Closing
 // the browser tab detaches; sessions keep running under tmux.
 //
-// Privilege split (DESIGN_REVIEW §1.1): WEB_PI_TMUX_SOCKET may instead be
+// Privilege split (DESIGN_REVIEW §1.1): CYBERMOLE_TMUX_SOCKET may instead be
 // an ABSOLUTE path — the serving/working split, where the tmux server (and
 // every pi session) runs as another uid/container and this process is
 // only a client. tmux resolves a relative `-L <name>` per-client as
@@ -32,24 +32,24 @@ import {
   type TmuxSessionName,
 } from '../types/branded';
 
-export const SOCKET = ENV.WEB_PI_TMUX_SOCKET;
+export const SOCKET = ENV.CYBERMOLE_TMUX_SOCKET;
 
 // In-project tmux config, applied when the tmux server starts. `-f` is read
 // at server start only; carrying it on every call is a no-op afterwards and
 // guarantees whichever call boots the server (first new-session) uses it.
 // Exported for the /settings dashboard (resolved path, shown only).
-export const CONF = ENV.WEB_PI_TMUX_CONF;
+export const CONF = ENV.CYBERMOLE_TMUX_CONF;
 const log = componentLogger('tmux');
-if (RAW_ENV.WEB_PI_TMUX_CONF && !fs.existsSync(CONF)) {
-  log.warn(`WEB_PI_TMUX_CONF=${CONF} does not exist — using tmux defaults`);
+if (RAW_ENV.CYBERMOLE_TMUX_CONF && !fs.existsSync(CONF)) {
+  log.warn(`CYBERMOLE_TMUX_CONF=${CONF} does not exist — using tmux defaults`);
 }
 
 /** Session name a scheduled job's run opens on this socket (src/lib/jobs.ts
  *  fires runs under it; the jobs page's running badge and ?run= view link
  *  address it). Always a valid session name: JOB_NAME_RE caps names at 40,
- *  'webpi-' + 40 = 46 fits TMUX_SESSION_NAME_RE's 64 (unit-tested). */
+ *  'cybermole-' + 40 = 46 fits TMUX_SESSION_NAME_RE's 64 (unit-tested). */
 export function jobSessionName(job: JobName): TmuxSessionName {
-  return asTmuxSessionName(`webpi-${job}`);
+  return asTmuxSessionName(`cybermole-${job}`);
 }
 
 /** Session name a terminal tab runs under (docs/workspaces-plan.md §4):

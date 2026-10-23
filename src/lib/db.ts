@@ -1,7 +1,7 @@
-// db.ts — web-pi's persisted state: one SQLite file (node:sqlite).
+// db.ts — cybermole's persisted state: one SQLite file (node:sqlite).
 //
-// Everything the app itself writes lives in ENV.WEB_PI_DB_FILE (default
-// <state dir>/webpi.db): the login credential (single row), the login
+// Everything the app itself writes lives in ENV.CYBERMOLE_DB_FILE (default
+// <state dir>/cybermole.db): the login credential (single row), the login
 // sessions (`auth_sessions` — token hashes only, src/lib/auth.ts), the
 // apps/workspaces/terminals tables (docs/workspaces-plan.md §2 —
 // src/lib/apps.ts, src/lib/workspaces.ts; the pi-session `sessions`
@@ -9,7 +9,7 @@
 // the scheduled-jobs tables (`jobs` definitions,
 // `job_runs` bookkeeping — src/lib/jobs.ts) and a small `settings` kv
 // (src/lib/auto-update.ts). pi's own store (sessions/,
-// provider creds under WEB_PI_AGENT_DIR) is not web-pi state and stays
+// provider creds under CYBERMOLE_AGENT_DIR) is not cybermole state and stays
 // untouched.
 //
 // - node:sqlite's DatabaseSync is synchronous on purpose: every call here
@@ -340,7 +340,7 @@ function migrateToV6(db: DatabaseSync): void {
   addColumnIfMissing(db, 'job_runs', 'finished_at', 'INTEGER');
   addColumnIfMissing(db, 'apps', 'cwd', 'TEXT');
 }
-/** web-pi's state database: a lazily-opened node:sqlite connection (see
+/** cybermole's state database: a lazily-opened node:sqlite connection (see
  *  module comment) plus cached prepared statements. */
 export class StateDb {
   private conn: DatabaseSync | null = null;

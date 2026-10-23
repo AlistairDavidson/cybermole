@@ -23,15 +23,15 @@ const USERNAME_FAIL = {
 };
 
 function freshDb() {
-  return new StateDb(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-apps-')), 'webpi.db'));
+  return new StateDb(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-apps-')), 'cybermole.db'));
 }
 
 /** A db that cannot open: a path under a regular file (mkdir of its parent
  *  fails inside db()) — every read/write becomes database_error. */
 function brokenDb() {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-apps-')), 'not-a-dir');
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-apps-')), 'not-a-dir');
   fs.writeFileSync(file, '');
-  return new StateDb(path.join(file, 'webpi.db'));
+  return new StateDb(path.join(file, 'cybermole.db'));
 }
 
 function recorder() {
@@ -140,7 +140,7 @@ test('save_app: derives the slug, allocates order in steps of 10, stamps the cre
 test('save_app: optional cwd (task/app-cwd) — stored + returned; empty/whitespace = unset', async () => {
   const db = freshDb();
   const a = apps(db);
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-app-cwd-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-app-cwd-'));
   const made = await a.saveApp('placed', dir);
   assert.equal(made.ok, true, made.errorMessage);
   assert.equal(made.data.cwd, dir);
@@ -157,7 +157,7 @@ test('save_app: optional cwd (task/app-cwd) — stored + returned; empty/whitesp
 
 test('save_app: invalid_cwd — relative, missing, a file (the workspace cwd rule); database_error paths unchanged', async () => {
   const a = apps(freshDb());
-  const file = path.join(os.tmpdir(), `webpi-app-file-${process.pid}`);
+  const file = path.join(os.tmpdir(), `cybermole-app-file-${process.pid}`);
   fs.writeFileSync(file, '');
   for (const cwd of ['relative/path', '/definitely/not/here', file]) {
     const r = await a.saveApp('x', cwd);
@@ -231,7 +231,7 @@ test('rename: invalid_name on an empty name; app_not_found on a slug that does n
 test('rename: the cwd patch — a string sets it (validated), absent keeps, null clears back to unset (task/app-cwd)', async () => {
   const db = freshDb();
   const a = apps(db);
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-app-cwd-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-app-cwd-'));
   const { slug } = (await a.saveApp('placed')).data;
   assert.equal(appRow(db, slug).cwd, null);
   // set
@@ -250,7 +250,7 @@ test('rename: the cwd patch — a string sets it (validated), absent keeps, null
   assert.equal(cleared.data.cwd, null);
   assert.equal(appRow(db, slug).cwd, null);
   // a string is validated with the workspace cwd's own rule
-  const file = path.join(os.tmpdir(), `webpi-app-file-${process.pid}`);
+  const file = path.join(os.tmpdir(), `cybermole-app-file-${process.pid}`);
   fs.writeFileSync(file, '');
   for (const bad of ['relative/path', '/definitely/not/here', file, '  ']) {
     const r = await a.renameApp(slug, undefined, bad);
@@ -364,7 +364,7 @@ test('list_apps: every app, sort_order asc (+ created_at tiebreak); empty; datab
   );
   for (const app of listed.data.apps) assert.match(app.id, UUID_RE);
   // the app cwd rides the read (task/app-cwd: the dialog's start-path hint)
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-app-cwd-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-app-cwd-'));
   const e = (await a.saveApp('with dir', dir)).data;
   assert.deepEqual(a.listApps().data.apps.at(-1), {
     id: e.id,

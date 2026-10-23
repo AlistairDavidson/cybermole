@@ -5,12 +5,12 @@
 // locals: 503). A settings_state failure answers 500 with no fragment —
 // the element keeps what it shows (like /partials/jobs-list).
 import SettingsView from '../../components/Settings/SettingsView.astro';
-import { assertWebPiLocals } from '../../lib/web/locals';
+import { assertCybermoleLocals } from '../../lib/web/locals';
 
 export const partial = true;
 
-const { webpi } = assertWebPiLocals(Astro.locals);
-const settings = webpi.settingsState();
+const { cybermole } = assertCybermoleLocals(Astro.locals);
+const settings = cybermole.settingsState();
 Astro.response.headers.set('Cache-Control', 'no-store');
 if (!settings.ok) {
   // console.error on purpose, not src/lib/logger.ts: frontmatter is

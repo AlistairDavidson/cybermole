@@ -16,10 +16,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-jobs-runs-'));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-jobs-runs-'));
 const fakeBin = path.join(dir, 'bin');
 fs.mkdirSync(fakeBin);
-process.env.WEB_PI_TMUX_SOCKET = path.join(dir, 'socket');
+process.env.CYBERMOLE_TMUX_SOCKET = path.join(dir, 'socket');
 process.env.FAKE_TMUX_DIR = dir; // the stand-in's state lives beside it
 process.env.PATH = `${fakeBin}:${process.env.PATH}`;
 
@@ -40,7 +40,7 @@ while [ $# -gt 0 ]; do case "$1" in -f|-S|-L) shift 2 ;; *) break ;; esac; done
 sub="$1"; shift
 case "$sub" in
   list-sessions)
-    [ -e "$dir/up" ] || { echo "error connecting to $WEB_PI_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
+    [ -e "$dir/up" ] || { echo "error connecting to $CYBERMOLE_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
     fmt=""
     while [ $# -gt 0 ]; do
       [ "$1" = "-F" ] && { fmt="$2"; shift 2; continue; }
@@ -58,7 +58,7 @@ case "$sub" in
     exit 1
     ;;
   new-session)
-    [ -e "$dir/up" ] || { echo "error connecting to $WEB_PI_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
+    [ -e "$dir/up" ] || { echo "error connecting to $CYBERMOLE_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
     while [ $# -gt 0 ]; do [ "$1" = "-s" ] && { echo "$2" >> "$sessions"; exit 0; }; shift; done
     exit 1
     ;;
@@ -74,7 +74,7 @@ const NOT_DUE = '0 0 31 12 *';
 function fresh() {
   const root = fs.mkdtempSync(path.join(dir, 'case-'));
   const logDir = path.join(root, 'job-logs');
-  const db = new StateDb(path.join(root, 'webpi.db'));
+  const db = new StateDb(path.join(root, 'cybermole.db'));
   return {
     root,
     logDir,
@@ -166,7 +166,7 @@ test('finish observation: a session found already live (boot shape) resolves its
     .run('bootrun', firedAt, 'schedule', runLogPaths(logDir, 'bootrun', firedAt).log);
   seedRun(logDir, 'bootrun', firedAt, { log: 'from before the restart\n', exit: '0\n' });
   tmuxUp(true);
-  liveSessions(['webpi-bootrun']);
+  liveSessions(['cybermole-bootrun']);
   try {
     await s.tick(); // arms the live session (no fired_at of its own)
     liveSessions([]);

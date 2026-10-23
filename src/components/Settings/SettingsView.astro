@@ -6,7 +6,7 @@
 // data-refresh hold plain HTML only — no wa-* elements — so the element
 // can swap them by id without re-hydrating components. `state` is null
 // only for a failed settings_state read (the page and the partial render
-// inside the web-pi server or not at all): the configuration card then
+// inside the cybermole server or not at all): the configuration card then
 // carries the reason; the status lines show unknown (…).
 import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
@@ -26,7 +26,7 @@ interface Props {
 const { state, error = null } = Astro.props;
 
 const rows: Array<[string, string]> = state ? [
-  ['web-pi', `v${state.appVersion}`],
+  ['cybermole', `v${state.appVersion}`],
   ['node', state.nodeVersion],
   ['listen', `${state.host}:${state.port}`],
   ['url base', state.base],
@@ -54,7 +54,7 @@ const npmMissing = !state || !state.npmAvailable;
   <wa-card class="settings-card" with-header>
     <div slot="header" class="wa-split">
       <strong class="card-title">configuration</strong>
-      <span class="hint">effective values (defaults where no WEB_PI_* override is set)</span>
+      <span class="hint">effective values (defaults where no CYBERMOLE_* override is set)</span>
     </div>
     <div id="config" class="wa-stack wa-gap-2xs" data-refresh>
       {state

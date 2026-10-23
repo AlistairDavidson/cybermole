@@ -1,4 +1,4 @@
-const VERSION = 'web-pi-v3'; // v3: /editor/* bypass the cache (old caches are dropped on activate)
+const VERSION = 'cybermole-v3'; // v3: /editor/* bypass the cache (old caches are dropped on activate)
 const SCOPE = new URL(self.registration.scope); // <origin><base>/
 const at = p => new URL(p, SCOPE).href;
 const PRECACHE = [
@@ -32,9 +32,9 @@ const PRECACHE = [
 ].map(at);
 
 const FALLBACK_HTML =
-  '<!doctype html><meta charset="utf-8"><title>web-pi — offline</title>' +
+  '<!doctype html><meta charset="utf-8"><title>cybermole — offline</title>' +
   '<body style="font:15px/1.5 system-ui;padding:2rem">' +
-  'web-pi is offline — reconnect to continue.</body>';
+  'cybermole is offline — reconnect to continue.</body>';
 
 self.addEventListener('install', event => {
   event.waitUntil(

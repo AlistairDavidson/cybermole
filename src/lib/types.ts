@@ -50,11 +50,11 @@ export interface WorkspaceState {
 export interface ConsoleState {
   me: 'ok';
   configured: boolean;
-  /** the editor webapp is configured (WEB_PI_EDITOR_UPSTREAM set — the
+  /** the editor webapp is configured (CYBERMOLE_EDITOR_UPSTREAM set — the
    *  same-origin `${BASE}/editor/` proxy, docs/editor-webapp.md): false
    *  hides the editor tab (plan §8). */
   editor: boolean;
-  /** WEB_PI_NEW_SESSION_CWD — prefills the new-workspace dialog (plan §10). */
+  /** CYBERMOLE_NEW_SESSION_CWD — prefills the new-workspace dialog (plan §10). */
   defaultCwd: string;
   apps: AppState[];
   /** flat; the client groups by appId. */
@@ -64,14 +64,14 @@ export interface ConsoleState {
 // ---- scheduled jobs (in-process scheduler — see src/lib/jobs.ts) ----
 
 export interface ScheduledJob {
-  /** job name (run sessions: webpi-<name> on the app's tmux socket) */
+  /** job name (run sessions: cybermole-<name> on the app's tmux socket) */
   name: JobName;
   /** 5-field cron (minute hour day-of-month month day-of-week) */
   schedule: string;
-  /** shell command a run executes (inside tmux session webpi-<name>) */
+  /** shell command a run executes (inside tmux session cybermole-<name>) */
   command: string;
   /** the optional app tag — display grouping only, never ownership:
-   *  cwd/env stay global and runs stay webpi-<name> sessions (plan §9) */
+   *  cwd/env stay global and runs stay cybermole-<name> sessions (plan §9) */
   appId: AppId | null;
   /** the tagged app's display name (listJobs' LEFT JOIN; null when untagged) */
   appName: string | null;

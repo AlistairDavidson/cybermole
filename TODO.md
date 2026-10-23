@@ -49,7 +49,7 @@ job exit-code notification hooks (deferred — jobs-agent-plan.md §11)
 
 ## Apps
 Build out apps feature properly (its own future epic — apps own their lifecycle
-via jobs + git, no web-pi deploy/rollback machinery; docs/jobs-agent-plan.md §0)
+via jobs + git, no cybermole deploy/rollback machinery; docs/jobs-agent-plan.md §0)
 
 ## Distribution
 installation instructions / script for agents / actual scripts

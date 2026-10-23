@@ -4,7 +4,7 @@
 // analytically (signed distance fields, 4×4 supersampling) and encoded as
 // PNGs with node:zlib. Re-run after editing: node tools/make-icons.mjs
 //
-// Design: the web-pi prompt glyph — a ">_" chevron-and-underscore — on a
+// Design: the cybermole prompt glyph — a ">_" chevron-and-underscore — on a
 // rounded dark tile. Colors mirror the app's semantic tokens (the :root
 // overrides in src/styles/console.css; accent is Web Awesome's default
 // blue-60, the dark-theme --wa-color-focus).
@@ -145,7 +145,7 @@ function encodePng(n, rgba) {
 
 // ---- SVG source (the "any" tile design, same coordinates) ----
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIZE} ${SIZE}">
-  <!-- web-pi: terminal prompt glyph. Colors mirror src/styles/console.css. -->
+  <!-- cybermole: terminal prompt glyph. Colors mirror src/styles/console.css. -->
   <rect x="${TILE.inset}" y="${TILE.inset}" width="${SIZE - 2 * TILE.inset}" height="${SIZE - 2 * TILE.inset}"
     rx="${TILE.radius}" fill="${BG}" stroke="${BORDER}" stroke-width="${TILE.border}"/>
   <path d="M${CHEVRON.map(([x, y]) => `${x} ${y}`).join(' L')}" fill="none" stroke="${GLYPH}"

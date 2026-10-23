@@ -1,5 +1,5 @@
 #!/bin/sh
-# web-pi workspace entrypoint — the working half of the privilege split
+# cybermole workspace entrypoint — the working half of the privilege split
 # (DESIGN_REVIEW §1.1). Runs as user `workspace` (uid 2000) from the SAME
 # image as the web service: this container owns the tmux server and every
 # pi session; the web container only ever attaches as a client. Verified
@@ -19,13 +19,13 @@
 # socket dir is a shared volume) is detected and removed before start.
 set -e
 
-SOCKET=${WEB_PI_TMUX_SOCKET:-/run/web-pi/tmux}
-WEB_USER=${WEB_PI_TMUX_WEB_USER:-node}
-SHARED_GROUP=${WEB_PI_TMUX_GROUP:-webpi}
-CONF=${WEB_PI_TMUX_CONF:-/opt/web-pi/tmux.conf}
-AGENT_DIR=${WEB_PI_AGENT_DIR:-/workspace/pi-agent}
-TEMPLATE=/opt/web-pi/pi
-ROOT_TEMPLATE=/opt/web-pi/root-agents/AGENTS.md
+SOCKET=${CYBERMOLE_TMUX_SOCKET:-/run/cybermole/tmux}
+WEB_USER=${CYBERMOLE_TMUX_WEB_USER:-node}
+SHARED_GROUP=${CYBERMOLE_TMUX_GROUP:-cybermole}
+CONF=${CYBERMOLE_TMUX_CONF:-/opt/cybermole/tmux.conf}
+AGENT_DIR=${CYBERMOLE_AGENT_DIR:-/workspace/pi-agent}
+TEMPLATE=/opt/cybermole/pi
+ROOT_TEMPLATE=/opt/cybermole/root-agents/AGENTS.md
 
 umask 0007
 
@@ -34,11 +34,11 @@ umask 0007
 # and an unknown name ("unknown user") late in boot, after the server is
 # already up; refusing here is the clear failure.
 if [ "$(id -un)" = "$WEB_USER" ]; then
-  echo "web-pi workspace: WEB_PI_TMUX_WEB_USER ($WEB_USER) is the workspace user itself — set it to the WEB side's user" >&2
+  echo "cybermole workspace: CYBERMOLE_TMUX_WEB_USER ($WEB_USER) is the workspace user itself — set it to the WEB side's user" >&2
   exit 1
 fi
 if ! id -u "$WEB_USER" >/dev/null 2>&1; then
-  echo "web-pi workspace: WEB_PI_TMUX_WEB_USER ($WEB_USER) is not a user in this image" >&2
+  echo "cybermole workspace: CYBERMOLE_TMUX_WEB_USER ($WEB_USER) is not a user in this image" >&2
   exit 1
 fi
 
@@ -46,7 +46,7 @@ fi
 # the liveness probe, remove it — start-server must not find a dead file.
 # show-options -g needs no session and never forks a server.
 if [ -S "$SOCKET" ] && ! tmux -S "$SOCKET" show-options -g >/dev/null 2>&1; then
-  echo "web-pi workspace: removing stale tmux socket $SOCKET"
+  echo "cybermole workspace: removing stale tmux socket $SOCKET"
   rm -f "$SOCKET"
 fi
 
@@ -70,10 +70,10 @@ fi
 # standing instructions (scheduled work belongs in jobs; a fired run is
 # started-not-finished; the CLI + MCP surface) — seeded from the repo's
 # one-file template into the default workspace cwd (the root: /workspace
-# in this shape; WEB_PI_NEW_SESSION_CWD names the same path web-side),
+# in this shape; CYBERMOLE_NEW_SESSION_CWD names the same path web-side),
 # same only-where-absent policy: an existing file (the operator's own, a
 # checkout that IS the cwd) always wins.
-ROOT_AGENTS="${WEB_PI_NEW_SESSION_CWD:-/workspace}/AGENTS.md"
+ROOT_AGENTS="${CYBERMOLE_NEW_SESSION_CWD:-/workspace}/AGENTS.md"
 if [ -f "$ROOT_TEMPLATE" ] && [ ! -e "$ROOT_AGENTS" ]; then
   cp "$ROOT_TEMPLATE" "$ROOT_AGENTS"
 fi
@@ -90,7 +90,7 @@ chmod 0660 "$SOCKET"
 chgrp "$SHARED_GROUP" "$SOCKET"
 tmux -S "$SOCKET" server-access -a "$WEB_USER"
 
-echo "web-pi workspace: tmux server on $SOCKET (web user: $WEB_USER, group: $SHARED_GROUP, pi agent dir: $AGENT_DIR)"
+echo "cybermole workspace: tmux server on $SOCKET (web user: $WEB_USER, group: $SHARED_GROUP, pi agent dir: $AGENT_DIR)"
 
 # This container's whole job is keeping the tmux server alive (web's
 # never-fork guard depends on it). Exit when the server dies — docker's
@@ -98,5 +98,5 @@ echo "web-pi workspace: tmux server on $SOCKET (web user: $WEB_USER, group: $SHA
 while tmux -S "$SOCKET" show-options -g >/dev/null 2>&1; do
   sleep 10
 done
-echo "web-pi workspace: tmux server exited"
+echo "cybermole workspace: tmux server exited"
 exit 1

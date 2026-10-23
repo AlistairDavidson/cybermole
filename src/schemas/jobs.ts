@@ -26,7 +26,7 @@ export const JobSaveSchema = z.object({
       z
         .string()
         .min(1, 'name is required')
-        .regex(JOB_NAME_RE, 'use letters, digits, - and _ (and not webpi-…)')
+        .regex(JOB_NAME_RE, 'use letters, digits, - and _ (and not cybermole-…)')
         .transform(asJobName),
     ),
   schedule: z

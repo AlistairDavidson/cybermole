@@ -3,7 +3,7 @@
 // the root agent's standing instructions — scheduled work belongs in
 // jobs, a fired run is started-not-finished, check exit codes, the CLI +
 // MCP surface — seeded into the DEFAULT WORKSPACE CWD (the workspace
-// root: /workspace in the compose split, WEB_PI_NEW_SESSION_CWD
+// root: /workspace in the compose split, CYBERMOLE_NEW_SESSION_CWD
 // elsewhere) only-where-absent, the pi-template policy: an existing file
 // (the operator's own, an app tree's, a checkout that IS the cwd — dev's
 // /app bind) always wins, and template updates still land where they're

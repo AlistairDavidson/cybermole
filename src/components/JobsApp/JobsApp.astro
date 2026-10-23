@@ -43,7 +43,7 @@ const validation = zodSchemaToHTMLAttributes(JobSaveSchema);
     </header>
     <p class="jobs-sub">
       A job is a name, a 5-field <code>cron</code> schedule and a shell
-      command, run by web-pi's built-in scheduler inside a tmux session on
+      command, run by cybermole's built-in scheduler inside a tmux session on
       the app's socket — every run shows up in the console's
       <strong>Live</strong> list and is attachable, just like a session you
       started yourself.
@@ -59,7 +59,7 @@ const validation = zodSchemaToHTMLAttributes(JobSaveSchema);
           name="name"
           label="name"
           placeholder="nightly-check"
-          hint="runs open in tmux session webpi-<name>"
+          hint="runs open in tmux session cybermole-<name>"
           {...validation.name}
         />
         <div>
@@ -81,7 +81,7 @@ const validation = zodSchemaToHTMLAttributes(JobSaveSchema);
           as="textarea"
           id="job-command"
           name="command"
-          label="command (shell; runs in tmux session webpi-<name>)"
+          label="command (shell; runs in tmux session cybermole-<name>)"
           placeholder={'pi -p "summarize today\'s commits"'}
           rows="3"
           {...validation.command}

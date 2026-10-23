@@ -23,7 +23,7 @@ interface Props {
   runs: JobRunView[] | null;
 }
 const { job, runs } = Astro.props;
-// Matches the server's WEB_PI_BASE ('' for root, else '/foo').
+// Matches the server's CYBERMOLE_BASE ('' for root, else '/foo').
 const base = (import.meta.env.BASE_URL ?? '/').replace(/\/+$/, '');
 ---
 {job === null ? (

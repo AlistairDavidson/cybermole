@@ -104,7 +104,7 @@ function bootRelay() {
       shuttingDown: () => false,
       allow: () => true,
       originOk: () => req.headers.origin === 'http://console.test',
-      validSession: () => (req.headers.cookie === `webpi=${TOKEN}` ? session : noSession),
+      validSession: () => (req.headers.cookie === `cybermole=${TOKEN}` ? session : noSession),
     });
     if (!decision.ok) {
       if (decision.reply === 'status')
@@ -132,7 +132,7 @@ const openClient = url =>
   new Promise((resolve, reject) => {
     const ws = new WebSocket(url, {
       origin: 'http://console.test',
-      headers: { cookie: `webpi=${TOKEN}` },
+      headers: { cookie: `cybermole=${TOKEN}` },
     });
     ws.once('open', () => resolve(ws));
     ws.once('error', reject);

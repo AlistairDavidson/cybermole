@@ -32,28 +32,28 @@ const PASSWORD = 'correct-horse-9';
 const MARKER = 'TS_MARKER_READY';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
-/** Child env with the WEB_PI_ / PI_CODING_AGENT_ overrides stripped: the
+/** Child env with the CYBERMOLE_ / PI_CODING_AGENT_ overrides stripped: the
  *  values under test must not see this machine's (or the suite
  *  webServer's) explicit settings. */
 function bareEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined && !k.startsWith('WEB_PI_') && !k.startsWith('PI_CODING_AGENT')) env[k] = v;
+    if (v !== undefined && !k.startsWith('CYBERMOLE_') && !k.startsWith('PI_CODING_AGENT')) env[k] = v;
   }
   return { ...env, ...extra };
 }
 
 let server: { cookie: string; dir: string } | null = null;
 let child: ReturnType<typeof spawn> | null = null;
-const SOCKET = 'webpi-itest-tsearch';
+const SOCKET = 'cybermole-itest-tsearch';
 const childEnv = () =>
   bareEnv({
-    WEB_PI_PORT: String(PORT),
-    WEB_PI_HOST: '127.0.0.1',
-    WEB_PI_STATE_DIR: server!.dir,
-    WEB_PI_TMUX_SOCKET: SOCKET,
-    WEB_PI_NEW_SESSION_CWD: os.tmpdir(),
-    WEB_PI_COMMAND: path.join(server!.dir, 'cmd.sh'),
+    CYBERMOLE_PORT: String(PORT),
+    CYBERMOLE_HOST: '127.0.0.1',
+    CYBERMOLE_STATE_DIR: server!.dir,
+    CYBERMOLE_TMUX_SOCKET: SOCKET,
+    CYBERMOLE_NEW_SESSION_CWD: os.tmpdir(),
+    CYBERMOLE_COMMAND: path.join(server!.dir, 'cmd.sh'),
   });
 
 /** Boot the server child (beforeAll, and again by the restart test) —
@@ -77,7 +77,7 @@ async function spawnServer(): Promise<void> {
       15_000,
     );
     next.stdout!.on('data', () => {
-      if (boot.includes('web-pi listening')) {
+      if (boot.includes('cybermole listening')) {
         clearTimeout(timer);
         resolve();
       }
@@ -115,7 +115,7 @@ test.afterAll(async () => {
  *  fixture. terminal-ws.spec's bootServer, minus the per-test socket
  *  lifecycle (this spec wants its sessions to SURVIVE page reloads). */
 test.beforeAll(async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-ts-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-ts-'));
   const cmd = path.join(dir, 'cmd.sh');
   fs.writeFileSync(cmd, `#!/bin/sh\necho '${MARKER}'\nexec /bin/sh\n`);
   fs.chmodSync(cmd, 0o755);
@@ -124,7 +124,7 @@ test.beforeAll(async () => {
   const pw = spawnSync('node', ['dist-server/server/set-password.js'], {
     cwd: ROOT,
     input: `${USERNAME}\n${PASSWORD}\n${PASSWORD}\n`,
-    env: bareEnv({ WEB_PI_PORT: '0', WEB_PI_STATE_DIR: dir }),
+    env: bareEnv({ CYBERMOLE_PORT: '0', CYBERMOLE_STATE_DIR: dir }),
   });
   expect(pw.status, pw.stderr?.toString()).toBe(0);
 
@@ -136,7 +136,7 @@ test.beforeAll(async () => {
   });
   expect(login.status).toBe(200);
   const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
-  expect(cookie).toContain('webpi_session=');
+  expect(cookie).toContain('cybermole_session=');
   server = { cookie, dir };
 });
 
@@ -249,7 +249,7 @@ async function openTerminal(page: Page, id: string): Promise<void> {
     await page.fill('wa-input#password input', PASSWORD);
     await page.click('wa-button:has-text("sign in")');
     await page.waitForURL(u => u.pathname === '/');
-    sessionCookie = (await page.context().cookies()).find(c => c.name === 'webpi_session') ?? null;
+    sessionCookie = (await page.context().cookies()).find(c => c.name === 'cybermole_session') ?? null;
     expect(sessionCookie).not.toBeNull();
   } else {
     await page.context().addCookies([sessionCookie]);

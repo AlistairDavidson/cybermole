@@ -381,7 +381,7 @@ export class JobsApp extends HTMLElement {
     };
     if (r.ok) {
       this.toast(
-        `run started — view it from this card (session ${body.session ?? `webpi-${name}`})`,
+        `run started — view it from this card (session ${body.session ?? `cybermole-${name}`})`,
         'success',
         'circle-check',
       );

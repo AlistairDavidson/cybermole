@@ -8,7 +8,7 @@
 // last needs no real tmux: a stand-in script on the child's PATH answers
 // the three commands src/lib/tmux.ts issues. tmux runs against a private
 // ABSOLUTE-path socket set before the import (tmux.ts binds SOCKET at module
-// load), so nothing here can touch a real web-pi socket — and with no
+// load), so nothing here can touch a real cybermole socket — and with no
 // server behind it, opening a run fails with the never-fork guard.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,9 +17,9 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-sched-test-'));
-process.env.WEB_PI_TMUX_SOCKET = path.join(dir, 'tmux');
-const SOCKET = process.env.WEB_PI_TMUX_SOCKET;
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-sched-test-'));
+process.env.CYBERMOLE_TMUX_SOCKET = path.join(dir, 'tmux');
+const SOCKET = process.env.CYBERMOLE_TMUX_SOCKET;
 
 const { Scheduler } = await import('../../dist-server/src/lib/jobs.js');
 const { StateDb } = await import('../../dist-server/src/lib/db.js');
@@ -38,7 +38,7 @@ const haveTmux = (() => {
 })();
 
 function freshScheduler() {
-  const db = new StateDb(path.join(fs.mkdtempSync(path.join(dir, 'db-')), 'webpi.db'));
+  const db = new StateDb(path.join(fs.mkdtempSync(path.join(dir, 'db-')), 'cybermole.db'));
   return new Scheduler(db, {
     cwd: dir,
     env: {},
@@ -51,7 +51,7 @@ function freshScheduler() {
 function brokenScheduler() {
   const file = path.join(fs.mkdtempSync(path.join(dir, 'broken-')), 'not-a-dir');
   fs.writeFileSync(file, '');
-  return new Scheduler(new StateDb(path.join(file, 'webpi.db')), {
+  return new Scheduler(new StateDb(path.join(file, 'cybermole.db')), {
     cwd: dir,
     env: {},
     logDir: path.join(dir, 'job-logs'),
@@ -106,7 +106,7 @@ test('listJobs: the jobs state on success, database_error when the db is gone', 
   assert.equal(listed.data.available, true);
   assert.deepEqual(
     listed.data.jobs.map(j => [j.name, j.session, j.running]),
-    [['nightly', 'webpi-nightly', false]],
+    [['nightly', 'cybermole-nightly', false]],
   );
   const failed = await brokenScheduler().listJobs();
   assert.equal(failed.errorCode, 'database_error');
@@ -116,7 +116,7 @@ test('runJob: job_not_found; tmux_error (no server behind the socket) still spen
   const s = freshScheduler();
   const missing = await s.runJob('nope');
   assert.equal(missing.errorCode, 'job_not_found');
-  assert.deepEqual(missing.data, { name: 'nope', session: 'webpi-nope' });
+  assert.deepEqual(missing.data, { name: 'nope', session: 'cybermole-nope' });
 
   await s.saveJob(parsed(GOOD));
   const refused = await s.runJob('nightly');
@@ -136,7 +136,7 @@ test('runJob: database_error when the job cannot be read, or its fire cannot be 
 
   // Reads work, the run bookkeeping write doesn't: the fire is refused
   // before any spawn (a tmux attempt would answer tmux_error instead).
-  const db = new StateDb(path.join(fs.mkdtempSync(path.join(dir, 'db-')), 'webpi.db'));
+  const db = new StateDb(path.join(fs.mkdtempSync(path.join(dir, 'db-')), 'cybermole.db'));
   const s = new Scheduler(db, {
     cwd: dir,
     env: {},
@@ -148,7 +148,7 @@ test('runJob: database_error when the job cannot be read, or its fire cannot be 
   const unrecorded = await s.runJob('nightly');
   assert.equal(unrecorded.errorCode, 'database_error');
   assert.match(unrecorded.errorMessage, /^could not record the run: /);
-  assert.deepEqual(unrecorded.data, { name: 'nightly', session: 'webpi-nightly' });
+  assert.deepEqual(unrecorded.data, { name: 'nightly', session: 'cybermole-nightly' });
 });
 
 test(
@@ -164,11 +164,11 @@ test(
       assert.deepEqual(await s.runJob('nightly'), {
         ok: true,
         resultType: 'run_job',
-        data: { name: 'nightly', session: 'webpi-nightly' },
+        data: { name: 'nightly', session: 'cybermole-nightly' },
       });
       const again = await s.runJob('nightly');
       assert.equal(again.errorCode, 'run_active');
-      assert.equal(again.data.session, 'webpi-nightly');
+      assert.equal(again.data.session, 'cybermole-nightly');
 
       const long = 'x'.repeat(40);
       await s.saveJob(parsed({ ...GOOD, name: long, command: 'sleep 10' }));
@@ -208,7 +208,7 @@ while [ $# -gt 0 ]; do case "$1" in -f|-S|-L) shift 2 ;; *) break ;; esac; done
 sub="$1"; shift
 case "$sub" in
   list-sessions)
-    [ -e "$dir/up" ] || { echo "error connecting to $WEB_PI_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
+    [ -e "$dir/up" ] || { echo "error connecting to $CYBERMOLE_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
     fmt=""
     while [ $# -gt 0 ]; do
       [ "$1" = "-F" ] && { fmt="$2"; shift 2; continue; }
@@ -226,7 +226,7 @@ case "$sub" in
     exit 1
     ;;
   new-session)
-    [ -e "$dir/up" ] || { echo "error connecting to $WEB_PI_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
+    [ -e "$dir/up" ] || { echo "error connecting to $CYBERMOLE_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
     while [ $# -gt 0 ]; do [ "$1" = "-s" ] && { echo "$2" >> "$sessions"; exit 0; }; shift; done
     exit 1
     ;;
@@ -241,7 +241,7 @@ const sessions = path.join(dir, 'sessions');
 const { Scheduler } = require(process.cwd() + '/dist-server/src/lib/jobs.js');
 const { StateDb } = require(process.cwd() + '/dist-server/src/lib/db.js');
 const { JobSaveSchema } = require(process.cwd() + '/dist-server/src/schemas/jobs.js');
-const db = new StateDb(path.join(dir, 'webpi.db'));
+const db = new StateDb(path.join(dir, 'cybermole.db'));
 const s = new Scheduler(db, {
   cwd: dir,
   env: {},
@@ -286,15 +286,15 @@ test(
     fs.writeFileSync(fakeTmux, FAKE_TMUX, { mode: 0o755 });
     const child = path.join(fakeDir, 'runs.js');
     fs.writeFileSync(child, RUNS_CHILD);
-    // WEB_PI_LOKI_URL/'' — empty counts as unset (compose sets it that way
+    // CYBERMOLE_LOKI_URL/'' — empty counts as unset (compose sets it that way
     // on a plain `up`): the child's logger is the console-only shape.
     const env = {
       ...process.env,
       PATH: `${fakeDir}:${process.env.PATH}`,
       FAKE_TMUX_DIR: fakeDir,
-      WEB_PI_TMUX_SOCKET: path.join(fakeDir, 'socket'),
-      WEB_PI_LOKI_URL: '',
-      WEB_PI_LOKI_JOB: '',
+      CYBERMOLE_TMUX_SOCKET: path.join(fakeDir, 'socket'),
+      CYBERMOLE_LOKI_URL: '',
+      CYBERMOLE_LOKI_JOB: '',
     };
     const { stdout, stderr } = await new Promise((resolve, reject) =>
       execFile(process.execPath, [child], { env, timeout: 20_000 }, (err, out, serr) =>
@@ -305,7 +305,7 @@ test(
     assert.ok(!out.includes('CHILD-FAIL'), `child failed: ${out}`);
     assert.match(
       out,
-      /info +\[scheduler\] job nightly fired \(catchup\) — opening run session webpi-nightly/,
+      /info +\[scheduler\] job nightly fired \(catchup\) — opening run session cybermole-nightly/,
       'the overdue fire is logged',
     );
     // The run session now opens the plan §9 wrapper, not the bare
@@ -314,12 +314,12 @@ test(
     // the user command riding as $1 (never string-embedded).
     assert.match(
       out,
-      /info +\[tmux\] tmux session webpi-nightly started \{"command":"\/bin\/sh -c mkdir -p \\"\$\(dirname/,
+      /info +\[tmux\] tmux session cybermole-nightly started \{"command":"\/bin\/sh -c mkdir -p \\"\$\(dirname/,
       'the run session opening is logged',
     );
     assert.match(
       out,
-      /info +\[scheduler\] job nightly fired \(manual\) — opening run session webpi-nightly/,
+      /info +\[scheduler\] job nightly fired \(manual\) — opening run session cybermole-nightly/,
       'the run-now fire is logged',
     );
     const finishes = out.split('\n').filter(l => l.includes('run finished'));
@@ -330,7 +330,7 @@ test(
     );
     assert.match(
       finishes[0],
-      /info +\[scheduler\] job nightly run finished \(run session webpi-nightly gone, exit unknown\)/,
+      /info +\[scheduler\] job nightly run finished \(run session cybermole-nightly gone, exit unknown\)/,
       'no exit file under the fake (it never runs the wrapper) → unknown',
     );
     assert.match(

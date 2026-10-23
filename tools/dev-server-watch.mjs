@@ -2,7 +2,7 @@
 // dev-server-watch.mjs — `npm run dev:server`: build once, boot the
 // compiled server on :3001, then keep it current. The data pages
 // (/settings, /jobs) render only inside that process
-// (assertWebPiLocals in their frontmatter — astro dev's own render has
+// (assertCybermoleLocals in their frontmatter — astro dev's own render has
 // no services), so its build inputs changing IS the dev loop for them.
 //
 // What it watches: exactly what the build reads — src/ (pages,
@@ -111,12 +111,12 @@ let busy = false; // a build/restart cycle is running
 let queued = false; // a change landed mid-cycle — run another
 let timer = null;
 
-/** Boot the fresh build (the child logs its own 'web-pi listening' line). */
+/** Boot the fresh build (the child logs its own 'cybermole listening' line). */
 function boot() {
   server = spawn('node', ['dist-server/server/main.js'], {
     stdio: 'inherit',
     cwd: ROOT,
-    env: { ...process.env, WEB_PI_PORT: PORT },
+    env: { ...process.env, CYBERMOLE_PORT: PORT },
   });
   server.on('exit', (code, signal) => {
     if (stopping) return;

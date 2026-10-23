@@ -22,10 +22,10 @@ import { loginForm } from '../schemas/api';
 // POST (or a slot in the 10-per-15-min login budget).
 const validation = zodSchemaToHTMLAttributes(loginForm);
 ---
-<Base title="web-pi — sign in">
+<Base title="cybermole — sign in">
   <main class="login-main wa-stack">
     <wa-card class="login-card">
-      <h1><wa-icon name="terminal"></wa-icon> web-pi</h1>
+      <h1><wa-icon name="terminal"></wa-icon> cybermole</h1>
       <validation-enhancer-zod>
         <form id="login-form" class="wa-stack wa-gap-m">
           <WaField id="username" name="username" label="username" autocomplete="username" autofocus

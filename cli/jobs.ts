@@ -1,4 +1,4 @@
-// jobs.ts — the `webpi jobs` verb group (task/jobs-cli,
+// jobs.ts — the `cybermole-cli jobs` verb group (task/jobs-cli,
 // docs/jobs-agent-plan.md §5): every user action on the /jobs page has
 // a verb here, and each verb is a THIN client over the internal API's
 // route of the same meaning (server/internal-api.ts, plan §4) — same
@@ -122,13 +122,13 @@ function printFailure(ctx: VerbContext, response: ApiResponse): void {
   }
   const body = parseJson<FailureBody>(response.text);
   if (body === null) {
-    ctx.io.err(`webpi: the server answered ${response.status}:\n${response.text}`);
+    ctx.io.err(`cybermole-cli: the server answered ${response.status}:\n${response.text}`);
     return;
   }
   const head =
     body.error ?? CODE_FALLBACK[body.code ?? ''] ?? `the server answered ${response.status}`;
   const code = body.code === undefined ? '' : ` (code: ${body.code})`;
-  ctx.io.err(`webpi: ${head}${code}`);
+  ctx.io.err(`cybermole-cli: ${head}${code}`);
   if (typeof body.detail === 'string' && body.detail !== '') ctx.io.err(`  ${body.detail}`);
   if (body.issues !== undefined) {
     for (const [field, message] of Object.entries(body.issues)) {
@@ -156,7 +156,7 @@ async function api<T extends object>(
   const parsed = parseJson<T>(response.text);
   if (parsed === null) {
     ctx.io.err(
-      `webpi: the server answered ${response.status} with a body that is not JSON — ` +
+      `cybermole-cli: the server answered ${response.status} with a body that is not JSON — ` +
         `report this. Raw body:\n${response.text}`,
     );
     return null;
@@ -166,9 +166,9 @@ async function api<T extends object>(
 
 /** A usage error: the message, the verb's usage line, the way out. */
 function usage(ctx: VerbContext, message: string, usageLine: string): number {
-  ctx.io.err(`webpi: ${message}`);
+  ctx.io.err(`cybermole-cli: ${message}`);
   ctx.io.err(`usage: ${usageLine}`);
-  ctx.io.err('try: webpi jobs --help');
+  ctx.io.err('try: cybermole-cli jobs --help');
   return 2;
 }
 
@@ -188,7 +188,7 @@ function valueOf(options: Record<string, string | boolean>, name: string): strin
 
 /** GET /jobs — the /jobs page's list. */
 async function listVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
-  const USAGE = 'webpi jobs list [-a <app-slug>] [--json]';
+  const USAGE = 'cybermole-cli jobs list [-a <app-slug>] [--json]';
   if (args.positionals.length > 0) return usage(ctx, 'list takes no positional arguments', USAGE);
   const app = valueOf(args.options, '--app');
   const url = app === undefined ? '/jobs' : `/jobs?app=${encodeURIComponent(app)}`;
@@ -217,7 +217,7 @@ async function listVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
 
 /** GET /jobs/:name/runs — the job's run history. */
 async function runsVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
-  const USAGE = 'webpi jobs runs <name> [--json]';
+  const USAGE = 'cybermole-cli jobs runs <name> [--json]';
   if (args.positionals.length !== 1) return usage(ctx, 'runs takes exactly one job name', USAGE);
   const name = args.positionals[0] ?? '';
   const answer = await api<RunsBody>(ctx, 'GET', jobPath('jobs', name, 'runs'));
@@ -247,7 +247,7 @@ async function runsVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
  *  the one non-JSON success body, printed verbatim; --json wraps it so
  *  the flag always means valid JSON on stdout). */
 async function logVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
-  const USAGE = 'webpi jobs log <name> <firedAt> [--json]';
+  const USAGE = 'cybermole-cli jobs log <name> <firedAt> [--json]';
   if (args.positionals.length !== 2)
     return usage(ctx, 'log takes a job name and a firedAt (epoch ms — copy it from `runs`)', USAGE);
   const name = args.positionals[0] ?? '';
@@ -277,7 +277,7 @@ async function logVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
  *  form's save is the same upsert; the CLI verb keeps the page's name). */
 async function createVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
   const USAGE =
-    'webpi jobs create --name <name> --schedule <cron> --command <cmd> [--app <app-id>] [--json]';
+    'cybermole-cli jobs create --name <name> --schedule <cron> --command <cmd> [--app <app-id>] [--json]';
   if (args.positionals.length > 0) return usage(ctx, 'create takes no positional arguments', USAGE);
   const name = valueOf(args.options, '--name');
   const schedule = valueOf(args.options, '--schedule');
@@ -306,7 +306,7 @@ async function createVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
  *  clears the app tag (the internal route's read-merge-write contract). */
 async function setVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
   const USAGE =
-    'webpi jobs set <name> [--schedule <cron>] [--command <cmd>] [--app <app-id> | --clear-app] [--json]';
+    'cybermole-cli jobs set <name> [--schedule <cron>] [--command <cmd>] [--app <app-id> | --clear-app] [--json]';
   if (args.positionals.length !== 1) return usage(ctx, 'set takes exactly one job name', USAGE);
   const name = args.positionals[0] ?? '';
   const schedule = valueOf(args.options, '--schedule');
@@ -341,7 +341,7 @@ async function setVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
 
 /** DELETE /jobs/:name. */
 async function deleteVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
-  const USAGE = 'webpi jobs delete <name> [--json]';
+  const USAGE = 'cybermole-cli jobs delete <name> [--json]';
   if (args.positionals.length !== 1) return usage(ctx, 'delete takes exactly one job name', USAGE);
   const name = args.positionals[0] ?? '';
   const answer = await api<{ name: string; session: string | null }>(
@@ -363,7 +363,7 @@ async function deleteVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
  *  FIRED — the run session opened — and the output says so: outcomes
  *  land in the run history when the server's tick observes the finish. */
 async function runVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
-  const USAGE = 'webpi jobs run <name> [--json]';
+  const USAGE = 'cybermole-cli jobs run <name> [--json]';
   if (args.positionals.length !== 1) return usage(ctx, 'run takes exactly one job name', USAGE);
   const name = args.positionals[0] ?? '';
   const answer = await api<{ name: string; session: string }>(
@@ -378,14 +378,14 @@ async function runVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
   }
   ctx.io.out(`job ${answer.body.name} fired — run session ${answer.body.session} is open\n`);
   ctx.io.out(
-    `  fired = the session opened, not the command finished: poll \`webpi jobs runs ${answer.body.name}\` for the outcome\n`,
+    `  fired = the session opened, not the command finished: poll \`cybermole-cli jobs runs ${answer.body.name}\` for the outcome\n`,
   );
   return 0;
 }
 
 /** POST /jobs/:name/runs/:firedAt/kill — no request body, like run. */
 async function killVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
-  const USAGE = 'webpi jobs kill <name> <firedAt> [--json]';
+  const USAGE = 'cybermole-cli jobs kill <name> <firedAt> [--json]';
   if (args.positionals.length !== 2)
     return usage(
       ctx,
@@ -412,7 +412,7 @@ async function killVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
  *  is the ANSWER (200), and the exit code carries it: 0 all valid,
  *  1 something invalid, 2 usage. */
 async function validateVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
-  const USAGE = 'webpi jobs validate [--schedule <cron>] [--command <cmd>] [--json]';
+  const USAGE = 'cybermole-cli jobs validate [--schedule <cron>] [--command <cmd>] [--json]';
   if (args.positionals.length > 0)
     return usage(ctx, 'validate takes no positional arguments', USAGE);
   const schedule = valueOf(args.options, '--schedule');
@@ -463,9 +463,9 @@ interface Verb {
 const VERBS: Record<string, Verb> = {
   list: {
     name: 'list',
-    usage: 'webpi jobs list [-a <app-slug>] [--json]',
+    usage: 'cybermole-cli jobs list [-a <app-slug>] [--json]',
     spec: { values: ['--app'], aliases: { '-a': '--app' } },
-    help: `webpi jobs list [-a <app-slug>] [--json]
+    help: `cybermole-cli jobs list [-a <app-slug>] [--json]
 
 The job definitions — the same list the /jobs page shows, one row per
 job. Columns: NAME, SCHEDULE (5-field cron), COMMAND (truncated —
@@ -481,15 +481,15 @@ Options:
   -h, --help         this text
 
 Examples:
-  webpi jobs list --json
-  webpi jobs list -a deploy-tools`,
+  cybermole-cli jobs list --json
+  cybermole-cli jobs list -a deploy-tools`,
     run: listVerb,
   },
   runs: {
     name: 'runs',
-    usage: 'webpi jobs runs <name> [--json]',
+    usage: 'cybermole-cli jobs runs <name> [--json]',
     spec: {},
-    help: `webpi jobs runs <name> [--json]
+    help: `cybermole-cli jobs runs <name> [--json]
 
 The job's run history, newest first (the same 20-row history the page
 shows). FIRED-AT (epoch ms) is each run's identity — copy it into the
@@ -501,41 +501,41 @@ manual (run-now / the page's Run button), schedule, or catchup (fired
 on boot for a window missed while the server was down).
 
 Example:
-  webpi jobs runs nightly`,
+  cybermole-cli jobs runs nightly`,
     run: runsVerb,
   },
   log: {
     name: 'log',
-    usage: 'webpi jobs log <name> <firedAt> [--json]',
+    usage: 'cybermole-cli jobs log <name> <firedAt> [--json]',
     spec: {},
-    help: `webpi jobs log <name> <firedAt> [--json]
+    help: `cybermole-cli jobs log <name> <firedAt> [--json]
 
 One run's log tail: the newest 1 MiB of what the run wrote, printed
 verbatim (a stderr note marks truncation). --json wraps it as
 {name, firedAt, truncated, text} — with --json, stdout is always
-valid JSON. The firedAt comes from \`webpi jobs runs <name>\`.
+valid JSON. The firedAt comes from \`cybermole-cli jobs runs <name>\`.
 
 Example:
-  webpi jobs log nightly 1736395200000`,
+  cybermole-cli jobs log nightly 1736395200000`,
     run: logVerb,
   },
   create: {
     name: 'create',
     usage:
-      'webpi jobs create --name <name> --schedule <cron> --command <cmd> [--app <app-id>] [--json]',
+      'cybermole-cli jobs create --name <name> --schedule <cron> --command <cmd> [--app <app-id>] [--json]',
     spec: {
       values: ['--name', '--schedule', '--command', '--app'],
       aliases: { '-n': '--name', '-s': '--schedule', '-c': '--command' },
     },
-    help: `webpi jobs create --name <name> --schedule <cron> --command <cmd> [--app <app-id>] [--json]
+    help: `cybermole-cli jobs create --name <name> --schedule <cron> --command <cmd> [--app <app-id>] [--json]
 
 Create a job — or overwrite one with the same name: the save is an
 upsert, exactly the /jobs form's save. The name slug-normalizes
 ("Nightly Check" → nightly-check): letters, digits, - and _, and never
-webpi-… (reserved for run sessions). The schedule is 5-field cron —
+cybermole-… (reserved for run sessions). The schedule is 5-field cron —
 minute hour day-of-month month day-of-week, local time; check one with
-\`webpi jobs validate\` first. The command is ONE line of arbitrary
-shell, run as the workspace user in the job's tmux session webpi-<name>
+\`cybermole-cli jobs validate\` first. The command is ONE line of arbitrary
+shell, run as the workspace user in the job's tmux session cybermole-<name>
 — its output goes to the run log (read it with \`log\`), and its exit
 code into the run history.
 
@@ -544,25 +544,25 @@ Options:
   -s, --schedule <cron>   required, 5-field cron
   -c, --command <cmd>     required, one line, ≤4000 chars
   --app <app-id>          the app tag's id (uuid) — the same value the
-                          /jobs form's app picker uses; \`webpi jobs
+                          /jobs form's app picker uses; \`cybermole-cli jobs
                           list --json\` shows appId on tagged jobs.
                           Absent = untagged.
 
 Examples:
-  webpi jobs create --name nightly --schedule '0 4 * * *' --command 'npm test'
-  webpi jobs create -n rebuild -s '*/15 * * * *' -c 'make build'`,
+  cybermole-cli jobs create --name nightly --schedule '0 4 * * *' --command 'npm test'
+  cybermole-cli jobs create -n rebuild -s '*/15 * * * *' -c 'make build'`,
     run: createVerb,
   },
   set: {
     name: 'set',
     usage:
-      'webpi jobs set <name> [--schedule <cron>] [--command <cmd>] [--app <app-id> | --clear-app] [--json]',
+      'cybermole-cli jobs set <name> [--schedule <cron>] [--command <cmd>] [--app <app-id> | --clear-app] [--json]',
     spec: {
       values: ['--schedule', '--command', '--app'],
       aliases: { '-s': '--schedule', '-c': '--command' },
       flags: ['--clear-app'],
     },
-    help: `webpi jobs set <name> [--schedule <cron>] [--command <cmd>] [--app <app-id> | --clear-app] [--json]
+    help: `cybermole-cli jobs set <name> [--schedule <cron>] [--command <cmd>] [--app <app-id> | --clear-app] [--json]
 
 Change a job's fields. Every option is optional — an absent field KEEPS
 its stored value (only what you pass is rewritten); --clear-app removes
@@ -577,48 +577,48 @@ Options:
   --clear-app             remove the app tag
 
 Examples:
-  webpi jobs set nightly --schedule '30 4 * * *'
-  webpi jobs set nightly --command 'npm test --silent' --clear-app`,
+  cybermole-cli jobs set nightly --schedule '30 4 * * *'
+  cybermole-cli jobs set nightly --command 'npm test --silent' --clear-app`,
     run: setVerb,
   },
   delete: {
     name: 'delete',
-    usage: 'webpi jobs delete <name> [--json]',
+    usage: 'cybermole-cli jobs delete <name> [--json]',
     spec: {},
-    help: `webpi jobs delete <name> [--json]
+    help: `cybermole-cli jobs delete <name> [--json]
 
 Drop the job: its definition, its run history and its log files. A
 LIVE run's tmux session is deliberately left alive (the page's
 semantics — killing it is a separate decision): kill it first with
-\`webpi jobs kill\` if it must not outlive the job.
+\`cybermole-cli jobs kill\` if it must not outlive the job.
 
 Example:
-  webpi jobs delete nightly`,
+  cybermole-cli jobs delete nightly`,
     run: deleteVerb,
   },
   run: {
     name: 'run',
-    usage: 'webpi jobs run <name> [--json]',
+    usage: 'cybermole-cli jobs run <name> [--json]',
     spec: {},
-    help: `webpi jobs run <name> [--json]
+    help: `cybermole-cli jobs run <name> [--json]
 
 Fire the job NOW (origin 'manual'). ok means FIRED — the run session
-webpi-<name> opened and the command is starting — NOT that it
+cybermole-<name> opened and the command is starting — NOT that it
 finished. Outcomes are observed by the server's tick (≤30 s after the
-end) into the run history: poll \`webpi jobs runs <name>\` (or \`log\`)
+end) into the run history: poll \`cybermole-cli jobs runs <name>\` (or \`log\`)
 and CHECK THE EXIT CODE before declaring success. Refused — run_active,
 exit 1 — while the previous run's session is still alive; kill that
 one or wait.
 
 Example:
-  webpi jobs run nightly`,
+  cybermole-cli jobs run nightly`,
     run: runVerb,
   },
   kill: {
     name: 'kill',
-    usage: 'webpi jobs kill <name> <firedAt> [--json]',
+    usage: 'cybermole-cli jobs kill <name> <firedAt> [--json]',
     spec: {},
-    help: `webpi jobs kill <name> <firedAt> [--json]
+    help: `cybermole-cli jobs kill <name> <firedAt> [--json]
 
 Kill the job's live run — its tmux session. The run named must be the
 job's CURRENT one (the newest firedAt in \`runs\`): an older firedAt
@@ -628,17 +628,17 @@ exit code (the wrapper rarely gets its exit line out before the
 SIGHUP).
 
 Example:
-  webpi jobs kill nightly 1736395200000`,
+  cybermole-cli jobs kill nightly 1736395200000`,
     run: killVerb,
   },
   validate: {
     name: 'validate',
-    usage: 'webpi jobs validate [--schedule <cron>] [--command <cmd>] [--json]',
+    usage: 'cybermole-cli jobs validate [--schedule <cron>] [--command <cmd>] [--json]',
     spec: {
       values: ['--schedule', '--command'],
       aliases: { '-s': '--schedule', '-c': '--command' },
     },
-    help: `webpi jobs validate [--schedule <cron>] [--command <cmd>] [--json]
+    help: `cybermole-cli jobs validate [--schedule <cron>] [--command <cmd>] [--json]
 
 Check values WITHOUT saving anything: the cron schedule (with its next
 fire time) and/or the command (one line, non-empty, ≤4000 chars — the
@@ -647,24 +647,24 @@ failed request — the exit code carries it either way: 0 all valid,
 1 something invalid (see the output), 2 usage error.
 
 Examples:
-  webpi jobs validate --schedule '0 4 * * *'
-  webpi jobs validate --schedule '*/5 * * * *' --command 'npm test'`,
+  cybermole-cli jobs validate --schedule '0 4 * * *'
+  cybermole-cli jobs validate --schedule '*/5 * * * *' --command 'npm test'`,
     run: validateVerb,
   },
 };
 
-/** `webpi jobs` / `webpi jobs --help`: the group's map — one line per
+/** `cybermole-cli jobs` / `cybermole-cli jobs --help`: the group's map — one line per
  *  verb, one example per verb (plan §5: the help is the documentation). */
 export function jobsGroupHelp(): string {
-  return `webpi jobs — scheduled jobs (parity with the /jobs page)
+  return `cybermole-cli jobs — scheduled jobs (parity with the /jobs page)
 
 A job = name + 5-field cron schedule (local time) + one-line shell
 command, optionally tagged with an app. Runs open in tmux as
-webpi-<name>: "run" reporting ok means the session OPENED (fired), not
+cybermole-<name>: "run" reporting ok means the session OPENED (fired), not
 that the command finished — the server's tick (≤30 s) observes
 finishes and exit codes into the run history.
 
-Usage: webpi jobs <verb> [options]        (options after the verb)
+Usage: cybermole-cli jobs <verb> [options]        (options after the verb)
 
   list [-a <app-slug>]              definitions, next fire, live runs
   runs <name>                       run history (firedAt = run identity)
@@ -684,24 +684,24 @@ Every verb takes --json (the server's raw answer, for scripting) and
 copy them from \`runs\`.
 
 Examples:
-  webpi jobs list --json
-  webpi jobs list -a deploy-tools
-  webpi jobs runs nightly
-  webpi jobs log nightly 1736395200000
-  webpi jobs create --name nightly --schedule '0 4 * * *' --command 'npm test'
-  webpi jobs set nightly --schedule '30 4 * * *'
-  webpi jobs delete nightly
-  webpi jobs run nightly
-  webpi jobs kill nightly 1736395200000
-  webpi jobs validate --schedule '*/5 * * * *' --command 'npm test'
+  cybermole-cli jobs list --json
+  cybermole-cli jobs list -a deploy-tools
+  cybermole-cli jobs runs nightly
+  cybermole-cli jobs log nightly 1736395200000
+  cybermole-cli jobs create --name nightly --schedule '0 4 * * *' --command 'npm test'
+  cybermole-cli jobs set nightly --schedule '30 4 * * *'
+  cybermole-cli jobs delete nightly
+  cybermole-cli jobs run nightly
+  cybermole-cli jobs kill nightly 1736395200000
+  cybermole-cli jobs validate --schedule '*/5 * * * *' --command 'npm test'
 
 The server side is the internal API over the unix socket — see
-\`webpi --help\` (Socket) for how the CLI finds it.`;
+\`cybermole --help\` (Socket) for how the CLI finds it.`;
 }
 
-/** Run `webpi jobs <verb> …`: parse, help, discover the socket, run.
+/** Run `cybermole-cli jobs <verb> …`: parse, help, discover the socket, run.
  *  Never throws — every failure is a printed message + exit code (the
- *  connect-time socket failure names the WEB_PI_SOCK knob). */
+ *  connect-time socket failure names the CYBERMOLE_SOCK knob). */
 export async function runJobsCommand(argv: string[], io: Output): Promise<number> {
   const [verbName, ...rest] = argv;
   if (verbName === undefined) {
@@ -711,7 +711,7 @@ export async function runJobsCommand(argv: string[], io: Output): Promise<number
   }
   const verb = VERBS[verbName];
   if (verb === undefined) {
-    io.err(`webpi: unknown jobs verb '${verbName}' — try: webpi jobs --help`);
+    io.err(`cybermole-cli: unknown jobs verb '${verbName}' — try: cybermole-cli jobs --help`);
     return 2;
   }
   const spec: ArgSpec = {
@@ -725,14 +725,14 @@ export async function runJobsCommand(argv: string[], io: Output): Promise<number
     return 0;
   }
   if (args.usageErrors.length > 0) {
-    for (const problem of args.usageErrors) io.err(`webpi: ${problem}`);
+    for (const problem of args.usageErrors) io.err(`cybermole-cli: ${problem}`);
     io.err(`usage: ${verb.usage}`);
     return 2;
   }
   // Help and usage errors answer before any socket is needed.
   const discovery = discoverInternalSocket();
   if (!discovery.ok) {
-    io.err(`webpi: ${discovery.message}`);
+    io.err(`cybermole-cli: ${discovery.message}`);
     return 1;
   }
   const ctx: VerbContext = {
@@ -745,7 +745,7 @@ export async function runJobsCommand(argv: string[], io: Output): Promise<number
   } catch (err) {
     // The CLI's crash guard (main.ts's stance): one printed line, never
     // a stack trace — a verb bug costs one exit 1, not a Node dump.
-    io.err(`webpi: ${(err as Error).message}`);
+    io.err(`cybermole-cli: ${(err as Error).message}`);
     return 1;
   }
 }

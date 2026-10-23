@@ -43,7 +43,7 @@ export function editorUpgradeHeaders(incoming: IncomingHeaders): IncomingHeaders
 }
 
 /** The editor webapp's upstream (readEditorUpstream in env.ts builds it
- *  from WEB_PI_EDITOR_UPSTREAM), or null when unset = editor off. */
+ *  from CYBERMOLE_EDITOR_UPSTREAM), or null when unset = editor off. */
 export interface EditorUpstream {
   /** origin only, e.g. http://editor:3000 — never carries a path (the
    *  proxy forwards request paths verbatim under the app's base) */

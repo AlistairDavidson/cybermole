@@ -47,7 +47,7 @@ test('failureResponse: parse, validation and upload codes', () => {
 });
 
 test('jobFailureResponse: every jobs code → status, with the { error, detail } body /jobs reads', async () => {
-  const session = 'webpi-nightly';
+  const session = 'cybermole-nightly';
   const cases = [
     ['invalid_schedule', 400],
     ['app_not_found', 404],

@@ -2,7 +2,7 @@
 // units: the internal jobs API — a real HTTP listener on a tmp-dir unix
 // socket, exercised over node:http socketPath for EVERY verb, plus the
 // socket lifecycle (stale file unlinked+rebound, a live listener refused,
-// the 0660 chmod, close() unlinking) and the WEB_PI_SOCK env rules
+// the 0660 chmod, close() unlinking) and the CYBERMOLE_SOCK env rules
 // (src/lib/env.ts — child processes, the editor/storage test pattern).
 // Needs no real tmux: the jobs-runs stand-in on PATH answers the
 // commands src/lib/tmux.ts issues (plus kill-session, which the kill
@@ -17,10 +17,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-internal-api-'));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-internal-api-'));
 const fakeBin = path.join(dir, 'bin');
 fs.mkdirSync(fakeBin);
-process.env.WEB_PI_TMUX_SOCKET = path.join(dir, 'tmux');
+process.env.CYBERMOLE_TMUX_SOCKET = path.join(dir, 'tmux');
 process.env.FAKE_TMUX_DIR = dir;
 process.env.PATH = `${fakeBin}:${process.env.PATH}`;
 
@@ -40,7 +40,7 @@ while [ $# -gt 0 ]; do case "$1" in -f|-S|-L) shift 2 ;; *) break ;; esac; done
 sub="$1"; shift
 case "$sub" in
   list-sessions)
-    [ -e "$dir/up" ] || { echo "error connecting to $WEB_PI_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
+    [ -e "$dir/up" ] || { echo "error connecting to $CYBERMOLE_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
     while [ $# -gt 0 ]; do [ "$1" = "-F" ] && shift 2 && continue; shift; done
     cat "$sessions"
     ;;
@@ -50,7 +50,7 @@ case "$sub" in
     exit 1
     ;;
   new-session)
-    [ -e "$dir/up" ] || { echo "error connecting to $WEB_PI_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
+    [ -e "$dir/up" ] || { echo "error connecting to $CYBERMOLE_TMUX_SOCKET (No such file or directory)" >&2; exit 1; }
     while [ $# -gt 0 ]; do [ "$1" = "-s" ] && { echo "$2" >> "$sessions"; exit 0; }; shift; done
     exit 1
     ;;
@@ -81,14 +81,14 @@ function appsFor(db) {
 async function boot() {
   const root = fs.mkdtempSync(path.join(dir, 'case-'));
   const logDir = path.join(root, 'job-logs');
-  const db = new StateDb(path.join(root, 'webpi.db'));
+  const db = new StateDb(path.join(root, 'cybermole.db'));
   const scheduler = new Scheduler(db, { cwd: root, env: {}, logDir });
   const apps = appsFor(db);
   // the fake tmux's live-session list is shared across cases (it stands
   // in for the one tmux server); each case starts with none.
   fs.writeFileSync(path.join(dir, 'sessions'), '');
   fs.writeFileSync(path.join(dir, 'up'), '');
-  const socketPath = path.join(root, 'webpi.sock');
+  const socketPath = path.join(root, 'cybermole.sock');
   const api = await startInternalApi({ socketPath, scheduler, apps });
   return { root, logDir, db, scheduler, apps, api, socketPath };
 }
@@ -129,13 +129,13 @@ const GOOD = { name: 'nightly', schedule: '0 4 * * *', command: 'echo hello' };
 // ---------- §3: socket lifecycle ----------
 
 test('startInternalApi: creates a missing socket parent dir (the state-dir default is otherwise never materialized)', async () => {
-  // The e2e specs' spawned second servers hit exactly this: WEB_PI_SOCK
+  // The e2e specs' spawned second servers hit exactly this: CYBERMOLE_SOCK
   // unset, agent dir / db pointed elsewhere, so nothing ever mkdirs
-  // ~/.local/state/web-pi and listen() died EACCES on the missing parent.
+  // ~/.local/state/cybermole and listen() died EACCES on the missing parent.
   const root = fs.mkdtempSync(path.join(dir, 'case-'));
-  const db = new StateDb(path.join(root, 'webpi.db'));
+  const db = new StateDb(path.join(root, 'cybermole.db'));
   const scheduler = new Scheduler(db, { cwd: root, env: {}, logDir: path.join(root, 'job-logs') });
-  const deep = path.join(root, 'state', 'web-pi', 'webpi.sock');
+  const deep = path.join(root, 'state', 'cybermole', 'cybermole.sock');
   assert.ok(!fs.existsSync(path.dirname(deep)));
   const api = await startInternalApi({ socketPath: deep, scheduler, apps: appsFor(db) });
   try {
@@ -183,14 +183,14 @@ test('POST /jobs creates; GET /jobs lists; bodies match the browser API', async 
 test('POST /jobs: a name that normalizes invalid is the browser 400 validation body', async () => {
   const w = await boot();
   try {
-    // "webpi-…" is reserved for run sessions (JOB_NAME_RE) — and does
+    // "cybermole-…" is reserved for run sessions (JOB_NAME_RE) — and does
     // not normalize away, unlike punctuation
-    const r = await call(w.socketPath, 'POST', '/jobs', { ...GOOD, name: 'webpi-nightly' });
+    const r = await call(w.socketPath, 'POST', '/jobs', { ...GOOD, name: 'cybermole-nightly' });
     assert.equal(r.status, 400);
     assert.deepEqual(r.json, {
-      error: 'name: use letters, digits, - and _ (and not webpi-…)',
+      error: 'name: use letters, digits, - and _ (and not cybermole-…)',
       code: 'validation_failure',
-      issues: { name: 'use letters, digits, - and _ (and not webpi-…)' },
+      issues: { name: 'use letters, digits, - and _ (and not cybermole-…)' },
     });
   } finally {
     await w.api.close();
@@ -393,12 +393,12 @@ test('GET /apps: the picker rows over the socket; database_error when the apps d
   const notADir = path.join(root, 'not-a-dir');
   fs.writeFileSync(notADir, '');
   const api = await startInternalApi({
-    socketPath: path.join(root, 'webpi.sock'),
+    socketPath: path.join(root, 'cybermole.sock'),
     scheduler: w.scheduler,
-    apps: appsFor(new StateDb(path.join(notADir, 'webpi.db'))),
+    apps: appsFor(new StateDb(path.join(notADir, 'cybermole.db'))),
   });
   try {
-    const broken = await call(path.join(root, 'webpi.sock'), 'GET', '/apps');
+    const broken = await call(path.join(root, 'cybermole.sock'), 'GET', '/apps');
     assert.equal(broken.status, 500);
     assert.equal(broken.json.code, 'database_error');
   } finally {
@@ -446,7 +446,7 @@ test('run/kill/log: the run lifecycle over the socket', async () => {
 
     const run = await call(w.socketPath, 'POST', '/jobs/nightly/run', {});
     assert.equal(run.status, 200);
-    assert.deepEqual(run.json, { name: 'nightly', session: 'webpi-nightly' });
+    assert.deepEqual(run.json, { name: 'nightly', session: 'cybermole-nightly' });
 
     // the previous run is still live (the fake tmux session exists)
     const busy = await call(w.socketPath, 'POST', '/jobs/nightly/run', {});
@@ -468,7 +468,7 @@ test('run/kill/log: the run lifecycle over the socket', async () => {
       assert.equal(failed.status, 500);
       assert.equal(failed.json.code, 'tmux_error');
       assert.equal(failed.json.error, 'could not kill the run session');
-      assert.equal(failed.json.detail, 'could not kill the run session webpi-nightly');
+      assert.equal(failed.json.detail, 'could not kill the run session cybermole-nightly');
     } finally {
       fs.rmSync(path.join(dir, 'kill-fail'), { force: true });
     }
@@ -543,12 +543,12 @@ test('a broken state db answers 500 database_error on the read verbs', async () 
   const root = fs.mkdtempSync(path.join(dir, 'broken-'));
   const notADir = path.join(root, 'not-a-dir');
   fs.writeFileSync(notADir, '');
-  const scheduler = new Scheduler(new StateDb(path.join(notADir, 'webpi.db')), {
+  const scheduler = new Scheduler(new StateDb(path.join(notADir, 'cybermole.db')), {
     cwd: root,
     env: {},
     logDir: path.join(root, 'job-logs'),
   });
-  const socketPath = path.join(root, 'webpi.sock');
+  const socketPath = path.join(root, 'cybermole.sock');
   const api = await startInternalApi({
     socketPath,
     scheduler,
@@ -611,7 +611,7 @@ test('unknown paths and verbs answer 404 with a Result body, never HTML', async 
     const badEscape = await call(w.socketPath, 'GET', '/jobs/%E0/runs');
     assert.equal(badEscape.status, 400);
     // a name that is not a JobName: the browser's invalid_job_name body
-    const badName = await call(w.socketPath, 'DELETE', '/jobs/webpi-x');
+    const badName = await call(w.socketPath, 'DELETE', '/jobs/cybermole-x');
     assert.equal(badName.status, 400);
     assert.deepEqual(badName.json, {
       error: 'invalid job name',
@@ -669,7 +669,7 @@ test('a live listener owns the socket: the typed error main.ts degrades on', asy
         // still stops the boot (plan §3, amended in integration).
         assert.ok(err instanceof InternalSocketOwnedError, 'the typed marker, not just the message');
         assert.equal(err.socketPath, w.socketPath);
-        assert.match(err.message, /another web-pi server owns the socket/);
+        assert.match(err.message, /another cybermole server owns the socket/);
         return true;
       },
     );
@@ -679,7 +679,7 @@ test('a live listener owns the socket: the typed error main.ts degrades on', asy
 });
 
 test('probeSocketFile: a plain foreign server on the socket counts as live', async () => {
-  const socketPath = path.join(fs.mkdtempSync(path.join(dir, 'probe-')), 'webpi.sock');
+  const socketPath = path.join(fs.mkdtempSync(path.join(dir, 'probe-')), 'cybermole.sock');
   const server = net.createServer(() => {});
   await new Promise(resolve => server.listen(socketPath, resolve));
   try {
@@ -689,13 +689,13 @@ test('probeSocketFile: a plain foreign server on the socket counts as live', asy
   }
 });
 
-// ---------- §3: WEB_PI_SOCK resolution (src/lib/env.ts) ----------
+// ---------- §3: CYBERMOLE_SOCK resolution (src/lib/env.ts) ----------
 
-/** readInternalApiSocket() in a child process (env.ts reads WEB_PI_* at
+/** readInternalApiSocket() in a child process (env.ts reads CYBERMOLE_* at
  *  module load — the editor/storage test pattern). */
 function readSock(env) {
   const clean = Object.fromEntries(
-    Object.entries(process.env).filter(([k]) => k !== 'WEB_PI_SOCK'),
+    Object.entries(process.env).filter(([k]) => k !== 'CYBERMOLE_SOCK'),
   );
   try {
     const out = execFileSync(
@@ -712,25 +712,25 @@ function readSock(env) {
   }
 }
 
-test('env: a non-absolute WEB_PI_SOCK stops the boot, like the S3 vars', () => {
-  const r = readSock({ WEB_PI_SOCK: 'webpi.sock' });
-  assert.match(r.error, /WEB_PI_SOCK="webpi.sock" must be an absolute socket path/);
+test('env: a non-absolute CYBERMOLE_SOCK stops the boot, like the S3 vars', () => {
+  const r = readSock({ CYBERMOLE_SOCK: 'cybermole.sock' });
+  assert.match(r.error, /CYBERMOLE_SOCK="cybermole.sock" must be an absolute socket path/);
 });
 
-test('env: EMPTY WEB_PI_SOCK is off — the listener is disabled', () => {
-  assert.deepEqual(readSock({ WEB_PI_SOCK: '' }).value, null);
-  assert.deepEqual(readSock({ WEB_PI_SOCK: '   ' }).value, null);
+test('env: EMPTY CYBERMOLE_SOCK is off — the listener is disabled', () => {
+  assert.deepEqual(readSock({ CYBERMOLE_SOCK: '' }).value, null);
+  assert.deepEqual(readSock({ CYBERMOLE_SOCK: '   ' }).value, null);
 });
 
 test('env: unset = the shape default; an absolute path wins', () => {
   const stateDir = fs.mkdtempSync(path.join(dir, 'state-'));
-  const runWebPi = fs.existsSync('/run/web-pi');
-  const expected = runWebPi ? '/run/web-pi/webpi.sock' : path.join(stateDir, 'webpi.sock');
-  assert.equal(readSock({ WEB_PI_STATE_DIR: stateDir }).value, expected);
-  assert.equal(readSock({ WEB_PI_SOCK: '/tmp/other.sock' }).value, '/tmp/other.sock');
+  const runCybermole = fs.existsSync('/run/cybermole');
+  const expected = runCybermole ? '/run/cybermole/cybermole.sock' : path.join(stateDir, 'cybermole.sock');
+  assert.equal(readSock({ CYBERMOLE_STATE_DIR: stateDir }).value, expected);
+  assert.equal(readSock({ CYBERMOLE_SOCK: '/tmp/other.sock' }).value, '/tmp/other.sock');
 });
 
-test('internalSocketDefault: /run/web-pi when the shared dir exists, else the state dir', () => {
-  assert.equal(internalSocketDefault('/state', true), '/run/web-pi/webpi.sock');
-  assert.equal(internalSocketDefault('/state', false), path.join('/state', 'webpi.sock'));
+test('internalSocketDefault: /run/cybermole when the shared dir exists, else the state dir', () => {
+  assert.equal(internalSocketDefault('/state', true), '/run/cybermole/cybermole.sock');
+  assert.equal(internalSocketDefault('/state', false), path.join('/state', 'cybermole.sock'));
 });

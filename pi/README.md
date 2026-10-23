@@ -1,7 +1,7 @@
 # pi/ — the controlled pi agent-dir template
 
 Everything in this directory is seeded into the **runtime agent dir**
-(default `<app root>/.pi-agent`, or `WEB_PI_AGENT_DIR`) at server boot,
+(default `<app root>/.pi-agent`, or `CYBERMOLE_AGENT_DIR`) at server boot,
 **only where the runtime dir doesn't already have the file** — existing
 files always win, so config pi itself writes (settings.json) or the
 operator customises is never clobbered, while template files added by
@@ -10,7 +10,7 @@ upgrades still land. Files only pi itself writes (`auth.json`,
 
 Spawned pi sessions get `PI_CODING_AGENT_DIR=<runtime dir>` — they never
 read or write `~/.pi/agent`. Credentials therefore live per-install:
-`/login` once inside a web-pi session, or seed `auth.json` yourself.
+`/login` once inside a cybermole session, or seed `auth.json` yourself.
 
 Layout mirrors pi's agent directory (`pi docs: configuration.md`):
 
@@ -32,7 +32,7 @@ this, per pi's normal precedence — trust prompts included.
 
 ## The jobs MCP server
 
-`mcp.json` registers **webpi-jobs** — the jobs surface as in-session
+`mcp.json` registers **cybermole-jobs** — the jobs surface as in-session
 MCP tools (docs/jobs-agent-plan.md §6): a stdio server
 (`dist-server/server/mcp.js`, spawned per session) whose tools are 1:1
 with the internal jobs API's verbs — `jobs_list`, `jobs_create`,
@@ -43,13 +43,13 @@ app-tag picker is a user action too). Every session starts with them
 tool result carries the internal API's Result JSON verbatim, so an
 agent reads the same answers the console and the CLI do — including the
 failure codes (`job_not_found`, `run_not_active`, …). It needs the
-internal socket: it resolves `WEB_PI_SOCK` exactly like the server
+internal socket: it resolves `CYBERMOLE_SOCK` exactly like the server
 itself, so the compose split's default needs no entry `env` (override
-`WEB_PI_SOCK` there only if the deployment moves the socket off the
+`CYBERMOLE_SOCK` there only if the deployment moves the socket off the
 shape default).
 
 The command is the **absolute image path** — the entry runs in the
-workspace container, and both containers ship the image at `/opt/web-pi`.
+workspace container, and both containers ship the image at `/opt/cybermole`.
 Dev shapes differ: the compose dev profile bind-mounts the checkout at
 `/app` (`/app/dist-server/server/mcp.js`), and a bare host run uses the
 checkout's own path. Seeding is only-where-absent, so a host that wants
@@ -64,21 +64,21 @@ and an open session only via `/reload`.
 The root agent's standing instructions are NOT part of this dir: they
 live in the repo's [`root-agents/AGENTS.md`](../root-agents/AGENTS.md),
 seeded only-where-absent into the **default workspace cwd**
-(`WEB_PI_NEW_SESSION_CWD` — `/workspace` in the compose split), so
+(`CYBERMOLE_NEW_SESSION_CWD` — `/workspace` in the compose split), so
 app checkouts under the workspace root read them by upward walk
 (docs/jobs-agent-plan.md §9). Same policy, same seeder halves as this
 template (the workspace entrypoint in the split, the server's boot
 seeding single-user); different target — the workspace root, not the
 runtime agent dir. Its content is the jobs conventions (scheduled work
 belongs in jobs; a fired run is started-not-finished — check exit
-codes) and the tool surface: the `webpi` CLI's verbs and the
-webpi-jobs MCP tools registered by the `mcp.json` above.
+codes) and the tool surface: the `cybermole-cli` CLI's verbs and the
+cybermole-jobs MCP tools registered by the `mcp.json` above.
 
 ## Shipping resources to every session
 
 - **MCP servers** — `mcp.json`:
   `{"mcpServers": {"name": {"command": "…", "args": […]}}}` (pi docs:
-  mcp.md). Available in every web-pi session — only add servers whose
+  mcp.md). Available in every cybermole session — only add servers whose
   credentials you're happy exposing to everything a session can do.
 - **Skills** — `skills/<name>/SKILL.md` (+ supporting files), loaded by
   every session.

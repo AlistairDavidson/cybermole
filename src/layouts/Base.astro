@@ -42,7 +42,7 @@ const THEME_COLOR = "#11131a";
       name="apple-mobile-web-app-status-bar-style"
       content="black-translucent"
     />
-    <meta name="apple-mobile-web-app-title" content="web-pi" />
+    <meta name="apple-mobile-web-app-title" content="cybermole" />
   </head>
   <body class={header ? "app-chrome" : undefined}>
     {header && <AppHeader current={header} />}
@@ -89,7 +89,7 @@ const THEME_COLOR = "#11131a";
           reload.textContent = "Reload";
           reload.addEventListener("click", () => location.reload());
           // create() resolves to the toast item once it is shown.
-          void toast.create("A new version of web-pi is ready.", {
+          void toast.create("A new version of cybermole is ready.", {
             duration: 0,
             variant: "neutral",
             icon: "arrows-rotate",

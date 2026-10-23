@@ -33,9 +33,9 @@ test('loki, loki-init and grafana are opt-in behind the observability profile', 
     assert.ok(svc, `${name} service exists`);
     assert.deepEqual(svc.profiles, ['observability'], `${name} is profile-gated`);
   }
-  // profile-gated services must not start on plain up: webpi/workspace
+  // profile-gated services must not start on plain up: cybermole/workspace
   // carry no profiles, the dev trio and the observability trio do.
-  for (const name of ['webpi', 'workspace', 'seaweedfs']) {
+  for (const name of ['cybermole', 'workspace', 'seaweedfs']) {
     assert.equal(compose.services[name].profiles, undefined, `${name} starts on plain up`);
   }
   assert.deepEqual(compose.services.dev.profiles, ['dev']);
@@ -43,35 +43,35 @@ test('loki, loki-init and grafana are opt-in behind the observability profile', 
 
 test('loki publishes no port and is reached over the compose network', () => {
   assert.equal(compose.services.loki.ports, undefined);
-  // webpi gets the push URL through compose interpolation — empty default
+  // cybermole gets the push URL through compose interpolation — empty default
   // means console-only logging on a plain up.
-  assert.equal(compose.services.webpi.environment.WEB_PI_LOKI_URL, '${WEB_PI_LOKI_URL:-}');
+  assert.equal(compose.services.cybermole.environment.CYBERMOLE_LOKI_URL, '${CYBERMOLE_LOKI_URL:-}');
 });
 
 test('loki image is a pinned 3.x and the config is mounted read-only', () => {
   assert.match(compose.services.loki.image, /^grafana\/loki:3\.\d+\.\d+$/);
   const mounts = compose.services.loki.volumes;
   assert.ok(mounts.some(v => v === './deploy/loki/config.yaml:/etc/loki/config.yaml:ro'));
-  assert.ok(mounts.some(v => v.startsWith('webpi-loki:')));
+  assert.ok(mounts.some(v => v.startsWith('cybermole-loki:')));
 });
 
 test('the loki volume follows the explicit-naming pattern; loki-init owns it', () => {
-  assert.equal(compose.volumes['webpi-loki'].name, 'webpi-loki');
+  assert.equal(compose.volumes['cybermole-loki'].name, 'cybermole-loki');
   const init = compose.services['loki-init'];
   assert.equal(init.user, '0:0');
   assert.match(init.entrypoint.join(' '), /chown -R 10001:10001 \/loki/);
-  assert.deepEqual(init.volumes, ['webpi-loki:/loki']);
+  assert.deepEqual(init.volumes, ['cybermole-loki:/loki']);
   assert.equal(
     compose.services.loki.depends_on['loki-init'].condition,
     'service_completed_successfully',
   );
 });
 
-test("grafana is loopback-published on a port that is not web-pi or dev's", () => {
+test("grafana is loopback-published on a port that is not cybermole or dev's", () => {
   const ports = compose.services.grafana.ports;
   assert.deepEqual(ports, ['127.0.0.1:3300:3000']);
   const host = Number(ports[0].split(':')[1]);
-  assert.ok(![3000, 3001, 4321].includes(host), `${host} collides with webpi/dev`);
+  assert.ok(![3000, 3001, 4321].includes(host), `${host} collides with cybermole/dev`);
 });
 
 test('grafana datasource provisioning points at the stack loki', () => {
@@ -130,11 +130,11 @@ test('resource limits are set and modest on the observability services', () => {
 const { envSchema } = await import('../../dist-server/src/lib/env-schema.js');
 
 /** readLokiConfig() in a fresh process (RAW_ENV is read at module load —
- *  same pattern as the WEB_PI_S3_* boot checks in storage.test.mjs), or
+ *  same pattern as the CYBERMOLE_S3_* boot checks in storage.test.mjs), or
  *  its error. */
 function bootConfig(env) {
   const clean = Object.fromEntries(
-    Object.entries(process.env).filter(([k]) => !k.startsWith('WEB_PI_LOKI_')),
+    Object.entries(process.env).filter(([k]) => !k.startsWith('CYBERMOLE_LOKI_')),
   );
   try {
     const out = execFileSync(
@@ -151,14 +151,14 @@ function bootConfig(env) {
   }
 }
 
-test('the WEB_PI_LOKI_* env contract is declared in the shared schema', () => {
-  assert.deepEqual(envSchema.WEB_PI_LOKI_URL, {
+test('the CYBERMOLE_LOKI_* env contract is declared in the shared schema', () => {
+  assert.deepEqual(envSchema.CYBERMOLE_LOKI_URL, {
     type: 'string',
     context: 'server',
     access: 'secret',
     optional: true,
   });
-  assert.deepEqual(envSchema.WEB_PI_LOKI_JOB, {
+  assert.deepEqual(envSchema.CYBERMOLE_LOKI_JOB, {
     type: 'string',
     context: 'server',
     access: 'secret',
@@ -169,26 +169,26 @@ test('the WEB_PI_LOKI_* env contract is declared in the shared schema', () => {
 test('readLokiConfig: unset/empty is null; url+job configure the transport', () => {
   assert.deepEqual(bootConfig({}), { config: null });
   assert.deepEqual(
-    bootConfig({ WEB_PI_LOKI_URL: '' }),
+    bootConfig({ CYBERMOLE_LOKI_URL: '' }),
     { config: null },
     'empty counts as unset (compose VAR: "")',
   );
-  assert.deepEqual(bootConfig({ WEB_PI_LOKI_URL: 'http://loki:3100' }), {
-    config: { url: 'http://loki:3100', job: 'webpi' },
+  assert.deepEqual(bootConfig({ CYBERMOLE_LOKI_URL: 'http://loki:3100' }), {
+    config: { url: 'http://loki:3100', job: 'cybermole' },
   });
   assert.deepEqual(
-    bootConfig({ WEB_PI_LOKI_URL: 'http://loki:3100/', WEB_PI_LOKI_JOB: 'webpi-box' }),
-    { config: { url: 'http://loki:3100', job: 'webpi-box' } },
+    bootConfig({ CYBERMOLE_LOKI_URL: 'http://loki:3100/', CYBERMOLE_LOKI_JOB: 'cybermole-box' }),
+    { config: { url: 'http://loki:3100', job: 'cybermole-box' } },
     'trailing slash normalised, job label override',
   );
 });
 
 test('readLokiConfig: malformed values stop the boot', () => {
-  assert.match(bootConfig({ WEB_PI_LOKI_JOB: 'webpi' }).error, /without WEB_PI_LOKI_URL/);
-  assert.match(bootConfig({ WEB_PI_LOKI_URL: 'ftp://x' }).error, /is not an http\(s\) URL/);
-  assert.match(bootConfig({ WEB_PI_LOKI_URL: 'not a url' }).error, /is not an http\(s\) URL/);
+  assert.match(bootConfig({ CYBERMOLE_LOKI_JOB: 'cybermole' }).error, /without CYBERMOLE_LOKI_URL/);
+  assert.match(bootConfig({ CYBERMOLE_LOKI_URL: 'ftp://x' }).error, /is not an http\(s\) URL/);
+  assert.match(bootConfig({ CYBERMOLE_LOKI_URL: 'not a url' }).error, /is not an http\(s\) URL/);
   assert.match(
-    bootConfig({ WEB_PI_LOKI_URL: 'http://loki:3100', WEB_PI_LOKI_JOB: 'my box' }).error,
+    bootConfig({ CYBERMOLE_LOKI_URL: 'http://loki:3100', CYBERMOLE_LOKI_JOB: 'my box' }).error,
     /is not a valid job label/,
   );
 });

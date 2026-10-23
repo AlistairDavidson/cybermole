@@ -26,13 +26,13 @@ const USERNAME_FAIL = {
 const MISSING_WS = '99999999-9999-4999-8999-999999999999'; // a well-formed uuid v4 that is not ours
 
 function freshDb() {
-  return new StateDb(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-ws-')), 'webpi.db'));
+  return new StateDb(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-ws-')), 'cybermole.db'));
 }
 
 function brokenDb() {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-ws-')), 'not-a-dir');
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-ws-')), 'not-a-dir');
   fs.writeFileSync(file, '');
-  return new StateDb(path.join(file, 'webpi.db'));
+  return new StateDb(path.join(file, 'cybermole.db'));
 }
 
 function recorder() {
@@ -167,7 +167,7 @@ test('save_workspace: invalid_name on empty or whitespace-only names', async () 
 test('save_workspace: invalid_cwd — relative, missing, a file; absolute + existing dir passes', async () => {
   const db = freshDb();
   const w = domain(db, USERNAME, async () => true, '/definitely-not-the-default');
-  const file = path.join(os.tmpdir(), `webpi-ws-file-${process.pid}`);
+  const file = path.join(os.tmpdir(), `cybermole-ws-file-${process.pid}`);
   fs.writeFileSync(file, '');
   for (const cwd of ['relative/path', '/definitely/not/here', file]) {
     const r = await w.saveWorkspace({ name: 'x', cwd });
@@ -182,10 +182,10 @@ test('save_workspace: invalid_cwd — relative, missing, a file; absolute + exis
 
 test("save_workspace: the cwd DERIVES — the parent app's cwd (task/app-cwd), else the configured default", async () => {
   const db = freshDb();
-  const defaultDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-ws-default-'));
+  const defaultDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-ws-default-'));
   const w = domain(db, USERNAME, async () => true, defaultDir);
   const a = new Apps({ db, username: () => USERNAME, killSession: async () => true });
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-app-cwd-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-app-cwd-'));
   const placed = (await a.saveApp('placed', dir)).data;
   const bare = (await a.saveApp('bare')).data;
   // an app with a cwd: its workspaces start there — no cwd on the create

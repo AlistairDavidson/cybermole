@@ -1,5 +1,5 @@
 // tmux.test.mjs — the privilege split's socket plumbing (src/lib/tmux.ts):
-// -S-vs-L selection for WEB_PI_TMUX_SOCKET, the never-fork guard's
+// -S-vs-L selection for CYBERMOLE_TMUX_SOCKET, the never-fork guard's
 // decision table, and (where tmux exists — a stated requirement) the
 // guarded new-session behaviour against a real server on an absolute-path
 // socket, the live-name set /api/state diffs against, plus the
@@ -13,8 +13,8 @@ import * as path from 'node:path';
 
 // Absolute-path socket BEFORE the first import: tmux.ts binds SOCKET at
 // module load. Everything session-shaped below then runs in split mode.
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-tmux-test-'));
-process.env.WEB_PI_TMUX_SOCKET = path.join(dir, 'tmux');
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-tmux-test-'));
+process.env.CYBERMOLE_TMUX_SOCKET = path.join(dir, 'tmux');
 
 const {
   socketArgs,
@@ -35,7 +35,7 @@ const {
 } = await import('../../dist-server/src/lib/tmux.js');
 const { TmuxSessionNameSchema } = await import('../../dist-server/src/schemas/ids.js');
 
-const SOCKET = process.env.WEB_PI_TMUX_SOCKET;
+const SOCKET = process.env.CYBERMOLE_TMUX_SOCKET;
 
 const tmuxUp = () => {
   try {
@@ -55,14 +55,14 @@ const haveTmux = (() => {
 })();
 
 test('socketArgs: absolute path → -S, relative name → -L', () => {
-  assert.deepEqual(socketArgs('/run/web-pi/tmux'), ['-S', '/run/web-pi/tmux']);
-  assert.deepEqual(socketArgs('web-pi'), ['-L', 'web-pi']);
-  assert.deepEqual(socketArgs('web-pi-itest'), ['-L', 'web-pi-itest']);
+  assert.deepEqual(socketArgs('/run/cybermole/tmux'), ['-S', '/run/cybermole/tmux']);
+  assert.deepEqual(socketArgs('cybermole'), ['-L', 'cybermole']);
+  assert.deepEqual(socketArgs('cybermole-itest'), ['-L', 'cybermole-itest']);
 });
 
 test('forksServer: only relative names keep fork-to-start (the guard gate)', () => {
-  assert.equal(forksServer('web-pi'), true); // single-user: first new-session forks the server
-  assert.equal(forksServer('/run/web-pi/tmux'), false); // split: another uid owns the server
+  assert.equal(forksServer('cybermole'), true); // single-user: first new-session forks the server
+  assert.equal(forksServer('/run/cybermole/tmux'), false); // split: another uid owns the server
   assert.equal(forksServer('/'), false);
 });
 
@@ -89,7 +89,7 @@ test('isServerDown: down-server errors, an answering server, unknown failures', 
 });
 
 test('jobSessionName: every valid job name yields a valid tmux session name (40-char names included)', () => {
-  // JOB_NAME_RE allows 40 chars; 'webpi-' + 40 = 46. The old 40-char tmux
+  // JOB_NAME_RE allows 40 chars; 'cybermole-' + 40 = 46. The old 40-char tmux
   // name cap rejected these runs outright (newSession refused, hasSession
   // always false) — the brand now promises validity, this holds it to that.
   for (const job of ['a', 'nightly-check', 'x'.repeat(40), 'a_b-c'.repeat(8)]) {

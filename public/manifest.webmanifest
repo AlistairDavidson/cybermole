@@ -1,6 +1,6 @@
 {
-  "name": "web-pi",
-  "short_name": "web-pi",
+  "name": "cybermole",
+  "short_name": "cybermole",
   "description": "pi coding-agent sessions in a browser terminal, backed by tmux",
   "start_url": "./",
   "scope": "./",

@@ -1,7 +1,7 @@
 node_modules/
 __pycache__/
 auth.json
-webpi.db
+cybermole.db
 dist/
 dist-server/
 .astro/

@@ -9,7 +9,7 @@
 // loop, a second runPiUpdate busy flag would let a manual and an
 // automatic update race npm, a second StateDb would hold its own sqlite
 // connection, a second sessions title cache would rescan. Reaching state
-// through locals.webpi keeps exactly one of each.
+// through locals.cybermole keeps exactly one of each.
 import * as fs from 'node:fs';
 import type { Auth } from './auth';
 import type { AutoUpdater } from './auto-update';
@@ -71,18 +71,18 @@ export interface ServerConfig {
   astroEntry: string;
   newSessionCwd: string;
   /** task/ws-jobs (plan §9): job runs' persisted-log root
-   *  (WEB_PI_JOB_LOG_DIR; /workspace/.webpi/job-logs by default). */
+   *  (CYBERMOLE_JOB_LOG_DIR; /workspace/.cybermole/job-logs by default). */
   jobLogDir: string;
   /** whitespace-split session command line */
   command: string[];
   trustProxy: number;
-  /** The editor webapp's upstream (WEB_PI_EDITOR_UPSTREAM, docs/
+  /** The editor webapp's upstream (CYBERMOLE_EDITOR_UPSTREAM, docs/
    *  editor-webapp.md), or null when not configured — the console then
    *  hides its editor affordances. */
   editorUpstream: EditorUpstream | null;
 }
 
-export interface WebPiServices {
+export interface CybermoleServices {
   cfg: ServerConfig;
   auth: Auth;
   scheduler: Scheduler;
@@ -112,8 +112,8 @@ export interface WebPiServices {
 /** What server/main.ts passes the Astro handler on the authenticated path
  *  — and only there: src/middleware.ts fails closed when it is missing.
  *  (App.Locals in src/env.d.ts declares the same fields.) */
-export interface WebPiLocals {
-  webpi?: WebPiServices;
+export interface CybermoleLocals {
+  cybermole?: CybermoleServices;
   /** the session token this request authenticated with */
   session?: SessionToken;
 }
@@ -141,12 +141,12 @@ export interface ServiceDeps {
   liveSessionNames: () => Promise<Set<TmuxSessionName>>;
 }
 
-export function createServices(deps: ServiceDeps): WebPiServices {
+export function createServices(deps: ServiceDeps): CybermoleServices {
   const { cfg, stateDb, auth, scheduler, autoUpdater, objectStore } = deps;
   // task/ws-schema: the app + workspace domains. The username dep reads
   // the credential row through Auth (created_by/updated_by — plan §2);
   // killSession is main.ts's tmux.killSession; defaultCwd is
-  // WEB_PI_NEW_SESSION_CWD (POST /api/workspaces' cwd default — plan §6).
+  // CYBERMOLE_NEW_SESSION_CWD (POST /api/workspaces' cwd default — plan §6).
   const apps = new Apps({
     db: stateDb,
     username: () => auth.username(),
@@ -194,7 +194,7 @@ export function createServices(deps: ServiceDeps): WebPiServices {
           me: 'ok',
           configured: configured.data.value,
           // task/ws-editor (docs/editor-webapp.md): the same-origin editor
-          // (WEB_PI_EDITOR_UPSTREAM set?) — false hides the editor tab.
+          // (CYBERMOLE_EDITOR_UPSTREAM set?) — false hides the editor tab.
           editor: cfg.editorUpstream !== null,
           defaultCwd: cfg.newSessionCwd,
           apps: listed.data.apps,

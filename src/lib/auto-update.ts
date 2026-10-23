@@ -1,5 +1,5 @@
 // auto-update.ts — the 'auto-update pi' setting (TODO top block): when ON,
-// check for a newer pi WITHIN the range web-pi declares in package.json
+// check for a newer pi WITHIN the range cybermole declares in package.json
 // (read the way settings.ts's piDeclared does) and install it through the
 // manual updater's machinery (runPiUpdate — shared busy guard, output
 // capture, no restart). Default OFF; the toggle and the last outcomes live

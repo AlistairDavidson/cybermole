@@ -1,5 +1,5 @@
 // editor.test.mjs — src/lib/editor.ts (the same-origin editor proxy's
-// policy surface, docs/editor-webapp.md) + the WEB_PI_EDITOR_UPSTREAM boot
+// policy surface, docs/editor-webapp.md) + the CYBERMOLE_EDITOR_UPSTREAM boot
 // checks (src/lib/env.ts). One test per behavior the proxy relies on: path
 // routing (HTTP + WS), the header set that overrides the global DENY, the
 // body-cap/chunked policy, the upstream WS handshake headers (the
@@ -120,14 +120,14 @@ test('editorBodyCapStatus: sized to a big save, chunked accepted, small bodies p
 
 test('editorUpgradeHeaders: hop-by-hop out, the upgrade pair in, the load-bearing rest preserved', () => {
   const incoming = {
-    host: 'webpi.example.com', // load-bearing: the editor embeds it
+    host: 'cybermole.example.com', // load-bearing: the editor embeds it
     connection: 'keep-alive', // hop-by-hop: must go...
     'keep-alive': 'timeout=5',
     'transfer-encoding': 'chunked',
     upgrade: 'websocket', // ...and come back as the explicit pair
     'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==',
     'sec-websocket-version': '13',
-    cookie: 'webpi_session=t',
+    cookie: 'cybermole_session=t',
   };
   const h = editorUpgradeHeaders(incoming);
   // Without Connection: Upgrade no upstream ever answers 101 — every editor
@@ -137,9 +137,9 @@ test('editorUpgradeHeaders: hop-by-hop out, the upgrade pair in, the load-bearin
   assert.equal(h.upgrade, 'websocket');
   assert.equal(h['keep-alive'], undefined);
   assert.equal(h['transfer-encoding'], undefined);
-  assert.equal(h.host, 'webpi.example.com');
+  assert.equal(h.host, 'cybermole.example.com');
   assert.equal(h['sec-websocket-key'], 'dGhlIHNhbXBsZSBub25jZQ==');
-  assert.equal(h.cookie, 'webpi_session=t');
+  assert.equal(h.cookie, 'cybermole_session=t');
   // no Upgrade in the incoming (a bare probe): default to websocket
   const bare = editorUpgradeHeaders({ host: 'x' });
   assert.equal(bare.connection, 'Upgrade');
@@ -188,12 +188,12 @@ test('EditorTunnelTracker: logout cuts only that token; closeAll cuts everything
   assert.deepEqual(closed, ['a1', 'a2', 'b1']);
 });
 
-// ---------- WEB_PI_EDITOR_UPSTREAM boot checks (src/lib/env.ts) ----------
+// ---------- CYBERMOLE_EDITOR_UPSTREAM boot checks (src/lib/env.ts) ----------
 
 /** readEditorUpstream() in a fresh process (RAW_ENV is read at module load). */
 function bootUpstream(env) {
   const clean = Object.fromEntries(
-    Object.entries(process.env).filter(([k]) => k !== 'WEB_PI_EDITOR_UPSTREAM'),
+    Object.entries(process.env).filter(([k]) => k !== 'CYBERMOLE_EDITOR_UPSTREAM'),
   );
   try {
     const out = execFileSync(
@@ -210,37 +210,37 @@ function bootUpstream(env) {
   }
 }
 
-test('env: unset or empty WEB_PI_EDITOR_UPSTREAM is off (compose `VAR: ""` states)', () => {
+test('env: unset or empty CYBERMOLE_EDITOR_UPSTREAM is off (compose `VAR: ""` states)', () => {
   assert.deepEqual(bootUpstream({}), { config: null });
-  assert.deepEqual(bootUpstream({ WEB_PI_EDITOR_UPSTREAM: '' }), { config: null });
-  assert.deepEqual(bootUpstream({ WEB_PI_EDITOR_UPSTREAM: '   ' }), { config: null });
+  assert.deepEqual(bootUpstream({ CYBERMOLE_EDITOR_UPSTREAM: '' }), { config: null });
+  assert.deepEqual(bootUpstream({ CYBERMOLE_EDITOR_UPSTREAM: '   ' }), { config: null });
 });
 
 test('env: a clean http(s) origin configures the proxy', () => {
-  assert.deepEqual(bootUpstream({ WEB_PI_EDITOR_UPSTREAM: 'http://editor:3000' }), {
+  assert.deepEqual(bootUpstream({ CYBERMOLE_EDITOR_UPSTREAM: 'http://editor:3000' }), {
     config: { origin: 'http://editor:3000' },
   });
-  assert.deepEqual(bootUpstream({ WEB_PI_EDITOR_UPSTREAM: 'https://editor.internal:8443' }), {
+  assert.deepEqual(bootUpstream({ CYBERMOLE_EDITOR_UPSTREAM: 'https://editor.internal:8443' }), {
     config: { origin: 'https://editor.internal:8443' },
   });
 });
 
 test('env: malformed values stop the boot (operator mistake, like object storage)', () => {
   assert.match(
-    bootUpstream({ WEB_PI_EDITOR_UPSTREAM: 'editor:3000' }).error,
+    bootUpstream({ CYBERMOLE_EDITOR_UPSTREAM: 'editor:3000' }).error,
     /is not an http\(s\) URL/,
   );
   assert.match(
-    bootUpstream({ WEB_PI_EDITOR_UPSTREAM: 'ftp://editor:3000' }).error,
+    bootUpstream({ CYBERMOLE_EDITOR_UPSTREAM: 'ftp://editor:3000' }).error,
     /is not an http\(s\) URL/,
   );
   // a path would be silently dropped by the origin-only proxy — refuse it
   assert.match(
-    bootUpstream({ WEB_PI_EDITOR_UPSTREAM: 'http://editor:3000/editor' }).error,
+    bootUpstream({ CYBERMOLE_EDITOR_UPSTREAM: 'http://editor:3000/editor' }).error,
     /must be an origin only/,
   );
   assert.match(
-    bootUpstream({ WEB_PI_EDITOR_UPSTREAM: 'http://editor:3000/?tkn=x' }).error,
+    bootUpstream({ CYBERMOLE_EDITOR_UPSTREAM: 'http://editor:3000/?tkn=x' }).error,
     /must be an origin only/,
   );
 });

@@ -20,11 +20,11 @@ interface Props {
 }
 const { current } = Astro.props;
 
-// Matches the server's WEB_PI_BASE ('' for root, else '/foo').
+// Matches the server's CYBERMOLE_BASE ('' for root, else '/foo').
 const base = (import.meta.env.BASE_URL ?? '/').replace(/\/+$/, '');
 
 const links: Array<{ section: Section; label: string; href: string; icon: string }> = [
-  { section: 'console', label: 'webpi', href: `${base}/`, icon: 'terminal' },
+  { section: 'console', label: 'cybermole', href: `${base}/`, icon: 'terminal' },
   { section: 'jobs', label: 'jobs', href: `${base}/jobs`, icon: 'clock' },
   { section: 'settings', label: 'settings', href: `${base}/settings`, icon: 'gear' },
 ];
@@ -34,7 +34,7 @@ const left = links.filter(l => l.section === 'console' || l.section === 'jobs');
 const right = links.filter(l => l.section !== 'console' && l.section !== 'jobs');
 ---
 <app-header>
-  <nav class="wa-cluster wa-gap-2xs" aria-label="web-pi">
+  <nav class="wa-cluster wa-gap-2xs" aria-label="cybermole">
     {left.map(l => (
       <wa-button
         class={l.section === 'console' ? 'app-nav-link app-brand' : 'app-nav-link'}

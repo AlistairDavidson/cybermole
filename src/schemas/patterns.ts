@@ -8,7 +8,7 @@
 // silently ignores the whole pattern.
 
 /** tmux session names on the app socket. 64, not 40: a job run's session
- *  is `webpi-<job name>` and job names go up to 40 (JOB_NAME_RE), so a
+ *  is `cybermole-<job name>` and job names go up to 40 (JOB_NAME_RE), so a
  *  40-char cap rejected every run of a job named longer than 34. */
 // eslint-disable-next-line no-useless-escape -- escaped `-` compiles as an HTML `pattern` attribute (`v` flag); tests/unit/zod-attributes.test.mjs guards this
 export const TMUX_SESSION_NAME_RE = /^[a-zA-Z0-9_\-]{1,64}$/;
@@ -22,10 +22,10 @@ export const OBJECT_KEY_RE =
  *  (JOB_NAME_RE). Normalizing never lengthens a name. */
 export const MAX_JOB_NAME = 40;
 
-/** Job name charset: tmux-session-name-safe. Names starting with "webpi-"
+/** Job name charset: tmux-session-name-safe. Names starting with "cybermole-"
  *  are rejected so a job can never produce a doubly-prefixed (confusingly
- *  nested) webpi-webpi-* run session. */
-export const JOB_NAME_RE = new RegExp(`^(?!webpi-)[a-z0-9][a-z0-9_\\-]{0,${MAX_JOB_NAME - 1}}$`);
+ *  nested) cybermole-cybermole-* run session. */
+export const JOB_NAME_RE = new RegExp(`^(?!cybermole-)[a-z0-9][a-z0-9_\\-]{0,${MAX_JOB_NAME - 1}}$`);
 
 /** Normalize a job-supplied name (the shared slug rules). */
 export function normalizeJobName(raw: string): string {

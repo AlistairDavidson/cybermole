@@ -1,5 +1,5 @@
 // logger.test.mjs — the winston logging module (src/lib/logger.ts):
-// transport selection with and without WEB_PI_LOKI_URL, the loki
+// transport selection with and without CYBERMOLE_LOKI_URL, the loki
 // transport's labels/levels, console visibility of the levels, and — in a
 // child process against a dead URL — the hard requirement that a down
 // loki never takes the server down (no unhandled rejections, no retry
@@ -13,11 +13,11 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-// No WEB_PI_LOKI_* in this process: the module-level `logger` is the
+// No CYBERMOLE_LOKI_* in this process: the module-level `logger` is the
 // console-only shape (the fresh-process env reads below cover the
 // configured shape through createLogger).
-delete process.env.WEB_PI_LOKI_URL;
-delete process.env.WEB_PI_LOKI_JOB;
+delete process.env.CYBERMOLE_LOKI_URL;
+delete process.env.CYBERMOLE_LOKI_JOB;
 
 const { createLogger, logger, CONSOLE_LEVEL, LOKI_LEVEL, closeLogger } =
   await import('../../dist-server/src/lib/logger.js');
@@ -33,14 +33,14 @@ test('without loki env: exactly one transport, the console', () => {
 });
 
 test('with loki env: console + winston-loki, batched JSON push, static job label', () => {
-  const log = createLogger({ url: 'http://loki:3100', job: 'webpi-test' });
+  const log = createLogger({ url: 'http://loki:3100', job: 'cybermole-test' });
   const [consoleT, lokiT] = log.transports;
   assert.equal(consoleT.constructor.name, 'Console');
   assert.equal(lokiT.constructor.name, 'LokiTransport');
   assert.equal(lokiT.level, LOKI_LEVEL, 'loki sees everything the root logger passes it');
   assert.deepEqual(
     lokiT.labels,
-    { job: 'webpi-test' },
+    { job: 'cybermole-test' },
     'only the static label; level/component join per line',
   );
   assert.equal(
@@ -82,7 +82,7 @@ test(
   { timeout: 15_000 },
   async () => {
     const { stdout, stderr } = await new Promise((resolve, reject) => {
-      const script = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-logger-')), 'vis.js');
+      const script = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-logger-')), 'vis.js');
       fs.writeFileSync(script, VISIBILITY_CHILD);
       execFile(process.execPath, [script], { env: { ...process.env } }, (err, stdout, stderr) =>
         err ? reject(err) : resolve({ stdout, stderr }),
@@ -106,7 +106,7 @@ test(
 // ---------- a configured-but-down loki (child process) ----------
 //
 // The requirement is behavioural, not just structural: with
-// WEB_PI_LOKI_URL pointing at a closed port the process must stay alive
+// CYBERMOLE_LOKI_URL pointing at a closed port the process must stay alive
 // and quiet. The child logs, waits past the first failed push (the 5s
 // batch interval), logs again, and exits 0 — any unhandledRejection or
 // uncaughtException fails it. Port 1 on loopback: connection refused
@@ -128,13 +128,13 @@ test(
   'a configured-but-down loki degrades silently: alive, no crash, one throttled warn',
   { timeout: 20_000 },
   async () => {
-    const script = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-logger-')), 'down.js');
+    const script = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-logger-')), 'down.js');
     fs.writeFileSync(script, DOWN_CHILD);
     const { stdout, stderr } = await new Promise((resolve, reject) => {
       execFile(
         process.execPath,
         [script],
-        { env: { ...process.env, WEB_PI_LOKI_URL: 'http://127.0.0.1:1' } },
+        { env: { ...process.env, CYBERMOLE_LOKI_URL: 'http://127.0.0.1:1' } },
         (err, stdout, stderr) =>
           err ? reject({ err, stdout, stderr }) : resolve({ stdout, stderr }),
       );
@@ -158,7 +158,7 @@ test(
 const PUSH_CHILD = `
 const { componentLogger, closeLogger } = require(process.cwd() + '/dist-server/src/lib/logger.js');
 const http = componentLogger('http');
-http.info('hello from web-pi', { status: 200, ms: 7 });
+http.info('hello from cybermole', { status: 200, ms: 7 });
 const boot = componentLogger('boot');
 boot.debug('quiet on the console');
 closeLogger();  // flush: the batch leaves without waiting out the interval
@@ -182,7 +182,7 @@ test(
     await new Promise(r => server.listen(0, '127.0.0.1', r));
     const port = server.address().port;
     try {
-      const script = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'webpi-logger-')), 'push.js');
+      const script = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-logger-')), 'push.js');
       fs.writeFileSync(script, PUSH_CHILD);
       const { stdout, stderr } = await new Promise((resolve, reject) => {
         execFile(
@@ -191,8 +191,8 @@ test(
           {
             env: {
               ...process.env,
-              WEB_PI_LOKI_URL: `http://127.0.0.1:${port}`,
-              WEB_PI_LOKI_JOB: 'webpi-test',
+              CYBERMOLE_LOKI_URL: `http://127.0.0.1:${port}`,
+              CYBERMOLE_LOKI_JOB: 'cybermole-test',
             },
           },
           (err, stdout, stderr) => (err ? reject(err) : resolve({ stdout, stderr })),
@@ -205,14 +205,14 @@ test(
       const byLabel = component => batch.streams.find(s => s.stream.component === component);
       const httpStream = byLabel('http');
       assert.ok(httpStream, `an http stream exists: ${body}`);
-      assert.equal(httpStream.stream.job, 'webpi-test');
+      assert.equal(httpStream.stream.job, 'cybermole-test');
       assert.equal(httpStream.stream.level, 'info');
       const [ts, line] = httpStream.values[0];
       assert.ok(Number(ts) > 0, 'entry carries a timestamp');
       const parsed = JSON.parse(line.slice(line.indexOf('{')));
       assert.equal(parsed.status, 200);
       assert.equal(parsed.ms, 7);
-      assert.match(line, /hello from web-pi/);
+      assert.match(line, /hello from cybermole/);
       const bootStream = byLabel('boot');
       assert.ok(bootStream, 'one stream per label set — component is a stream label');
       assert.equal(bootStream.stream.level, 'debug', 'debug lines reach loki');

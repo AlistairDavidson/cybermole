@@ -91,7 +91,7 @@ test('sw.js: editor/ is never served from the cache (mixed-version assets, authe
     ),
     false,
   );
-  // the bypass holds under a WEB_PI_BASE mount too
+  // the bypass holds under a CYBERMOLE_BASE mount too
   const swBase = loadServiceWorker('http://127.0.0.1:4000/foo/');
   assert.equal(
     await swHandles(

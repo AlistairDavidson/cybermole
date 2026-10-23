@@ -16,7 +16,7 @@ import { StateDb, qb } from '../../dist-server/src/lib/db.js';
 const MISSING = '99999999-9999-4999-8999-999999999999';
 
 function freshFile(prefix) {
-  return path.join(fs.mkdtempSync(path.join(os.tmpdir(), prefix)), 'webpi.db');
+  return path.join(fs.mkdtempSync(path.join(os.tmpdir(), prefix)), 'cybermole.db');
 }
 
 const columns = (sdb, table) =>
@@ -71,7 +71,7 @@ const V5_SCHEMA = `
 `;
 
 test('a fresh file (user_version 0) gets the v6 shape at CREATE — no ALTER ever throws', () => {
-  const file = freshFile('webpi-db-fresh-');
+  const file = freshFile('cybermole-db-fresh-');
   const db = new StateDb(file);
   db.db(); // open + migrate
   assert.equal(userVersion(file), 6);
@@ -98,7 +98,7 @@ test('a fresh file (user_version 0) gets the v6 shape at CREATE — no ALTER eve
 });
 
 test('a v5-shaped file upgrades to v6 with the ALTERs applied and its data intact', () => {
-  const file = freshFile('webpi-db-v5-');
+  const file = freshFile('cybermole-db-v5-');
   const raw = new DatabaseSync(file);
   raw.exec(V5_SCHEMA);
   raw.exec('PRAGMA user_version = 5');
@@ -191,7 +191,7 @@ test('a v5-shaped file upgrades to v6 with the ALTERs applied and its data intac
 });
 
 test('a v6 file whose apps table predates apps.cwd (task/app-cwd) gains the column at open, data intact, version unmoved', () => {
-  const file = freshFile('webpi-db-v6-no-app-cwd-');
+  const file = freshFile('cybermole-db-v6-no-app-cwd-');
   // The pre-task/app-cwd v6 shape, hand-built: every other table can come
   // from SCHEMA at open (CREATE IF NOT EXISTS) — the apps table must exist
   // WITHOUT cwd so the ALTER path is what adds it.
@@ -239,7 +239,7 @@ test('a v6 file whose apps table predates apps.cwd (task/app-cwd) gains the colu
 });
 
 test('a db newer than v6 refuses to open', () => {
-  const file = freshFile('webpi-db-v7-');
+  const file = freshFile('cybermole-db-v7-');
   const db = new StateDb(file);
   db.db();
   const raw = new DatabaseSync(file);
@@ -249,7 +249,7 @@ test('a db newer than v6 refuses to open', () => {
 });
 
 test('foreign keys are enforced: the pragma is ON, so a dangling parent is rejected', () => {
-  const file = freshFile('webpi-db-fk-');
+  const file = freshFile('cybermole-db-fk-');
   const db = new StateDb(file);
   db.db();
   const pragma = db.db().prepare('PRAGMA foreign_keys').get();

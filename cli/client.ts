@@ -18,7 +18,7 @@ import type { ApiResponse } from './output';
 export type { ApiResponse };
 
 /** No server answers on the socket — the file is missing, the server is
- *  down, or this user may not open it. Message names the WEB_PI_SOCK
+ *  down, or this user may not open it. Message names the CYBERMOLE_SOCK
  *  knob: it is the one thing an operator can point elsewhere. */
 export class SocketUnavailableError extends Error {
   constructor(
@@ -28,10 +28,10 @@ export class SocketUnavailableError extends Error {
     const why =
       errnoCode === 'EACCES'
         ? "this user may not open it — in the compose split the socket file's group grants access"
-        : 'no web-pi server is listening there';
+        : 'no cybermole server is listening there';
     super(
       `cannot reach the internal API at ${socketPath} (${errnoCode}) — ${why}. ` +
-        'The CLI reaches the server over its internal unix socket: set WEB_PI_SOCK ' +
+        'The CLI reaches the server over its internal unix socket: set CYBERMOLE_SOCK ' +
         '(absolute path) if it lives elsewhere, or check that the web server is running.',
     );
     this.name = 'SocketUnavailableError';
@@ -41,10 +41,10 @@ export class SocketUnavailableError extends Error {
 export type SocketDiscovery = { ok: true; socketPath: string } | { ok: false; message: string };
 
 /** Where the CLI finds the internal socket: env.ts's one resolution
- *  (readInternalApiSocket — $WEB_PI_SOCK, then /run/web-pi/webpi.sock
- *  when the shared dir exists, else <state dir>/webpi.sock). Never a
+ *  (readInternalApiSocket — $CYBERMOLE_SOCK, then /run/cybermole/cybermole.sock
+ *  when the shared dir exists, else <state dir>/cybermole.sock). Never a
  *  second heuristic here (plan §5: import it, don't duplicate it). The
- *  two no-socket cases both become a friendly message: WEB_PI_SOCK
+ *  two no-socket cases both become a friendly message: CYBERMOLE_SOCK
  *  empty = the listener is off (plan §3), and a set-but-non-absolute
  *  value is env.ts's own boot-time error, surfaced as text instead of
  *  a stack trace. */
@@ -59,7 +59,7 @@ export function discoverInternalSocket(): SocketDiscovery {
     return {
       ok: false,
       message:
-        'the internal API is disabled on this server (WEB_PI_SOCK is empty) — ' +
+        'the internal API is disabled on this server (CYBERMOLE_SOCK is empty) — ' +
         'the CLI has nothing to talk to',
     };
   }

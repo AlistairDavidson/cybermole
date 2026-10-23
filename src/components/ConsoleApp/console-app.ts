@@ -362,7 +362,7 @@ export class ConsoleApp extends HTMLElement {
   private async createWorkspace(): Promise<void> {
     const name = ((this.querySelector('#workspace-name') as WaInput | null)?.value ?? '').trim();
     // No cwd in the body (task/app-cwd): the server derives it — the
-    // parent app's cwd, else WEB_PI_NEW_SESSION_CWD.
+    // parent app's cwd, else CYBERMOLE_NEW_SESSION_CWD.
     const appId = this.newWorkspaceAppId;
     const done = await this.call(
       'POST',

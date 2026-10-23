@@ -3,14 +3,14 @@
 // are refused (409, shared with auto-update's busy guard). {dryRun:true}
 // is a check-only mode: proves npm runs, installs nothing.
 import type { APIRoute } from 'astro';
-import { assertWebPiLocals } from '../../lib/web/locals';
+import { assertCybermoleLocals } from '../../lib/web/locals';
 import { parseAndValidateAPIRequest } from '../../lib/web/parsing.service';
 import { failureResponse, piUpdateResponse } from '../../lib/web/responses.service';
 import { updatePiBody } from '../../schemas/api';
 
 export const POST: APIRoute = async ({ locals, request }) => {
-  const { webpi } = assertWebPiLocals(locals);
+  const { cybermole } = assertCybermoleLocals(locals);
   const parsed = await parseAndValidateAPIRequest(request, updatePiBody);
   if (!parsed.ok) return failureResponse(parsed);
-  return piUpdateResponse(await webpi.runPiUpdate(parsed.data.dryRun));
+  return piUpdateResponse(await cybermole.runPiUpdate(parsed.data.dryRun));
 };

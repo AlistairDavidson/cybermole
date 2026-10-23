@@ -1,6 +1,6 @@
 # CODE_STYLE.md
 
-Correctness conventions for web-pi. This file is about **using the type system and boundaries correctly**, not formatting: match the formatting and comment density of the code around you. Read it before touching `src/lib`, `src/schemas`, an API route, or a form. Porting old code into these conventions: `docs/REFACTOR_STYLE.md`.
+Correctness conventions for cybermole. This file is about **using the type system and boundaries correctly**, not formatting: match the formatting and comment density of the code around you. Read it before touching `src/lib`, `src/schemas`, an API route, or a form. Porting old code into these conventions: `docs/REFACTOR_STYLE.md`.
 
 ---
 
@@ -113,8 +113,8 @@ is a type error.
 - JSON endpoints are Astro routes under `src/pages/api/`. A handler
   parses, calls one domain function, and maps the result. No `try/catch`
   in handlers.
-- **Services come from `Astro.locals.webpi`** (`src/lib/services.ts`,
-  narrowed with `assertWebPiLocals`). Never construct or import a stateful
+- **Services come from `Astro.locals.cybermole`** (`src/lib/services.ts`,
+  narrowed with `assertCybermoleLocals`). Never construct or import a stateful
   singleton (`StateDb`, `Auth`, `Scheduler`) inside the Astro bundle. Vite
   would bundle a second copy with its own state: a second scheduler with its
   own tick loop, a second `runPiUpdate` busy flag letting a manual and an
@@ -122,7 +122,7 @@ is a type error.
   services once and passes them to the Astro handler.
 - **What Astro code may runtime-import:** `astro`, `src/lib/web/*`,
   `src/schemas/*`, and `import type` from anything. Anything else from
-  `src/lib` is reached through `locals.webpi`. (Check:
+  `src/lib` is reached through `locals.cybermole`. (Check:
   `grep -r auth_sessions dist/server` should find nothing.)
 - **Content types:** API bodies are parsed only as `application/json` or
   form-urlencoded; anything else is 415. The exception is a file upload:
@@ -133,9 +133,9 @@ is a type error.
     anything reaches Astro, and only passes `locals` on the authenticated
     path.
   - `src/middleware.ts` fails closed: `/api/*` and `/partials/*` answer
-    503 when `locals.webpi` is missing (`astro dev`, or the Astro handler
+    503 when `locals.cybermole` is missing (`astro dev`, or the Astro handler
     run on its own). The data pages (settings, jobs) take the
-    same stance in their frontmatter: `assertWebPiLocals` (src/lib/web/
+    same stance in their frontmatter: `assertCybermoleLocals` (src/lib/web/
     locals.ts) throws — a page without the services is a broken
     invariant, never a loading placeholder the client fills in.
   - The adapter's `bodySizeLimit` is set (its default is 1 GiB) — to the
@@ -156,7 +156,7 @@ is a type error.
 ## 7. Pages: server-rendered first, enhanced by HTML web components
 
 - Render data in the page's frontmatter so it arrives as HTML: get the
-  services with `assertWebPiLocals(Astro.locals)` — the render throws
+  services with `assertCybermoleLocals(Astro.locals)` — the render throws
   without them (the gate is the only renderer that has them; in dev,
   browse the `dev:server` process), never a placeholder the element
   fills in. A failed service call renders its error message instead. A

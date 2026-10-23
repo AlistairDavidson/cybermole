@@ -2,7 +2,7 @@
 // A job = name + 5-field cron schedule + arbitrary shell command, stored
 // in the state db (jobs table, src/lib/db.ts). The Scheduler ticks every
 // ~30s and fires due jobs; every run — scheduler-fired or "run now" —
-// opens a tmux session `webpi-<name>` on the app's own socket, so the
+// opens a tmux session `cybermole-<name>` on the app's own socket, so the
 // jobs page can show a run as live and link its console view (/?run=)
 // at it. Since plan §9 every fire also persists a DURABLE run log + exit
 // code under the workspace-side log dir: the wrapper argv (runCommandArgv)
@@ -254,7 +254,7 @@ export function runLogPaths(
  *  server process's cwd is unrelated, and the script must sit at a stable
  *  absolute path for the wrapper, which executes it inside the WORKSPACE
  *  container's tmux session (both containers of the split ship the same
- *  image at /opt/web-pi, so this module's directory there is this one). */
+ *  image at /opt/cybermole, so this module's directory there is this one). */
 const LOG_APPENDER = path.join(__dirname, 'job-log-appender.js');
 
 /** The wrapper every fire runs instead of the bare command (plan §9's
@@ -267,7 +267,7 @@ const LOG_APPENDER = path.join(__dirname, 'job-log-appender.js');
  *  INSIDE the pipeline, before the appender, into $3. The wrapper's own
  *  exit (the appender's) is irrelevant — the code is read from the file.
  *  The appender ($4) caps the log at maxBytes ($5, ctx.logMaxBytes —
- *  WEB_PI_JOB_LOG_MAX) and never closes the pipe early, so a chatty or
+ *  CYBERMOLE_JOB_LOG_MAX) and never closes the pipe early, so a chatty or
  *  runaway job can neither fill the disk mid-run nor die of a SIGPIPE
  *  (plan §8). A failed mkdir/appender must not kill the run: output is
  *  lost, the exit file never appears, the run's result stays 'unknown'. */
@@ -303,11 +303,11 @@ const CATCHUP_LATENESS_MS = 2 * TICK_MS;
 export interface JobContext {
   cwd: string;
   env: Record<string, string>;
-  /** Run-log root (WEB_PI_JOB_LOG_DIR; /workspace/.webpi/job-logs in the
+  /** Run-log root (CYBERMOLE_JOB_LOG_DIR; /workspace/.cybermole/job-logs in the
    *  compose split — a path that exists in BOTH containers, plan §9). */
   logDir: string;
   /** The write-time cap each run's log is appended under (plan §8,
-   *  WEB_PI_JOB_LOG_MAX): the wrapper's appender stops writing past this
+   *  CYBERMOLE_JOB_LOG_MAX): the wrapper's appender stops writing past this
    *  many bytes — one "[truncated at N bytes]" marker — while still
    *  draining the job's output. */
   logMaxBytes: number;
