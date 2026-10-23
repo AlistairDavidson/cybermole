@@ -5,6 +5,9 @@ Summary versions of tests with minimal text, MCPs akin to barbarus
 preact signals - make this available for any frontend state needs apps might have in future
 lit?
 
+## Design
+Mole icon
+
 ## Quality
 playwright fuzzer/monkeys? fuzz based integration testing
 
