@@ -1,12 +1,8 @@
-## Branding
-New name -> cybermole
-
 ## Infrastructure
 preact signals - make this available for any frontend state needs apps might have in future
 lit?
 
 ## Quality
-make flakey tests not flakey
 playwright fuzzer/monkeys? fuzz based integration testing
 automatically set dev credentials to `test`/`test`
 don't lose dev state on restarts and make sure we don't lose server state
@@ -29,7 +25,7 @@ hideable nav on desktop
 global light/dark mode from browser, not hard coded
 vscodium follow global light/dark mode
 
-Rename "Console" -> "Global"
+Rename "Console" -> "Cybermole"
 
 link to logs (page with grafana in an iframe)
 
