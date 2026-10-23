@@ -90,8 +90,8 @@ test('terminalDefaults / resolved*: unset db → the env values, no overrides fl
 
 test('resolved*: a db override wins over the env value (the whole point)', async () => {
   const db = freshDb();
-  assert.equal((await saveTerminalDefaults(db, { agentCommand: '/db/agent -x' })).ok, true);
-  assert.equal((await saveTerminalDefaults(db, { shellCommand: '/db/shell -y' })).ok, true);
+  assert.equal((saveTerminalDefaults(db, { agentCommand: '/db/agent -x' })).ok, true);
+  assert.equal((saveTerminalDefaults(db, { shellCommand: '/db/shell -y' })).ok, true);
   assert.equal(resolvedAgentCommand(db).data.value, '/db/agent -x');
   assert.equal(resolvedShellCommand(db).data.value, '/db/shell -y');
   const d = terminalDefaults(db).data;
@@ -104,7 +104,7 @@ test('resolved*: a db override wins over the env value (the whole point)', async
 test('saveTerminalDefaults: null clears back to the env chain, absent keeps, the answer is the effective pair', async () => {
   const db = freshDb();
   // absent keeps: a one-field save leaves the other untouched
-  const onlyAgent = await saveTerminalDefaults(db, { agentCommand: '/db/agent' });
+  const onlyAgent = saveTerminalDefaults(db, { agentCommand: '/db/agent' });
   assert.equal(onlyAgent.ok, true);
   assert.deepEqual(onlyAgent.data, {
     agentCommand: '/db/agent',
@@ -113,8 +113,8 @@ test('saveTerminalDefaults: null clears back to the env chain, absent keeps, the
     shellOverridden: false,
   });
   // null clears: the override row is GONE (unset), not an empty string
-  await saveTerminalDefaults(db, { shellCommand: '/db/shell' });
-  const cleared = await saveTerminalDefaults(db, { shellCommand: null });
+  saveTerminalDefaults(db, { shellCommand: '/db/shell' });
+  const cleared = saveTerminalDefaults(db, { shellCommand: null });
   assert.deepEqual(cleared.data, {
     agentCommand: '/db/agent',
     shellCommand: ENV_SHELL,
@@ -122,12 +122,12 @@ test('saveTerminalDefaults: null clears back to the env chain, absent keeps, the
     shellOverridden: false,
   });
   // clearing an unset override is a no-op that still succeeds
-  assert.equal((await saveTerminalDefaults(db, { shellCommand: null })).ok, true);
+  assert.equal((saveTerminalDefaults(db, { shellCommand: null })).ok, true);
 });
 
 test('a corrupt settings row reads as unset (data we wrote, never a db failure)', async () => {
   const db = freshDb();
-  await saveTerminalDefaults(db, { agentCommand: '/db/agent' });
+  saveTerminalDefaults(db, { agentCommand: '/db/agent' });
   db.setSetting('terminalDefaults.agentCommand', 'not json');
   db.setSetting('terminalDefaults.shellCommand', '42'); // JSON, but not a string
   const d = terminalDefaults(db);
@@ -145,10 +145,10 @@ test('a corrupt settings row reads as unset (data we wrote, never a db failure)'
 test('terminal_defaults / save_terminal_defaults: database_error on an unreadable db', async () => {
   assert.equal(terminalDefaults(brokenDb()).errorCode, 'database_error');
   assert.equal(terminalDefaults(brokenDb()).resultType, 'terminal_defaults');
-  const saved = await saveTerminalDefaults(brokenDb(), { agentCommand: 'x' });
+  const saved = saveTerminalDefaults(brokenDb(), { agentCommand: 'x' });
   assert.equal(saved.ok, false);
   assert.equal(saved.resultType, 'save_terminal_defaults');
   assert.equal(saved.errorCode, 'database_error');
-  const cleared = await saveTerminalDefaults(brokenDb(), { shellCommand: null });
+  const cleared = saveTerminalDefaults(brokenDb(), { shellCommand: null });
   assert.equal(cleared.errorCode, 'database_error');
 });
