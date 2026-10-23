@@ -32,7 +32,12 @@ export const envSchema = {
   // as $TMUX_TMPDIR/tmux-<uid>/<name>, unusable across uids), and every
   // session-creating call (terminal spawns, job runs, the WS attach)
   // refuses to fork a server (see src/lib/tmux.ts).
-  CYBERMOLE_TMUX_SOCKET: { type: 'string', context: 'server', access: 'secret', default: 'cybermole' },
+  CYBERMOLE_TMUX_SOCKET: {
+    type: 'string',
+    context: 'server',
+    access: 'secret',
+    default: 'cybermole',
+  },
   // Reverse-proxy hops in front of the server whose X-Forwarded-For entries
   // are trusted (nginx = 1, ALB → nginx = 2). 0: XFF is ignored entirely.
   CYBERMOLE_TRUST_PROXY: { type: 'number', context: 'server', access: 'secret', default: 0 },
@@ -41,7 +46,12 @@ export const envSchema = {
   // shape; the e2e suite is serial from one IP and legitimately upgrades far
   // more (every terminal test attaches, pops, reconnects), so its config
   // raises this — the jobs test's run attach was refused at exactly 30.
-  CYBERMOLE_WS_UPGRADES_PER_MIN: { type: 'number', context: 'server', access: 'secret', default: 30 },
+  CYBERMOLE_WS_UPGRADES_PER_MIN: {
+    type: 'number',
+    context: 'server',
+    access: 'secret',
+    default: 30,
+  },
   // Dynamic defaults — see env.ts (homedir / app root / fs probe / cross-var).
   CYBERMOLE_HOME: { type: 'string', context: 'server', access: 'secret', optional: true },
   // One directory for all cybermole state (db, runtime pi agent dir) —
@@ -53,7 +63,12 @@ export const envSchema = {
   CYBERMOLE_DB_FILE: { type: 'string', context: 'server', access: 'secret', optional: true },
   CYBERMOLE_CLIENT_DIR: { type: 'string', context: 'server', access: 'secret', optional: true },
   CYBERMOLE_ASTRO_ENTRY: { type: 'string', context: 'server', access: 'secret', optional: true },
-  CYBERMOLE_NEW_SESSION_CWD: { type: 'string', context: 'server', access: 'secret', optional: true },
+  CYBERMOLE_NEW_SESSION_CWD: {
+    type: 'string',
+    context: 'server',
+    access: 'secret',
+    optional: true,
+  },
   // task/ws-jobs (workspaces-plan §9): the root under which job runs
   // persist their logs — /workspace/.cybermole/job-logs, a path that exists
   // in BOTH containers of the compose split (created by workspace-init;
@@ -72,6 +87,12 @@ export const envSchema = {
   // whitespace-split by main.ts. Dynamic default in env.ts: a login
   // shell — $SHELL -l, /bin/sh -l when SHELL is unset.
   CYBERMOLE_COMMAND: { type: 'string', context: 'server', access: 'secret', optional: true },
+  // task/defaults-settings: what the auto-opened FIRST terminal of a new
+  // workspace runs (the agent slot; the /settings terminal-defaults form
+  // writes a db override that wins over this). Dynamic default in env.ts:
+  // the vendored pi binary when the install has one, else 'pi' on PATH.
+  // Like CYBERMOLE_COMMAND, whitespace-split by the spawner.
+  CYBERMOLE_AGENT_COMMAND: { type: 'string', context: 'server', access: 'secret', optional: true },
   CYBERMOLE_TMUX_CONF: { type: 'string', context: 'server', access: 'secret', optional: true },
   // task/jobs-socket (docs/jobs-agent-plan.md §3): the internal jobs
   // API's unix socket path. Unset = the shape default (env.ts
@@ -97,15 +118,30 @@ export const envSchema = {
   CYBERMOLE_S3_ENDPOINT: { type: 'string', context: 'server', access: 'secret', optional: true },
   CYBERMOLE_S3_ACCESS_KEY: { type: 'string', context: 'server', access: 'secret', optional: true },
   CYBERMOLE_S3_SECRET_KEY: { type: 'string', context: 'server', access: 'secret', optional: true },
-  CYBERMOLE_S3_BUCKET: { type: 'string', context: 'server', access: 'secret', default: 'cybermole' },
+  CYBERMOLE_S3_BUCKET: {
+    type: 'string',
+    context: 'server',
+    access: 'secret',
+    default: 'cybermole',
+  },
   // SigV4 signs with a region; self-hosted servers accept any, us-east-1 is the convention.
-  CYBERMOLE_S3_REGION: { type: 'string', context: 'server', access: 'secret', default: 'us-east-1' },
+  CYBERMOLE_S3_REGION: {
+    type: 'string',
+    context: 'server',
+    access: 'secret',
+    default: 'us-east-1',
+  },
   // task/ws-editor (docs/editor-webapp.md): the VSCodium reh-web editor's
   // upstream on the compose network (e.g. http://editor:3000). THE single
   // switch — unset/empty = the editor is off: /editor/* answers 404 and the
   // console hides its affordances. Validated at boot (env.ts
   // readEditorUpstream) like the S3 vars: a malformed value stops the server.
-  CYBERMOLE_EDITOR_UPSTREAM: { type: 'string', context: 'server', access: 'secret', optional: true },
+  CYBERMOLE_EDITOR_UPSTREAM: {
+    type: 'string',
+    context: 'server',
+    access: 'secret',
+    optional: true,
+  },
   // task/logs-page: the BROWSER-reachable Grafana base URL the /logs page's
   // iframe loads (the `observability` compose profile publishes grafana on
   // the host loopback, e.g. http://127.0.0.1:3300 — the compose-internal

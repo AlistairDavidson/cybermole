@@ -131,3 +131,38 @@ export const appForm = z.object({
 export const workspaceForm = z.object({
   name: z.string().trim().min(1, 'name is required').max(120, 'name is too long (max 120)'),
 });
+
+// ---------- task/defaults-settings: the /settings terminal-defaults form ----------
+
+/** The longest command line the terminal-defaults fields accept (a
+ *  program + a few flags — the field's maxlength). */
+export const MAX_TERMINAL_COMMAND = 500;
+const SINGLE_LINE = /^[^\r\n]*$/;
+
+/** POST /api/settings (save terminal defaults) — the same schema the
+ *  /settings form validates with in the browser. Per field: a NON-EMPTY
+ *  string SETS the db override, null CLEARS it back to the default
+ *  chain, absent KEEPS the stored value. An empty (or whitespace-only:
+ *  trim runs first) string ALSO clears — validation-enhancer-zod feeds an
+ *  emptied wa-input as '' (its value is null, coerced before zod), so ''
+ *  must parse or the per-field clear could never pass client validation;
+ *  the transform normalizes it to the same null. What is INVALID, on both
+ *  sides: longer than MAX_TERMINAL_COMMAND, or more than one line. */
+export const terminalDefaultsBody = z.object({
+  agentCommand: z
+    .string()
+    .trim()
+    .max(MAX_TERMINAL_COMMAND, `command is too long (max ${MAX_TERMINAL_COMMAND})`)
+    .regex(SINGLE_LINE, 'command must be one line')
+    .transform(v => (v === '' ? null : v))
+    .nullable()
+    .optional(),
+  shellCommand: z
+    .string()
+    .trim()
+    .max(MAX_TERMINAL_COMMAND, `command is too long (max ${MAX_TERMINAL_COMMAND})`)
+    .regex(SINGLE_LINE, 'command must be one line')
+    .transform(v => (v === '' ? null : v))
+    .nullable()
+    .optional(),
+});

@@ -45,7 +45,6 @@ async function bootServer(
   const cmd = path.join(dir, 'cmd.sh');
   fs.writeFileSync(cmd, `#!/bin/sh\necho '${MARKER}'\nexec /bin/sh\n`);
   fs.chmodSync(cmd, 0o755);
-
   const pw = spawnSync('node', ['dist-server/server/set-password.js'], {
     cwd: ROOT,
     input: `${USERNAME}\n${PASSWORD}\n${PASSWORD}\n`,
@@ -62,6 +61,11 @@ async function bootServer(
       CYBERMOLE_TMUX_SOCKET: socket,
       CYBERMOLE_NEW_SESSION_CWD: os.tmpdir(), // deliberately NOT the workspace cwd
       CYBERMOLE_COMMAND: cmd,
+      // task/defaults-settings: the auto-opened first tab of every
+      // workspace this spec creates — deterministic like CYBERMOLE_COMMAND
+      // (the vendored-pi default would drag this checkout's node_modules
+      // into the spawn).
+      CYBERMOLE_AGENT_COMMAND: cmd,
     }),
     stdio: ['ignore', 'pipe', 'pipe'],
   });

@@ -273,7 +273,13 @@ test("delete_app: cascades workspaces and terminals, un-tags jobs, best-effort-k
     username: () => USERNAME,
     killSession,
     defaultCwd: os.tmpdir(),
-    spawnSession: async name => ({ ok: true, resultType: 'tmux_session', data: { name } }),
+    spawnSession: async name => ({
+      ok: true,
+      resultType: 'tmux_session',
+      data: { name },
+    }),
+    shellCommand: () => ({ ok: true, resultType: 'database_read', data: { value: 'sh -l' } }),
+    agentCommand: () => ({ ok: true, resultType: 'database_read', data: { value: 'agent' } }),
   });
   const app = (await a.saveApp('gone')).data;
   const ws = (await w.saveWorkspace({ appId: app.id, name: 'under it' })).data;
@@ -292,19 +298,30 @@ test("delete_app: cascades workspaces and terminals, un-tags jobs, best-effort-k
     }),
   );
 
+  // the auto-opened tabs exist from the creates (task/defaults-settings):
+  // captured BEFORE the delete — the cascade removes the app's one
+  const appAuto = db.get(
+    qb.selectFrom('terminals').select('id').where('workspace_id', '=', ws.id),
+  );
+  const consoleAuto = db.get(
+    qb.selectFrom('terminals').select('id').where('workspace_id', '=', consoleWs.id),
+  );
+
   const deleted = await a.deleteApp('gone');
   assert.equal(deleted.ok, true, deleted.errorMessage);
   assert.equal(deleted.resultType, 'delete_app');
   assert.deepEqual(deleted.data, { id: app.id });
-  // the cascade: app gone, its workspace and terminals with it
+  // the cascade: app gone, its workspace and terminals with it (the
+  // console workspace keeps BOTH its tabs — its auto-opened agent tab and
+  // the + button one)
   assert.equal(appRow(db, 'gone'), undefined);
   assert.deepEqual(
     rows(db, 'workspaces').map(r => r.id),
     [consoleWs.id],
   );
   assert.deepEqual(
-    rows(db, 'terminals').map(r => r.id),
-    [consoleTerm.id],
+    rows(db, 'terminals').map(r => r.id).sort(),
+    [consoleAuto.id, consoleTerm.id].sort(),
   );
   // jobs are un-tagged, never deleted (spread: node:sqlite rows carry a
   // null prototype, which deepEqual treats as a different object)
@@ -312,8 +329,17 @@ test("delete_app: cascades workspaces and terminals, un-tags jobs, best-effort-k
     qb.selectFrom('jobs').select(['name', 'app_id']).where('name', '=', 'nightly'),
   );
   assert.deepEqual({ ...job }, { name: 'nightly', app_id: null });
-  // exactly the deleted terminals' derived session names were killed
-  assert.deepEqual(killed.sort(), [terminalSessionName(t1.id), terminalSessionName(t2.id)].sort());
+  // exactly the deleted terminals' derived session names were killed —
+  // the app's workspace terminals INCLUDING its auto-opened agent tab
+  // (task/defaults-settings); the other workspaces' were not
+  assert.deepEqual(
+    killed.sort(),
+    [
+      terminalSessionName(t1.id),
+      terminalSessionName(t2.id),
+      terminalSessionName(appAuto.id),
+    ].sort(),
+  );
   assert.equal(killed.includes(terminalSessionName(consoleTerm.id)), false);
 
   const again = await a.deleteApp('gone');
@@ -334,6 +360,8 @@ test('delete_app: database_error on an unwritable db — and a failed kill never
     killSession: async () => false,
     defaultCwd: os.tmpdir(),
     spawnSession: async name => ({ ok: true, resultType: 'tmux_session', data: { name } }),
+    shellCommand: () => ({ ok: true, resultType: 'database_read', data: { value: 'sh -l' } }),
+    agentCommand: () => ({ ok: true, resultType: 'database_read', data: { value: 'agent' } }),
   });
   const ws = (await w.saveWorkspace({ appId: app.id, name: 'x' })).data;
   await w.newTerminal(ws.id, undefined);

@@ -16,6 +16,7 @@ import * as fs from 'node:fs';
 import { databaseRead, databaseUpdate, qb, type DatabaseReadResult, type StateDb } from './db';
 import { componentLogger } from './logger';
 import { terminalSessionName } from './tmux';
+import { splitCommandLine } from './terminal-defaults';
 import type { ResultFailure, ResultSuccess } from '../types/result';
 import type { AppId, TerminalId, TmuxSessionName, WorkspaceId } from '../types/branded';
 import { asTerminalId, asWorkspaceId } from '../types/branded';
@@ -100,12 +101,18 @@ export type RenameTerminalFailure = ResultFailure<
 export type RenameTerminalResult = RenameTerminalSuccess | RenameTerminalFailure;
 
 /** What server/main.ts's WS attach path needs for one terminal tab: the
- *  row + its workspace's cwd (the respawn dir — plan §4). */
+ *  row + its workspace's cwd (the respawn dir — plan §4). `agent`: the
+ *  row IS the workspace's auto-opened agent tab (task/defaults-settings,
+ *  recognised by created_at equality with the workspace — only a tab
+ *  created inside the create holds that exact timestamp), so the respawn
+ *  re-runs the AGENT command for it and the shell command for every
+ *  other tab, exactly like the spawns that created them. */
 export type TerminalForAttachData = {
   id: TerminalId;
   workspaceId: WorkspaceId;
   title: string | null;
   cwd: string;
+  agent: boolean;
 };
 export type TerminalForAttachErrorCode = 'terminal_not_found' | 'database_error';
 export type TerminalForAttachSuccess = ResultSuccess<'terminal_for_attach', TerminalForAttachData>;
@@ -164,7 +171,18 @@ export interface WorkspacesDeps {
   spawnSession: (
     name: TmuxSessionName,
     cwd: string,
+    command: string[],
   ) => Promise<TmuxSessionSuccess | TmuxSessionFailure>;
+  /** The resolved SHELL command line — what every new tab EXCEPT a new
+   *  workspace's first runs (db override ?? CYBERMOLE_COMMAND —
+   *  task/defaults-settings). Injected like spawnSession so the domain
+   *  stays unit-testable; read per spawn, so a /settings save applies
+   *  without a restart. */
+  shellCommand: () => DatabaseReadResult<string>;
+  /** The resolved AGENT command line — what the auto-opened first tab of
+   *  a NEW workspace runs (db ?? CYBERMOLE_AGENT_COMMAND ?? the vendored
+   *  pi — src/lib/terminal-defaults.ts). */
+  agentCommand: () => DatabaseReadResult<string>;
   /** CYBERMOLE_NEW_SESSION_CWD — the default when the create carries no cwd
    *  of its own AND the parent app has none (plan §6, task/app-cwd). */
   defaultCwd: string;
@@ -190,7 +208,10 @@ export class Workspaces {
       'could not read workspace',
       () =>
         this.deps.db.get(
-          qb.selectFrom('workspaces').select(['id', 'app_id', 'name', 'cwd']).where('id', '=', id),
+          qb
+            .selectFrom('workspaces')
+            .select(['id', 'app_id', 'name', 'cwd', 'created_at'])
+            .where('id', '=', id),
         ) ?? null,
     );
   }
@@ -286,6 +307,24 @@ export class Workspaces {
     log.info(
       `workspace "${name}" created (cwd ${cwd.cwd}${appId === null ? ', console' : `, app ${appId}`})`,
     );
+    // task/defaults-settings: a NEW workspace auto-opens its FIRST
+    // terminal — the agent slot — running the resolved agent command,
+    // created through the same row-then-spawn contract as the + button
+    // (plan §4): the row lands even when the spawn fails (a dead tab,
+    // retried by the first attach), and a failed auto-open can never
+    // fail the CREATE — a workspace without its agent tab beats no
+    // workspace. The row carries the WORKSPACE's created_at (`now`
+    // below): only a tab created inside the create can hold that exact
+    // timestamp, which is how the attach path recognises the agent slot
+    // for respawns (terminalForAttach's `agent`) — stable where
+    // first-by-sort_order would drift (closing the agent tab would
+    // re-flag whatever became first).
+    const opened = await this.openTab(id, cwd.cwd, undefined, this.deps.agentCommand(), now);
+    if (!opened.ok)
+      log.warn(
+        `workspace "${name}": its first terminal did not start ` +
+          `(${opened.errorCode}: ${opened.errorMessage}) — the tab is there, the first attach retries`,
+      );
     return {
       ok: true,
       resultType: 'save_workspace',
@@ -387,10 +426,50 @@ export class Workspaces {
    *  cwd. Rows never block on tmux: when the spawn fails the row still
    *  exists — the failure carries it (live:false), the UI shows a dead
    *  tab and the first attach retries the spawn. No eager spawns at
-   *  boot; closing kills the session best-effort, never failing on it. */
+   *  boot; closing kills the session best-effort, never failing on it.
+   *  The tab runs the SHELL command (task/defaults-settings); the
+   *  workspace create's auto-open (the agent slot) shares openTab. */
   async newTerminal(
     workspaceId: WorkspaceId,
     title: string | undefined,
+  ): Promise<NewTerminalResult> {
+    const fail = (errorCode: NewTerminalErrorCode, errorMessage: string) =>
+      ({
+        ok: false,
+        resultType: 'new_terminal',
+        errorCode,
+        errorMessage,
+      }) satisfies NewTerminalFailure;
+    const found = this.byId(workspaceId);
+    if (!found.ok) return fail('database_error', found.errorMessage);
+    const row = found.data.value;
+    if (!row) return fail('workspace_not_found', 'no such workspace');
+    // A + button tab must NEVER share its workspace's created_at — that
+    // equality IS the agent-slot mark (terminalForAttach). A human's +
+    // click is always a later tick, but a scripted client can land its
+    // next request in the same millisecond; the stamp never goes
+    // backwards (clock skew) and always advances past the workspace's.
+    const createdAt = Math.max(Date.now(), row.created_at + 1);
+    return this.openTab(workspaceId, row.cwd, title, this.deps.shellCommand(), createdAt);
+  }
+
+  /** The shared row-then-spawn half of newTerminal and the workspace
+   *  create's auto-open (plan §4): resolve the command (the caller picks
+   *  the slot's own — shell vs agent — at create time, so a /settings
+   *  save applies to the very next tab), insert the row, then
+   *  best-effort spawn at `cwd` running the split argv. The row ALWAYS
+   *  lands before the spawn is attempted; a spawn failure carries it
+   *  (live:false). A failed command READ (database_error) precedes the
+   *  insert, so no row exists — the same shape new_terminal gives a db
+   *  failure. `createdAt` stamps the row — the workspace create passes
+   *  ITS OWN timestamp so the auto-opened row is recognisable later
+   *  (terminalForAttach's `agent`). */
+  private async openTab(
+    workspaceId: WorkspaceId,
+    cwd: string,
+    title: string | null | undefined,
+    command: DatabaseReadResult<string>,
+    createdAt: number,
   ): Promise<NewTerminalResult> {
     const fail = (errorCode: NewTerminalErrorCode, errorMessage: string, data?: NewTerminalData) =>
       ({
@@ -400,10 +479,9 @@ export class Workspaces {
         errorMessage,
         ...(data ? { data } : {}),
       }) satisfies NewTerminalFailure;
-    const found = this.byId(workspaceId);
-    if (!found.ok) return fail('database_error', found.errorMessage);
-    const row = found.data.value;
-    if (!row) return fail('workspace_not_found', 'no such workspace');
+    if (!command.ok)
+      return fail('database_error', command.errorMessage ?? 'could not read the terminal command');
+    const argv = splitCommandLine(command.data.value);
     const actor = this.actor();
     if (!actor.ok) return fail('database_error', actor.errorMessage);
     const order = databaseRead(
@@ -418,7 +496,7 @@ export class Workspaces {
     );
     if (!order.ok) return fail('database_error', order.errorMessage);
     const id = asTerminalId(randomUUID());
-    const now = Date.now();
+    const now = createdAt;
     const inserted = databaseUpdate('could not save the terminal', () =>
       this.deps.db.run(
         qb.insertInto('terminals').values({
@@ -435,7 +513,7 @@ export class Workspaces {
     );
     if (!inserted.ok) return fail('database_error', inserted.errorMessage);
     const data: NewTerminalData = { id, workspaceId, title: title ?? null, live: false };
-    const spawned = await this.deps.spawnSession(terminalSessionName(id), row.cwd);
+    const spawned = await this.deps.spawnSession(terminalSessionName(id), cwd, argv);
     if (!spawned.ok) {
       // The row exists even when the spawn fails (plan §4) — report the
       // code, carry the row: a dead tab, retried by the first attach.
@@ -448,7 +526,7 @@ export class Workspaces {
         data,
       );
     }
-    log.info(`terminal ${id} opened (${terminalSessionName(id)} at ${row.cwd})`);
+    log.info(`terminal ${id} opened (${terminalSessionName(id)} at ${cwd})`);
     return {
       ok: true,
       resultType: 'new_terminal',
@@ -524,7 +602,9 @@ export class Workspaces {
 
   /** The row + workspace cwd for one terminal tab — server/main.ts's WS
    *  attach path (task/ws-terminal, plan §4: never-fork guard → respawn
-   *  if dead → attach -d). Read-only; joins the workspace for the cwd. */
+   *  if dead → attach -d). Read-only; joins the workspace for the cwd and
+   *  adds `agent` (the auto-opened slot — task/defaults-settings) so the
+   *  respawn re-runs the command the tab's slot runs. */
   async terminalForAttach(id: TerminalId): Promise<TerminalForAttachResult> {
     const fail = (errorCode: TerminalForAttachErrorCode, errorMessage: string) =>
       ({
@@ -540,17 +620,36 @@ export class Workspaces {
           qb
             .selectFrom('terminals')
             .innerJoin('workspaces', 'workspaces.id', 'terminals.workspace_id')
-            .select(['terminals.id', 'terminals.workspace_id', 'terminals.title', 'workspaces.cwd'])
+            .select([
+              'terminals.id',
+              'terminals.workspace_id',
+              'terminals.title',
+              'terminals.created_at',
+              'workspaces.cwd',
+              'workspaces.created_at as ws_created_at',
+            ])
             .where('terminals.id', '=', id),
         ) ?? null,
     );
     if (!found.ok) return fail('database_error', found.errorMessage);
     const row = found.data.value;
     if (!row) return fail('terminal_not_found', 'no such terminal');
+    // The agent-slot test (task/defaults-settings): the auto-opened row
+    // carries its workspace's EXACT created_at (saveWorkspace passes its
+    // own `now`), and no other row can — a + button tab is always a later
+    // tick. Closing the agent tab therefore leaves nothing flagged (a
+    // first-by-sort_order check would re-flag whichever tab became
+    // first and respawn the agent command into a shell tab).
     return {
       ok: true,
       resultType: 'terminal_for_attach',
-      data: { id: row.id, workspaceId: row.workspace_id, title: row.title, cwd: row.cwd },
+      data: {
+        id: row.id,
+        workspaceId: row.workspace_id,
+        title: row.title,
+        cwd: row.cwd,
+        agent: row.created_at === row.ws_created_at,
+      },
     } satisfies TerminalForAttachSuccess;
   }
 

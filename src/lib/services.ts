@@ -29,6 +29,13 @@ import {
   runPiUpdate,
   type PiUpdateResult,
 } from './settings';
+import {
+  resolvedAgentCommand,
+  resolvedShellCommand,
+  saveTerminalDefaults,
+  terminalDefaults,
+  type SaveTerminalDefaultsResult,
+} from './terminal-defaults';
 import * as tmux from './tmux';
 import type { EditorUpstream } from './editor';
 import type { CalendarCheck, ConsoleState, SettingsState } from './types';
@@ -73,8 +80,10 @@ export interface ServerConfig {
   /** task/ws-jobs (plan §9): job runs' persisted-log root
    *  (CYBERMOLE_JOB_LOG_DIR; /workspace/.cybermole/job-logs by default). */
   jobLogDir: string;
-  /** whitespace-split session command line */
-  command: string[];
+  /** The terminal commands are NOT here on purpose (task/defaults-settings):
+   *  they resolve db override ?? env at SPAWN time
+   *  (src/lib/terminal-defaults.ts), never at boot — a /settings save
+   *  applies without a restart, which a boot-time CFG string cannot. */
   trustProxy: number;
   /** The editor webapp's upstream (CYBERMOLE_EDITOR_UPSTREAM, docs/
    *  editor-webapp.md), or null when not configured — the console then
@@ -109,6 +118,14 @@ export interface CybermoleServices {
   /** GET /api/settings' body: paths and versions only — no credential
    *  or hash contents ever leave. */
   settingsState(): SettingsStateResult;
+  /** POST /api/settings' save (task/defaults-settings): the /settings
+   *  terminal-defaults form — a string sets the db override, null clears
+   *  it (reset to default), absent keeps; the answer is the effective
+   *  pair (like settingsState resolves them). */
+  saveTerminalDefaults(input: {
+    agentCommand?: string | null;
+    shellCommand?: string | null;
+  }): SaveTerminalDefaultsResult;
   /** The manual pi updater — shares runPiUpdate's busy guard with the
    *  auto-updater, which is why it lives here. */
   runPiUpdate(dryRun: boolean): Promise<PiUpdateResult>;
@@ -142,6 +159,7 @@ export interface ServiceDeps {
   spawnSession: (
     name: TmuxSessionName,
     cwd: string,
+    command: string[],
   ) => Promise<TmuxSessionSuccess | TmuxSessionFailure>;
   /** Live tmux session names (tmux.liveSessionNames) — /api/state's live
    *  diff, injected into the workspaces domain like its siblings. */
@@ -166,6 +184,11 @@ export function createServices(deps: ServiceDeps): CybermoleServices {
     defaultCwd: cfg.newSessionCwd,
     spawnSession: deps.spawnSession,
     liveSessionNames: deps.liveSessionNames,
+    // task/defaults-settings: the resolved terminal commands, read per
+    //  spawn (db override ?? env — src/lib/terminal-defaults.ts) so a
+    //  /settings save applies to the next tab with no restart.
+    shellCommand: () => resolvedShellCommand(stateDb),
+    agentCommand: () => resolvedAgentCommand(stateDb),
   });
   return {
     cfg,
@@ -224,6 +247,12 @@ export function createServices(deps: ServiceDeps): CybermoleServices {
       if (!checked.ok) return fail(checked.errorMessage);
       const updated = lastUpdate(stateDb);
       if (!updated.ok) return fail(updated.errorMessage);
+      // task/defaults-settings: the terminal defaults resolve here too (db
+      // ?? env — never a boot-time snapshot), so the /settings form
+      // prefills what the NEXT tab would actually run.
+      const defaults = terminalDefaults(stateDb);
+      if (!defaults.ok)
+        return fail(defaults.errorMessage ?? 'could not read the terminal defaults');
       return {
         ok: true,
         resultType: 'settings_state',
@@ -234,7 +263,10 @@ export function createServices(deps: ServiceDeps): CybermoleServices {
           host: cfg.host,
           port: cfg.port,
           base: cfg.base,
-          command: cfg.command.join(' '),
+          // The shell a new tab runs — the EFFECTIVE command now
+          // (task/defaults-settings), same value the form prefills; a db
+          // override shows here the same as an env one always did.
+          command: defaults.data.shellCommand,
           newSessionCwd: cfg.newSessionCwd,
           agentDir: cfg.agentDir,
           stateDb: cfg.dbFile,
@@ -245,6 +277,7 @@ export function createServices(deps: ServiceDeps): CybermoleServices {
           piDeclared: piDeclared(APP_ROOT),
           piInstalled: piInstalled(APP_ROOT),
           npmAvailable: npmPath() !== null,
+          terminalDefaults: defaults.data,
           piAutoUpdate: {
             enabled: enabled.data.value,
             lastCheck: checked.data.value,
@@ -253,6 +286,8 @@ export function createServices(deps: ServiceDeps): CybermoleServices {
         },
       } satisfies SettingsStateSuccess;
     },
+
+    saveTerminalDefaults: input => saveTerminalDefaults(stateDb, input),
 
     runPiUpdate: dryRun => runPiUpdate(APP_ROOT, dryRun),
     checkCron: schedule => checkCron(schedule),

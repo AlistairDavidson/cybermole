@@ -14,11 +14,20 @@ import { DatabaseSync } from 'node:sqlite';
 // `WebSocket` inside in-page evaluate closures would be rewritten to the
 // node binding (…ReferenceError: _ws2 is not defined… in the browser).
 import * as nodeWs from 'ws';
-import { expect, test, type Cookie, type Page } from '@playwright/test';
+import { expect, test, type Cookie, type Locator, type Page } from '@playwright/test';
 import { WebSocket as NodeWebSocket } from 'ws';
 import { setCredential } from '../src/lib/auth';
 import { StateDb } from '../src/lib/db';
-import { MARKER, PASSWORD, S3_BUCKET, S3_PORT, TMUX_SOCKET, USERNAME, WORKSPACE } from './env';
+import {
+  AGENT_MARKER,
+  MARKER,
+  PASSWORD,
+  S3_BUCKET,
+  S3_PORT,
+  TMUX_SOCKET,
+  USERNAME,
+  WORKSPACE,
+} from './env';
 import { UPLOAD_MAX_BODY_BYTES } from '../src/schemas/uploads';
 
 /** Terminal sizing invariants, evaluated in the page:
@@ -114,7 +123,8 @@ async function login(page: Page): Promise<void> {
     await page.goto('/login');
     await signIn(page);
     await page.waitForURL(u => u.pathname === '/');
-    sessionCookie = (await page.context().cookies()).find(c => c.name === 'cybermole_session') ?? null;
+    sessionCookie =
+      (await page.context().cookies()).find(c => c.name === 'cybermole_session') ?? null;
   }
   await page.waitForSelector('workspace-sidebar .nav');
 }
@@ -152,15 +162,32 @@ async function makeTerminalIn(page: Page, ws: string): Promise<string> {
 }
 
 /** Make a workspace + one terminal tab; return both ids. The tab's pane is
- *  created by CLICKING the tab (first activation). */
+ *  created by CLICKING the tab (first activation). The workspace's
+ *  AUTO-OPENED agent tab (task/defaults-settings) is closed first: these
+ *  tests predate the agent slot and assert a one-tab world (pane counts,
+ *  empty-state prompts, single .terminal-status locators) — the slot
+ *  itself has its own spec (the auto-open test) and the console flow. */
 async function makeTerminal(
   page: Page,
   name: string,
   cwd?: string,
 ): Promise<{ ws: string; id: string }> {
   const ws = await makeWorkspace(page, name, cwd);
+  const auto = await page.locator('terminal-tabs .tabs-bar .tab').first().getAttribute('data-term');
+  expect(auto, 'the workspace auto-opened its first tab').toBeTruthy();
+  const closed = await api(page, 'DELETE', `/api/terminals/${auto}`);
+  expect(closed.status, JSON.stringify(closed.json)).toBe(200);
+  await refreshState(page);
   return { ws, id: await makeTerminalIn(page, ws) };
 }
+
+/** The VISIBLE pane's status line — scoped to the not-hidden pane: a
+ *  workspace's auto-opened tab keeps its (hidden, attached) pane in the
+ *  DOM next to the tab under test (task/defaults-settings), so an
+ *  unscoped .terminal-status locator goes strict-mode on two panes.
+ *  `state` picks the modifier class ('.ok', '.info', …). */
+const paneStatus = (page: Page, state = ''): Locator =>
+  page.locator(`agent-terminal:not(.hidden) .terminal-status${state}`);
 
 /** Pull a fresh /api/state into the console's sidebar + tabs (the 15 s
  *  poll, forced — raw in-page POSTs don't trigger it). */
@@ -354,26 +381,39 @@ test("console flow: create app (with a cwd) → workspace (starts at the app's c
   expect(posts.filter(p => p === '/api/workspaces')).toEqual([]);
   await page.fill('wa-input#workspace-name input', 'flow ws');
   await page.click('#workspace-save');
-  // selected: the tab bar's no-terminals prompt carries its own +
-  await expect(page.locator('.tabs-empty-terminals')).toBeVisible();
-  // the workspace's cwd IS the app's (the server derived it — the row's
-  // title carries w.cwd) — not the suite default (CYBERMOLE_NEW_SESSION_CWD)
+  // Selected — and NOT empty: the workspace auto-opened its first terminal
+  // (task/defaults-settings — the agent slot) running CYBERMOLE_AGENT_COMMAND
+  // (this suite's cmd.sh in agent mode: a distinct banner), live and
+  // attached. The no-terminals prompt only appears once its last tab is
+  // closed below.
+  // The workspace's cwd IS the app's (the server derived it — the row's
+  // title carries w.cwd) — not the suite default (CYBERMOLE_NEW_SESSION_CWD).
   const flowRow = page.locator('workspace-sidebar li[data-ws].active');
   await expect(flowRow).toContainText('flow ws');
   await expect(flowRow).toHaveAttribute('title', appDir);
-
-  // --- new terminal via the tab bar's + : the tab appears LIVE, the pane
-  //     attaches, the banner (cmd.sh) renders, input round-trips
-  await page.click('terminal-tabs .tab-new');
   await expect(page.locator('terminal-tabs .tabs-bar .tab')).toHaveCount(1);
-  const tabId = await page.locator('terminal-tabs .tabs-bar .tab').getAttribute('data-term');
+  const agentTab = await page.locator('terminal-tabs .tabs-bar .tab').getAttribute('data-term');
+  await expect(page.locator(`terminal-tabs .tab[data-term="${agentTab}"] .tab-dot`)).toHaveClass(
+    /live/,
+    { timeout: 10_000 },
+  );
+  await waitForTermText(page, AGENT_MARKER, 20_000);
+  await expect(paneStatus(page, '.ok')).toContainText(`attached: t-${agentTab}`);
+
+  // --- new terminal via the tab bar's + : a SECOND tab, live, running the
+  //     SHELL command (CYBERMOLE_COMMAND — cmd.sh's default banner)
+  await page.click('terminal-tabs .tab-new');
+  await expect(page.locator('terminal-tabs .tabs-bar .tab')).toHaveCount(2);
+  const tabId = await page.locator('terminal-tabs .tabs-bar .tab.active').getAttribute('data-term');
   expect(tabId).toMatch(/^[0-9a-f-]{36}$/);
+  expect(tabId).not.toBe(agentTab);
   await expect(page.locator(`terminal-tabs .tab[data-term="${tabId}"] .tab-dot`)).toHaveClass(
     /live/,
     { timeout: 10_000 },
   );
   await waitForTermText(page, MARKER, 20_000);
-  await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${tabId}`);
+  // two panes exist now (the agent slot's + this one) — the scoped locator
+  await expect(paneStatus(page, '.ok')).toContainText(`attached: t-${tabId}`);
 
   // Full loop: keystrokes in xterm → WS → pty → tmux → output rendered.
   // $((41+1)) distinguishes the shell's evaluated output (TYPIST_42) from
@@ -399,10 +439,17 @@ test("console flow: create app (with a cwd) → workspace (starts at the app's c
   await expect(page.locator('#confirm-delete-text')).toContainText('terminal');
   await expect(page.locator('#confirm-delete-text')).toContainText(tabId!.slice(0, 8));
   await page.click('#confirm-delete-ok');
-  await expect(page.locator('terminal-tabs .tabs-bar .tab')).toHaveCount(0);
+  // the SHELL tab is gone — the workspace's auto-opened agent tab remains
+  // (its session too: only the closed tab's was killed)
+  await expect(page.locator('terminal-tabs .tabs-bar .tab')).toHaveCount(1);
   await expect
     .poll(() => tmuxStatus(['has-session', '-t', `t-${tabId}`]), { timeout: 10_000 })
     .not.toBe(0);
+  expect(tmuxStatus(['has-session', '-t', `t-${agentTab}`])).toBe(0);
+  // ...and closing THAT one empties the workspace (the prompt's own path)
+  await page.click(`terminal-tabs .tab[data-term="${agentTab}"] .tab-close`);
+  await page.click('#confirm-delete-ok');
+  await expect(page.locator('terminal-tabs .tabs-bar .tab')).toHaveCount(0);
   await expect(page.locator('.tabs-empty-terminals')).toBeVisible();
 
   // --- delete the workspace (its delete button → confirm) → row gone;
@@ -422,6 +469,56 @@ test("console flow: create app (with a cwd) → workspace (starts at the app's c
   await expect(page.locator('workspace-sidebar .ws-group')).toHaveCount(2);
   // (the empty state — zero workspaces — is covered on the restart-survival
   //  spec's private server, where the fixture tree isn't in the way)
+});
+
+test('a new workspace auto-opens its first terminal running the AGENT command; other tabs run the shell (task/defaults-settings)', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await login(page);
+  const ws = await makeWorkspace(page, 'agent slot ws');
+  // The FIRST tab exists without ever touching the + button, is live, and
+  // attaches on the workspace's selection — running the AGENT command
+  // (CYBERMOLE_AGENT_COMMAND = the suite's cmd.sh in agent mode).
+  await expect(page.locator('terminal-tabs .tabs-bar .tab')).toHaveCount(1);
+  const id = await page.locator('terminal-tabs .tabs-bar .tab').getAttribute('data-term');
+  await expect(page.locator(`terminal-tabs .tab[data-term="${id}"] .tab-dot`)).toHaveClass(/live/, {
+    timeout: 10_000,
+  });
+  await waitForTermText(page, AGENT_MARKER, 20_000);
+  await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`);
+  // the spawn really ran on the suite's socket
+  expect(tmuxStatus(['has-session', '-t', `t-${id}`])).toBe(0);
+
+  // A second tab (the + button) runs the SHELL command — the default
+  // marker, not the agent one: the two settings are independent.
+  const second = await makeTerminalIn(page, ws);
+  await page.click(`terminal-tabs .tab[data-term="${second}"]`);
+  await waitForTermText(page, MARKER, 20_000);
+  expect(tmuxStatus(['has-session', '-t', `t-${second}`])).toBe(0);
+
+  // The agent tab's RESPAWN re-runs the AGENT command (plan §4's dead-tab
+  // path, task/defaults-settings): an out-of-band kill, then a fresh
+  // attach. The tab is recognisable as the agent slot by created_at
+  // equality with its workspace, so the respawn must NOT fall back to the
+  // shell command. The hidden agent pane's socket learns of the death
+  // asynchronously ('exit' → detached, never reconnected on its own); the
+  // tab click then destroys the ENDED pane and opens a FRESH one — whose
+  // empty buffer is what makes the banner decisive: a wrong shell
+  // respawn would print the plain marker into it and time this out.
+  execFileSync('tmux', ['-L', TMUX_SOCKET, 'kill-session', '-t', `t-${id}`]);
+  await expect(
+    page.locator('agent-terminal.hidden .terminal-status', { hasText: `t-${id}` }),
+  ).toContainText('detached', { timeout: 10_000 });
+  await page.click(`terminal-tabs .tab[data-term="${id}"]`);
+  await waitForTermText(page, AGENT_MARKER, 20_000);
+  expect(tmuxStatus(['has-session', '-t', `t-${id}`])).toBe(0);
+
+  // Cleanup: the workspace takes both tabs (rows + best-effort kills).
+  expect((await api(page, 'DELETE', `/api/workspaces/${ws}`)).status).toBe(200);
+  await expect
+    .poll(() => tmuxStatus(['has-session', '-t', `t-${id}`]), { timeout: 10_000 })
+    .not.toBe(0);
 });
 
 test('a paste bigger than one WebSocket frame reaches the session whole', async ({ page }) => {
@@ -935,7 +1032,7 @@ test('hidden tabs keep their WS attached: state and scrollback persist, refit on
     }>;
     return panes.map(p => (p.websocket === undefined ? 'closed' : `${p.websocket!.readyState}`));
   });
-  expect(sockets).toEqual(['1', '1']); // both panes: OPEN
+  expect(sockets).toEqual(['1', '1', '1']); // all three panes (the auto-opened tab + the two made ones): OPEN
 });
 
 test('terminal toolbar: copy output and download transcript capture the terminal buffer', async ({
@@ -1102,6 +1199,8 @@ test("popping a tab moves the pane to a new tab: main socket down, popped tab at
   await expect(page.locator(`terminal-tabs .tab[data-term="${id}"]`)).toHaveClass(/popped/);
   await expect(page.locator(`terminal-tabs .tab[data-term="${id}"]`)).toHaveClass(/active/);
   await expect(page.locator('.tabs-popped')).toBeVisible();
+  // two tabs now (the popped row still among them) — makeTerminal closed
+  // the workspace's auto-opened agent tab first (task/defaults-settings)
   await expect(page.locator('terminal-tabs .tabs-bar .tab')).toHaveCount(2);
   await expect(page.locator('terminal-tabs agent-terminal')).toHaveCount(0);
   expect(tmuxStatus(['has-session', '-t', `t-${id}`])).toBe(0);
@@ -1524,7 +1623,10 @@ test('jobs: app tag chip, persisted run logs, run history + log view (task/ws-jo
   // Run now (the card's button): a live cybermole-<name> session whose
   // wrapper tees output to a durable log under CYBERMOLE_JOB_LOG_DIR.
   await page.click('jobs-app wa-button[data-run="e2e-job"]');
-  await expect(page.locator('jobs-app .job-view')).toHaveAttribute('href', /\?run=cybermole-e2e-job$/);
+  await expect(page.locator('jobs-app .job-view')).toHaveAttribute(
+    'href',
+    /\?run=cybermole-e2e-job$/,
+  );
   // expect.poll retries a bad VALUE, not a thrown callback — ENOENT while
   // the pane's mkdir -p lands must read as 0 so the window keeps polling.
   const logDirEntries = () => {
@@ -1926,6 +2028,116 @@ test('settings dashboard shows effective config; update dry-run is check-only', 
   expect(dry.body.output).toContain('would run');
 });
 
+test('terminal defaults: the /settings form validates, saves, and the override persists across a reload (task/defaults-settings)', async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto('/settings');
+  await page.waitForFunction(() => customElements.get('validation-enhancer-zod') !== undefined);
+  // The fields prefill once upgraded (wa-input's value is a property —
+  // settings-app sets it from the server-rendered source region).
+  await page.waitForFunction(
+    () =>
+      typeof (
+        document.querySelector('wa-input#shell-command') as unknown as { value?: string | null }
+      )?.value === 'string',
+  );
+  const fieldValue = (id: string): Promise<string> =>
+    page.evaluate(
+      i =>
+        (document.querySelector(`wa-input#${i}`) as unknown as { value: string | null }).value ??
+        '',
+      id,
+    );
+
+  // Prefilled with the EFFECTIVE values — what a new tab would actually
+  // run: this suite pins both env vars (cmd.sh, with the agent marker arg).
+  expect(await fieldValue('shell-command')).toBe(`${WORKSPACE}/cmd.sh`);
+  expect(await fieldValue('agent-command')).toBe(`${WORKSPACE}/cmd.sh agent`);
+  // The schema's typed cap reaches the real input (zod → maxlength).
+  await expect(page.locator('wa-input#shell-command input')).toHaveAttribute('maxlength', '500');
+
+  // Client-side validation (the shared schema): a >500-char value is the
+  // invalid case (an EMPTY or whitespace-only field is a legal CLEAR — the
+  // schema normalizes both to null), and nothing is POSTed while invalid.
+  const posts: string[] = [];
+  page.on('request', r => {
+    if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/settings')
+      posts.push(new URL(r.url()).pathname);
+  });
+  await page.evaluate(() => {
+    // page.fill goes through the input's maxlength (500) — the host
+    // property does not, exactly a value-pasting script's path
+    (document.querySelector('wa-input#shell-command') as unknown as { value: string }).value =
+      'x'.repeat(501);
+  });
+  await page.click('#save-terminal-defaults');
+  await expect(page.locator('#shell-command-error')).toHaveText('command is too long (max 500)');
+  // The message lives in the wa-input's hint slot: the REAL input is
+  // described by it (AGENTS.md — the login-form precedent).
+  await expect(page.locator('wa-input#shell-command input')).toHaveAccessibleDescription(
+    /command is too long/,
+  );
+  expect(posts).toEqual([]);
+
+  // Save a shell override — and the agent field rides along as its shown
+  // (effective) value: a save pins both fields (the form never lies about
+  // what it saves; the status line says which side each value came from).
+  await page.fill('wa-input#shell-command input', '/bin/dash -l');
+  await page.click('#save-terminal-defaults');
+  await expect(page.locator('#terminal-defaults-result:not(.hidden)')).toContainText('saved');
+  await expect(page.locator('#terminal-defaults-source')).toContainText('(override saved)');
+
+  // Persisted: a reload re-prefills from the db overrides, and the API
+  // carries the same effective pair + flags.
+  await page.reload();
+  await page.waitForFunction(
+    () =>
+      typeof (
+        document.querySelector('wa-input#shell-command') as unknown as { value?: string | null }
+      )?.value === 'string',
+  );
+  expect(await fieldValue('shell-command')).toBe('/bin/dash -l');
+  const st = (await api(page, 'GET', '/api/settings')).json;
+  expect(st.terminalDefaults).toMatchObject({
+    agentCommand: `${WORKSPACE}/cmd.sh agent`,
+    shellCommand: '/bin/dash -l',
+    agentOverridden: true,
+    shellOverridden: true,
+  });
+  expect(st.command).toBe('/bin/dash -l'); // the config row follows the override
+
+  // The PER-FIELD clear: emptying the shell field and saving clears only
+  // it (validation-enhancer feeds an emptied wa-input as '' — the schema
+  // normalizes both null and '' to a clear), the agent override stays.
+  await page.fill('wa-input#shell-command input', '');
+  await page.click('#save-terminal-defaults');
+  await expect(page.locator('#terminal-defaults-result:not(.hidden)')).toContainText('saved');
+  const cleared = (await api(page, 'GET', '/api/settings')).json.terminalDefaults;
+  expect(cleared).toMatchObject({ shellOverridden: false, agentOverridden: true });
+  expect(cleared.shellCommand).toBe(`${WORKSPACE}/cmd.sh`); // the env chain again
+
+  // The server validates with the same schema: a >500-char string is a 400
+  // with the field's issue.
+  const tooLong = await api(page, 'POST', '/api/settings', { shellCommand: 'x'.repeat(501) });
+  expect(tooLong.status).toBe(400);
+  expect(tooLong.json.issues.shellCommand).toContain('too long');
+
+  // Reset to defaults: both overrides clear (the rows are gone, the env
+  // chain answers again) — clean state for the rest of the suite.
+  await page.click('#reset-terminal-defaults');
+  await expect(page.locator('#terminal-defaults-result:not(.hidden)')).toContainText('defaults');
+  await expect(page.locator('#terminal-defaults-source')).toContainText('(default)');
+  const after = (await api(page, 'GET', '/api/settings')).json.terminalDefaults;
+  expect(after).toMatchObject({ agentOverridden: false, shellOverridden: false });
+  expect(after.shellCommand).toBe(`${WORKSPACE}/cmd.sh`);
+  const db = new DatabaseSync(`${WORKSPACE}/cybermole.db`);
+  expect(
+    db.prepare("SELECT count(*) c FROM settings WHERE key LIKE 'terminalDefaults.%'").get(),
+  ).toMatchObject({ c: 0 });
+  db.close();
+});
+
 // ---------- browser hardening (DESIGN_REVIEW §1.2) ----------
 
 const CSP =
@@ -1983,7 +2195,8 @@ test('WS upgrades demand a matching Origin — missing or foreign destroys the s
   page,
 }) => {
   await login(page);
-  const token = (await page.context().cookies()).find(c => c.name === 'cybermole_session')?.value ?? '';
+  const token =
+    (await page.context().cookies()).find(c => c.name === 'cybermole_session')?.value ?? '';
   const wsOrigin = new URL(page.url()).origin;
 
   // Raw ws client from the test process: browsers can't omit or forge
@@ -2236,6 +2449,9 @@ test('SIGTERM: every socket gets restart, closes, and the process exits 0', asyn
       CYBERMOLE_NEW_SESSION_CWD: dir,
       CYBERMOLE_TMUX_SOCKET: tmuxSocket,
       CYBERMOLE_COMMAND: '/bin/sh',
+      // task/defaults-settings: the auto-opened first tab is deterministic
+      // here too (sh — no dependency on the checkout's vendored pi).
+      CYBERMOLE_AGENT_COMMAND: '/bin/sh',
     },
     stdio: 'ignore',
   });
@@ -2297,10 +2513,24 @@ test('SIGTERM: every socket gets restart, closes, and the process exits 0', asyn
       ).loadState(),
     );
     await page.click(`workspace-sidebar li[data-ws="${wsMade.id}"]`);
+    // the workspace's auto-opened first tab (task/defaults-settings)
+    const autoId = await page
+      .locator('terminal-tabs .tabs-bar .tab')
+      .first()
+      .getAttribute('data-term');
+    expect(autoId).toBeTruthy();
     await page.click('terminal-tabs .tab-new'); // creates + selects the terminal tab
-    const tabId = await page.locator('terminal-tabs .tabs-bar .tab').getAttribute('data-term');
+    // the create+select is async — wait for the selection to leave the
+    // auto tab before reading it (see the restart-survival spec)
+    await expect
+      .poll(() => page.locator('terminal-tabs .tabs-bar .tab.active').getAttribute('data-term'))
+      .not.toBe(autoId);
+    const tabId = await page
+      .locator('terminal-tabs .tabs-bar .tab.active')
+      .getAttribute('data-term');
     expect(tabId).toBeTruthy();
-    await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${tabId}`, {
+    // two panes exist (the auto-opened agent tab's + this one) — scoped
+    await expect(paneStatus(page, '.ok')).toContainText(`attached: t-${tabId}`, {
       timeout: 20_000,
     });
 
@@ -2318,10 +2548,10 @@ test('SIGTERM: every socket gets restart, closes, and the process exits 0', asyn
     expect(messages[messages.length - 1]).toBe(JSON.stringify({ type: 'restart' }));
     // The browser terminal announces the restart and reconnects (the
     // server is gone, so the backoff keeps retrying — that's the point).
-    await expect(page.locator('.terminal-status')).toContainText('server restarting', {
+    await expect(paneStatus(page)).toContainText('server restarting', {
       timeout: 5000,
     });
-    await expect(page.locator('.terminal-status')).toContainText('reconnecting in', {
+    await expect(paneStatus(page)).toContainText('reconnecting in', {
       timeout: 5000,
     });
 
@@ -2529,6 +2759,10 @@ test('a terminal tab survives a WEB restart: tmux keeps the session, the client 
     CYBERMOLE_NEW_SESSION_CWD: cwd,
     CYBERMOLE_TMUX_SOCKET: tmuxSocket,
     CYBERMOLE_COMMAND: cmd,
+    // task/defaults-settings: the auto-opened first tab is deterministic
+    // here too (the vendored-pi default would depend on this checkout's
+    // node_modules — never on a test's environment).
+    CYBERMOLE_AGENT_COMMAND: cmd,
   };
   const boot = (): ChildProcess =>
     spawn(process.execPath, ['dist-server/server/main.js'], {
@@ -2576,11 +2810,29 @@ test('a terminal tab survives a WEB restart: tmux keeps the session, the client 
     expect(wsMade.status, JSON.stringify(wsMade.json)).toBe(200);
     await refreshState(page);
     await page.click(`workspace-sidebar li[data-ws="${wsMade.json.id}"]`);
+    // the workspace's auto-opened first tab (task/defaults-settings) — its
+    // id is needed to tell the tab under test apart
+    const autoId = await page
+      .locator('terminal-tabs .tabs-bar .tab')
+      .first()
+      .getAttribute('data-term');
+    expect(autoId).toBeTruthy();
     await page.click('terminal-tabs .tab-new');
-    const tabId = await page.locator('terminal-tabs .tabs-bar .tab').getAttribute('data-term');
+    // The create+select is ASYNC (POST → loadState → selectTerminal): wait
+    // for the second tab AND for the selection to move to it — reading
+    // .tab.active too early returns the auto tab and every later
+    // attached-to-t-<tabId> assertion then pins the wrong pane.
+    await expect(page.locator('terminal-tabs .tabs-bar .tab')).toHaveCount(2);
+    await expect
+      .poll(() => page.locator('terminal-tabs .tabs-bar .tab.active').getAttribute('data-term'))
+      .not.toBe(autoId);
+    const tabId = await page
+      .locator('terminal-tabs .tabs-bar .tab.active')
+      .getAttribute('data-term');
     expect(tabId).toBeTruthy();
     await waitForTermText(page, MARKER, 20_000);
-    await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${tabId}`);
+    // two panes exist (the auto-opened agent tab's + this one) — scoped
+    await expect(paneStatus(page, '.ok')).toContainText(`attached: t-${tabId}`);
     await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
     await page.keyboard.type('echo SURVIVES_$((40+2))\n');
     await waitForTermText(page, 'SURVIVES_42', 10_000);
@@ -2635,13 +2887,17 @@ test('a terminal tab survives a WEB restart: tmux keeps the session, the client 
     await expect
       .poll(
         async () =>
-          (await page.evaluate(() => (window as unknown as { __statusSeen?: string[] }).__statusSeen ?? []))
+          (
+            await page.evaluate(
+              () => (window as unknown as { __statusSeen?: string[] }).__statusSeen ?? [],
+            )
+          )
             .join(' | ')
             .includes('reconnect'),
         { timeout: 15_000 },
       )
       .toBe(true);
-    await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${tabId}`, {
+    await expect(paneStatus(page, '.ok')).toContainText(`attached: t-${tabId}`, {
       timeout: 30_000,
     });
     await waitForTermText(page, 'SURVIVES_42', 10_000); // the screen survived: tmux redraws it
@@ -2650,7 +2906,7 @@ test('a terminal tab survives a WEB restart: tmux keeps the session, the client 
     // the terminal is still usable.
     const state = await api(page, 'GET', '/api/state');
     const row = state.json.workspaces.find((w: { id: string }) => w.id === wsMade.json.id);
-    expect(row.terminals[0].live).toBe(true);
+    expect(row.terminals.find((t: { id: string }) => t.id === tabId).live).toBe(true);
     await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
     await page.keyboard.type('echo AFTER_$((40+2))\n');
     await waitForTermText(page, 'AFTER_42', 10_000);

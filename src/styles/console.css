@@ -618,4 +618,11 @@ body.app-chrome > .logs-main { flex: 1 1 0; min-height: 0; }
 /* on-quiet: the text token (fill-normal is a background fill — near-black red in wa-dark, pale red in wa-light) */
 .field-error { color: var(--wa-color-danger-on-quiet); }
 .field-error:empty { display: none; }
+/* The terminal-defaults form's error lines RESERVE their height: a message
+   appearing or clearing reflows everything below the field, which moves a
+   mid-flight click onto whatever took the button's place (observed: fix an
+   invalid field, click save — the focusout validation clears the message,
+   the button jumps up, the click lands on the form, nothing saves).
+   :empty's display:none would fight the reservation, so this overrides it. */
+#terminal-defaults-form .field-error:empty { display: block; min-height: 1.4em; }
 

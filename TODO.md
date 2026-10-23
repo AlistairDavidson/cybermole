@@ -14,9 +14,6 @@ app preview?
 
 self-naming workspaces
 
-ability to configure which agent is used - auto-opens as first terminal session (pi default)
-ability to configure which terminal is used (zsh default)
-
 hideable nav on desktop
 
 Rename "Console" -> "Cybermole"

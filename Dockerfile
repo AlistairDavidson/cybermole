@@ -25,8 +25,13 @@ FROM node:${NODE_VERSION}-bookworm-slim AS runtime
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      tmux git ripgrep ca-certificates \
+      tmux git ripgrep ca-certificates zsh \
  && rm -rf /var/lib/apt/lists/*
+# zsh (task/defaults-settings): the shipped compose default shell
+# (CYBERMOLE_COMMAND=zsh -l on the cybermole + dev services). The binary
+# must exist where tmux spawns sessions — the WORKSPACE container of the
+# split runs this same image, so installing it here covers every target
+# (the dev stage below FROMs runtime and inherits it).
 
 # Privilege split (DESIGN_REVIEW §1.1), one image / two roles:
 #   web       — uid node (base image): serves HTTP/WS from /opt/cybermole,

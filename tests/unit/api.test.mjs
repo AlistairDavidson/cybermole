@@ -17,6 +17,7 @@ import {
   workspacePatchBody,
   terminalCreateBody,
   terminalPatchBody,
+  terminalDefaultsBody,
   appForm,
   workspaceForm,
 } from '../../dist-server/src/schemas/api.js';
@@ -272,4 +273,34 @@ test('JobSaveSchema now accepts an optional appId tag (stored by task/ws-jobs)',
     ID,
   );
   assert.equal(ok(JobSaveSchema, { name: 'n', schedule: 's', command: 'c', appId: 'nope' }), false);
+});
+
+test('terminalDefaultsBody: string sets, null/empty clears (validation-enhancer feeds "" for an emptied wa-input), absent keeps; too long/multiline are 400s', () => {
+  // task/defaults-settings — the /settings form's schema, shared with
+  // POST /api/settings.
+  assert.deepEqual(parse(terminalDefaultsBody, { shellCommand: '  zsh -l  ' }), {
+    shellCommand: 'zsh -l',
+  }); // trimmed, sets
+  assert.deepEqual(parse(terminalDefaultsBody, { shellCommand: null }), { shellCommand: null });
+  assert.deepEqual(parse(terminalDefaultsBody, { shellCommand: '' }), { shellCommand: null });
+  assert.deepEqual(parse(terminalDefaultsBody, { shellCommand: '   ' }), {
+    shellCommand: null,
+  }); // whitespace-only clears too
+  assert.deepEqual(parse(terminalDefaultsBody, {}), {}); // absent = keep the stored override
+  for (const bad of [
+    { shellCommand: 'x'.repeat(501) },
+    { agentCommand: 'x'.repeat(501) },
+    { shellCommand: 'two\nlines' },
+    { shellCommand: 5 },
+  ]) {
+    assert.equal(ok(terminalDefaultsBody, bad), false, JSON.stringify(bad));
+  }
+  assert.equal(
+    issueText(terminalDefaultsBody, { shellCommand: 'x'.repeat(501) }),
+    'shellCommand: command is too long (max 500)',
+  );
+  assert.equal(
+    issueText(terminalDefaultsBody, { shellCommand: 'a\nb' }),
+    'shellCommand: command must be one line',
+  );
 });

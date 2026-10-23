@@ -48,6 +48,10 @@ export default defineConfig({
         CYBERMOLE_NEW_SESSION_CWD: WORKSPACE,
         CYBERMOLE_TMUX_SOCKET: TMUX_SOCKET,
         CYBERMOLE_COMMAND: `${WORKSPACE}/cmd.sh`,
+        // task/defaults-settings: the auto-opened first terminal of a new
+        // workspace — the same deterministic cmd.sh, with the marker
+        // argument that distinguishes its banner from a plain tab's.
+        CYBERMOLE_AGENT_COMMAND: `${WORKSPACE}/cmd.sh agent`,
         CYBERMOLE_JOB_LOG_DIR: `${WORKSPACE}/job-logs`,
         // The internal jobs socket (jobs-agent-plan §3) — OUTSIDE WORKSPACE:
         // global-setup rm -rf's WORKSPACE AFTER this server boots, and the

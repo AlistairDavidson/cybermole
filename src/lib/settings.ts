@@ -4,8 +4,8 @@
 // install dir. No restart needed: the session command is the vendored
 // node_modules/.bin/pi, exec'd fresh per session, so new sessions get the
 // new version (running ones keep theirs). Only when the server booted
-// without a vendored pi (CYBERMOLE_COMMAND fell back to `pi` on PATH) does a
-// restart switch sessions over to it.
+// without a vendored pi (CYBERMOLE_AGENT_COMMAND fell back to `pi` on
+// PATH) does a restart switch sessions over to it.
 import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
