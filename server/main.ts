@@ -41,6 +41,7 @@ import {
   type EditorUpstream,
 } from '../src/lib/editor';
 import { createServices, type ServerConfig, type CybermoleLocals } from '../src/lib/services';
+import { grafanaExploreUrlFromEnv } from '../src/lib/grafana';
 import { startInternalApi, InternalSocketOwnedError, type InternalApiHandle } from './internal-api';
 import { ObjectStore } from '../src/lib/storage';
 import type { ClientMsg, ServerMsg } from '../src/lib/types';
@@ -108,6 +109,9 @@ const CFG: ServerConfig = {
   command: ENV.CYBERMOLE_COMMAND.trim().split(/\s+/).filter(Boolean),
   trustProxy: Math.max(0, ENV.CYBERMOLE_TRUST_PROXY),
   editorUpstream: readEditorUpstream(),
+  // task/logs-page: the Explore URL the /logs page frames, built (and
+  // boot-validated) from CYBERMOLE_GRAFANA_URL at startup.
+  grafanaExploreUrl: grafanaExploreUrlFromEnv(),
 };
 
 /** Seed the runtime agent dir from the versioned template, only where the
@@ -219,6 +223,11 @@ bootLog.info(
   CFG.editorUpstream === null
     ? 'editor: not configured (CYBERMOLE_EDITOR_UPSTREAM unset) — /editor answers 404'
     : `editor: proxying ${CFG.base === '/' ? '' : CFG.base}/editor/ → ${CFG.editorUpstream.origin}`,
+);
+bootLog.info(
+  CFG.grafanaExploreUrl === null
+    ? 'logs: not configured (CYBERMOLE_GRAFANA_URL unset) — /logs answers 404'
+    : `logs: framing Grafana Explore (${CFG.grafanaExploreUrl})`,
 );
 // task/ws-terminal (plan §4): a terminal tab's spawn/respawn — one
 // guarded new-session with the configured command + sessionEnv, shared

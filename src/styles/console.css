@@ -416,6 +416,21 @@ agent-terminal .terminal-status.err wa-icon { color: var(--wa-color-danger-on-qu
 
 jobs-app { display: block; }
 .jobs-main { max-width: 46rem; margin: 0 auto; padding: var(--wa-space-m); }
+
+/* ---- logs page (task/logs-page): Grafana Explore filling the viewport ---- */
+/* Like the console's shell, not jobs/settings' scrollables: the iframe is
+   the whole content, so it takes exactly what remains under the header
+   (body.app-chrome's flex column) and never scrolls the page itself.
+   min-height: 0 lets the flex item shrink below its content — without it
+   the iframe's default 150px minimum grows the body instead. */
+body.app-chrome > .logs-main { flex: 1 1 0; min-height: 0; }
+.logs-main { display: flex; flex-direction: column; }
+.logs-main iframe {
+  flex: 1; width: 100%; border: 0;
+  /* Grafana is a light-or-dark app of its own; a dark tile keeps the
+     frame from flashing white while it loads. */
+  background: var(--wa-color-surface-default);
+}
 .jobs-header { align-items: center; }
 .jobs-header h1 {
   display: flex; align-items: center; gap: var(--wa-space-2xs);
