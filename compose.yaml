@@ -156,6 +156,19 @@ services:
       # (up -d then recreates cybermole to pick it up). Unset/empty = console-only
       # logging; the dev profile and plain hosts stay that way.
       CYBERMOLE_LOKI_URL: ${CYBERMOLE_LOKI_URL:-}
+      # task/logs-page: the BROWSER-reachable Grafana URL the /logs page's
+      # iframe loads — DELIBERATELY default-off: grafana exists only under
+      # the opt-in observability profile, and an on-by-default link would
+      # iframe a dead port for every plain-stack user. To get the header's
+      # logs link, bring the profile up AND set this (the .env-next-to-
+      # compose.yaml pattern this file documents):
+      #   echo 'CYBERMOLE_GRAFANA_URL=http://127.0.0.1:3300' >> .env
+      #   CYBERMOLE_LOKI_URL=http://loki:3100 docker compose --profile observability up -d
+      # NB it must be reachable from the OPERATOR'S BROWSER, not the
+      # compose network — grafana publishes 127.0.0.1:3300 on the host
+      # (the internal http://grafana:3000 is not routable from outside).
+      # Unset/empty: no logs link, /logs answers 404.
+      CYBERMOLE_GRAFANA_URL: ${CYBERMOLE_GRAFANA_URL:-}
       # task/ws-editor (docs/editor-webapp.md): the editor webapp's
       # upstream on the compose network — THE single switch. The stack
       # ships the editor container (header note), so the default wires the
@@ -339,6 +352,13 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # task/logs-page: cybermole's /logs page frames this Grafana —
+      # without allow_embedding grafana answers X-Frame-Options: deny
+      # (verified against the pinned 13.2.3: pkg/middleware/middleware.go
+      # sets it unless cfg.AllowEmbedding) and the iframe stays blank.
+      # Acceptable here exactly because the port is loopback-only with
+      # anonymous read-only access.
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
     volumes:
       - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
     deploy:
