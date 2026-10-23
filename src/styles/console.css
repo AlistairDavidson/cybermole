@@ -256,15 +256,9 @@ terminal-tabs {
   color: var(--wa-color-text-quiet); font-size: var(--wa-font-size-2xs);
 }
 .tabs-bar .tab .tab-close:hover { color: var(--wa-color-danger-on-quiet); }
-/* Pop-out (task/pop-tab-window): the affordance lives on the ACTIVE tab
-   only; a popped tab's terminal is in its own window, so its row dims. */
-.tabs-bar .tab .tab-pop {
-  display: none; align-items: center;
-  border-radius: var(--wa-border-radius-s);
-  color: var(--wa-color-text-quiet); font-size: var(--wa-font-size-2xs);
-}
-.tabs-bar .tab.active .tab-pop { display: inline-flex; }
-.tabs-bar .tab .tab-pop:hover { color: var(--wa-color-brand-on-quiet); }
+/* Pop-out (task/popout-toolbar): the button lives in the pane's toolbar
+   (agent-terminal.ts), not on the row; a popped tab's terminal lives in
+   another browser tab, so its row dims. */
 .tabs-bar .tab.popped { color: var(--wa-color-text-quiet); }
 .tabs-bar .tab.editor-tab wa-icon { font-size: var(--wa-font-size-2xs); flex: none; }
 .tabs-bar .tab-new {

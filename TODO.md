@@ -9,10 +9,6 @@ don't lose dev state on restarts and make sure we don't lose server state
 
 ## Console features
 
-popout behaviour improvement (_blank is better)
-popout button off of tab
-  -> combine with copy/download bar
-
 app preview?
 
 self-naming workspaces

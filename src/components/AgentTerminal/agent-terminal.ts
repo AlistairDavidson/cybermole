@@ -198,6 +198,10 @@ export class AgentTerminal extends HTMLElement {
   private bufferPrimed = false;
   /** tmux session the server last attached us to — set on 'attached'. */
   private attachedTarget: TmuxSessionName | null = null;
+  /** The tab uuid this pane attaches as ('terminal' mode; null on a run
+   *  pane) — the toolbar's pop-out button's identity. attach() is the
+   *  one place the mode is known, so it drives the button there. */
+  private terminalId: TerminalId | null = null;
   /** Is the current attach OVER for good (never attached, or ended by
    *  the server's 'exit'/'error'/'signed-out')? Read by <terminal-tabs>:
    *  a tab whose pane has ended gets a FRESH attach on its next click —
@@ -379,6 +383,10 @@ export class AgentTerminal extends HTMLElement {
         <wa-icon name="xmark" label="close find bar"></wa-icon>
       </wa-button>`;
     bar.innerHTML = `
+      <wa-button class="tb-pop-out hidden" appearance="plain" variant="neutral" size="xs"
+          title="pop out — move this terminal to its own browser tab (its row here brings it back)">
+        <wa-icon slot="start" name="arrow-up-right-from-square" aria-hidden="true"></wa-icon>pop out
+      </wa-button>
       <wa-button class="tb-copy-output" appearance="plain" variant="neutral" size="xs"
           title="copy the terminal's output — scrollback included — as plain text">
         <wa-icon slot="start" name="copy" aria-hidden="true"></wa-icon>copy
@@ -387,6 +395,26 @@ export class AgentTerminal extends HTMLElement {
           title="download the transcript — scrollback included, ANSI colors preserved">
         <wa-icon slot="start" name="download" aria-hidden="true"></wa-icon>download
       </wa-button>`;
+    // Pop-out (task/popout-toolbar): FIRST action — it MOVES the pane,
+    //  the others only read it. Rendered hidden and revealed by attach():
+    //  only a 'terminal' attach has a tab to pop out to — the run pane
+    //  (?run= job viewer) is not a workspace terminal and has no row to
+    //  bring the terminal back, so it never gets the button. The click
+    //  is dispatched, not handled here: the pane knows its id, but the
+    //  MOVE semantics (open-before-teardown, popped marks, bring-back)
+    //  belong to <terminal-tabs> (every pane's ancestor), which catches
+    //  the bubbled event and routes it to popTerminal().
+    (bar.querySelector('.tb-pop-out') as HTMLElement).addEventListener('click', () => {
+      const id = this.terminalId;
+      if (id === null) return;
+      this.dispatchEvent(
+        new CustomEvent('terminal-pop-out', {
+          detail: { id },
+          bubbles: true,
+          composed: true,
+        }),
+      );
+    });
     (bar.querySelector('.tb-copy-output') as HTMLElement).addEventListener(
       'click',
       () => void this.copyOutput(),
@@ -566,6 +594,12 @@ export class AgentTerminal extends HTMLElement {
     this.terminal?.focus();
     this.activeKey = key;
     this.attachedTarget = null;
+    this.terminalId = mode === 'terminal' ? (target as TerminalId) : null;
+    // the pop-out button rides the toolbar, whose build (ensureToolbar,
+    // connectedCallback) runs before the mode is known — reveal it here
+    this.toolbar
+      ?.querySelector('.tb-pop-out')
+      ?.classList.toggle('hidden', this.terminalId === null);
     this.ended = true;
     // 'terminal' carries the tab's uuid (the server derives t-<uuid>,
     // respawning if dead — plan §4); 'run' a live job run's session name
