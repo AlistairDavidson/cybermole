@@ -12,3 +12,6 @@ playwright-report/
 # image; a local/e2e run may plant one in the repo root for testing).
 version.json
 .dist-watch/
+
+# pi harness session artifacts (mcp.json etc) — never tracked
+.pi/
