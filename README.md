@@ -900,14 +900,16 @@ are `/` and `/login`.
   the new binary up on the next `up` (pi is exec'd when you run it;
   terminals already running it finish on the old one). Durable in-place
   updates without a rebuild: install pi standalone on the workspace
-  volume and point `CYBERMOLE_COMMAND` at it (every new terminal tab then
-  runs it) — pi's own dependency tree is pure JS (verified:
+  volume and point `CYBERMOLE_AGENT_COMMAND` at it (every new workspace's
+  auto-opened agent tab then runs it — or set the same value once on
+  `/settings`, which wins over the env) — pi's own dependency tree is
+  pure JS (verified:
   installs and runs with no compiler on PATH), unlike a full cybermole
   checkout whose `npm install` would build `node-pty`:
 
   ```sh
   docker compose exec workspace sh -c 'mkdir -p /workspace/pi && cd /workspace/pi && npm init -y >/dev/null && npm install @earendil-works/pi-coding-agent@latest'
-  # compose cybermole environment: CYBERMOLE_COMMAND=/workspace/pi/node_modules/.bin/pi
+  # compose cybermole environment: CYBERMOLE_AGENT_COMMAND=/workspace/pi/node_modules/.bin/pi
   docker compose up -d
   ```
 
@@ -976,7 +978,7 @@ compose up -d`). A git checkout on the workspace volume is still where
 you (or an agent) keep projects — including a checkout of cybermole itself
 for reading or forking — but it no longer feeds any build-and-swap flow;
 if you want terminals to run pi from such a checkout, use the
-standalone-workspace install above (`CYBERMOLE_COMMAND`).
+standalone-workspace install above (`CYBERMOLE_AGENT_COMMAND`).
 
 ## Security model
 
