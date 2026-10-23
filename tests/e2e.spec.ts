@@ -1062,37 +1062,43 @@ Promise<{ status: number; json: any }> {
   );
 }
 
-// Pop-out (task/pop-tab-window): the active tab's arrow button MOVES the
-// pane to a /?t=<id> window — the server's attach runs `tmux attach -d`,
-// so the main page's socket must be gone before the popup attaches. The
-// row survives (marked popped); the terminal returns on the popup's
-// pagehide or on the tab's next click (which bumps the popup, by design).
-test("popping a tab moves the pane to a window: main socket down, popup attached, row survives; the tab click and the popup's close both bring it back", async ({
+// Pop-out (task/popout-toolbar): the active pane's toolbar button MOVES
+// the pane to a /?t=<id> browser tab (window.open('_blank') — Playwright
+// still surfaces the new tab as a 'popup' event) — the server's attach
+// runs `tmux attach -d`, so the main page's socket must be gone before
+// the popped tab attaches. The row survives (marked popped); the
+// terminal returns on the popped tab's pagehide or on the tab's next
+// click (which bumps the popped tab, by design).
+test("popping a tab moves the pane to a new tab: main socket down, popped tab attached, row survives; the tab click and the popped tab's close both bring it back", async ({
   page,
 }) => {
   await login(page);
   const { ws, id } = await makeTerminal(page, 'pop ws');
-  const other = await makeTerminalIn(page, ws); // a second, never-activated tab
+  await makeTerminalIn(page, ws); // a second, never-activated tab
   await page.click(`terminal-tabs .tab[data-term="${id}"]`);
   await waitForTermText(page, MARKER, 20_000);
   await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`);
-  // the pop button is the ACTIVE tab's only (the other tab's is display:none)
-  await expect(page.locator(`terminal-tabs .tab[data-term="${id}"] .tab-pop`)).toBeVisible();
-  await expect(page.locator(`terminal-tabs .tab[data-term="${other}"] .tab-pop`)).toBeHidden();
+  // the pop button lives in the ACTIVE pane's toolbar (a never-activated
+  // tab holds no pane, so no toolbar at all)
+  const popBtn = page.locator(
+    'terminal-tabs agent-terminal:not(.hidden) .terminal-toolbar .tb-pop-out',
+  );
+  await expect(popBtn).toBeVisible();
+  await expect(page.locator('terminal-tabs .tb-pop-out')).toHaveCount(1);
 
-  // --- pop: the pane MOVES to the popup (the ?t= deep-link path)
-  const [popup] = await Promise.all([
+  // --- pop: the pane MOVES to the new tab (the ?t= deep-link path)
+  const [popout] = await Promise.all([
     page.waitForEvent('popup'),
-    page.click(`terminal-tabs .tab[data-term="${id}"] .tab-pop`),
+    popBtn.click(),
   ]);
-  await popup.waitForSelector('workspace-sidebar .nav');
-  await expect(popup.locator(`terminal-tabs .tab[data-term="${id}"]`)).toHaveClass(/active/);
-  await expect(popup.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`);
-  await waitForTermText(popup, MARKER, 20_000);
+  await popout.waitForSelector('workspace-sidebar .nav');
+  await expect(popout.locator(`terminal-tabs .tab[data-term="${id}"]`)).toHaveClass(/active/);
+  await expect(popout.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`);
+  await waitForTermText(popout, MARKER, 20_000);
 
   // the main page: row kept (active + popped, dimmed) with a notice where
   // the pane was, the pane itself GONE (socket torn down — not killed:
-  // the tmux session the popup now owns is still alive)
+  // the tmux session the popped tab now owns is still alive)
   await expect(page.locator(`terminal-tabs .tab[data-term="${id}"]`)).toHaveClass(/popped/);
   await expect(page.locator(`terminal-tabs .tab[data-term="${id}"]`)).toHaveClass(/active/);
   await expect(page.locator('.tabs-popped')).toBeVisible();
@@ -1100,33 +1106,33 @@ test("popping a tab moves the pane to a window: main socket down, popup attached
   await expect(page.locator('terminal-tabs agent-terminal')).toHaveCount(0);
   expect(tmuxStatus(['has-session', '-t', `t-${id}`])).toBe(0);
 
-  // the popped terminal is LIVE in the popup: input round-trips there
-  await popup.locator('agent-terminal:not(.hidden) .terminal-container').click();
-  await popup.keyboard.type('echo POP_$((40+2))\n');
-  await waitForTermText(popup, 'POP_42', 10_000);
+  // the popped terminal is LIVE in the popped tab: input round-trips there
+  await popout.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await popout.keyboard.type('echo POP_$((40+2))\n');
+  await waitForTermText(popout, 'POP_42', 10_000);
 
-  // --- bring-back by CLICK: the tab re-attaches here; the popup's client
-  //     is bumped (detached — once, no reconnect loop)
+  // --- bring-back by CLICK: the tab re-attaches here; the popped tab's
+  //     client is bumped (detached — once, no reconnect loop)
   await page.click(`terminal-tabs .tab[data-term="${id}"]`);
   await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`);
   await expect(page.locator(`terminal-tabs .tab[data-term="${id}"]`)).not.toHaveClass(/popped/);
   await expect(page.locator('.tabs-popped')).toHaveCount(0);
-  await expect(popup.locator('.terminal-status.info')).toContainText(`detached: t-${id}`);
+  await expect(popout.locator('.terminal-status.info')).toContainText(`detached: t-${id}`);
   await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
   await page.keyboard.type('echo BACK_$((40+2))\n');
   await waitForTermText(page, 'BACK_42', 10_000);
-  await popup.close(); // its pagehide is a no-op now (the mark is gone)
+  await popout.close(); // its pagehide is a no-op now (the mark is gone)
 
-  // --- pop again, then CLOSE the popup: the pagehide (the held handle,
-  //     same origin) re-attaches the active tab with no click at all
-  const [popup2] = await Promise.all([
+  // --- pop again, then CLOSE the popped tab: the pagehide (the held
+  //     handle, same origin) re-attaches the active tab with no click at all
+  const [popout2] = await Promise.all([
     page.waitForEvent('popup'),
-    page.click(`terminal-tabs .tab[data-term="${id}"] .tab-pop`),
+    popBtn.click(),
   ]);
-  await popup2.waitForSelector('workspace-sidebar .nav');
-  await expect(popup2.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`);
+  await popout2.waitForSelector('workspace-sidebar .nav');
+  await expect(popout2.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`);
   await expect(page.locator('terminal-tabs agent-terminal')).toHaveCount(0);
-  await popup2.close();
+  await popout2.close();
   await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`, {
     timeout: 10_000,
   });
