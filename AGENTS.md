@@ -48,6 +48,22 @@ For authenticated API calls use in-page `fetch` (`page.evaluate`), not
 cookie over the suite's plain-http origin. Build first (`npm run build`)
 or let global-setup do it when dist/ is missing.
 
+The e2e suite also runs inside fleet sandboxes: the repo's
+`.sandbox-pi.json` selects the `agent-sandbox-node` image (tmux,
+node-pty's build toolchain, chromium's runtime libs + fonts — see
+`~/sandbox-images/`) and mounts the host browser cache read-only plus
+shared npm/node-gyp caches, so `npm ci` → build → units → e2e needs no
+setup and no workarounds (a full cold ladder is a few minutes). Each
+container has its own `/tmp`, so worker runs never collide with each
+other or with a host run. If Playwright complains about a missing
+browser revision, the host cache is stale: run `npx playwright install
+chromium` on the HOST once — the sandbox mount is read-only. Assertions
+that poke the environment directly must stay gVisor-tolerant (tmux's
+`#{pane_current_path}` resolves empty there — pty-master TIOCGSID is
+ENOTTY — and fast-boot timing can outpace a live status poll; prefer
+round-trips through the UI and pre-installed recorders over side-channel
+probes).
+
 ## node:sqlite
 
 The state db (`src/lib/db.ts`) uses the built-in `node:sqlite`, which
@@ -84,7 +100,8 @@ defines first, Lit renders a second copy next to the declarative-shadow-
 DOM content (everything appears twice; layout doubles in height). After
 adding a `wa-*` element to a page, verify it
 upgrades in a real browser (headless Chromium via the playwright install in
-`~/projects/validation-enhancer` works), not just in the SSR HTML.
+`~/projects/validation-enhancer` works, as does a fleet sandbox — see
+Testing), not just in the SSR HTML.
 
 ### Forms on wa-* controls
 
@@ -140,4 +157,8 @@ upgrades in a real browser (headless Chromium via the playwright install in
 ## Fleet merge process
 
 Fleet work lands on `task/*` branches (one per worker, all cut from the same
-base). Integration is ONE BRANCH AT A TIME. Fleet agents must be instructed to skip e2e testing; it doesn't work well in the sandbox. The orchestrator is responsible for running e2e tests.
+base). Integration is ONE BRANCH AT A TIME. Fleet sandboxes are e2e-capable
+(see Testing): workers should self-test with the full suite before reporting
+done on UI- or server-touching work — a run is a few minutes and needs no
+setup. The orchestrator still runs e2e as the integration gate per merged
+branch; host runs are serial (one `/tmp/web-pi-itest` at a time).
