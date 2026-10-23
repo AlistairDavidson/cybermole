@@ -14,6 +14,10 @@ import { expect, test } from '@playwright/test';
 
 const ROOT = path.resolve(__dirname, '..');
 const INPUT = 'tester\ncorrect-horse-9\ncorrect-horse-9\n';
+/** compose's dev seed input: user/pass/pass piped to --if-unset (the dev
+ *  service's printf — test/test, under the ≥8 minimum the interactive and
+ *  plain piped modes keep). */
+const SEED_INPUT = 'test\ntest\ntest\n';
 
 /** Child env with the CYBERMOLE_ / PI_CODING_AGENT_ overrides stripped: the
  *  defaults under test must not see this machine's (or the suite's
@@ -21,18 +25,19 @@ const INPUT = 'tester\ncorrect-horse-9\ncorrect-horse-9\n';
 function bareEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined && !k.startsWith('CYBERMOLE_') && !k.startsWith('PI_CODING_AGENT')) env[k] = v;
+    if (v !== undefined && !k.startsWith('CYBERMOLE_') && !k.startsWith('PI_CODING_AGENT'))
+      env[k] = v;
   }
   return { ...env, ...extra };
 }
 
 /** run set-password with exactly the given CYBERMOLE_* vars (port 0: never a
  *  real listener; set-password only parses the env, it never binds). */
-function setPassword(env: Record<string, string>) {
-  return spawnSync('node', ['dist-server/server/set-password.js'], {
+function setPassword(env: Record<string, string>, args: string[] = [], input = INPUT) {
+  return spawnSync('node', ['dist-server/server/set-password.js', ...args], {
     cwd: ROOT,
     env: bareEnv({ CYBERMOLE_PORT: '0', ...env }),
-    input: INPUT,
+    input,
   });
 }
 
@@ -117,7 +122,11 @@ test('server boot seeds pi-agent from the repo template; CYBERMOLE_AGENT_DIR out
 
   const state = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-state-dir-'));
   const agent = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-agent-dir-'));
-  await bootServer({ CYBERMOLE_HOME: home, CYBERMOLE_STATE_DIR: state, CYBERMOLE_AGENT_DIR: agent });
+  await bootServer({
+    CYBERMOLE_HOME: home,
+    CYBERMOLE_STATE_DIR: state,
+    CYBERMOLE_AGENT_DIR: agent,
+  });
   expectSeededFromTemplate(agent); // the per-path override wins, not <state>/pi-agent
   expect(fs.existsSync(path.join(state, 'pi-agent'))).toBe(false);
 });
@@ -133,8 +142,39 @@ test('CYBERMOLE_STATE_DIR moves the layout; CYBERMOLE_DB_FILE still outranks it'
   expect(fs.existsSync(path.join(home, '.local'))).toBe(false);
 
   const before = fs.statSync(path.join(state, 'cybermole.db')).mtimeMs;
-  const b = setPassword({ CYBERMOLE_HOME: home, CYBERMOLE_STATE_DIR: state, CYBERMOLE_DB_FILE: explicit });
+  const b = setPassword({
+    CYBERMOLE_HOME: home,
+    CYBERMOLE_STATE_DIR: state,
+    CYBERMOLE_DB_FILE: explicit,
+  });
   expect(b.status, b.stderr?.toString()).toBe(0);
   expect(fs.existsSync(explicit)).toBe(true);
   expect(fs.statSync(path.join(state, 'cybermole.db')).mtimeMs).toBe(before); // untouched
+});
+
+test('--if-unset seeds a fresh state dir once, never over an existing credential', () => {
+  // The dev profile's boot command, through the built artifact: the seed
+  // lands in CYBERMOLE_STATE_DIR (under the ≥8 minimum — the mode's
+  // deliberate exception), and a later human password survives the seed
+  // re-running on every recreate.
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-state-dir-'));
+  const db = path.join(state, 'cybermole.db');
+  const username = () =>
+    (
+      new DatabaseSync(db).prepare('SELECT username FROM credential').get() as
+        { username: string } | undefined
+    )?.username;
+
+  const seed = setPassword({ CYBERMOLE_STATE_DIR: state }, ['--if-unset'], SEED_INPUT);
+  expect(seed.status, seed.stderr?.toString()).toBe(0);
+  expect(username()).toBe('test');
+
+  const changed = setPassword({ CYBERMOLE_STATE_DIR: state }); // dev:set-password
+  expect(changed.status, changed.stderr?.toString()).toBe(0);
+  expect(username()).toBe('tester');
+
+  const reseed = setPassword({ CYBERMOLE_STATE_DIR: state }, ['--if-unset'], SEED_INPUT);
+  expect(reseed.status, reseed.stderr?.toString()).toBe(0);
+  expect(reseed.stdout?.toString()).toBe(''); // silent no-op
+  expect(username()).toBe('tester'); // the user's password survived the recreate
 });

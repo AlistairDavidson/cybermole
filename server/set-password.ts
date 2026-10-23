@@ -3,11 +3,19 @@
 // Interactive:
 //   npm run set-password   (or: node dist-server/server/set-password.js)
 // Piped:  printf 'user\npass\npass\n' | node dist-server/server/set-password.js
+// Seed:   printf 'user\npass\npass\n' | node dist-server/server/set-password.js --if-unset
+//   — dev's first-boot credential (compose seeds test/test): same piped
+//   input, but a no-op (exit 0, silent) when a credential row already
+//   exists, so a password the user set later survives every container
+//   recreate. The ≥8-char minimum deliberately does NOT apply in this one
+//   mode: the guard exists to catch a human's typo at a prompt, while the
+//   seeder's input is a reviewed literal in compose.yaml — and login
+//   itself (auth.ts verify) enforces no length at all.
 // Logging: plain console.* on purpose (no src/lib/logger.ts) — this is a
 // one-shot CLI for a human at a terminal; wiring it to the winston logger
 // would timestamp/format an interactive prompt's own output.
 import * as readline from 'node:readline';
-import { setCredential } from '../src/lib/auth';
+import { Auth, setCredential } from '../src/lib/auth';
 import { StateDb } from '../src/lib/db';
 import { ENV } from '../src/lib/env';
 
@@ -62,6 +70,11 @@ function readPiped(): Promise<string[]> {
 }
 
 void (async (): Promise<void> => {
+  // The seed mode (see the header): checked before the input validation
+  // below — an existing credential is a no-op whatever came in on stdin,
+  // and a db that can't be READ is an error, never "unset" (fail-closed,
+  // the same line auth.ts draws).
+  const ifUnset = process.argv.includes('--if-unset');
   let username: string, pw: string, pw2: string;
   if (process.stdin.isTTY) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -79,8 +92,16 @@ void (async (): Promise<void> => {
     console.error('username required');
     process.exit(1);
   }
-  if (!pw || pw.length < 8) {
-    console.error('password must be >= 8 chars');
+  if (ifUnset) {
+    const configured = new Auth(stateDb).configured();
+    if (!configured.ok) {
+      console.error(configured.errorMessage);
+      process.exit(1);
+    }
+    if (configured.data.value) process.exit(0);
+  }
+  if (!pw || (!ifUnset && pw.length < 8)) {
+    console.error(ifUnset ? 'password required' : 'password must be >= 8 chars');
     process.exit(1);
   }
   if (pw !== pw2) {
