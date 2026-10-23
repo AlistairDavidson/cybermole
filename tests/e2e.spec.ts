@@ -2467,9 +2467,20 @@ test('SIGTERM: every socket gets restart, closes, and the process exits 0', asyn
       ).loadState(),
     );
     await page.click(`workspace-sidebar li[data-ws="${wsMade.id}"]`);
+    // the workspace's auto-opened first tab (task/defaults-settings)
+    const autoId = await page
+      .locator('terminal-tabs .tabs-bar .tab')
+      .first()
+      .getAttribute('data-term');
+    expect(autoId).toBeTruthy();
     await page.click('terminal-tabs .tab-new'); // creates + selects the terminal tab
-    // the ACTIVE tab — the one just created; the workspace's first tab
-    // (auto-opened, task/defaults-settings) is a different row
+    // the create+select is async — wait for the selection to leave the
+    // auto tab before reading it (see the restart-survival spec)
+    await expect
+      .poll(() =>
+        page.locator('terminal-tabs .tabs-bar .tab.active').getAttribute('data-term'),
+      )
+      .not.toBe(autoId);
     const tabId = await page
       .locator('terminal-tabs .tabs-bar .tab.active')
       .getAttribute('data-term');
@@ -2755,9 +2766,24 @@ test('a terminal tab survives a WEB restart: tmux keeps the session, the client 
     expect(wsMade.status, JSON.stringify(wsMade.json)).toBe(200);
     await refreshState(page);
     await page.click(`workspace-sidebar li[data-ws="${wsMade.json.id}"]`);
+    // the workspace's auto-opened first tab (task/defaults-settings) — its
+    // id is needed to tell the tab under test apart
+    const autoId = await page
+      .locator('terminal-tabs .tabs-bar .tab')
+      .first()
+      .getAttribute('data-term');
+    expect(autoId).toBeTruthy();
     await page.click('terminal-tabs .tab-new');
-    // the ACTIVE tab — the one just created (+ selected). The workspace's
-    // FIRST tab (auto-opened, task/defaults-settings) is a different row.
+    // The create+select is ASYNC (POST → loadState → selectTerminal): wait
+    // for the second tab AND for the selection to move to it — reading
+    // .tab.active too early returns the auto tab and every later
+    // attached-to-t-<tabId> assertion then pins the wrong pane.
+    await expect(page.locator('terminal-tabs .tabs-bar .tab')).toHaveCount(2);
+    await expect
+      .poll(() =>
+        page.locator('terminal-tabs .tabs-bar .tab.active').getAttribute('data-term'),
+      )
+      .not.toBe(autoId);
     const tabId = await page
       .locator('terminal-tabs .tabs-bar .tab.active')
       .getAttribute('data-term');

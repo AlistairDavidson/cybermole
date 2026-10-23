@@ -108,11 +108,14 @@ const source = (overridden: boolean): string => (overridden ? 'override saved' :
           {...defaultsValidation.shellCommand}
         />
         <div class="wa-cluster wa-gap-2xs">
-          <wa-button id="save-terminal-defaults" variant="brand" size="s">
+          <!-- type=button + onclick→requestSubmit (the jobs-dialog pattern):
+               wa-button is form-associated, and a default-action submit here
+               would race the validated requestSubmit below. -->
+          <wa-button id="save-terminal-defaults" type="button" variant="brand" size="s">
             <wa-icon slot="start" name="floppy-disk"></wa-icon>
             save
           </wa-button>
-          <wa-button id="reset-terminal-defaults" size="s" appearance="plain">
+          <wa-button id="reset-terminal-defaults" type="button" size="s" appearance="plain">
             reset to defaults
           </wa-button>
         </div>

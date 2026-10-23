@@ -56,11 +56,20 @@ export class SettingsApp extends HTMLElement {
       const button = (e.target as HTMLElement).closest('wa-button');
       if (button?.id === 'update-pi') void this.updatePi();
       else if (button?.id === 'logout-all') void this.logoutAll();
-      // The form's own buttons requestSubmit (never a bare submit:
-      // validation-enhancer-zod must run first — the AGENTS.md rule).
-      else if (button?.id === 'save-terminal-defaults') this.defaultsForm()?.requestSubmit();
-      else if (button?.id === 'reset-terminal-defaults') void this.resetDefaults();
     });
+    // The terminal-defaults buttons: direct onclick on the hosts
+    //  (jobs-app's #job-save pattern — they live inside the form, where a
+    //  native submit default action would race the validated submit).
+    //  The save button requestSubmits so validation-enhancer-zod runs
+    //  first (the AGENTS.md rule); the reset posts its explicit nulls.
+    (this.querySelector('#save-terminal-defaults') as HTMLElement | null)?.addEventListener(
+      'click',
+      () => this.defaultsForm()?.requestSubmit(),
+    );
+    (this.querySelector('#reset-terminal-defaults') as HTMLElement | null)?.addEventListener(
+      'click',
+      () => void this.resetDefaults(),
+    );
     this.addEventListener('change', e => {
       if ((e.target as HTMLElement).id === 'pi-auto-update') void this.toggleAutoUpdate();
     });
@@ -85,6 +94,18 @@ export class SettingsApp extends HTMLElement {
         ),
       );
     void customElements.whenDefined('wa-input').then(() => this.prefillDefaults());
+    // A blocked submit leaves the zod layer's setCustomValidity on the
+    //  wa-input HOST (the inner input's own state clears on edit; the
+    //  host's does not) — and requestSubmit's interactive validation
+    //  consults the host, silently refusing to submit at all. Clear the
+    //  stale flag on every edit (observed here, on the host — before the
+    //  enhancer's ancestor listener re-marks a still-invalid value, so a
+    //  zod error keeps showing while it should).
+    for (const name of ['agentCommand', 'shellCommand'] as const) {
+      this.defaultsField(name)?.addEventListener('input', function (this: WaInputLike) {
+        this.setCustomValidity('');
+      });
+    }
     this.localizeTimes();
   }
 
