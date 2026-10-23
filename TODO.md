@@ -1,3 +1,6 @@
+## Agentic development
+Summary versions of tests with minimal text, MCPs akin to barbarus
+
 ## Infrastructure
 preact signals - make this available for any frontend state needs apps might have in future
 lit?
