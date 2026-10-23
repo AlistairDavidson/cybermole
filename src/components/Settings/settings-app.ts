@@ -39,10 +39,12 @@ interface WaSwitchLike extends HTMLElement {
   disabled: boolean;
 }
 /** wa-input's surface for the terminal-defaults fields. An empty
- *  wa-input's value is null, not '' — here that IS the payload: null
- *  clears the override (the schema says the same). */
+ *  wa-input's value is null, not '' — and either way the payload means
+ *  CLEAR: the schema normalizes '' to null (validation-enhancer-zod
+ *  feeds an emptied field as ''). */
 interface WaInputLike extends HTMLElement {
   value: string | null;
+  name: string;
   setCustomValidity(message: string): void;
 }
 
@@ -111,6 +113,10 @@ export class SettingsApp extends HTMLElement {
 
   // ---- terminal defaults (task/defaults-settings) ----
 
+  /** The effective values this element last applied to the fields — the
+   *  edit-detector prefillDefaults() skips changed fields against. */
+  private applied: { agentCommand: string; shellCommand: string } | null = null;
+
   private defaultsForm(): HTMLFormElement | null {
     return this.querySelector('#terminal-defaults-form');
   }
@@ -154,15 +160,32 @@ export class SettingsApp extends HTMLElement {
 
   /** Fill the two fields with the server's effective values (the source
    *  region's data attributes — #terminal-defaults-source, refreshed by
-   *  refresh()). Runs on load and after every save/reset, so the fields
-   *  always show what the next tab would run. */
+   *  refresh()). Runs on load and after every save/reset — but never over
+   *  a field the user has edited since: the refresh ride can land while
+   *  they type, and clobbering their edit (or quietly re-saving it as the
+   *  stale shown value) is the worse wrong. A field is skipped when its
+   *  current value no longer equals the one WE last applied. */
   private prefillDefaults(): void {
     const source = this.$('terminal-defaults-source');
     const agent = this.defaultsField('agentCommand');
     const shell = this.defaultsField('shellCommand');
     if (!source || !agent || !shell) return;
-    agent.value = source.dataset.agentCommand ?? '';
-    shell.value = source.dataset.shellCommand ?? '';
+    const next = {
+      agentCommand: source.dataset.agentCommand ?? '',
+      shellCommand: source.dataset.shellCommand ?? '',
+    };
+    const apply = (
+      control: WaInputLike,
+      name: 'agentCommand' | 'shellCommand',
+      value: string,
+    ): void => {
+      const before = this.applied;
+      const edited = before !== null && (control.value ?? '') !== before[name];
+      if (!edited) control.value = value;
+    };
+    apply(agent, 'agentCommand', next.agentCommand);
+    apply(shell, 'shellCommand', next.shellCommand);
+    this.applied = next;
   }
 
   private defaultsCallout(): WaCalloutLike {
@@ -175,8 +198,9 @@ export class SettingsApp extends HTMLElement {
     const shell = this.defaultsField('shellCommand');
     if (!agent || !shell) return;
     result.classList.add('hidden');
-    // An empty field is null on an upgraded wa-input: null CLEARS the
-    //  override (reset-to-default per field); whitespace-only never got
+    // An emptied field is null on an upgraded wa-input ('' once the
+    //  enhancer has had it) — either way the schema's transform makes it
+    //  null: the PER-FIELD clear. A too-long or multiline value never got
     //  past the enhancer.
     const sent = await signedInFetch(`${BASE}/api/settings`, {
       method: 'POST',
@@ -206,6 +230,10 @@ export class SettingsApp extends HTMLElement {
     result.variant = 'success';
     result.textContent = 'saved — the next terminal runs it';
     result.classList.remove('hidden');
+    // What was sent is what the server now reports — mark the fields as
+    // ours at these values, so the refresh's prefill skips only a field
+    // genuinely edited while the save was in flight.
+    this.applied = { agentCommand: agent.value ?? '', shellCommand: shell.value ?? '' };
     void this.refresh(); // the source line + the config row re-render server-side
   }
 
@@ -230,6 +258,7 @@ export class SettingsApp extends HTMLElement {
     result.variant = 'success';
     result.textContent = 'back to the defaults (env / built-in chain)';
     result.classList.remove('hidden');
+    this.applied = null; // a reset MEANS re-filling both fields from the server
     void this.refresh();
   }
 

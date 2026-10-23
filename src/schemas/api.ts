@@ -140,25 +140,29 @@ export const MAX_TERMINAL_COMMAND = 500;
 const SINGLE_LINE = /^[^\r\n]*$/;
 
 /** POST /api/settings (save terminal defaults) — the same schema the
- *  /settings form validates with in the browser. Per field: a string
- *  SETS the db override, null CLEARS it back to the default chain (an
- *  empty wa-input's value is null, so an emptied field + save IS the
- *  reset), absent KEEPS the stored value. A whitespace-only string is
- *  the invalid case — min(1) applies after the trim, so '   ' fails
- *  where '' never arrives (it reads as null). */
+ *  /settings form validates with in the browser. Per field: a NON-EMPTY
+ *  string SETS the db override, null CLEARS it back to the default
+ *  chain, absent KEEPS the stored value. An empty (or whitespace-only:
+ *  trim runs first) string ALSO clears — validation-enhancer-zod feeds an
+ *  emptied wa-input as '' (its value is null, coerced before zod), so ''
+ *  must parse or the per-field clear could never pass client validation;
+ *  the transform normalizes it to the same null. What is INVALID, on both
+ *  sides: longer than MAX_TERMINAL_COMMAND, or more than one line. */
 export const terminalDefaultsBody = z.object({
   agentCommand: z
     .string()
     .trim()
-    .min(1, 'command is required')
     .max(MAX_TERMINAL_COMMAND, `command is too long (max ${MAX_TERMINAL_COMMAND})`)
     .regex(SINGLE_LINE, 'command must be one line')
-    .nullable(),
+    .transform(v => (v === '' ? null : v))
+    .nullable()
+    .optional(),
   shellCommand: z
     .string()
     .trim()
-    .min(1, 'command is required')
     .max(MAX_TERMINAL_COMMAND, `command is too long (max ${MAX_TERMINAL_COMMAND})`)
     .regex(SINGLE_LINE, 'command must be one line')
-    .nullable(),
+    .transform(v => (v === '' ? null : v))
+    .nullable()
+    .optional(),
 });

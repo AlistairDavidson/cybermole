@@ -87,10 +87,11 @@ const source = (overridden: boolean): string => (overridden ? 'override saved' :
          new tab would actually run, never the raw db value), so a save
          writes both as typed (pinning a shown default to the db is the
          accepted cost of the form never lying); an EMPTIED field saves as
-         null, which clears the override — the reset button does the same
-         for both at once. The form is deliberately OUTSIDE the
-         data-refresh regions (wa-* would need rehydrating on swap);
-         <settings-app> re-fills the fields from the region's data below. -->
+         a clear (the schema normalizes '' to null — the per-field reset;
+         the reset button does both at once). The form is deliberately
+         OUTSIDE the data-refresh regions (wa-* would need rehydrating on
+         swap); <settings-app> re-fills the fields from the region's data
+         below. -->
     <validation-enhancer-zod>
       <form id="terminal-defaults-form" class="wa-stack wa-gap-s" novalidate>
         <WaField
