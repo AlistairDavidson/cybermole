@@ -44,6 +44,37 @@ import '../AgentTerminal/agent-terminal';
 /** The editor tab's pseudo-id (a terminal id is a uuid — no collision). */
 const EDITOR = 'editor';
 
+/** The editor pane's src: the same-origin /editor proxy with the
+ *  workspace cwd as the ?folder= param (spike-pinned, URI-encoded). No
+ *  theme param — VERIFIED against the vendored reh-web build (1.140.x,
+ *  docs/editor-webapp.md): the workbench client parses only folder/
+ *  workspace/ew from the URL, so a theme param would be ignored. The
+ *  workbench instead follows the BROWSER's scheme at boot (the proxy
+ *  injects window.autoDetectColorScheme — src/lib/editor.ts), which is
+ *  why a mode flip RELOADS the iframe (see the observer below): a reload
+ *  re-reads the scheme at boot and lands the pane in the new mode. */
+const editorSrc = (cwd: string): string => `${BASE}/editor/?folder=${encodeURIComponent(cwd)}`;
+
+// One page-wide observer (the agent-terminal shared-wake pattern): when
+// Base.astro's blocking script flips html's wa-dark/wa-light classes, an
+// existing editor pane re-navigates. Re-assigning src (even the same
+// value) is a reload per the iframe spec — the workbench re-boots in the
+// now-current mode. The injected autoDetectColorScheme default
+// (src/lib/editor.ts) sometimes re-themes a booted workbench live too,
+// but not reliably (it rides a theme-file fetch); the reload is the
+// deterministic path and is task-sanctioned — the two converge on the
+// same theme either way. Workspace state is server-side; nothing is
+// lost but the pane's scroll position.
+let editorThemeArmed = false;
+function armEditorThemeReload(): void {
+  if (editorThemeArmed) return;
+  editorThemeArmed = true;
+  new MutationObserver(() => {
+    for (const frame of document.querySelectorAll<HTMLIFrameElement>('iframe.editor-frame'))
+      frame.src = frame.src; // eslint-disable-line no-self-assign -- a reload, on purpose
+  }).observe(document.documentElement, { attributeFilter: ['class'], attributes: true });
+}
+
 /** After a popped window's pagehide, how long before `closed` is trusted
  * (the close settles just after the event; a navigation does not). */
 const POPUP_GONE_MS = 300;
@@ -470,13 +501,14 @@ export class TerminalTabs extends HTMLElement {
 
   /** The editor iframe pane — created on first open of the editor tab (a
    *  hidden iframe would still boot the whole workbench), src pinned by
-   *  the spike's ?folder= shape (URI-encoded). */
+   *  the spike's ?folder= shape (URI-encoded, editorSrc above). */
   private ensureEditorPane(): void {
     if (this.editorPane || !this.body || !this.ws) return;
+    armEditorThemeReload();
     const frame = document.createElement('iframe');
     frame.className = 'editor-frame hidden';
     frame.title = 'editor';
-    frame.src = `${BASE}/editor/?folder=${encodeURIComponent(this.ws.cwd)}`;
+    frame.src = editorSrc(this.ws.cwd);
     this.body.appendChild(frame);
     this.editorPane = frame;
   }

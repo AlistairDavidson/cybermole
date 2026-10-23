@@ -32,10 +32,12 @@ import { EventsRelay, checkEventsUpgrade } from '../src/lib/events-ws';
 import { AutoUpdater } from '../src/lib/auto-update';
 import {
   EDITOR_HOP_BY_HOP_HEADERS,
+  EDITOR_HTML_REWRITE_MAX_BYTES,
   EditorTunnelTracker,
   editorBodyCapStatus,
   editorSecurityHeaders,
   editorUpgradeHeaders,
+  injectWorkbenchThemeDefaults,
   isEditorHttpPath,
   isEditorUpgradePath,
   type EditorUpstream,
@@ -662,6 +664,44 @@ function proxyEditorRequest(
     // only fills absent ones. Assets keep the global set.
     if ((out['content-type'] ?? '').startsWith('text/html')) {
       for (const [name, value] of Object.entries(editorSecurityHeaders())) out[name] = value;
+      // The ONE buffered editor body (task/theme-browser): the boot
+      // document is a few KiB, and it is the only body the proxy rewrites
+      // — injecting the color-scheme configurationDefaults (src/lib/
+      // editor.ts, verified end to end against the vendored build). The
+      // upstream serves it CHUNKED (no content-length — verified), so the
+      // cap is enforced by watching the byte count: over the cap this
+      // stops being the boot document (a future pin, an error page), the
+      // buffered bytes flush through UNREWRITTEN and the rest streams —
+      // never buffered, never lost. A content-encoding (a compressed body)
+      // would make a text rewrite corrupt — stream it through untouched.
+      if (!('content-encoding' in out)) {
+        const chunks: Buffer[] = [];
+        let buffered = 0;
+        let overflowed = false;
+        upstreamRes.on('data', (chunk: Buffer) => {
+          if (overflowed) return; // already streaming from below
+          chunks.push(chunk);
+          buffered += chunk.length;
+          if (buffered > EDITOR_HTML_REWRITE_MAX_BYTES) {
+            // Not the boot document: flush what's buffered — the crossing
+            // chunk INCLUDED — and stream the rest (content-length, if any,
+            // is still exact: every byte passes through unchanged).
+            overflowed = true;
+            res.writeHead(upstreamRes.statusCode ?? 502, out);
+            res.write(Buffer.concat(chunks));
+            chunks.length = 0;
+            upstreamRes.pipe(res);
+          }
+        });
+        upstreamRes.on('end', () => {
+          if (overflowed) return; // the streaming path owns the response
+          const body = injectWorkbenchThemeDefaults(Buffer.concat(chunks).toString('utf8'));
+          out['content-length'] = String(Buffer.byteLength(body));
+          res.writeHead(upstreamRes.statusCode ?? 502, out);
+          res.end(body);
+        });
+        return;
+      }
     }
     res.writeHead(upstreamRes.statusCode ?? 502, out);
     // STREAMED, never buffered — the workbench bundles are tens of MB.
@@ -907,12 +947,18 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     return;
   }
 
-  // PWA files from public/ (service worker, manifest, icons): served with
-  // or without a session — the login page links the manifest and registers
-  // the worker before any auth can exist, and none of them carry data.
+  // PWA files from public/ (service worker, manifest, icons, theme boot
+  // script): served with or without a session — the login page links the
+  // manifest, registers the worker and loads the theme script before any
+  // auth can exist, and none of them carry data.
   if (req.method === 'GET' && url.startsWith(CFG.base)) {
     const rel = url.slice(CFG.base.length).replace(/^\//, '');
-    if (rel === 'sw.js' || rel === 'manifest.webmanifest' || rel.startsWith('icons/')) {
+    if (
+      rel === 'sw.js' ||
+      rel === 'theme-boot.js' ||
+      rel === 'manifest.webmanifest' ||
+      rel.startsWith('icons/')
+    ) {
       sendClientFile(res, '/' + rel, rel.startsWith('icons/'));
       return;
     }

@@ -12,10 +12,13 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
   EditorTunnelTracker,
+  EDITOR_HTML_REWRITE_MAX_BYTES,
   EDITOR_MAX_BODY_BYTES,
+  EDITOR_THEME_CONFIGURATION_DEFAULTS,
   editorBodyCapStatus,
   editorSecurityHeaders,
   editorUpgradeHeaders,
+  injectWorkbenchThemeDefaults,
   isEditorHttpPath,
   isEditorUpgradePath,
 } from '../../dist-server/src/lib/editor.js';
@@ -114,6 +117,104 @@ test('editorBodyCapStatus: sized to a big save, chunked accepted, small bodies p
     null,
   );
   assert.equal(editorBodyCapStatus({ method: 'HEAD', headers: {} }), null);
+});
+
+// ---------- the boot document's color-scheme injection (task/theme-browser) ----------
+
+/** The REAL boot document shape (fetched from the pinned reh-web build at
+ *  verification time): the construction options ride a meta tag with HTML
+ *  attribute escaping, and the URL params the workbench parses are ONLY
+ *  folder/workspace/ew — there is no ?theme= (vscode.dev's wrapper adds
+ *  that site-side; this build ignores it). The injection is the mechanism
+ *  that makes the editor follow the BROWSER's scheme. */
+const BOOT_DOC = `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta id="vscode-workbench-web-configuration" data-settings="{&quot;remoteAuthority&quot;:&quot;127.0.0.1:3999&quot;,&quot;serverBasePath&quot;:&quot;/&quot;,&quot;enableWorkspaceTrust&quot;:false,&quot;callbackRoute&quot;:&quot;/stable-807/callback&quot;}">
+  </head>
+  <body aria-label="">
+  </body>
+</html>`;
+
+const injectedDoc = injectWorkbenchThemeDefaults(BOOT_DOC);
+const injectedMeta = /data-settings="([^"]*)"/.exec(injectedDoc)?.[1] ?? '';
+const injectedConfig = JSON.parse(injectedMeta.replaceAll('&quot;', '"').replaceAll('&amp;', '&'));
+
+test('injectWorkbenchThemeDefaults: the color-scheme defaults land in the construction options, everything else intact', () => {
+  assert.equal(
+    injectedConfig.configurationDefaults['window.autoDetectColorScheme'],
+    true,
+    'the workbench must follow the browser scheme (verified against a real boot)',
+  );
+  assert.equal(
+    injectedConfig.configurationDefaults['workbench.preferredDarkColorTheme'],
+    EDITOR_THEME_CONFIGURATION_DEFAULTS['workbench.preferredDarkColorTheme'],
+  );
+  assert.equal(
+    injectedConfig.configurationDefaults['workbench.preferredLightColorTheme'],
+    EDITOR_THEME_CONFIGURATION_DEFAULTS['workbench.preferredLightColorTheme'],
+  );
+  // the rest of the construction options survive verbatim (remoteAuthority
+  // is load-bearing: it is how the browser dials its WS back through us)
+  assert.equal(injectedConfig.remoteAuthority, '127.0.0.1:3999');
+  assert.equal(injectedConfig.serverBasePath, '/');
+  assert.equal(injectedConfig.enableWorkspaceTrust, false);
+  assert.equal(injectedConfig.callbackRoute, '/stable-807/callback');
+  // and the document around the meta is untouched — one rewrite, one place
+  assert.ok(injectedDoc.startsWith('<!DOCTYPE html>\n<html>\n  <head>'));
+  assert.ok(injectedDoc.endsWith('  </body>\n</html>'));
+});
+
+test('injectWorkbenchThemeDefaults: attribute escaping round-trips (&amp; in, &amp; out)', () => {
+  // a value that exercises the escaping both ways: & in the JSON must
+  // survive as & (not double-escape, not eat the following chars)
+  const doc = BOOT_DOC.replace(
+    '&quot;serverBasePath&quot;:&quot;/&quot;',
+    '&quot;serverBasePath&quot;:&quot;/a&amp;b&quot;',
+  );
+  const out = JSON.parse(
+    (/data-settings="([^"]*)"/.exec(injectWorkbenchThemeDefaults(doc))?.[1] ?? '')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&amp;', '&'),
+  );
+  assert.equal(out.serverBasePath, '/a&b');
+});
+
+test('injectWorkbenchThemeDefaults: existing configurationDefaults are kept (a default never clobbers an embedder setting)', () => {
+  const doc = BOOT_DOC.replace(
+    'enableWorkspaceTrust&quot;:false',
+    'enableWorkspaceTrust&quot;:false,&quot;configurationDefaults&quot;:{&quot;workbench.preferredDarkColorTheme&quot;:&quot;Abyss&quot;,&quot;editor.fontSize&quot;:14}',
+  );
+  const out = JSON.parse(
+    (/data-settings="([^"]*)"/.exec(injectWorkbenchThemeDefaults(doc))?.[1] ?? '')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&amp;', '&'),
+  );
+  assert.equal(out.configurationDefaults['editor.fontSize'], 14, 'unrelated keys pass through');
+  // ours wins for OUR keys only — the embedder's is the base, ours the
+  // theme provision layered on top (and a user's in-workbench pick still
+  // overrides both: these are defaults, not policy)
+  assert.equal(
+    out.configurationDefaults['workbench.preferredDarkColorTheme'],
+    EDITOR_THEME_CONFIGURATION_DEFAULTS['workbench.preferredDarkColorTheme'],
+  );
+});
+
+test('injectWorkbenchThemeDefaults: no meta tag / invalid JSON degrades to the input untouched (upstream shape change, never a dead editor)', () => {
+  // no construction meta at all (an upstream error page, a future shape)
+  const noMeta = '<!DOCTYPE html><html><head><title>502</title></head></html>';
+  assert.equal(injectWorkbenchThemeDefaults(noMeta), noMeta);
+  // the meta tag but broken JSON inside
+  const badJson = BOOT_DOC.replace(
+    /data-settings="[^"]*"/,
+    'data-settings="{&quot;remoteAuthority&quot;:,&quot;}',
+  );
+  assert.equal(injectWorkbenchThemeDefaults(badJson), badJson);
+  // and the cap is a real byte cap (the boot doc is a few KiB; anything
+  // at this size isn't one — server/main.ts streams it through instead)
+  assert.ok(EDITOR_HTML_REWRITE_MAX_BYTES >= 4096);
+  assert.ok(EDITOR_HTML_REWRITE_MAX_BYTES < 1_000_000);
 });
 
 // ---------- the upstream WS handshake headers ----------

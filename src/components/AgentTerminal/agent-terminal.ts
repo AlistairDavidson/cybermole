@@ -15,6 +15,7 @@
 // out. 'restart' (server shutdown) is the exception that reconnects: tmux
 // keeps the session, and the backoff lands back on it once it's back.
 import { Terminal } from '@xterm/xterm';
+import type { ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -104,15 +105,28 @@ let lastFindQuery = '';
 /** Live-search debounce while typing (ms). */
 const FIND_DEBOUNCE_MS = 150;
 
-/** Search-highlight colours, resolved once from the app's tokens in
- *  console.css :root — the one sanctioned home of hex. The addon paints
- *  literal #RRGGBB onto the canvas/overview ruler, so Web Awesome tokens
- *  (var() chains — a custom-property read returns the raw, unresolved
- *  stream) can't be used; the literals are read here instead. null when
- *  they don't resolve: find still runs, just unhighlighted. */
+/** The resolved color mode — the html class Base.astro's blocking script
+ *  maintains ('wa-dark' | 'wa-light', or '' without JS). The single
+ *  source of truth the mode-aware code below keys its caches on. */
+function currentColorMode(): string {
+  const cls = document.documentElement.classList;
+  return cls.contains('wa-dark') ? 'wa-dark' : cls.contains('wa-light') ? 'wa-light' : '';
+}
+
+/** Search-highlight colours, resolved from the app's tokens in
+ *  console.css's two mode blocks — the one sanctioned home of hex. The
+ *  addon paints literal #RRGGBB onto the canvas/overview ruler, so Web
+ *  Awesome tokens (var() chains — a custom-property read returns the raw,
+ *  unresolved stream) can't be used; the literals are read here instead.
+ *  Cached per MODE: the tokens re-resolve under the other class, so the
+ *  mode flip below invalidates the cache and open find bars re-run their
+ *  search to repaint. null when they don't resolve: find still runs, just
+ *  unhighlighted. */
 let findDecorations: ISearchDecorationOptions | null | undefined;
+let findDecorationsMode: string | null = null;
 function resolveFindDecorations(): ISearchDecorationOptions | undefined {
-  if (findDecorations === undefined) {
+  const mode = currentColorMode();
+  if (findDecorations === undefined || findDecorationsMode !== mode) {
     const cs = getComputedStyle(document.documentElement);
     const pick = (name: string): string => cs.getPropertyValue(name).trim();
     const match = pick('--cybermole-find-match');
@@ -128,6 +142,7 @@ function resolveFindDecorations(): ISearchDecorationOptions | undefined {
             activeMatchColorOverviewRuler: activeOverview,
           }
         : null;
+    findDecorationsMode = mode;
   }
   return findDecorations ?? undefined;
 }
@@ -170,6 +185,70 @@ function armSharedFind(): void {
   if (sharedFindArmed) return;
   sharedFindArmed = true;
   document.addEventListener('keydown', openFindOnCtrlF, true);
+}
+
+// ---- color mode (task/theme-browser) ----
+
+/** The pane's xterm theme, built from the RESOLVED mode: console.css's
+ *  html.wa-dark / html.wa-light blocks carry the Tokyo Night (Day)
+ * palettes as --cybermole-xterm-* literals, and this reads them back
+ * through getComputedStyle — no hex in the TS, and whichever class the
+ * blocking theme-boot script (Base.astro → public/theme-boot.js) set
+ * decides the palette. Keys whose token doesn't resolve (console.css
+ * missing) are simply absent: xterm falls
+ * back to its own defaults for them, at creation and on flips alike. */
+function resolveXtermTheme(): ITheme {
+  const cs = getComputedStyle(document.documentElement);
+  const pick = (name: string): string | undefined => {
+    const value = cs.getPropertyValue(name).trim();
+    return value === '' ? undefined : value;
+  };
+  const bright = (name: string): string | undefined => pick(`--cybermole-xterm-${name}-bright`);
+  const plain = (name: string): string | undefined => pick(`--cybermole-xterm-${name}`);
+  return {
+    background: plain('background'),
+    foreground: plain('foreground'),
+    cursor: plain('cursor'),
+    cursorAccent: plain('cursor-accent'),
+    selectionBackground: plain('selection-background'),
+    black: plain('black'),
+    red: plain('red'),
+    green: plain('green'),
+    yellow: plain('yellow'),
+    blue: plain('blue'),
+    magenta: plain('magenta'),
+    cyan: plain('cyan'),
+    white: plain('white'),
+    brightBlack: bright('black'),
+    brightRed: bright('red'),
+    brightGreen: bright('green'),
+    brightYellow: bright('yellow'),
+    brightBlue: bright('blue'),
+    brightMagenta: bright('magenta'),
+    brightCyan: bright('cyan'),
+    brightWhite: bright('white'),
+  };
+}
+
+/** One MutationObserver for every pane (the shared-wake pattern): the
+ *  blocking theme-boot script (Base.astro → public/theme-boot.js) flips
+ *  html's wa-dark/wa-light classes on a prefers-color-scheme change;
+ *  watching the CLASS (not matchMedia) means this runs strictly after
+ *  the flip, so the computed tokens already resolve to the new mode.
+ *  Every live pane gets options.theme set at runtime (xterm 6 re-runs its
+ *  ThemeService and both renderers follow), and open find bars re-run so
+ *  their canvas highlights repaint in the new mode's colors (the
+ *  decoration cache is mode-keyed, above). */
+let sharedThemeArmed = false;
+function armSharedThemeSync(): void {
+  if (sharedThemeArmed) return;
+  sharedThemeArmed = true;
+  new MutationObserver(() => {
+    for (const t of instances) t.refreshColorMode();
+  }).observe(document.documentElement, {
+    attributeFilter: ['class'],
+    attributes: true,
+  });
 }
 
 export class AgentTerminal extends HTMLElement {
@@ -232,6 +311,7 @@ export class AgentTerminal extends HTMLElement {
   connectedCallback(): void {
     instances.add(this);
     armSharedWake();
+    armSharedThemeSync();
     this.ensureToolbar();
     armSharedFind();
     if (this.terminal) {
@@ -239,9 +319,6 @@ export class AgentTerminal extends HTMLElement {
     }
 
     const terminalContainer = this.querySelector('.terminal-container') as HTMLElement;
-
-    const surfaceColor =
-      getComputedStyle(this).getPropertyValue('--wa-color-surface-default').trim() || '#11131a';
 
     this.terminal = new Terminal({
       cursorBlink: true,
@@ -253,9 +330,9 @@ export class AgentTerminal extends HTMLElement {
       // the addon throws "You must set the allowProposedApi option" on
       // every find otherwise.
       allowProposedApi: true,
-      theme: {
-        background: surfaceColor,
-      },
+      // The RESOLVED mode's palette (resolveXtermTheme above) — no hex
+      // here; console.css's --cybermole-xterm-* set owns the colors.
+      theme: resolveXtermTheme(),
     });
 
     this.fitXtermAddon = new FitAddon();
@@ -584,6 +661,21 @@ export class AgentTerminal extends HTMLElement {
     // Enter steps through matches.
     if (backwards) addon.findPrevious(query, { decorations: resolveFindDecorations() });
     else addon.findNext(query, { decorations: resolveFindDecorations() });
+  }
+
+  /** A color-mode flip (the shared class observer above): re-theme the
+   *  live terminal and repaint an open find bar's highlights in the new
+   *  mode's colors. */
+  refreshColorMode(): void {
+    if (this.terminal) this.terminal.options.theme = resolveXtermTheme();
+    if (this.findBar && !this.findBar.classList.contains('hidden')) this.rerunOpenFind();
+  }
+
+  /** A color-mode flip repainted the pane; re-run the open find bar's
+   *  search so its canvas highlights pick up the new mode's decoration
+   *  colors (the cached set is mode-keyed and just re-resolved). */
+  private rerunOpenFind(): void {
+    this.runFind(this.findQuery(), false);
   }
 
   attach(mode: 'terminal' | 'run', target: TerminalId | TmuxSessionName, key: ActiveKey): void {

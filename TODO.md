@@ -19,9 +19,6 @@ ability to configure which terminal is used (zsh default)
 
 hideable nav on desktop
 
-global light/dark mode from browser, not hard coded
-vscodium follow global light/dark mode
-
 Rename "Console" -> "Cybermole"
 
 ## Workspaces follow-ups (deferred with the plan — docs/workspaces-plan.md §14)

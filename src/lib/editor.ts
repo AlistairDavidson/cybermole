@@ -101,6 +101,98 @@ export function editorSecurityHeaders(): Record<string, string> {
  *  global bodySizeLimit uses. */
 export const EDITOR_MAX_BODY_BYTES = UPLOAD_MAX_BODY_BYTES;
 
+/** The largest editor HTML response the proxy will buffer to rewrite —
+ *  the workbench boot document is a few KiB; anything bigger than this
+ *  isn't it, and streams through untouched like every other editor body. */
+export const EDITOR_HTML_REWRITE_MAX_BYTES = 262_144;
+
+/** The configuration defaults the proxy injects into the workbench boot
+ *  document, making the editor follow the BROWSER's color scheme
+ *  (task/theme-browser). Background, all verified against the vendored
+ *  reh-web build (docs/editor-webapp.md pins it):
+ *
+ *  - The workbench client parses only folder/workspace/ew URL params —
+ *    a ?theme= param (vscode.dev's wrapper feature) does nothing here.
+ *  - Window-scope settings like workbench.colorTheme live BROWSER-side
+ *    (IndexedDB) in a web workbench, so provisioning settings.json in
+ *    the editor home volume can't set them either.
+ *  - The boot document carries its construction options in a
+ *    vscode-workbench-web-configuration meta tag, and its
+ *    configurationDefaults are honored — verified end to end against a
+ *    real booting workbench: with autoDetectColorScheme defaulted on, the
+ *    workbench opens dark/light matching the browser's scheme at boot,
+ *    and (its installPreferredSchemeListener armed by the same default)
+ *    often re-themes live on a flip too. That live follow was NOT
+ *    reliable in testing (it rides a theme-file fetch and can lag by
+ *    seconds), so the console RELOADS the editor pane on flips
+ *    (terminal-tabs.ts) — deterministic, and task-sanctioned; the
+ *    workbench's own live follow, when it wins the race, lands the same
+ *    theme either way.
+ *
+ *  They are DEFAULTS: a user who picks their own theme in the workbench
+ *  overrides colorTheme in their browser-side settings, and can turn the
+ *  detection off entirely — the provision is a default, not a policy. */
+export const EDITOR_THEME_CONFIGURATION_DEFAULTS: Record<string, unknown> = {
+  'window.autoDetectColorScheme': true,
+  // This build's flagship themes — the ids exist in the vendored
+  // theme-defaults extension ("Dark 2026"/"Light 2026", the renamed
+  // successors of "Default Dark/Light Modern").
+  'workbench.preferredDarkColorTheme': 'Dark 2026',
+  'workbench.preferredLightColorTheme': 'Light 2026',
+};
+
+/** The workbench boot document's construction-options channel: the meta
+ *  tag the reh-web server writes. `data-settings` carries JSON with the
+ *  HTML attribute escapes (&quot; / &amp;) — exactly the escaping the
+ *  server applies, so the round-trip is lossless for the JSON we parse
+ *  and re-stringify. */
+const WORKBENCH_CONFIG_META =
+  /(<meta\s+id="vscode-workbench-web-configuration"\s+data-settings=")([^"]*)(")/;
+
+const decodeAttribute = (value: string): string =>
+  value
+    .replaceAll('&quot;', '"')
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&amp;', '&'); // LAST: &amp; must not re-decode the entities above
+const encodeAttribute = (value: string): string =>
+  value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
+
+/** Inject EDITOR_THEME_CONFIGURATION_DEFAULTS into a workbench boot
+ *  document's construction options (see the constant for the why). Pure
+ *  string work, on purpose: the boot document is tiny, and the proxy
+ *  buffers exactly this much. Anything unexpected — no meta tag (an
+ *  upstream error page, or a shape change in a future pin), invalid
+ *  JSON — degrades to the input UNTOUCHED: the editor still boots, it
+ *  just stops following the browser's scheme, the pre-task behavior. */
+export function injectWorkbenchThemeDefaults(html: string): string {
+  const match = WORKBENCH_CONFIG_META.exec(html);
+  const encoded = match?.[2];
+  if (!match || encoded === undefined) return html;
+  let config: Record<string, unknown>;
+  try {
+    config = JSON.parse(decodeAttribute(encoded)) as Record<string, unknown>;
+  } catch {
+    return html;
+  }
+  const existing = config.configurationDefaults;
+  config.configurationDefaults = {
+    ...(typeof existing === 'object' && existing !== null ? existing : {}),
+    ...EDITOR_THEME_CONFIGURATION_DEFAULTS,
+  };
+  return (
+    html.slice(0, match.index) +
+    match[1] +
+    encodeAttribute(JSON.stringify(config)) +
+    match[3] +
+    html.slice(match.index + match[0].length)
+  );
+}
+
 /** Editor body-cap entry: 413 over the cap, and — unlike every other
  *  non-upload route — NEVER 411: a length-less (chunked) body is
  *  accepted, streamed to the upstream, and guarded by the stall watch
