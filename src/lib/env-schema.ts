@@ -106,4 +106,12 @@ export const envSchema = {
   // console hides its affordances. Validated at boot (env.ts
   // readEditorUpstream) like the S3 vars: a malformed value stops the server.
   CYBERMOLE_EDITOR_UPSTREAM: { type: 'string', context: 'server', access: 'secret', optional: true },
+  // task/logs-page: the BROWSER-reachable Grafana base URL the /logs page's
+  // iframe loads (the `observability` compose profile publishes grafana on
+  // the host loopback, e.g. http://127.0.0.1:3300 — the compose-internal
+  // http://grafana:3000 is NOT reachable from the operator's browser). THE
+  // single switch, like CYBERMOLE_EDITOR_UPSTREAM: unset/empty = the feature
+  // is off — no header link and /logs answers 404. Validated at boot (env.ts
+  // readGrafanaUrl) like the S3 vars: a malformed value stops the server.
+  CYBERMOLE_GRAFANA_URL: { type: 'string', context: 'server', access: 'secret', optional: true },
 } as const satisfies Record<string, ServerEnvField>;
