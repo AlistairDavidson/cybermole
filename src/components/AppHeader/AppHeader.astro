@@ -14,24 +14,36 @@ import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
 /** The bar's sections — `current` marks one link aria-current="page". */
-type Section = 'console' | 'jobs' | 'settings';
+type Section = 'console' | 'jobs' | 'logs' | 'settings';
 interface Props {
   current: Section;
+  /** task/logs-page: show the logs link (the /logs page's Grafana
+   *  iframe) — Base.astro sets it only when CYBERMOLE_GRAFANA_URL is
+   *  configured; unconfigured, the section does not exist at all. */
+  logs?: boolean;
 }
-const { current } = Astro.props;
+const { current, logs = false } = Astro.props;
 
 // Matches the server's CYBERMOLE_BASE ('' for root, else '/foo').
 const base = (import.meta.env.BASE_URL ?? '/').replace(/\/+$/, '');
 
+// The observability surface — absent unless a Grafana is wired up (the
+// link would 404: /logs answers 404 when unconfigured).
+const logsEntries: Array<{ section: Section; label: string; href: string; icon: string }> = logs
+  ? [{ section: 'logs', label: 'logs', href: `${base}/logs`, icon: 'file-lines' }]
+  : [];
+
 const links: Array<{ section: Section; label: string; href: string; icon: string }> = [
   { section: 'console', label: 'cybermole', href: `${base}/`, icon: 'terminal' },
   { section: 'jobs', label: 'jobs', href: `${base}/jobs`, icon: 'clock' },
+  ...logsEntries,
   { section: 'settings', label: 'settings', href: `${base}/settings`, icon: 'gear' },
 ];
-// Left of the split: the console brand + jobs (the apps list joins them
-// later). Right: everything else + sign-out.
-const left = links.filter(l => l.section === 'console' || l.section === 'jobs');
-const right = links.filter(l => l.section !== 'console' && l.section !== 'jobs');
+// Left of the split: the console brand + the content sections (jobs,
+// logs — the apps list joins them later). Right: everything else +
+// sign-out.
+const left = links.filter(l => l.section !== 'settings');
+const right = links.filter(l => l.section === 'settings');
 ---
 <app-header>
   <nav class="wa-cluster wa-gap-2xs" aria-label="cybermole">

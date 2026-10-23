@@ -24,8 +24,6 @@ vscodium follow global light/dark mode
 
 Rename "Console" -> "Cybermole"
 
-link to logs (page with grafana in an iframe)
-
 ## Workspaces follow-ups (deferred with the plan — docs/workspaces-plan.md §14)
 
 terminal tab drag-reorder + workspace/app reorder UI (the sort_order columns exist)

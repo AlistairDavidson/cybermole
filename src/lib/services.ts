@@ -80,6 +80,13 @@ export interface ServerConfig {
    *  editor-webapp.md), or null when not configured — the console then
    *  hides its editor affordances. */
   editorUpstream: EditorUpstream | null;
+  /** task/logs-page: the fully-built Grafana Explore URL the /logs page
+   *  frames (grafanaExploreUrlFromEnv() over CYBERMOLE_GRAFANA_URL —
+   *  src/lib/grafana.ts), or null when not configured: the header link
+   *  hides and /logs answers 404 (the editor-off pattern). Built at boot
+   *  so the page only reads a string (src/lib stays out of the Vite
+   *  bundle — CODE_STYLE §6). */
+  grafanaExploreUrl: string | null;
 }
 
 export interface CybermoleServices {

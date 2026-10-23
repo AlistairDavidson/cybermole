@@ -298,6 +298,7 @@ directly.
 | `CYBERMOLE_DEV_API` | `http://127.0.0.1:3001` | dev only: where `astro dev` proxies `/api`, `/partials`, `/editor`, `/ws`, login/logout (the `npm run dev:server` process) |
 | `CYBERMOLE_LOKI_URL` | *(unset: console-only)* | push URL of a Grafana Loki for the server's operational logs (`http://loki:3100` when the compose `observability` profile runs). Unset — the default, and the dev profile and plain hosts — logging is console-only, identical to before observability existed. A set-but-malformed value stops the server at boot, like the S3 vars |
 | `CYBERMOLE_LOKI_JOB` | `cybermole` | the `job` label every pushed log line carries — identifies this deployment in Loki's stream selectors. Letters, digits, `_`, `-`, max 64 chars |
+| `CYBERMOLE_GRAFANA_URL` | *(unset: logs page off)* | the **browser-reachable** Grafana URL the header's **logs** link frames (`http://127.0.0.1:3300` when the compose `observability` profile runs — the value must be routable from the operator's browser, not the compose network; a Grafana under a subpath works too). Unset — the default — there is no logs link and `/logs` answers 404, so compose interpolates it **default-off**: grafana exists only under the opt-in profile, and a default-on link would frame a dead port for every plain-stack user. Set, `/logs` embeds Grafana Explore with the provisioned Loki datasource preselected ([Observability](#observability-logs--loki-dashboards--grafana)). A malformed value stops the server at boot, like the S3 vars |
 
 Run under a dedicated unprivileged user (the app spawns a terminal — treat
 it as a web shell by design). Don't run it as root, don't put a sudo-wielding
@@ -463,7 +464,7 @@ deploy.
 ```sh
 docker compose build        # subpath deploy: 'The base path' below first — CYBERMOLE_BASE=/cybermole docker compose build
 docker compose up -d        # web + workspace + editor + seaweedfs + one-shot inits; loopback :3000, TLS reverse proxy in front
-docker compose --profile observability up -d   # additionally: loki + grafana (Observability below) — set CYBERMOLE_LOKI_URL too
+docker compose --profile observability up -d   # additionally: loki + grafana (Observability below) — set CYBERMOLE_LOKI_URL too (and CYBERMOLE_GRAFANA_URL for the /logs page)
 docker compose exec cybermole node dist-server/server/set-password.js   # once, on a fresh deploy
 ```
 
@@ -696,6 +697,36 @@ rejects oversized/too-old entries and overlong labels
 {job="cybermole", component="http"}   # the access log
 {job="cybermole"} |= "login failed"   # auth failures
 ```
+
+**The logs page (`/logs`).** The header grows a **logs** link — a page
+that frames Grafana's *Explore* with the provisioned Loki datasource
+(`cybermole-loki`) already selected, i.e. a working log-query UI without
+provisioning a single dashboard — only when `CYBERMOLE_GRAFANA_URL` is
+set. It is deliberately **default-off**: grafana exists only under this
+opt-in profile, and an on-by-default link would frame a dead port for
+every plain-stack user. Bring the profile up and set it (a `.env` next
+to `compose.yaml`, the pattern above, works — `up -d` then recreates
+cybermole):
+
+```sh
+echo 'CYBERMOLE_GRAFANA_URL=http://127.0.0.1:3300' >> .env
+CYBERMOLE_LOKI_URL=http://loki:3100 docker compose --profile observability up -d
+```
+
+The value must be reachable from the **operator's browser** (the iframe
+loads it directly) — the host's `http://127.0.0.1:3300` in the compose
+shape, not the container-network `http://grafana:3000`; a Grafana behind
+a reverse proxy under a subpath works too. Unset/empty: no header link,
+and `/logs` answers 404. The Explore URL is built server-side
+(`src/lib/grafana.ts`, pinned against the Grafana the compose file pins:
+the `panes`+`schemaVersion=1` format v13 parses, with the datasource
+uid preselected) and the page's CSP allows framing exactly that one
+origin. The compose grafana also sets `GF_SECURITY_ALLOW_EMBEDDING=true`
+— without it Grafana answers `X-Frame-Options: deny` and the frame stays
+blank; acceptable here because the port is loopback-only with anonymous
+read-only access. A non-compose Grafana works the same way: point
+`CYBERMOLE_GRAFANA_URL` at it (embedding enabled on its side) and the
+logs page follows.
 
 A non-compose install points `CYBERMOLE_LOKI_URL` at any reachable Loki
 the same way. Killing Loki (`docker compose stop loki`) must change

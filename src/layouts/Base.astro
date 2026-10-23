@@ -3,16 +3,24 @@ import "@awesome.me/webawesome/dist/styles/webawesome.css";
 import "@awesome.me/webawesome/dist/components/toast/toast.js";
 import { BASE } from "../base";
 import AppHeader from "../components/AppHeader/AppHeader.astro";
+import { assertCybermoleLocals } from "../lib/web/locals";
 
 interface Props {
   title: string;
   /** Renders the global header bar above the page (every signed-in
    *  page) and marks that section's link aria-current="page". Omitted on
    *  /login (not signed in yet) and the offline shell. */
-  header?: "console" | "jobs" | "settings";
+  header?: "console" | "jobs" | "logs" | "settings";
 }
 
 const { title, header } = Astro.props;
+// task/logs-page: the header's logs link exists only when a Grafana is
+// configured (cfg.grafanaExploreUrl). The services are present on every
+// page that renders the header — its page's assertCybermoleLocals already
+// ran in the frontmatter before this layout renders — so gate through the
+// same assert rather than a soft optional read: a miss here is a broken
+// invariant, not a state to render a link-less header around.
+const logs = header !== undefined && assertCybermoleLocals(Astro.locals).cybermole.cfg.grafanaExploreUrl !== null;
 // Mirrors --wa-color-surface-default
 const THEME_COLOR = "#11131a";
 ---
@@ -45,7 +53,7 @@ const THEME_COLOR = "#11131a";
     <meta name="apple-mobile-web-app-title" content="cybermole" />
   </head>
   <body class={header ? "app-chrome" : undefined}>
-    {header && <AppHeader current={header} />}
+    {header && <AppHeader current={header} logs={logs} />}
     <slot />
     <!-- App-wide toast stack (update notifications from the script below). -->
     <wa-toast placement="top-end"></wa-toast>

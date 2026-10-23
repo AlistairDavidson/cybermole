@@ -216,3 +216,29 @@ export function readEditorUpstream(): EditorUpstream | null {
   }
   return { origin: u.origin };
 }
+
+/** The browser-reachable Grafana base URL for the /logs page's iframe
+ *  (src/lib/grafana.ts builds the Explore URL from it), or null when
+ *  CYBERMOLE_GRAFANA_URL is unset/empty — the feature is then off: the
+ *  header link hides and /logs answers 404, exactly like an unset editor
+ *  upstream. Unlike the editor's, a PATH is fine: this is not a proxy —
+ *  the browser loads the URL itself, so a Grafana mounted under a
+ *  subpath (e.g. http://host/grafana) is legitimate; a query or fragment
+ *  still stops the boot (both would be silently dropped when the page
+ *  appends its /explore path). Empty strings count as unset (compose's
+ *  `VAR: ""`); trailing slashes are normalised away. */
+export function readGrafanaUrl(): string | null {
+  const raw = RAW_ENV.CYBERMOLE_GRAFANA_URL;
+  if (raw === undefined || raw.trim() === '') return null;
+  if (!URL.canParse(raw) || !/^https?:$/.test(new URL(raw).protocol)) {
+    throw new Error(`CYBERMOLE_GRAFANA_URL=${JSON.stringify(raw)} is not an http(s) URL`);
+  }
+  const u = new URL(raw);
+  if (u.search !== '' || u.hash !== '') {
+    throw new Error(
+      `CYBERMOLE_GRAFANA_URL=${JSON.stringify(raw)} must not carry a query or fragment ` +
+        '(the /logs page appends its own path)',
+    );
+  }
+  return `${u.origin}${u.pathname}`.replace(/\/+$/, '');
+}
