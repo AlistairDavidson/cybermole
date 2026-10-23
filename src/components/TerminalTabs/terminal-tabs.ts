@@ -14,15 +14,19 @@
 // innerHTML swaps of the bar (the AGENTS.md sidebar caveat): sync()
 // moves/adds/removes button nodes and touches classes.
 //
-// Pop-out (the ACTIVE tab's arrow button): a tab pops to its own browser
-// window at /?t=<id> — a MOVE, not a copy: the server's attach runs
-// `tmux attach -d`, which detaches any other client, so a popup and an
-// in-page pane would fight over the session. Popping tears the pane down
-// here (socket closed; the SESSION survives — unlike close-terminal,
-// which kills it), keeps the row (marked popped, a notice in the body),
-// and the terminal comes back on the popup's pagehide (this page holds
-// the window handle — same origin) or on the tab's next activation (a
-// fresh attach bumps the popup, once, no loop).
+// Pop-out (the pane toolbar's pop-out button, task/popout-toolbar): a
+// tab pops to its own browser TAB at /?t=<id> — a MOVE, not a copy: the
+// server's attach runs `tmux attach -d`, which detaches any other
+// client, so a popped tab and an in-page pane would fight over the
+// session. Popping tears the pane down here (socket closed; the SESSION
+// survives — unlike close-terminal, which kills it), keeps the row
+// (marked popped, a notice in the body), and the terminal comes back on
+// the popped tab's pagehide (this page holds the window handle — same
+// origin; window.open returns one for a tab too) or on the tab's next
+// activation (a fresh attach bumps the popped tab, once, no loop). The
+// button lives in the ACTIVE pane's toolbar (agent-terminal.ts's
+// ensureToolbar), so its click arrives here as a bubbled
+// 'terminal-pop-out' {id} — the panes are this element's descendants.
 //
 // Emits: new-terminal {workspaceId}, close-terminal {id},
 // new-workspace {appId} (the no-workspace empty state's prompt),
@@ -54,9 +58,9 @@ export class TerminalTabs extends HTMLElement {
   private readonly panes = new Map<TerminalId, AgentTerminal>();
   private bar: HTMLElement | null = null;
   private body: HTMLElement | null = null;
-  /** Popped tabs — the live window handle of each (its pagehide brings
-   *  the terminal back; `closed` catches a window that died without
-   *  one). */
+  /** Popped tabs — the live window handle of each (window.open returns
+   *  one for a tab too; its pagehide brings the terminal back, `closed`
+   *  catches a tab that died without one). */
   private readonly popped = new Map<TerminalId, Window>();
   /** The active popped tab's body notice (only one tab can be popped AND
    *  active; clicking any other tab clears it). */
@@ -66,8 +70,16 @@ export class TerminalTabs extends HTMLElement {
   private editorPane: HTMLIFrameElement | null = null;
   private runHost: HTMLElement | null = null;
   private runPane: AgentTerminal | null = null;
+  /** The panes' toolbar pop-out buttons arrive as bubbled
+   *  'terminal-pop-out' {id} events — a named field so a reconnect's
+   *  addEventListener dedupes (the reconnectNow pattern in
+   *  agent-terminal.ts). */
+  private readonly onPanePopOut = (e: Event): void => {
+    this.popTerminal((e as CustomEvent<{ id: TerminalId }>).detail.id);
+  };
 
   connectedCallback(): void {
+    this.addEventListener('terminal-pop-out', this.onPanePopOut);
     if (this.bar) return; // already built
     this.innerHTML = `
       <div class="tabs-bar" role="tablist" aria-label="terminal tabs"></div>
@@ -163,13 +175,13 @@ export class TerminalTabs extends HTMLElement {
 
   // ---- pop-out ----
 
-  /** Pop a tab's terminal out to its own window (/?t=<id> re-attaches it
-   *  there through the deep-link path). MOVE, not copy: the popup's
-   *  `tmux attach -d` would detach this page's pane the moment it
+  /** Pop a tab's terminal out to its own tab (/?t=<id> re-attaches it
+   *  there through the deep-link path). MOVE, not copy: the popped
+   *  tab's `tmux attach -d` would detach this page's pane the moment it
    *  attached, so the pane goes first — its socket closes, the SESSION
    *  survives (destroy(), not the close-terminal kill). The row stays,
-   *  marked popped; the terminal returns on the popup's pagehide or the
-   *  tab's next click. */
+   *  marked popped; the terminal returns on the popped tab's pagehide
+   *  or the tab's next click. */
   popTerminal(id: TerminalId): void {
     if (!this.ws || !this.ws.terminals.some(t => t.id === id)) return;
     const existing = this.popped.get(id);
@@ -177,12 +189,13 @@ export class TerminalTabs extends HTMLElement {
       if (!existing.closed) {
         existing.focus();
         return;
-      } // already popped: the click focuses its window
-      this.unpop(id); // its window died without a pagehide (crash): stale mark
+      } // already popped: the click focuses its tab
+      this.unpop(id); // its tab died without a pagehide (crash): stale mark
     }
-    // Open BEFORE tearing down: a blocked popup (this is the user-gesture
-    // call) must leave the pane exactly as it was.
-    const win = window.open(`${BASE}/?t=${id}`, '_blank', 'popup=true,width=1100,height=720');
+    // Open BEFORE tearing down: a refused open (this is the user-gesture
+    // call) must leave the pane exactly as it was. No features string:
+    // '_blank' alone is the browser's own NEW TAB, not a sized popup.
+    const win = window.open(`${BASE}/?t=${id}`, '_blank');
     if (!win) {
       this.dispatchEvent(
         new CustomEvent('pop-blocked', {
@@ -194,18 +207,19 @@ export class TerminalTabs extends HTMLElement {
       return;
     }
     this.popped.set(id, win);
-    // HOOK(pop-tab-window): the MOVE's teardown half — close this page's
-    // pane socket BEFORE the popup can attach, so its `attach -d` finds
-    // no client to detach (both attached, they would bump each other;
-    // reusing the close-terminal path here would instead KILL the tmux
-    // session the popup is about to open). destroyPane only closes the
-    // socket: the session survives for the popup's attach.
+    // HOOK(popout-toolbar): the MOVE's teardown half — close this page's
+    // pane socket BEFORE the popped tab can attach, so its `attach -d`
+    // finds no client to detach (both attached, they would bump each
+    // other; reusing the close-terminal path here would instead KILL the
+    // tmux session the popped tab is about to open). destroyPane only
+    // closes the socket: the session survives for the popped tab's
+    // attach.
     this.destroyPane(id);
     this.markPopped(id, true);
     this.showPoppedNotice();
-    // The pagehide listener rides the popup's window object, which
+    // The pagehide listener rides the popped tab's window object, which
     // same-origin navigation REUSES — so the initial about:blank →
-    // /?t=<id> swap fires pagehide too. Count it only once the window is
+    // /?t=<id> swap fires pagehide too. Count it only once the tab is
     // really gone (a swap leaves it open; a close flips `closed`), checked
     // after a beat to let the close settle.
     win.addEventListener('pagehide', () => {
@@ -215,7 +229,7 @@ export class TerminalTabs extends HTMLElement {
     });
   }
 
-  /** The popped window went away (its pagehide reaches this page through
+  /** The popped tab went away (its pagehide reaches this page through
    *  the handle — same origin). The active popped tab re-attaches here
    *  right away; an inactive one just drops its mark (its next
    *  activation attaches a fresh pane). */
@@ -225,14 +239,14 @@ export class TerminalTabs extends HTMLElement {
     if (this.active === id) this.selectTerminal(id);
   }
 
-  /** Drop a tab's popped mark (its window, if any, is no longer this
+  /** Drop a tab's popped mark (its tab, if any, is no longer this
    *  page's to manage — an old handle's pagehide is ignored above). */
   private unpop(id: TerminalId): void {
     if (this.popped.delete(id)) this.markPopped(id, false);
   }
 
-  /** The popped class on a tab's row button (dimmed; the CSS shows the
-   *  pop button on the active tab only) — and its aria label NOW, not at
+  /** The popped class on a tab's row button (dimmed — its terminal
+   *  lives in another tab) — and its aria label NOW, not at
    *  the next sync poll (updateTabButton recomputes the same string from
    *  state, so the two can never disagree). */
   private markPopped(id: TerminalId, on: boolean): void {
@@ -253,7 +267,7 @@ export class TerminalTabs extends HTMLElement {
     notice.className = 'tabs-empty tabs-popped';
     notice.innerHTML = `
       <wa-icon name="arrow-up-right-from-square"></wa-icon>
-      <p>popped out to its own window — click the tab to bring it back here</p>`;
+      <p>popped out to its own tab — click the tab to bring it back here</p>`;
     this.body.appendChild(notice);
     this.poppedNotice = notice;
   }
@@ -276,8 +290,8 @@ export class TerminalTabs extends HTMLElement {
     this.clearNoTerminals();
     this.clearPoppedNotice();
     // A popped tab's click is a bring-back: drop the mark and let the
-    // pane below re-attach (its `attach -d` bumps the popup's client —
-    // once; the popup's 'exit' ends its attach, no loop).
+    // pane below re-attach (its `attach -d` bumps the popped tab's
+    // client — once; the popped tab's 'exit' ends its attach, no loop).
     if (this.popped.has(id)) this.unpop(id);
     this.active = id;
     const dead = this.panes.get(id);
@@ -366,15 +380,9 @@ export class TerminalTabs extends HTMLElement {
     tab.innerHTML =
       `<span class="tab-dot" aria-hidden="true"></span>` +
       `<span class="tab-label"></span>` +
-      `<span class="tab-pop" role="button" title="pop out to its own window"><wa-icon name="arrow-up-right-from-square" label="pop out to its own window"></wa-icon></span>` +
       `<span class="tab-close" role="button" title="close this terminal"><wa-icon name="xmark" label="close terminal"></wa-icon></span>`;
     (tab.querySelector('.tab-label') as HTMLElement).textContent = t.title ?? '';
     tab.addEventListener('click', e => {
-      if ((e.target as HTMLElement).closest('.tab-pop')) {
-        e.stopPropagation();
-        this.popTerminal(t.id);
-        return;
-      }
       if ((e.target as HTMLElement).closest('.tab-close')) {
         e.stopPropagation();
         this.dispatchEvent(
@@ -484,7 +492,7 @@ export class TerminalTabs extends HTMLElement {
   }
 
   /** Everything pane-shaped goes: terminal panes, the editor iframe, the
-   *  run pane, the bar's buttons, the popped marks (their windows stay
+   *  run pane, the bar's buttons, the popped marks (their tabs stay
    *  open — an old handle's pagehide is a no-op in popupClosed). The
    *  bar/body shells stay. */
   private teardownPanes(): void {
