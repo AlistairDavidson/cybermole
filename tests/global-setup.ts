@@ -5,12 +5,12 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { setCredential } from '../src/lib/auth';
-import { StateDb, type DatabaseReadResult } from '../src/lib/db';
+import { StateDb, qb, type DatabaseReadResult } from '../src/lib/db';
 import { Apps } from '../src/lib/apps';
 import { Workspaces } from '../src/lib/workspaces';
 import { terminalSessionName } from '../src/lib/tmux';
 import { asAppId, asTerminalId } from '../src/types/branded';
-import { MARKER, PASSWORD, TMUX_SOCKET, USERNAME, WORKSPACE } from './env';
+import { AGENT_MARKER, MARKER, PASSWORD, TMUX_SOCKET, USERNAME, WORKSPACE } from './env';
 
 export default async function globalSetup(): Promise<void> {
   fs.rmSync(WORKSPACE, { recursive: true, force: true });
@@ -23,21 +23,36 @@ export default async function globalSetup(): Promise<void> {
   if (!saved.ok) throw new Error(`global-setup: ${saved.errorMessage}`);
 
   // Deterministic command for new terminal tabs: banner + a shell we can
-  // type into. CYBERMOLE_COMMAND is whitespace-split, so it must be one path.
+  // type into. CYBERMOLE_COMMAND is whitespace-split, so it must be one
+  // path. `agent` is the marker argument the AUTO-OPENED first terminal of
+  // a new workspace runs under (CYBERMOLE_AGENT_COMMAND — a distinct
+  // banner so the agent tab is tellable from a plain one).
   const cmd = path.join(WORKSPACE, 'cmd.sh');
-  fs.writeFileSync(cmd, `#!/bin/sh\necho '${MARKER}'\nexec /bin/sh\n`);
+  fs.writeFileSync(
+    cmd,
+    `#!/bin/sh\nif [ "$1" = "agent" ]; then echo '${AGENT_MARKER}'; else echo '${MARKER}'; fi\nexec /bin/sh\n`,
+  );
   fs.chmodSync(cmd, 0o755);
 
   // Fixture workspace tree (plan §5), written through the real domains:
   // one app, two console workspaces, one app workspace, terminals under
   // them. Rows only — no eager spawns; which fixture tabs read as LIVE is
   // decided by the tmux sessions below (the live diff is tmux-derived).
+  // The create AUTO-OPENS each workspace's first terminal (task/
+  // defaults-settings — the agent slot), so `titles` names only the
+  // EXTRA tabs beyond it: scratch gets one extra (its dead-tab fixture),
+  // deploy and proj none.
   const username = (): DatabaseReadResult<string | null> => ({
     ok: true,
     resultType: 'database_read',
     data: { value: USERNAME },
   });
   const apps = new Apps({ db, username, killSession: async () => true });
+  const cmdOk = (command: string): DatabaseReadResult<string> => ({
+    ok: true,
+    resultType: 'database_read',
+    data: { value: command },
+  });
   const workspaces = new Workspaces({
     db,
     username,
@@ -45,6 +60,8 @@ export default async function globalSetup(): Promise<void> {
     defaultCwd: WORKSPACE,
     spawnSession: async name => ({ ok: true, resultType: 'tmux_session', data: { name } }),
     liveSessionNames: async () => new Set(),
+    shellCommand: () => cmdOk(cmd),
+    agentCommand: () => cmdOk(`${cmd} agent`),
   });
   const dir = (name: string): string => {
     const d = path.join(WORKSPACE, name);
@@ -63,7 +80,18 @@ export default async function globalSetup(): Promise<void> {
       appId === null ? { name, cwd } : { appId: asAppId(appId), name, cwd },
     );
     if (!ws.ok) throw new Error(`global-setup: ${ws.errorMessage}`);
-    const terminals: string[] = [];
+    // The create auto-opened the first tab (the agent slot — task/
+    // defaults-settings); read its row back so the fixture's terminal
+    // list starts with it, in tab order.
+    const autoRow = db.get(
+      qb
+        .selectFrom('terminals')
+        .select('id')
+        .where('workspace_id', '=', ws.data.id)
+        .orderBy('sort_order', 'asc'),
+    );
+    if (!autoRow) throw new Error('global-setup: auto-opened terminal missing');
+    const terminals: string[] = [autoRow.id];
     for (const title of titles) {
       const t = await workspaces.newTerminal(ws.data.id, title === '' ? undefined : title);
       if (!t.ok) throw new Error(`global-setup: ${t.errorMessage}`);
@@ -71,9 +99,9 @@ export default async function globalSetup(): Promise<void> {
     }
     return { cwd, terminals };
   };
-  const scratch = await seeded('scratch', dir('scratch'), null, ['', 'build']);
-  const deploy = await seeded('deploy checklist', dir('deploy'), null, ['']);
-  const proj = await seeded('proj', dir('proj'), app.data.id, ['fix the login bug']);
+  const scratch = await seeded('scratch', dir('scratch'), null, ['build']);
+  const deploy = await seeded('deploy checklist', dir('deploy'), null, []);
+  const proj = await seeded('proj', dir('proj'), app.data.id, []);
 
   // Kill any leftover test tmux server from a previous aborted run —
   // BEFORE the live fixtures below, which must survive into the suite —

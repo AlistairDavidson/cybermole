@@ -54,6 +54,9 @@ const childEnv = () =>
     CYBERMOLE_TMUX_SOCKET: SOCKET,
     CYBERMOLE_NEW_SESSION_CWD: os.tmpdir(),
     CYBERMOLE_COMMAND: path.join(server!.dir, 'cmd.sh'),
+    // task/defaults-settings: the auto-opened first tab — deterministic
+    // (same cmd.sh as plain tabs; this spec never asserts its banner).
+    CYBERMOLE_AGENT_COMMAND: path.join(server!.dir, 'cmd.sh'),
   });
 
 /** Boot the server child (beforeAll, and again by the restart test) —

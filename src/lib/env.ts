@@ -91,8 +91,23 @@ export const ENV = {
   // Whitespace-split by main.ts like any override; e2e's deterministic
   // cmd.sh keeps working as an explicit CYBERMOLE_COMMAND.
   CYBERMOLE_COMMAND: RAW_ENV.CYBERMOLE_COMMAND ?? `${process.env.SHELL ?? '/bin/sh'} -l`,
+  // task/defaults-settings: the command the auto-opened FIRST terminal of
+  // a new workspace runs (the agent slot; db override ?? this ?? the
+  // built-in below — resolved at spawn time, src/lib/terminal-defaults.ts).
+  // Whitespace-split like CYBERMOLE_COMMAND; the e2e suite points it at
+  // its deterministic cmd.sh's agent mode.
+  CYBERMOLE_AGENT_COMMAND:
+    RAW_ENV.CYBERMOLE_AGENT_COMMAND ?? defaultAgentCommand(PI_BIN, fs.existsSync(PI_BIN)),
   CYBERMOLE_TMUX_CONF: RAW_ENV.CYBERMOLE_TMUX_CONF ?? path.join(APP_ROOT, 'tmux.conf'),
 };
+
+/** The built-in agent default (task/defaults-settings): the vendored pi
+ *  binary when the install has one, else 'pi' on PATH. Pure — the fs probe
+ *  is injected, like internalSocketDefault, so the fallback step of the
+ *  agent chain is unit-testable without a node_modules tree. */
+export function defaultAgentCommand(piBin: string, piBinExists: boolean): string {
+  return piBinExists ? piBin : 'pi';
+}
 
 /** Internal API socket default (task/jobs-socket, plan §3): the shared
  *  /run/cybermole dir (the compose privilege split — the same setgid dir the

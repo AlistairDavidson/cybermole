@@ -72,6 +72,12 @@ export const envSchema = {
   // whitespace-split by main.ts. Dynamic default in env.ts: a login
   // shell — $SHELL -l, /bin/sh -l when SHELL is unset.
   CYBERMOLE_COMMAND: { type: 'string', context: 'server', access: 'secret', optional: true },
+  // task/defaults-settings: what the auto-opened FIRST terminal of a new
+  // workspace runs (the agent slot; the /settings terminal-defaults form
+  // writes a db override that wins over this). Dynamic default in env.ts:
+  // the vendored pi binary when the install has one, else 'pi' on PATH.
+  // Like CYBERMOLE_COMMAND, whitespace-split by the spawner.
+  CYBERMOLE_AGENT_COMMAND: { type: 'string', context: 'server', access: 'secret', optional: true },
   CYBERMOLE_TMUX_CONF: { type: 'string', context: 'server', access: 'secret', optional: true },
   // task/jobs-socket (docs/jobs-agent-plan.md §3): the internal jobs
   // API's unix socket path. Unset = the shape default (env.ts

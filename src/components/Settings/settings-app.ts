@@ -8,6 +8,10 @@
 import type { UpdateResult } from '../../lib/types';
 import { BASE } from '../../base';
 import { signedInFetch, type SignedInFetchFailure } from '../signed-in-fetch';
+// Registers <validation-enhancer-zod> (and the base <validation-enhancer>).
+import 'validation-enhancer/zod';
+import type { ValidationEnhancerZod } from 'validation-enhancer/zod';
+import { terminalDefaultsBody } from '../../schemas/api';
 import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
@@ -15,6 +19,10 @@ import '@awesome.me/webawesome/dist/components/callout/callout.js';
 import '@awesome.me/webawesome/dist/components/badge/badge.js';
 import '@awesome.me/webawesome/dist/components/details/details.js';
 import '@awesome.me/webawesome/dist/components/switch/switch.js';
+// The terminal-defaults form's SSR'd controls (AGENTS.md: SSR imports ≠
+// client imports — without this the wa-inputs never upgrade, and a wa-*
+// form that hasn't upgraded submits none of its values).
+import '@awesome.me/webawesome/dist/components/input/input.js';
 
 interface WaButtonLike extends HTMLElement {
   loading: boolean;
@@ -30,6 +38,13 @@ interface WaSwitchLike extends HTMLElement {
   checked: boolean;
   disabled: boolean;
 }
+/** wa-input's surface for the terminal-defaults fields. An empty
+ *  wa-input's value is null, not '' — here that IS the payload: null
+ *  clears the override (the schema says the same). */
+interface WaInputLike extends HTMLElement {
+  value: string | null;
+  setCustomValidity(message: string): void;
+}
 
 export class SettingsApp extends HTMLElement {
   private $<T extends HTMLElement>(id: string): T {
@@ -41,11 +56,160 @@ export class SettingsApp extends HTMLElement {
       const button = (e.target as HTMLElement).closest('wa-button');
       if (button?.id === 'update-pi') void this.updatePi();
       else if (button?.id === 'logout-all') void this.logoutAll();
+      // The form's own buttons requestSubmit (never a bare submit:
+      // validation-enhancer-zod must run first — the AGENTS.md rule).
+      else if (button?.id === 'save-terminal-defaults') this.defaultsForm()?.requestSubmit();
+      else if (button?.id === 'reset-terminal-defaults') void this.resetDefaults();
     });
     this.addEventListener('change', e => {
       if ((e.target as HTMLElement).id === 'pi-auto-update') void this.toggleAutoUpdate();
     });
+    // Valid submits only (task/defaults-settings): the enhancer stops an
+    // invalid one from propagating, so this listener sits ABOVE it — a
+    // listener on the form itself would fire (target phase) before
+    // validation ran.
+    this.addEventListener('submit', e => {
+      if ((e.target as HTMLElement).id !== 'terminal-defaults-form') return;
+      e.preventDefault();
+      void this.saveDefaults();
+    });
+    // The form validates against the same schema POST /api/settings parses
+    // with; the fields prefill from the source region's data (the effective
+    // values — wa-input's value is a property, so the server render can't
+    // set it and the prefill runs once the control has upgraded).
+    void customElements
+      .whenDefined('validation-enhancer-zod')
+      .then(() =>
+        (this.querySelector('validation-enhancer-zod') as ValidationEnhancerZod).setZodSchema(
+          terminalDefaultsBody,
+        ),
+      );
+    void customElements.whenDefined('wa-input').then(() => this.prefillDefaults());
     this.localizeTimes();
+  }
+
+  // ---- terminal defaults (task/defaults-settings) ----
+
+  private defaultsForm(): HTMLFormElement | null {
+    return this.querySelector('#terminal-defaults-form');
+  }
+
+  private defaultsField(name: 'agentCommand' | 'shellCommand'): WaInputLike | null {
+    return this.querySelector(`wa-input[name="${name}"]`);
+  }
+
+  /** The field's message element (its hint slot — WaField). */
+  private defaultsError(control: WaInputLike): HTMLElement | null {
+    const id = control.getAttribute('aria-errormessage');
+    return id ? this.querySelector(`#${CSS.escape(id)}`) : null;
+  }
+
+  private clearDefaultsErrors(): void {
+    for (const name of ['agentCommand', 'shellCommand'] as const) {
+      const control = this.defaultsField(name);
+      if (!control) continue;
+      control.setCustomValidity('');
+      control.classList.remove('valid', 'invalid');
+      control.removeAttribute('aria-invalid');
+      const message = this.defaultsError(control);
+      if (message) message.textContent = '';
+    }
+  }
+
+  /** A 400's per-field issues, in the fields' hint slots (jobs-app's
+   *  showFieldErrors pattern: the custom validity clears itself once the
+   *  user edits and the enhancer re-validates). */
+  private showDefaultsErrors(issues: Record<string, string>): void {
+    for (const [name, text] of Object.entries(issues)) {
+      const control = this.defaultsField(name as 'agentCommand' | 'shellCommand');
+      if (!control) continue;
+      control.setCustomValidity(text);
+      control.classList.add('invalid');
+      control.setAttribute('aria-invalid', 'true');
+      const message = this.defaultsError(control);
+      if (message) message.textContent = text;
+    }
+  }
+
+  /** Fill the two fields with the server's effective values (the source
+   *  region's data attributes — #terminal-defaults-source, refreshed by
+   *  refresh()). Runs on load and after every save/reset, so the fields
+   *  always show what the next tab would run. */
+  private prefillDefaults(): void {
+    const source = this.$('terminal-defaults-source');
+    const agent = this.defaultsField('agentCommand');
+    const shell = this.defaultsField('shellCommand');
+    if (!source || !agent || !shell) return;
+    agent.value = source.dataset.agentCommand ?? '';
+    shell.value = source.dataset.shellCommand ?? '';
+  }
+
+  private defaultsCallout(): WaCalloutLike {
+    return this.$('terminal-defaults-result');
+  }
+
+  private async saveDefaults(): Promise<void> {
+    const result = this.defaultsCallout();
+    const agent = this.defaultsField('agentCommand');
+    const shell = this.defaultsField('shellCommand');
+    if (!agent || !shell) return;
+    result.classList.add('hidden');
+    // An empty field is null on an upgraded wa-input: null CLEARS the
+    //  override (reset-to-default per field); whitespace-only never got
+    //  past the enhancer.
+    const sent = await signedInFetch(`${BASE}/api/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        agentCommand: agent.value ?? null,
+        shellCommand: shell.value ?? null,
+      }),
+    });
+    if (!sent.ok) {
+      this.notAnswered(result, sent, 'could not save the terminal defaults');
+      return;
+    }
+    const res = sent.data.response;
+    const body = (await res.json().catch(() => null)) as {
+      agentCommand?: string;
+      shellCommand?: string;
+      issues?: Record<string, string>;
+      error?: string;
+    } | null;
+    if (!res.ok) {
+      if (body?.issues) this.showDefaultsErrors(body.issues);
+      this.showError(result, body?.error ?? `could not save (HTTP ${res.status})`);
+      return;
+    }
+    this.clearDefaultsErrors();
+    result.variant = 'success';
+    result.textContent = 'saved — the next terminal runs it';
+    result.classList.remove('hidden');
+    void this.refresh(); // the source line + the config row re-render server-side
+  }
+
+  private async resetDefaults(): Promise<void> {
+    const result = this.defaultsCallout();
+    result.classList.add('hidden');
+    const sent = await signedInFetch(`${BASE}/api/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentCommand: null, shellCommand: null }),
+    });
+    if (!sent.ok) {
+      this.notAnswered(result, sent, 'could not reset the terminal defaults');
+      return;
+    }
+    const res = sent.data.response;
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      this.showError(result, body.error ?? `could not reset (HTTP ${res.status})`);
+      return;
+    }
+    result.variant = 'success';
+    result.textContent = 'back to the defaults (env / built-in chain)';
+    result.classList.remove('hidden');
+    void this.refresh();
   }
 
   /** Server-rendered <time> values are ISO; show them in the browser's
@@ -94,6 +258,10 @@ export class SettingsApp extends HTMLElement {
       );
     });
     this.localizeTimes();
+    // task/defaults-settings: the terminal-defaults fields follow the
+    //  refreshed effective values (a save/reset just changed them; on a
+    //  plain refresh nothing moves).
+    this.prefillDefaults();
     const flags = this.$('pi-flags').dataset;
     const npmAvailable = flags.npmAvailable === 'true';
     this.$<WaButtonLike>('update-pi').disabled = !npmAvailable;

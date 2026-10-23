@@ -37,8 +37,7 @@ containers and two uids (server vs tmux/terminals) — see
   grouped by app, the Console group first, a filter on workspace name,
   `+ workspace` per group, `+ app` at the bottom. A workspace is a working
   context: a cwd + terminal tabs + one editor tab.
-- **Terminals** — one tab = one tmux session. New tabs run `CYBERMOLE_COMMAND`
-  (default a login shell; pi or anything else by hand); closing the
+- **Terminals** — one tab = one tmux session. A NEW workspace auto-opens its first terminal running the agent command (the vendored pi by default — `CYBERMOLE_AGENT_COMMAND`); every other new tab runs the shell command (`CYBERMOLE_COMMAND`, default a login shell — `zsh -l` in the shipped compose). Both are configurable per install on `/settings` (db overrides, applied without a restart); closing the
   browser tab detaches, the session keeps running. A dropped connection
   (proxy idle timeout, server restart, network blip) reattaches to the
   same tmux session on its own, with backoff. Tabs carry live dots; a tab
@@ -202,6 +201,9 @@ Notes:
 - The dev profile builds the `dev` image target (`cybermole:local-dev`),
   which carries `build-essential`/`python3` for the in-container
   `node-pty` build; the prod image (`cybermole:local`) stays slim.
+- Dev runs the same shipped shell default as prod (`CYBERMOLE_COMMAND:
+  zsh -l` — the image installs zsh); the host flow below keeps the
+  host-safe dynamic default (`$SHELL -l`).
 
 The dev loop is `dev:server`'s watch: it rebuilds on changes to `src/`,
 `server/`, `public/`, the tsconfigs, `astro.config.mjs` and restarts —
@@ -276,7 +278,8 @@ directly.
 | `CYBERMOLE_STATE_DIR` | `$CYBERMOLE_HOME/.local/state/cybermole` | one directory for all cybermole state: the sqlite db (`cybermole.db`) and the runtime `pi-agent/` (pi credentials + its own sessions). Per-path overrides (`CYBERMOLE_DB_FILE`, `CYBERMOLE_AGENT_DIR`) still win. In the container compose points it at `/state` on a dedicated volume |
 | `CYBERMOLE_AGENT_DIR` | `<state dir>/pi-agent` | runtime pi agent dir (config, credentials, pi's own session store) — seeded from the repo's `pi/` template where absent (a stray `PI_CODING_AGENT_DIR` in the server's env is ignored with an error logged). Every spawned terminal carries it as `PI_CODING_AGENT_DIR`, so a pi you run by hand stays on it |
 | `CYBERMOLE_NEW_SESSION_CWD` | `$CYBERMOLE_HOME` | default cwd for new workspaces — the fallback when the parent app has no `cwd` of its own (shown as the start-path hint in the new-workspace dialog). The workspace root's `AGENTS.md` (the root agent's standing jobs instructions) is seeded into it where absent — [jobs](#scheduled-jobs-jobs--the-in-process-scheduler), [`root-agents/`](root-agents/) |
-| `CYBERMOLE_COMMAND` | `$SHELL -l` (fallback `/bin/sh -l`) | the command a new terminal tab runs (whitespace-split) |
+| `CYBERMOLE_COMMAND` | `$SHELL -l` (fallback `/bin/sh -l`); `zsh -l` in the shipped compose | the shell command every new terminal tab EXCEPT a new workspace's first runs (whitespace-split). Resolution is **db override → this env → built-in**: the writable *terminal defaults* card on `/settings` saves a per-install db value that wins over this (reset there clears it back) |
+| `CYBERMOLE_AGENT_COMMAND` | the vendored `<app root>/node_modules/.bin/pi` when the install has one, else `pi` on PATH | the command the **auto-opened first terminal of every new workspace** runs (whitespace-split) — the agent slot. Same db-override-on-`/settings` chain as `CYBERMOLE_COMMAND`. Point it at a different agent (compose wiring) or a deterministic test double |
 | `CYBERMOLE_JOB_LOG_DIR` | `/workspace/.cybermole/job-logs` | root under which job runs persist their logs + exit files (`<dir>/<job>/<fired-at>.{log,exit}`) — a path that exists in both containers of the compose split (laid out by `workspace-init`); point it somewhere writable in other split shapes |
 | `CYBERMOLE_JOB_LOG_MAX` | `20971520` (20 MiB) | write-time cap on each job run's log — past it the run wrapper's appender stops writing (one `[truncated at N bytes]` marker line) but keeps draining the job's output, so a chatty or runaway job can neither fill the disk mid-run nor die of a broken pipe. A non-integer or negative value stops the server at boot |
 | `CYBERMOLE_SOCK` | `/run/cybermole/cybermole.sock` when `/run/cybermole` exists (the compose split), else `<state dir>/cybermole.sock` | the [internal jobs API](#scheduled-jobs-jobs--the-in-process-scheduler)'s unix socket: a second HTTP listener in the same server process serving the workspace side (agents) — see the jobs section. **Empty = the listener is off**; a set-but-non-absolute value stops the server at boot, like the S3 vars. The socket file is created `0660` — the file mode (the shared `cybermole` group in the split shape) is the only auth |
@@ -510,13 +513,17 @@ mounted at the same path — see below). Cross-uid tmux access is
 what `server-access` grants: without an entry the foreign-uid client gets
 a hard "access not allowed"; with it, full client access on the socket.
 
-Path agreement matters in this shape: `CYBERMOLE_COMMAND`'s default (a login
-shell — `$SHELL` must exist in the workspace container, where the tmux
-server actually spawns it) and the workspace cwd resolve **in the
-workspace container** — both containers use the same image and mount the
-shared volumes at the same paths, so the defaults hold (a `CYBERMOLE_COMMAND`
-pointing at the image's vendored `/opt/cybermole/node_modules/.bin/pi` is
-the classic case). Scheduled jobs are unchanged: the scheduler fires
+Path agreement matters in this shape: the terminal commands resolve **in the
+workspace container** (its tmux spawns every session) — `CYBERMOLE_COMMAND`'s
+default (a login shell — `$SHELL` must exist there) and the agent default
+(`CYBERMOLE_AGENT_COMMAND` → the vendored
+`/opt/cybermole/node_modules/.bin/pi`, the same path in both containers —
+same image). Both containers mount the shared volumes at the same paths, so
+the defaults hold (a `CYBERMOLE_COMMAND` pointing at the image's vendored
+binary is the classic case; the shipped compose default is `zsh -l`, and the
+image installs zsh so the binary exists where tmux spawns). The db overrides
+from `/settings` resolve web-side but are just strings — a path they name
+must exist in the workspace container, like an env value. Scheduled jobs are unchanged: the scheduler fires
 runs on the same shared socket (same guard, same env), so they land in
 the workspace container too, their logs on the shared `cybermole-job-logs`
 volume — a job only runs while the web server is up, exactly as before.

@@ -28,6 +28,7 @@ import type {
 } from '../workspaces';
 import type { ConsoleStateFailure, SettingsStateFailure } from '../services';
 import type { PiUpdateFailure, PiUpdateResult } from '../settings';
+import type { SaveTerminalDefaultsFailure, TerminalDefaultsFailure } from '../terminal-defaults';
 import type {
   FetchedObject,
   FetchObjectFailure,
@@ -421,6 +422,17 @@ export function consoleStateFailureResponse(f: ConsoleStateFailure): Response {
 /** GET /api/settings failures (/settings shows "could not load settings"). */
 export function settingsStateFailureResponse(f: SettingsStateFailure): Response {
   const code: 'database_error' = f.errorCode; // one-member union, as above
+  return jsonResponse({ error: f.errorMessage ?? 'database error', code }, 500);
+}
+
+/** The terminal-defaults families' failures (task/defaults-settings): the
+ *  read behind GET /api/settings + /settings, and the POST save. Both are
+ *  one-member unions — a second code fails to compile here, like the
+ *  settings_state family above. */
+export function terminalDefaultsFailureResponse(
+  f: TerminalDefaultsFailure | SaveTerminalDefaultsFailure,
+): Response {
+  const code: 'database_error' = f.errorCode;
   return jsonResponse({ error: f.errorMessage ?? 'database error', code }, 500);
 }
 

@@ -15,6 +15,9 @@ import '@awesome.me/webawesome/dist/components/callout/callout.js';
 import '@awesome.me/webawesome/dist/components/badge/badge.js';
 import '@awesome.me/webawesome/dist/components/details/details.js';
 import '@awesome.me/webawesome/dist/components/switch/switch.js';
+import WaField from '../form/WaField.astro';
+import { zodSchemaToHTMLAttributes } from '../../lib/web/zod.service';
+import { terminalDefaultsBody } from '../../schemas/api';
 import type { SettingsState } from '../../lib/types';
 
 interface Props {
@@ -45,6 +48,17 @@ const iso = (at: number): string => new Date(at).toISOString();
 // Spread the attribute in only when it is on.
 const flag = (name: string, on: boolean): Record<string, true> => (on ? { [name]: true } : {});
 const npmMissing = !state || !state.npmAvailable;
+// Native constraints matching the schema the form validates with in the
+// browser (validation-enhancer-zod — settings-app.ts); the server parses
+// POST /api/settings with the same schema.
+const defaultsValidation = zodSchemaToHTMLAttributes(terminalDefaultsBody);
+// The status line under the form (a data-refresh region — plain text, so
+// the partial swap needs no rehydration): which side of the chain each
+// effective value came from. The same region carries the effective values
+// for <settings-app>'s client-side prefill (wa-input's value is a property,
+// not an attribute — the server-rendered field can't carry it).
+const td = state?.terminalDefaults ?? null;
+const source = (overridden: boolean): string => (overridden ? 'override saved' : 'default');
 ---
 <main class="settings-main wa-stack wa-gap-m">
   <header class="settings-header">
@@ -61,6 +75,61 @@ const npmMissing = !state || !state.npmAvailable;
         ? rows.map(([k, v]) => <div class="cfg-row wa-split"><span class="k">{k}</span><span class="v">{v}</span></div>)
         : <span class="hint">could not load settings: {error}</span>}
     </div>
+  </wa-card>
+
+  <wa-card class="settings-card" with-header>
+    <div slot="header" class="wa-split">
+      <strong class="card-title">terminal defaults</strong>
+      <span class="hint">what new terminals run — saved values apply to the next tab, no restart</span>
+    </div>
+    <!-- task/defaults-settings: the writable section. The fields prefill
+         with the EFFECTIVE values (resolved db ?? env ?? built-in — what a
+         new tab would actually run, never the raw db value), so a save
+         writes both as typed (pinning a shown default to the db is the
+         accepted cost of the form never lying); an EMPTIED field saves as
+         null, which clears the override — the reset button does the same
+         for both at once. The form is deliberately OUTSIDE the
+         data-refresh regions (wa-* would need rehydrating on swap);
+         <settings-app> re-fills the fields from the region's data below. -->
+    <validation-enhancer-zod>
+      <form id="terminal-defaults-form" class="wa-stack wa-gap-s" novalidate>
+        <WaField
+          id="agent-command"
+          name="agentCommand"
+          label="agent command"
+          hint="runs as the first terminal of every NEW workspace"
+          {...defaultsValidation.agentCommand}
+        />
+        <WaField
+          id="shell-command"
+          name="shellCommand"
+          label="shell command"
+          hint="runs in every other new terminal tab (whitespace-split)"
+          {...defaultsValidation.shellCommand}
+        />
+        <div class="wa-cluster wa-gap-2xs">
+          <wa-button id="save-terminal-defaults" variant="brand" size="s">
+            <wa-icon slot="start" name="floppy-disk"></wa-icon>
+            save
+          </wa-button>
+          <wa-button id="reset-terminal-defaults" size="s" appearance="plain">
+            reset to defaults
+          </wa-button>
+        </div>
+      </form>
+    </validation-enhancer-zod>
+    <span
+      id="terminal-defaults-source"
+      class="hint"
+      data-refresh
+      data-agent-command={td?.agentCommand ?? ''}
+      data-shell-command={td?.shellCommand ?? ''}
+    >
+      {td
+        ? `agent: ${td.agentCommand} (${source(td.agentOverridden)}) · shell: ${td.shellCommand} (${source(td.shellOverridden)})`
+        : 'terminal defaults unavailable'}
+    </span>
+    <wa-callout id="terminal-defaults-result" class="hidden"></wa-callout>
   </wa-card>
 
   <wa-card class="settings-card" with-header>

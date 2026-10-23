@@ -159,12 +159,33 @@ export interface SettingsState {
   piDeclared: string;
   piInstalled: string | null;
   npmAvailable: boolean;
+  /** the terminal defaults (task/defaults-settings) — resolved like the
+   *  spawner resolves them (db ?? env ?? built-in, src/lib/
+   *  terminal-defaults.ts), so the /settings form prefills what a new
+   *  tab would actually run. `command` above is shellCommand (kept as
+   *  its own field: the configuration card's "terminal command" row). */
+  terminalDefaults: TerminalDefaults;
   /** the pi auto-update setting (toggle + status lines on /settings) */
   piAutoUpdate: {
     enabled: boolean;
     lastCheck: AutoUpdateCheck | null;
     lastUpdate: AutoUpdateResult | null;
   };
+}
+
+/** The terminal defaults (task/defaults-settings): the two commands a
+ *  new terminal can run, RESOLVED (db override ?? env ?? built-in — the
+ *  effective value, never the raw db value) plus whether each carries a
+ *  db override (the /settings reset affordance clears it). */
+export interface TerminalDefaults {
+  /** what the auto-opened FIRST terminal of a new workspace runs */
+  agentCommand: string;
+  /** what every other new terminal tab runs */
+  shellCommand: string;
+  /** a db override is stored for the agent command (reset clears it) */
+  agentOverridden: boolean;
+  /** ditto, the shell command */
+  shellOverridden: boolean;
 }
 
 /** Result of POST /api/update-pi (manual `npm install pi@latest`). */

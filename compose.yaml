@@ -146,6 +146,13 @@ services:
       # what the sidebar scans (web reads it via the shared group).
       CYBERMOLE_AGENT_DIR: /workspace/pi-agent
       CYBERMOLE_NEW_SESSION_CWD: /workspace
+      # task/defaults-settings: the shipped default shell — zsh -l (the
+      # image installs zsh; it must exist in the WORKSPACE container too,
+      # whose tmux spawns every terminal — same image, so it does).
+      # Override-able as always: plain hosts keep the host-safe dynamic
+      # default ($SHELL -l), and /settings can pin a per-install value in
+      # the state db on top of this.
+      CYBERMOLE_COMMAND: "${CYBERMOLE_COMMAND:-zsh -l}"
       # Object storage. The keys aren't here: seaweedfs-init generates them
       # into /run/cybermole-s3/credentials.env and docker-entrypoint.sh loads
       # them (CYBERMOLE_S3_ACCESS_KEY / CYBERMOLE_S3_SECRET_KEY).
@@ -523,6 +530,9 @@ services:
       # won't do here. Dev state (login db, dev pi-agent) is throwaway: it
       # lives in the container's /tmp and re-set-password after a recreate.
       CYBERMOLE_STATE_DIR: /tmp/cybermole-state
+      # task/defaults-settings: zsh -l like the prod service (the dev image
+      # installs zsh — same runtime base).
+      CYBERMOLE_COMMAND: "${CYBERMOLE_COMMAND:-zsh -l}"
       # A non-1000 uid has no passwd entry → HOME=/ → npm's cache is unwritable there
       npm_config_cache: /tmp/.npm
       CYBERMOLE_S3_ENDPOINT: http://dev-seaweedfs:8333

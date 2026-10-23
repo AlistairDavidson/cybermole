@@ -41,6 +41,11 @@ import {
   type EditorUpstream,
 } from '../src/lib/editor';
 import { createServices, type ServerConfig, type CybermoleLocals } from '../src/lib/services';
+import {
+  resolvedAgentCommand,
+  resolvedShellCommand,
+  splitCommandLine,
+} from '../src/lib/terminal-defaults';
 import { startInternalApi, InternalSocketOwnedError, type InternalApiHandle } from './internal-api';
 import { ObjectStore } from '../src/lib/storage';
 import type { ClientMsg, ServerMsg } from '../src/lib/types';
@@ -103,9 +108,9 @@ const CFG: ServerConfig = {
   astroEntry: ENV.CYBERMOLE_ASTRO_ENTRY,
   newSessionCwd: ENV.CYBERMOLE_NEW_SESSION_CWD,
   jobLogDir: ENV.CYBERMOLE_JOB_LOG_DIR,
-  // whitespace-split command line a new terminal tab runs (plan §4;
-  // default a login shell — src/lib/env.ts)
-  command: ENV.CYBERMOLE_COMMAND.trim().split(/\s+/).filter(Boolean),
+  // task/defaults-settings: the terminal commands resolve per spawn (db
+  //  override ?? env ?? built-in — src/lib/terminal-defaults.ts), not
+  //  here: a /settings save must apply without a restart.
   trustProxy: Math.max(0, ENV.CYBERMOLE_TRUST_PROXY),
   editorUpstream: readEditorUpstream(),
 };
@@ -221,11 +226,14 @@ bootLog.info(
     : `editor: proxying ${CFG.base === '/' ? '' : CFG.base}/editor/ → ${CFG.editorUpstream.origin}`,
 );
 // task/ws-terminal (plan §4): a terminal tab's spawn/respawn — one
-// guarded new-session with the configured command + sessionEnv, shared
-// by the workspaces domain (through createServices) and the WS attach
-// path's respawn.
-const spawnTerminalSession = (name: TmuxSessionName, cwd: string) =>
-  tmux.newSession(name, cwd, CFG.command, sessionEnv);
+// guarded new-session with the sessionEnv, shared by the workspaces
+// domain (through createServices) and the WS attach path's respawn. The
+// COMMAND comes per call (task/defaults-settings): the workspaces domain
+// resolves it for the tab's slot — shell for a regular tab, agent for a
+// new workspace's auto-opened first — and the respawn below does the
+// same, so a db override set on /settings applies mid-flight.
+const spawnTerminalSession = (name: TmuxSessionName, cwd: string, command: string[]) =>
+  tmux.newSession(name, cwd, command, sessionEnv);
 
 // Everything stateful the Astro side (API routes, pages) may use, built
 // once here and passed to the Astro handler in locals — never imported
@@ -1403,7 +1411,24 @@ function attach(ws: WebSocket, token: SessionToken): void {
         }
         const name = tmux.terminalSessionName(id.data);
         if (!(await tmux.hasSession(name))) {
-          const spawned = await spawnTerminalSession(name, found.data.cwd);
+          // The respawn re-runs the command the tab's SLOT runs
+          // (task/defaults-settings): the workspace's auto-opened tab
+          // (recognised by created_at equality with the workspace —
+          // terminalForAttach's `agent`) runs the agent command, every
+          // other tab a shell — resolved at respawn time like at create
+          // time, so a saved /settings override reaches respawns too.
+          const command = found.data.agent
+            ? resolvedAgentCommand(stateDb)
+            : resolvedShellCommand(stateDb);
+          if (!command.ok) {
+            failed('could not read the terminal defaults');
+            return;
+          }
+          const spawned = await spawnTerminalSession(
+            name,
+            found.data.cwd,
+            splitCommandLine(command.data.value),
+          );
           if (!spawned.ok) {
             switch (spawned.errorCode) {
               // the never-fork guard — say it, don't bury it
@@ -1514,10 +1539,14 @@ function attach(ws: WebSocket, token: SessionToken): void {
 server.listen(CFG.port, CFG.host, () => {
   bootLog.info(
     `cybermole listening on ${CFG.host}:${CFG.port} base ${CFG.base} ` +
-      `(tmux socket ${tmux.SOCKET}, command "${CFG.command.join(' ')}", client ${CFG.clientDir})`,
+      `(tmux socket ${tmux.SOCKET}, command "${ENV.CYBERMOLE_COMMAND}", client ${CFG.clientDir})`,
   );
-  // Best-effort vendored-pi version at boot — makes dependency drift visible.
-  if (CFG.command[0] === PI_BIN) {
+  // Best-effort vendored-pi version at boot — makes dependency drift
+  // visible. Checked against the ENV-side agent default, never the
+  // db-resolved one: reading the state db here would open it eagerly
+  // (db.ts opens lazily on purpose — the e2e webServer boots before its
+  // workspace reset).
+  if (ENV.CYBERMOLE_AGENT_COMMAND === PI_BIN) {
     execFile(PI_BIN, ['--version'], { timeout: 5000 }, (err, out) =>
       bootLog.info(
         err ? `pi: version check failed (${(err as Error).message})` : `pi ${String(out).trim()}`,
