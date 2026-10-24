@@ -1,10 +1,49 @@
 # The dev test-MCP plan — quiet test runs for agents
 
-Status: **proposed** — not yet agreed. Distills the design of barbarus's
-project MCP (`~/projects/barbarus/tools/mcp`, registered in its repo-level
-`.pi/mcp.json`) into a cybermole equivalent: repo-validation commands run as
-MCP tools that return **structured, quiet results**, so an agent's context
-fills with failure detail only, not per-test reporting.
+Status: **shipped** — landed as `tools/dev-mcp/` (parsers, quiet runner,
+stdio server), `tests/unit/dev-mcp.test.mjs` + fixtures, the
+`.pi/mcp.json` registration (the one tracked exception under the ignored
+`.pi/`), and the AGENTS.md Testing lead (§8). The branch's own demo, per
+§9: the full ladder through the new tools — check 112 files clean, lint
+0/136, build clean, units 367/367 in two lines of output, e2e 58/58 in
+two lines (2m42s) — plus the kill-path drills (client timeout, client
+close mid-run, external SIGTERM) that shaped the process-tree kills
+below. Integration amendments, told where they changed the agreed plan:
+the quiet reporter is a programmatic `run()` runner, NOT a
+`--test-reporter` module — node's reporter IPC structured-clones the
+event stream and strips Error messages/stacks entirely (assertion causes
+survive only as enumerable fields), while `run()`'s in-process stream
+carries the real Errors; that runner absorbs three verified Node 22
+quirks (`run({ testNamePattern })` silently ignored — the pattern rides
+execArgv to the per-file children; a stray `NODE_TEST_CONTEXT`, inherited
+when the runner is spawned from inside a node:test child — exactly what
+the dev-mcp unit suite does — makes `run()` "skip running files", so the
+runner drops it and the server strips it from every child env; a file
+that dies without running tests surfaces as an envelope `test:fail`
+whose name is the file path, or a `subtestsFailed` envelope with zero
+leaf failures — both become crash entries with the file's stderr tail,
+and `counts.fail` is `max(summary.failed, leaves + crashes)` because the
+summary counts an import crash but not a mid-run one) (§4 amended);
+Playwright's list reporter still prints to stdout when the JSON report
+goes to a file, so quiet ignores stdout and verbose passes it through,
+and the report's error messages arrive ANSI-colored — the parsers strip
+the escapes (§4 amended); the tools exec `node_modules/.bin/*` directly
+(no npm/npx wrapper layer) and `&&` pipelines share one deadline while
+composing per-step text (§3's "Runs" column, as-built); §1.7's timeout
+kill grew into process-TREE kills — detached groups plus a /proc
+ppid-walk for grandchildren that detach again (playwright's web
+servers), and a SIGTERM handler with a reffed SIGKILL pass, because pi's
+stdio-server shutdown SIGTERMs the server without running exit hooks
+and a plain group kill never reaches a re-detached web server (learned
+live: an abandoned run held the suite's ports); long runs carry
+progress heartbeats (`notifications/progress` every 30s, only when the
+client sent a progressToken) and the registration sets
+`timeout: 3660`, because the MCP per-request default (60s) kills a
+multi-minute run_e2e at the protocol layer regardless of the tool's own
+timeout (§3 amended); the request's abort signal kills the in-flight
+run's tree (§5's envelope unchanged). §6's flagged worktree-trust risk
+is verified fact in §10's shipped notes. The body below is the
+plan as agreed — the historical record, unchanged.
 
 ## 0. Problem and positioning
 
@@ -213,3 +252,23 @@ tools, then `.pi/mcp.json`, AGENTS.md, and a host + sandbox e2e-capable
 self-check (the branch's own full suite run through the new tools is its
 demo). Fleet merge process as usual — one branch at a time, orchestrator
 runs e2e as the gate.
+
+## 10. Shipped verification notes (§6, resolved to fact)
+
+- **Worktree trust: the risk is real.** A fresh `git worktree` of the
+  commit carries the tracked `.pi/mcp.json` (the gitignore exception
+  works), and `pi mcp list` inside it does NOT register the server —
+  untrusted project, exactly §6's flag. The fix stays sandbox-pi-side
+  (mark worktrees trusted, or pre-seed trust for the worktree root);
+  nothing to fix here. Until then, fleet workers get the tools only in
+  trusted checkouts (the main checkout is trusted).
+- **Self-location: verified in a worktree.** With `node_modules` present
+  (a fresh worktree has none — gitignored; sandboxes `npm ci` first), the
+  server launched from a worktree path with cwd elsewhere resolved the
+  worktree's root from `import.meta.url`, compiled THAT tree's
+  dist-server through `run_unit_tests`, and ran its tests (4/4 on ids).
+- **The kill drills** (client timeout, client close mid-run, external
+  SIGTERM to the server) each left orphaned e2e web servers holding the
+  suite's ports before the process-tree kills landed — the /proc
+  ppid-walk plus the reffed SIGKILL pass are what make `run_e2e` safe to
+  abandon.
