@@ -1,0 +1,51 @@
+---
+// Frontmatter imports SSR the wa-* components (astro-lit, declarative
+// shadow DOM); the client script below re-imports them so the browser
+// upgrades them — both halves, like the console's login page.
+import '@awesome.me/webawesome/dist/components/card/card.js';
+import '@awesome.me/webawesome/dist/components/button/button.js';
+const builtAt = new Date().toISOString();
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>app-fixture</title>
+  </head>
+  <body>
+    <main style="font-family: system-ui; max-width: 40rem; margin: 3rem auto; padding: 0 1rem;">
+      <wa-card>
+        <h1 slot="header">app-fixture</h1>
+        <p>
+          A minimal real Astro app mounted by the cybermole app host: SSR + Web Awesome
+          (declarative shadow DOM), built with base /apps/app-fixture baked in.
+        </p>
+        <p>
+          The API route answers Result JSON:
+          <code>GET /apps/app-fixture/api/ping?name=world</code>
+        </p>
+        <wa-button id="ping" variant="brand">ping the API route</wa-button>
+        <p id="out"></p>
+        <p style="opacity: 0.6">built at {builtAt}</p>
+      </wa-card>
+    </main>
+    <script>
+      // Support modules MUST precede the wa-* imports — if the SSR'd
+      // elements define before lit hydration support installs, they
+      // render twice (@awesome.me/astro-lit README).
+      import '@awesome.me/astro-lit/dsd-polyfill.js';
+      import '@awesome.me/astro-lit/hydration-support.js';
+      import '@awesome.me/webawesome/dist/components/card/card.js';
+      import '@awesome.me/webawesome/dist/components/button/button.js';
+
+      const out = document.getElementById('out');
+      document.getElementById('ping').addEventListener('click', async () => {
+        const res = await fetch('/apps/app-fixture/api/ping?name=world');
+        const body = await res.json();
+        out.textContent =
+          res.ok ? `pong — hello, ${body.data.hello}` : `error ${res.status}: ${body.error}`;
+      });
+    </script>
+  </body>
+</html>

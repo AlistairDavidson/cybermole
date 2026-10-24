@@ -28,6 +28,8 @@ export default [
       '.astro/',
       'test-results/',
       'playwright-report/',
+      // fixture app, built by its own toolchain
+      'tests/fixtures/app-fixture/',
     ],
   },
 
