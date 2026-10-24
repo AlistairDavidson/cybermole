@@ -8,11 +8,11 @@
 // identical except: the './server-shim.js' import points at our verbatim
 // shim copy, and the self-read is replaced by the literal name (the
 // original reads package.json only to get that string). Every import is
-// a bare specifier the fixture's astro.config resolution-alias maps to
-// its node_modules link, so the build inlines the whole renderer; the
+// a bare specifier this tree's astro.config.mjs resolution-alias maps to
+// its node_modules links, so the build inlines the whole renderer; the
 // non-relative imports left in the built graph are node: builtins only
-// (tools/check-app-selfcontained.mjs gates it). The kit branch ships a
-// compiled renderer and this copy goes away.
+// (scripts/check-selfcontained.mjs gates every build). If a future
+// @awesome.me/astro-lit ships a bundleable renderer, this copy can go.
 import './astro-lit-server-shim.mjs';
 
 import { LitElementRenderer } from '@lit-labs/ssr/lib/lit-element-renderer.js';

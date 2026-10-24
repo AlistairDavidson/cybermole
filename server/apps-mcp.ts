@@ -248,6 +248,17 @@ export async function unregisterTool(deps: AppsMcpDeps, slug: string): Promise<C
   if (deleted.status !== 200 || (body as { code?: unknown }).code !== undefined) {
     return json(body);
   }
+  // A green delete syncs the mount away — EXCEPT when the apps surface
+  // is off entirely: no host means nothing was ever mounted, so the row
+  // deletion IS the whole story (an honest note, not an error — the
+  // unreachable case below is the one that needs the operator's eyes).
+  if (deps.appsSocketPath === null) {
+    return json({
+      unregister: body,
+      reload: null,
+      note: 'the row is deleted; the apps surface is off (CYBERMOLE_APPS_SOCK is empty) — no app host is running, so no mount exists to drop. Nothing further to do.',
+    });
+  }
   const reload = await fetchSocket(
     deps.appsSocketPath,
     APPS_OFF,

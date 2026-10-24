@@ -1,8 +1,8 @@
 // VERBATIM copy of @awesome.me/astro-lit's server-shim.js except the
 // define-patch at the bottom (see there), with the 'lit-element' import
 // resolution-aliased at build (→ the fixture's node_modules link, so it
-// inlines). The kit branch ships a compiled renderer and this copy goes
-// away (apps-plan §5).
+// inlines). If a future @awesome.me/astro-lit ships a bundleable
+// renderer, this copy can go.
 import { customElements as litCE, HTMLElement as litShimHTMLElement } from '@lit-labs/ssr-dom-shim';
 
 // Something at build time injects document.currentScript = undefined instead of

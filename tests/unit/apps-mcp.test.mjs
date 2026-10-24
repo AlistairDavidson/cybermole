@@ -518,6 +518,7 @@ test("the MCP wiring: tools/list is exactly this branch's set; status answers th
         code: 'duplicate_slug',
       },
     },
+    'DELETE /apps/wired-app': { status: 200, body: { id: 'x' } },
   });
   const host = await stubSocket(hostSocket, {
     'GET /_admin/status': {
@@ -578,11 +579,19 @@ test("the MCP wiring: tools/list is exactly this branch's set; status answers th
   await client.close();
 
   // Boot two: the apps surface OFF (empty socket env) — reload answers
-  // the clear off-surface error as isError; check still works (local).
+  // the clear off-surface error as isError; unregister COMPOSES instead
+  // (the row deletion is the whole story: no host, no mount); check
+  // still works (local).
   const off = await boot({ CYBERMOLE_APPS_SOCK: '' });
   const reload = await call(off, 'reload', {});
   assert.equal(reload.isError, true);
   assert.match(reload.text, /CYBERMOLE_APPS_SOCK is empty/);
+  const dropped = await call(off, 'unregister', { slug: 'wired-app' });
+  assert.equal(dropped.isError, false, dropped.text);
+  const droppedBody = JSON.parse(dropped.text);
+  assert.deepEqual(droppedBody.unregister, { id: 'x' });
+  assert.equal(droppedBody.reload, null);
+  assert.match(droppedBody.note, /apps surface is off/);
   // check is LOCAL: the surface being off does not stop it — this stub
   // tree has no node_modules, so the LINKS stage fails (a red envelope is
   // a normal answer, the family's ok is true).
