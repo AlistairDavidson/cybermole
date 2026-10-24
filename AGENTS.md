@@ -173,5 +173,9 @@ Fleet work lands on `task/*` branches (one per worker, all cut from the same
 base). Integration is ONE BRANCH AT A TIME. Fleet sandboxes are e2e-capable
 (see Testing): workers should self-test with the full suite before reporting
 done on UI- or server-touching work — a run is a few minutes and needs no
-setup. The orchestrator still runs e2e as the integration gate per merged
+setup. The `cybermole-dev` tools run in-sandbox too (`.sandbox-pi.json`'s
+projectMcpServers keeplist; `npm ci` first — the server needs the worktree's
+node_modules, and a server that failed to connect at boot reconnects via
+`/mcp` once they exist). The orchestrator still runs e2e as the integration
+gate per merged
 branch; host runs are serial (one `/tmp/cybermole-itest` at a time).

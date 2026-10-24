@@ -42,7 +42,7 @@ client sent a progressToken) and the registration sets
 multi-minute run_e2e at the protocol layer regardless of the tool's own
 timeout (§3 amended); the request's abort signal kills the in-flight
 run's tree (§5's envelope unchanged). §6's flagged worktree-trust risk
-is verified fact in §10's shipped notes. The body below is the
+is resolved (fix + verification in §10). The body below is the
 plan as agreed — the historical record, unchanged.
 
 ## 0. Problem and positioning
@@ -255,13 +255,25 @@ runs e2e as the gate.
 
 ## 10. Shipped verification notes (§6, resolved to fact)
 
-- **Worktree trust: the risk is real.** A fresh `git worktree` of the
-  commit carries the tracked `.pi/mcp.json` (the gitignore exception
-  works), and `pi mcp list` inside it does NOT register the server —
-  untrusted project, exactly §6's flag. The fix stays sandbox-pi-side
-  (mark worktrees trusted, or pre-seed trust for the worktree root);
-  nothing to fix here. Until then, fleet workers get the tools only in
-  trusted checkouts (the main checkout is trusted).
+- **Worktree trust: was real, now fixed on both sides.** A fresh `git
+  worktree` of the commit carries the tracked `.pi/mcp.json` (the
+  gitignore exception works), but pi skipped it — untrusted project,
+  exactly §6's flag. The fix landed where the flag pointed:
+  host-side, `~/.pi/agent/trust.json` now trusts the sandbox-pi worktrees
+  ROOT (pi's trust decision walks up the directory tree, so one entry
+  covers every future worktree — verified: a fresh worktree under the
+  root connects, 6 tools); sandbox-side, `~/bin/sandbox-pi` gained a
+  `projectMcpServers` allowlist in `.sandbox-pi.json` (this repo lists
+  `cybermole-dev`) — named self-contained servers run in-container
+  instead of being masked by the empty overlay (project MCP is masked by
+  default: host-path servers just burn pi's connect timeout in the
+  sandbox; workers boot with `-a`, so trust was never the in-container
+  blocker — the mask was). A whole-file allowlist overlays byte-identical
+  content (git clean in-sandbox, hash-verified). Verified end-to-end by
+  a fleet worker on `task/mcp-in-sandbox-verify`: after `npm ci` it saw
+  all six tools declared and exercised every one in-container —
+  run_unit_tests 367/367 through the quiet reporter, e2e-capable ladder
+  intact.
 - **Self-location: verified in a worktree.** With `node_modules` present
   (a fresh worktree has none — gitignored; sandboxes `npm ci` first), the
   server launched from a worktree path with cwd elsewhere resolved the
