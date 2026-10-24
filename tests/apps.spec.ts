@@ -127,7 +127,21 @@ async function expectHostMounted(): Promise<void> {
     slug: 'app-fixture',
   });
   expect(reloaded.status, JSON.stringify(reloaded.json)).toBe(200);
-  expect(reloaded.json.mounted).toContain('app-fixture');
+  // The reload REPORTS transitions (mounted = newly mounted this sync,
+  // reimported = cache-busted re-import of an already-mounted one) — the
+  // host's boot-retry discovery can land between this helper's row-create
+  // and this poke, moving the app between the two buckets. The assertion
+  // that matters is the post-STATE: /_admin/status lists it mounted.
+  expect(
+    [...(reloaded.json.mounted ?? []), ...(reloaded.json.reimported ?? [])],
+    JSON.stringify(reloaded.json),
+  ).toContain('app-fixture');
+  const status = await callSocket(APPS_SOCKET, 'GET', '/_admin/status');
+  expect(status.status, JSON.stringify(status.json)).toBe(200);
+  expect(
+    status.json.mounted.map((m: { slug: string }) => m.slug),
+    JSON.stringify(status.json),
+  ).toContain('app-fixture');
 }
 
 test.beforeAll(async () => {
