@@ -9,6 +9,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./route-table": "./src/route-table.ts",
+    "./route-table-emit": "./src/route-table-emit.ts",
     "./wa-client": "./src/wa-client.ts",
     "./island": "./src/island.ts"
   },
@@ -19,5 +20,8 @@
     "kysely": "^0.29.6",
     "preact": "^10.27.2",
     "zod": "^4.6.5"
+  },
+  "peerDependencies": {
+    "astro": "^7.0.0"
   }
 }
