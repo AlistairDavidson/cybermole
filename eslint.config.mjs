@@ -28,8 +28,9 @@ export default [
       '.astro/',
       'test-results/',
       'playwright-report/',
-      // fixture app, built by its own toolchain
+      // fixture app + the starter template, built by their own toolchains
       'tests/fixtures/app-fixture/',
+      'app-starter/',
     ],
   },
 

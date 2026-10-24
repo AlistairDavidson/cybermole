@@ -180,6 +180,35 @@ export function readAppsSocket(): string | null {
   return raw;
 }
 
+/** Apps root default (task/app-scaffold, apps-plan §2/§6): the compose
+ *  WORKSPACE volume (/workspace) when it exists — app trees are
+ *  workspace-side files, scaffolded next to the workspaces on that volume —
+ *  else the state dir (plain host). Pure — the fs probe is injected, like
+ *  internalSocketDefault. */
+export function appsRootDefault(stateDir: string, workspaceExists: boolean): string {
+  return workspaceExists ? '/workspace/apps' : path.join(stateDir, 'apps');
+}
+
+/** The apps root the cybermole-apps MCP scaffolds under (task/app-scaffold),
+ *  resolved with the env-schema comment's rules: unset or EMPTY = the shape
+ *  default (appsRootDefault probing /workspace); a set value must be an
+ *  ABSOLUTE path or this throws — the reader is called by the apps MCP at
+ *  boot, so the mistake stops that entry the way a bad socket path stops
+ *  the web server. A function, not an ENV constant, so other entry points
+ *  never trip over it. */
+export function readAppsRoot(): string {
+  const raw = RAW_ENV.CYBERMOLE_APPS_ROOT;
+  if (raw === undefined || raw.trim() === '') {
+    return appsRootDefault(stateDir, fs.existsSync('/workspace'));
+  }
+  if (!path.isAbsolute(raw)) {
+    throw new Error(
+      `CYBERMOLE_APPS_ROOT=${JSON.stringify(raw)} must be an absolute directory path`,
+    );
+  }
+  return raw;
+}
+
 /** Loki push config for the winston-loki transport (src/lib/logger.ts), or
  *  null when CYBERMOLE_LOKI_URL is unset — console-only logging, identical to
  *  before the observability work. Validated at boot like the S3 vars: a

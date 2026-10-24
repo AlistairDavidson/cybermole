@@ -210,6 +210,22 @@ test('the serving flag: /api/state reports the registered app serving, the tree-
   page,
 }) => {
   await login(page);
+  // The serving flag joins the app rows with a host snapshot cached for
+  // one window (10 s — a hung host must never stall the state poll), so a
+  // poll right after mounting can read the PREVIOUS window's snapshot.
+  // Poll until the window turns over — the flag is eventually-true by
+  // design, and an instant assertion is racy against any earlier poll
+  // (another spec's /api/state read, the sidebar's 15 s poll).
+  await expect
+    .poll(
+      async () => {
+        const polled = await api(page, 'GET', '/api/state');
+        const polledApps = polled.json.apps as Array<{ slug: string; serving: boolean }>;
+        return polledApps.find(a => a.slug === 'app-fixture')?.serving ?? false;
+      },
+      { timeout: 20_000 },
+    )
+    .toBe(true);
   const state = await api(page, 'GET', '/api/state');
   expect(state.status).toBe(200);
   const apps = state.json.apps as Array<{
@@ -230,8 +246,10 @@ test('the serving flag: /api/state reports the registered app serving, the tree-
   // The sidebar's app group carries the open link (dimmed only when the
   // host is not serving the app).
   const open = page.locator('workspace-sidebar .ws-group[data-group="app-fixture"] .open-app-btn');
+  // The sidebar re-renders on its own 15 s poll reading the same cached
+  // serving flag — ride out the window (see the poll above).
   await expect(open).toHaveAttribute('href', '/apps/app-fixture/');
-  await expect(open).not.toHaveClass(/not-serving/);
+  await expect(open).not.toHaveClass(/not-serving/, { timeout: 30_000 });
   const alphaOpen = page.locator(
     'workspace-sidebar .ws-group[data-group="alpha-app"] .open-app-btn',
   );

@@ -113,6 +113,18 @@ export const envSchema = {
   // boot, like the S3 vars — the CYBERMOLE_SOCK rules verbatim, one env
   // every client reads.
   CYBERMOLE_APPS_SOCK: { type: 'string', context: 'server', access: 'secret', optional: true },
+  // task/app-scaffold (docs/apps-plan.md §2/§6): the root under which the
+  // cybermole-apps MCP scaffolds app trees (<root>/<slug>). Unset = the shape
+  // default (env.ts readAppsRoot): /workspace/apps when /workspace exists —
+  // the COMPOSE WORKSPACE VOLUME owns the default: app trees are workspace-
+  // side files (uid 2000's), so they live on that volume next to the
+  // workspaces, never on the root-owned image — else <state dir>/apps (a
+  // plain-host shape has no /workspace). EMPTY counts as unset (compose's
+  // `VAR: ""`). A set value must be an ABSOLUTE path or the boot stops, like
+  // the socket vars: this is shared-filesystem wiring, and a quietly-ignored
+  // typo would scaffold trees somewhere nobody serves them. The e2e suite
+  // points it into its hermetic tree.
+  CYBERMOLE_APPS_ROOT: { type: 'string', context: 'server', access: 'secret', optional: true },
   // task/winston-loki: log aggregation — push URL of a Grafana Loki (the
   // compose `observability` profile runs one; e.g. http://loki:3100).
   // Unset = console-only logging, byte-for-byte today's behaviour (env.ts

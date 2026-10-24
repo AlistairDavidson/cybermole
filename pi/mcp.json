@@ -5,6 +5,12 @@
       "args": ["/opt/cybermole/dist-server/server/mcp.js"],
       "description": "cybermole's scheduled jobs: list, create, edit, delete and validate jobs, read run history and logs, run now, kill a live run, and list apps for the job tag picker.",
       "exposure": "direct"
+    },
+    "cybermole-apps": {
+      "command": "node",
+      "args": ["/opt/cybermole/dist-server/server/apps-mcp.js"],
+      "description": "cybermole's app build loop (root agents): scaffold an app from the image starter template, check it green (astro check + tsc + unit tests + build, one quiet envelope), build it, register/unregister its row, reload the app host (the sync point), and see per-app status (registered, mounted, serving reason, build-stale, unregistered trees).",
+      "exposure": "direct"
     }
   }
 }

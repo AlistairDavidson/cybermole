@@ -1,0 +1,30 @@
+{
+  "name": "__APP_SLUG__",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "a cybermole app on @cybermole/app-kit — scaffolded from the image's app-starter template",
+  "scripts": {
+    "setup": "node scripts/setup-node-modules.mjs",
+    "typecheck": "astro check && tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "build": "astro build && node scripts/check-selfcontained.mjs dist/server/entry.mjs",
+    "check": "npm run typecheck && npm run test && npm run build"
+  },
+  "dependencies": {
+    "@astrojs/check": "^0.9.10",
+    "@astrojs/node": "^11.1.6",
+    "@awesome.me/astro-lit": "^5.0.4",
+    "@awesome.me/webawesome": "^3.14.0",
+    "@cybermole/app-kit": "*",
+    "@lit-labs/ssr-dom-shim": "^1.6.0",
+    "@preact/signals": "^2.3.1",
+    "astro": "^7.0.0",
+    "lit": "^3.3.3",
+    "lit-element": "^4.2.1",
+    "parse5": "^7.3.0",
+    "preact": "^10.27.2",
+    "typescript": "^5.8.0",
+    "zod": "^4.6.5"
+  }
+}
