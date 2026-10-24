@@ -42,12 +42,12 @@ const base = import.meta.env.BASE_URL;
         <h1 slot="header">Notes</h1>
         <p>capture, find, and archive notes and standup journals</p>
 
-        <form method="get" action={base} class="find">
+        <form method="get" class="find">
           <input type="search" name="search" placeholder="search" value={search} aria-label="search" />
           <input type="text" name="tag" placeholder="tag" value={tag} aria-label="tag" />
           {archivedView && <input type="hidden" name="archived" value="true" />}
           <button type="submit">find</button>
-          <a href={archivedView ? base : `${base}?archived=true`}>
+          <a href={archivedView ? `${base}/` : `${base}/?archived=true`}>
             {archivedView ? 'live notes' : 'archived'}
           </a>
         </form>

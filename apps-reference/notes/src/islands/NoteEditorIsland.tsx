@@ -67,7 +67,7 @@ export default function NoteEditorIsland({ mode, note }: NoteEditorProps) {
     if (r.ok) {
       // Back to the list, where the note has left the default view —
       // that is the whole story archive tells.
-      window.location.href = import.meta.env.BASE_URL;
+      window.location.href = `${import.meta.env.BASE_URL}/`;
       return;
     }
     say(`error: ${r.errorMessage ?? r.errorCode}`);
