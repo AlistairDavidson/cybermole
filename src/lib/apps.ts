@@ -18,11 +18,18 @@ import { componentLogger } from './logger';
 import { terminalSessionName } from './tmux';
 import { checkedCwd } from './workspaces';
 import type { DatabaseReadResult } from './db';
-import type { ResultFailure, ResultSuccess } from '../types/result';
-import type { AppId, AppSlug, TmuxSessionName } from '../types/branded';
-import { asAppId, asAppSlug } from '../types/branded';
+import {
+  asAppId,
+  asAppSlug,
+  APP_SLUG_RE,
+  normalizeSlug,
+  type AppId,
+  type AppSlug,
+  type ResultFailure,
+  type ResultSuccess,
+  type TmuxSessionName,
+} from '@cybermole/app-kit';
 import type { AppState } from './types';
-import { APP_SLUG_RE, normalizeSlug } from '../schemas/patterns';
 
 const log = componentLogger('apps');
 

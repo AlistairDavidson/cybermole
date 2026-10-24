@@ -39,8 +39,12 @@ import {
 import * as tmux from './tmux';
 import type { EditorUpstream } from './editor';
 import type { CalendarCheck, ConsoleState, SettingsState } from './types';
-import type { SessionToken, TmuxSessionName } from '../types/branded';
-import type { ResultFailure, ResultSuccess } from '../types/result';
+import type {
+  ResultFailure,
+  ResultSuccess,
+  SessionToken,
+  TmuxSessionName,
+} from '@cybermole/app-kit';
 import type { TmuxSessionFailure, TmuxSessionSuccess } from './tmux';
 
 /** database_error: a state read behind the console's poll (the apps /

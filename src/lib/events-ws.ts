@@ -23,7 +23,7 @@ import type { Duplex } from 'node:stream';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { onDomainEvent, type DomainEvent } from './events';
 import type { SessionCheckResult } from './auth';
-import type { SessionToken } from '../types/branded';
+import type { SessionToken } from '@cybermole/app-kit';
 
 /** The gate's verdict: allow (with the authenticated token), destroy the
  *  socket silently (shutdown / rate limit / Origin — no reply, exactly

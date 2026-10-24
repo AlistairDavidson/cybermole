@@ -11,7 +11,7 @@ import {
   terminalFailureResponse,
 } from '../../../lib/web/responses.service';
 import { terminalPatchBody } from '../../../schemas/api';
-import { TerminalIdSchema } from '../../../schemas/ids';
+import { TerminalIdSchema } from '@cybermole/app-kit';
 
 export const PATCH: APIRoute = async ({ locals, params, request }) => {
   const { cybermole } = assertCybermoleLocals(locals);

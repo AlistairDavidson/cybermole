@@ -8,7 +8,7 @@ import type {
   TerminalId,
   TmuxSessionName,
   WorkspaceId,
-} from '../types/branded';
+} from '@cybermole/app-kit';
 
 // ---- GET /api/state: the workspace tree (workspaces-plan §5) ----
 

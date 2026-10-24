@@ -2,7 +2,7 @@
 // never rejects: a request that gets no answer is a failure Result
 // (docs/CODE_STYLE.md §1), and a 401 (the session expired, or was logged
 // out everywhere) sends the page to /login here, once for every caller.
-import type { ResultFailure, ResultSuccess } from '../types/result';
+import type { ResultFailure, ResultSuccess } from '@cybermole/app-kit';
 import { BASE } from '../base';
 
 export type SignedInFetchData = { response: Response };

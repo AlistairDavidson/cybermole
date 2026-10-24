@@ -12,7 +12,7 @@ import {
   terminalFailureResponse,
 } from '../../../../lib/web/responses.service';
 import { terminalCreateBody } from '../../../../schemas/api';
-import { WorkspaceIdSchema } from '../../../../schemas/ids';
+import { WorkspaceIdSchema } from '@cybermole/app-kit';
 
 export const POST: APIRoute = async ({ locals, params, request }) => {
   const { cybermole } = assertCybermoleLocals(locals);

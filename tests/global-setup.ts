@@ -9,7 +9,7 @@ import { StateDb, qb, type DatabaseReadResult } from '../src/lib/db';
 import { Apps } from '../src/lib/apps';
 import { Workspaces } from '../src/lib/workspaces';
 import { terminalSessionName } from '../src/lib/tmux';
-import { asAppId, asTerminalId } from '../src/types/branded';
+import { asAppId, asTerminalId } from '@cybermole/app-kit';
 import { AGENT_MARKER, MARKER, PASSWORD, TMUX_SOCKET, USERNAME, WORKSPACE } from './env';
 
 export default async function globalSetup(): Promise<void> {

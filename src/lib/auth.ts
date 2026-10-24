@@ -11,8 +11,12 @@
 // revokes every session.
 import * as crypto from 'node:crypto';
 import { databaseRead, databaseUpdate, qb, type DatabaseReadSuccess, type StateDb } from './db';
-import type { ResultFailure, ResultSuccess } from '../types/result';
-import { asSessionToken, type SessionToken } from '../types/branded';
+import {
+  asSessionToken,
+  type ResultFailure,
+  type ResultSuccess,
+  type SessionToken,
+} from '@cybermole/app-kit';
 
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
 const SESSION_TTL_MS = 7 * 24 * 3600 * 1000; // sliding: idle expiry

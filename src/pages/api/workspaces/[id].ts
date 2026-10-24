@@ -11,7 +11,7 @@ import {
   workspaceFailureResponse,
 } from '../../../lib/web/responses.service';
 import { workspacePatchBody } from '../../../schemas/api';
-import { WorkspaceIdSchema } from '../../../schemas/ids';
+import { WorkspaceIdSchema } from '@cybermole/app-kit';
 
 export const PATCH: APIRoute = async ({ locals, params, request }) => {
   const { cybermole } = assertCybermoleLocals(locals);

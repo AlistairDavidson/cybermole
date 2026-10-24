@@ -25,8 +25,12 @@ import {
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { componentLogger } from './logger';
-import { asObjectKey, type ObjectKey } from '../types/branded';
-import type { ResultFailure, ResultSuccess } from '../types/result';
+import {
+  asObjectKey,
+  type ObjectKey,
+  type ResultFailure,
+  type ResultSuccess,
+} from '@cybermole/app-kit';
 
 const log = componentLogger('storage');
 

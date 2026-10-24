@@ -54,9 +54,13 @@ import { ObjectStore } from '../src/lib/storage';
 import type { ClientMsg, ServerMsg } from '../src/lib/types';
 import { loginBody } from '../src/schemas/api';
 import { parseClientMsg } from '../src/schemas/frames';
-import { TerminalIdSchema, TmuxSessionNameSchema } from '../src/schemas/ids';
+import {
+  TerminalIdSchema,
+  TmuxSessionNameSchema,
+  type SessionToken,
+  type TmuxSessionName,
+} from '@cybermole/app-kit';
 import { UPLOAD_MAX_BODY_BYTES } from '../src/schemas/uploads';
-import type { SessionToken, TmuxSessionName } from '../src/types/branded';
 
 // Operational logging (src/lib/logger.ts): console always; a winston-loki
 // push transport when CYBERMOLE_LOKI_URL is set. Component children give every

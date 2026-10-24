@@ -41,8 +41,15 @@ import {
   type Compilable,
   type DatabaseConnection,
 } from 'kysely';
-import type { ResultFailure, ResultSuccess } from '../types/result';
-import type { AppId, AppSlug, JobName, TerminalId, WorkspaceId } from '../types/branded';
+import type {
+  AppId,
+  AppSlug,
+  JobName,
+  ResultFailure,
+  ResultSuccess,
+  TerminalId,
+  WorkspaceId,
+} from '@cybermole/app-kit';
 
 /** The shared "generic update" result: a write that only reports how many
  *  rows it touched (setters, deletes, flag flips). */

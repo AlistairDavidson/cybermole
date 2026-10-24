@@ -21,7 +21,7 @@
 import { databaseRead, databaseUpdate, qb, type DatabaseReadResult, type StateDb } from './db';
 import { ENV } from './env';
 import type { TerminalDefaults } from './types';
-import type { ResultFailure, ResultSuccess } from '../types/result';
+import type { ResultFailure, ResultSuccess } from '@cybermole/app-kit';
 
 const KEY_AGENT = 'terminalDefaults.agentCommand';
 const KEY_SHELL = 'terminalDefaults.shellCommand';

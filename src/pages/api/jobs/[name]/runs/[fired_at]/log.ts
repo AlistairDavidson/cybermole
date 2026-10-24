@@ -11,7 +11,7 @@ import {
   jobFailureResponse,
   runLogResponse,
 } from '../../../../../../lib/web/responses.service';
-import { JobNameSchema } from '../../../../../../schemas/ids';
+import { JobNameSchema } from '@cybermole/app-kit';
 import { FiredAtSchema } from '../../../../../../schemas/jobs';
 
 export const GET: APIRoute = async ({ locals, params }) => {

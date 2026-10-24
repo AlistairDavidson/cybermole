@@ -26,7 +26,7 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/input/input.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import type { ActiveKey, ClientMsg, ServerMsg } from '../../lib/types';
-import type { TerminalId, TmuxSessionName } from '../../types/branded';
+import type { TerminalId, TmuxSessionName } from '@cybermole/app-kit';
 import { parseBackfillMsg } from '../../schemas/frames';
 import { BASE } from '../../base';
 

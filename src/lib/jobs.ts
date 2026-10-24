@@ -36,16 +36,15 @@ import {
 } from './db';
 import { componentLogger } from './logger';
 import type { CalendarCheck, JobsState, ScheduledJob } from './types';
-import {
-  hasSession,
-  jobSessionName,
-  killSession,
-  liveSessionNames,
-  newSession,
-} from './tmux';
+import { hasSession, jobSessionName, killSession, liveSessionNames, newSession } from './tmux';
 import { emitDomainEvent } from './events';
-import type { ResultFailure, ResultSuccess } from '../types/result';
-import type { AppId, JobName, TmuxSessionName } from '../types/branded';
+import type {
+  AppId,
+  JobName,
+  ResultFailure,
+  ResultSuccess,
+  TmuxSessionName,
+} from '@cybermole/app-kit';
 import { MAX_SCHEDULE, type SaveInput } from '../schemas/jobs';
 
 // ---------- results (HTTP statuses are mapped in the HTTP layer) ----------
@@ -708,12 +707,7 @@ export class Scheduler {
     const opened = await newSession(
       session,
       this.ctx.cwd,
-      runCommandArgv(
-        row.command,
-        recorded.paths.log,
-        recorded.paths.exit,
-        this.ctx.logMaxBytes,
-      ),
+      runCommandArgv(row.command, recorded.paths.log, recorded.paths.exit, this.ctx.logMaxBytes),
       this.ctx.env,
     );
     if (!opened.ok)

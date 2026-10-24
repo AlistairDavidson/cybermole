@@ -6,7 +6,7 @@
 // not a state to render around: it throws. Type-only imports: safe for
 // the Astro bundle (see services.ts).
 import type { CybermoleLocals, CybermoleServices } from '../services';
-import type { SessionToken } from '../../types/branded';
+import type { SessionToken } from '@cybermole/app-kit';
 
 export function assertCybermoleLocals(locals: CybermoleLocals): {
   cybermole: CybermoleServices;

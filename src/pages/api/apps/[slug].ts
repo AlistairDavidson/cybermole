@@ -12,7 +12,7 @@ import {
   jsonResponse,
 } from '../../../lib/web/responses.service';
 import { appPatchBody } from '../../../schemas/api';
-import { AppSlugSchema } from '../../../schemas/ids';
+import { AppSlugSchema } from '@cybermole/app-kit';
 
 export const PATCH: APIRoute = async ({ locals, params, request }) => {
   const { cybermole } = assertCybermoleLocals(locals);

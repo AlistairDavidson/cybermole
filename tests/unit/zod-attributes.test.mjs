@@ -12,8 +12,11 @@ import {
 } from '../../dist-server/src/lib/web/zod.service.js';
 import { JobSaveSchema } from '../../dist-server/src/schemas/jobs.js';
 import { loginForm } from '../../dist-server/src/schemas/api.js';
-import { UUID_RE } from '../../dist-server/src/schemas/patterns.js';
-import { JobNameSchema, TmuxSessionNameSchema } from '../../dist-server/src/schemas/ids.js';
+import { UUID_RE } from '../../dist-server/packages/app-kit/src/schemas/patterns.js';
+import {
+  JobNameSchema,
+  TmuxSessionNameSchema,
+} from '../../dist-server/packages/app-kit/src/schemas/ids.js';
 
 const attrs = shape => zodSchemaToHTMLAttributes(z.object(shape));
 

@@ -40,14 +40,13 @@ import {
   runLogResponse,
 } from '../src/lib/web/responses.service';
 import { parseAndValidateAPIRequest } from '../src/lib/web/parsing.service';
-import { AppSlugSchema, JobNameSchema } from '../src/schemas/ids';
+import { AppSlugSchema, JobNameSchema, type AppId, type JobName } from '@cybermole/app-kit';
 import {
   FiredAtSchema,
   JobPatchSchema,
   JobSaveSchema,
   JobValidateSchema,
 } from '../src/schemas/jobs';
-import type { AppId, JobName } from '../src/types/branded';
 
 const log = componentLogger('internal-api');
 

@@ -24,13 +24,14 @@ import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import { ENV, RAW_ENV } from './env';
 import { componentLogger } from './logger';
-import type { ResultFailure, ResultSuccess } from '../types/result';
 import {
   asTmuxSessionName,
   type JobName,
+  type ResultFailure,
+  type ResultSuccess,
   type TerminalId,
   type TmuxSessionName,
-} from '../types/branded';
+} from '@cybermole/app-kit';
 
 export const SOCKET = ENV.CYBERMOLE_TMUX_SOCKET;
 

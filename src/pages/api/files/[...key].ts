@@ -14,13 +14,16 @@ import {
   invalidObjectKeyResponse,
   objectStoreFailureResponse,
 } from '../../../lib/web/responses.service';
-import { ObjectKeySchema } from '../../../schemas/ids';
+import { ObjectKeySchema } from '@cybermole/app-kit';
 
 export const GET: APIRoute = async ({ locals, params, request }) => {
   const { cybermole } = assertCybermoleLocals(locals);
   const key = ObjectKeySchema.safeParse(params.key);
   if (!key.success) return invalidObjectKeyResponse();
-  const fetched = await cybermole.objectStore.fetchObject(key.data, parseRangeRequest(request.headers));
+  const fetched = await cybermole.objectStore.fetchObject(
+    key.data,
+    parseRangeRequest(request.headers),
+  );
   if (!fetched.ok) return objectStoreFailureResponse(fetched);
   return fileDownloadResponse(fetched.data);
 };

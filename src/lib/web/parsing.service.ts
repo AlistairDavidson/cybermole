@@ -10,7 +10,7 @@ import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { Busboy, type BusboyFileStream, type BusboyInstance } from '@fastify/busboy';
 import type { z, ZodType } from 'zod';
 import type { ObjectRange } from '../storage';
-import type { ResultFailure, ResultSuccess } from '../../types/result';
+import type { ResultFailure, ResultSuccess } from '@cybermole/app-kit';
 
 export type ParseSuccess<DataType extends object> = ResultSuccess<'parse_request', DataType>;
 export type ParseErrorCode = 'unsupported_content_type' | 'invalid_json' | 'invalid_form_data';
