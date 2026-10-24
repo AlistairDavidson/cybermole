@@ -1058,7 +1058,11 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     // for. No per-page allowlist to forget when a page is added. Data
     // routes are never pages: the API, the server-rendered partials
     // (fragments an element swaps in) and the proxied editor answer 401
-    // instead.
+    // instead. The proxied /apps/* namespace is deliberately NOT excluded:
+    // its paths mix an app's pages and API under one prefix the web side
+    // cannot split, so GETs get the page treatment (the login render) and
+    // only non-GETs are data routes — never app bytes reach an
+    // unauthenticated reader either way (task/app-web).
     if (
       req.method === 'GET' &&
       underBase(url) &&

@@ -9,8 +9,15 @@
 //   small tables, fail-closed reads.
 // - No WAL: one plain file that behaves on any volume (WAL's -wal/-shm
 //   sidecars are the classic network-storage footgun).
-// - The connection opens lazily on first use: an eager open can latch (and
-//   orphan) a db file a later reset deletes.
+// - The connection opens lazily on first use: an eager open can latch
+//   (and orphan) a db file a later reset deletes — and if the latch
+//   happens anyway (something legitimately reads at boot), a REPLACED
+//   file (a test's workspace reset, an operator restoring a backup) is
+//   adopted at the next use: the old inode would read stale rows and
+//   fail every write with SQLITE_READONLY, so the swap is detected by
+//   inode and the connection (plus its cached statements) reopens on
+//   the new file. A file deleted WITHOUT a replacement keeps serving
+//   the open inode — reads still work, writes fail loudly.
 // - Queries are typed with Kysely, used as a query BUILDER only: createQb()
 //   compiles against the app's schema interfaces and the SqliteDb below
 //   runs the SQL on its own synchronous connection (all/get/run). Kysely's
@@ -150,6 +157,9 @@ export interface SqliteDbOptions {
 export class SqliteDb {
   private conn: DatabaseSync | null = null;
   private stmts = new Map<string, StatementSync>();
+  /** dev+ino of the file this.conn was opened on — the replaced-file
+   *  detection below compares against it. */
+  private openedOn: { dev: number; ino: number } | null = null;
 
   constructor(
     readonly file: string,
@@ -158,7 +168,21 @@ export class SqliteDb {
 
   /** The connection — dir, schema and migrations happen on first use. */
   db(): DatabaseSync {
-    if (this.conn) return this.conn;
+    if (this.conn !== null) {
+      // The latch case (module comment): something replaced the file under
+      // the open connection — adopt the new one. A stat that throws (the
+      // path is gone) keeps the open connection: a DELETED db serves its
+      // inode until it fails loudly on write, never a silent fresh file.
+      try {
+        const st = fs.statSync(this.file);
+        if (this.openedOn === null || st.dev !== this.openedOn.dev || st.ino !== this.openedOn.ino) {
+          this.dropConn();
+        }
+      } catch {
+        /* path gone — keep the open inode */
+      }
+      if (this.conn !== null) return this.conn;
+    }
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     const fresh = !fs.existsSync(this.file);
     const db = new DatabaseSync(this.file);
@@ -183,6 +207,7 @@ export class SqliteDb {
       if (fresh && this.options.freshMode !== undefined)
         fs.chmodSync(this.file, this.options.freshMode);
       this.conn = db;
+      this.openedOn = fs.statSync(this.file);
       return db;
     } catch (err) {
       try {
@@ -194,11 +219,27 @@ export class SqliteDb {
     }
   }
 
+  /** Forget the open connection + its cached statements (a replaced file
+   *  is a different database — its statements must not survive it). */
+  private dropConn(): void {
+    try {
+      this.conn?.close();
+    } catch {
+      /* already gone */
+    }
+    this.conn = null;
+    this.openedOn = null;
+    this.stmts.clear();
+  }
+
   /** Prepared statement, compiled once per connection (keyed by SQL text:
    *  a Kysely query compiles to the same text every call, values bound as
-   *  parameters). Opens the db if needed. */
+   *  parameters). Runs db() FIRST on every query — that is where the
+   *  replaced-file check lives, and a cached statement must never bypass
+   *  it (a swapped file's statements are the swap's first victim). */
   private stmt<R>(query: Compilable<R>): { stmt: StatementSync; params: SQLInputValue[] } {
     const { sql, parameters } = query.compile();
+    this.db();
     let s = this.stmts.get(sql);
     if (!s) {
       s = this.db().prepare(sql);

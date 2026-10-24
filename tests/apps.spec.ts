@@ -154,13 +154,27 @@ test('the /apps/* gate: an unauthenticated page GET renders the login page in pl
   // address bar keeps the asked-for URL.
   await expect(page.locator('wa-input#username')).toBeVisible();
   await expect(page).toHaveURL(/\/apps\/app-fixture\/$/);
-  // The app's API path is a data route, not a page: 401, no login HTML.
+  // GETs anywhere in the namespace are PAGES to the gate (apps mix pages
+  // and API under one prefix the web side cannot split): the same
+  // in-place login render, never app bytes. A non-GET is a data route:
+  // 401, no login HTML.
   const r = await page.evaluate(async () => {
     const res = await fetch('/apps/app-fixture/api/ping?name=x');
     return { status: res.status, body: await res.text() };
   });
-  expect(r.status).toBe(401);
-  expect(r.body).toBe('unauthorized');
+  expect(r.status).toBe(200);
+  expect(r.body).toContain('sign in');
+  expect(r.body).not.toContain('pong');
+  const posted = await page.evaluate(async () => {
+    const res = await fetch('/apps/app-fixture/api/ping', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    return { status: res.status, body: await res.text() };
+  });
+  expect(posted.status).toBe(401);
+  expect(posted.body).toBe('unauthorized');
 });
 
 test('the happy path: the fixture app serves its SSR page and Result-JSON API through the console origin', async ({
