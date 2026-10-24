@@ -72,5 +72,14 @@ export default defineConfig({
     schema: envSchema,
   },
   // trailingSlash 'ignore' — the Node server decides what / and /login map to.
-  vite: { server: { proxy: devProxy } },
+  // The kit (@cybermole/app-kit, an npm workspace) ships TS source; Vite
+  // would externalize it like any node_modules dep (serve-time would then
+  // resolve the source symlink's .ts exports — no such thing at runtime).
+  // noExternal bundles it into dist/server/entry.mjs instead, compiled from
+  // source — the same self-contained-entry property apps' builds get
+  // (docs/apps-plan.md §5).
+  vite: {
+    ssr: { noExternal: ['@cybermole/app-kit'] },
+    server: { proxy: devProxy },
+  },
 });

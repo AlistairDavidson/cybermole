@@ -37,11 +37,13 @@ export default [
   // Type-aware linting for the TypeScript surfaces. Both tsconfigs are listed
   // explicitly: the project service only discovers configs named tsconfig.json,
   // and src/lib + src/schemas + src/types + server + cli live in tsconfig.server.json.
+  // packages/app-kit has its own tsconfig.json (extends the server one, noEmit).
   {
     files: [
       'src/**/*.ts',
       'server/**/*.ts',
       'cli/**/*.ts',
+      'packages/app-kit/**/*.ts',
       'tests/**/*.ts',
       'playwright.config.ts',
     ],
