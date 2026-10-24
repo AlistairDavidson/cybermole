@@ -16,7 +16,7 @@
     "build": "astro build && tsc -p tsconfig.server.json && node tools/place-kit-manifest.mjs",
     "start": "docker compose up -d --build",
     "set-password": "node dist-server/server/set-password.js",
-    "check": "astro check && tsc -p tsconfig.server.json --noEmit",
+    "check": "astro check && tsc -p tsconfig.server.json --noEmit && tsc -p packages/app-kit/tsconfig.json --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

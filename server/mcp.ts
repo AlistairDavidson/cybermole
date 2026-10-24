@@ -36,12 +36,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { readInternalApiSocket } from '../src/lib/env';
 import { AppSlugSchema, JobNameSchema } from '@cybermole/app-kit';
-import {
-  FiredAtSchema,
-  JobPatchSchema,
-  JobSaveSchema,
-  JobValidateSchema,
-} from '../src/schemas/jobs';
+import { FiredAtSchema, JobPatchSchema, JobSaveSchema, JobValidateSchema } from '../src/schemas/jobs';
 
 // ---------- the internal API socket client (plan §6) ----------
 
@@ -135,7 +130,10 @@ async function answerToolResult(
     answer = await requestInternalApi(socketPath, call);
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
-    const why = code !== undefined ? `(${code})` : `: ${(err as Error).message}`; // a reset mid-response — no errno
+    const why =
+      code !== undefined
+        ? `(${code})`
+        : `: ${(err as Error).message}`; // a reset mid-response — no errno
     return {
       content: [
         {
@@ -187,11 +185,11 @@ export function createJobsMcpServer(deps: { socketPath: string | null }): McpSer
     {
       description:
         'List the scheduled jobs — the same rows the console /jobs page shows ' +
-        "(name, cron schedule, command, app tag). Pass app to list only one app's " +
+        '(name, cron schedule, command, app tag). Pass app to list only one app\'s ' +
         'tagged jobs by its slug (from apps_list); an unknown slug answers the ' +
         'app_not_found failure code.',
       inputSchema: {
-        app: AppSlugSchema.optional().describe("an app slug, to list only that app's jobs"),
+        app: AppSlugSchema.optional().describe('an app slug, to list only that app\'s jobs'),
       },
     },
     async ({ app }) =>
@@ -205,11 +203,11 @@ export function createJobsMcpServer(deps: { socketPath: string | null }): McpSer
     'jobs_create',
     {
       description:
-        "Create a job — the console's new-job form. The name is a display name, " +
+        'Create a job — the console\'s new-job form. The name is a display name, ' +
         'normalized into the job\'s id ("Nightly Check" → nightly-check); schedule is a ' +
         '5-field cron (minute hour day-of-month month day-of-week); command is the ' +
         'one-line shell every run executes, as the workspace user. appId optionally ' +
-        "tags the job with an app (apps_list's id). The answer is the Result JSON: a " +
+        'tags the job with an app (apps_list\'s id). The answer is the Result JSON: a ' +
         'bad schedule carries the invalid_schedule code, a taken name stays a plain ' +
         'update (jobs are upserted by name).',
       inputSchema: {
@@ -272,7 +270,7 @@ export function createJobsMcpServer(deps: { socketPath: string | null }): McpSer
     'jobs_delete',
     {
       description:
-        "Delete a job: its definition, run history and log files. A live run's " +
+        'Delete a job: its definition, run history and log files. A live run\'s ' +
         'terminal session is deliberately left alone (kill it first if that ' +
         'matters). An unknown name answers job_not_found.',
       inputSchema: { name: nameSchema },
@@ -296,8 +294,8 @@ export function createJobsMcpServer(deps: { socketPath: string | null }): McpSer
     'jobs_log',
     {
       description:
-        "The newest 1 MiB tail of one run's log, as plain text. firedAt is the " +
-        "run's id from jobs_runs. Answers run_not_found for an unknown run, " +
+        'The newest 1 MiB tail of one run\'s log, as plain text. firedAt is the ' +
+        'run\'s id from jobs_runs. Answers run_not_found for an unknown run, ' +
         'log_missing when the run left no log file.',
       inputSchema: { name: nameSchema, firedAt: firedAtSchema },
     },
@@ -309,7 +307,7 @@ export function createJobsMcpServer(deps: { socketPath: string | null }): McpSer
     'jobs_run_now',
     {
       description:
-        "Start a manual run of the job now — the console's Run now button. It opens " +
+        'Start a manual run of the job now — the console\'s Run now button. It opens ' +
         'a live terminal session (cybermole-<name>) and answers the Result JSON with ' +
         'the session name. A previous run still being alive answers run_active: ' +
         'jobs never pile up — check jobs_runs and kill the old run first.',
