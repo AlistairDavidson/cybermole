@@ -27,10 +27,11 @@ npm run test      # just the unit tests
 ```
 
 The same loop runs through the root agent's `cybermole-apps` MCP
-(`check`/`build`/`register`/`reload`) — this tree's `.pi/mcp.json`
+(`add_action`/`check`/`build`/`register`/`reload`) — this tree's `.pi/mcp.json`
 disables that MCP on purpose (operators don't scaffold) and registers the
-app's own action tools under the app's slug (the shim binary ships with
-the cybermole install; the entry is inert until then — apps-plan §6).
+app's own action tools under the app's slug: the shim binary
+(`<install>/dist-server/server/app-mcp-shim.js <slug>`), its tools 1:1 with
+`dist/route-table.json`.
 
 `AGENTS.md` in this tree is the operator's manual for agents working
 here — read it first.
