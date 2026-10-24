@@ -382,8 +382,10 @@ test('GET /apps: the picker rows over the socket; database_error when the apps d
     assert.deepEqual(r.json, {
       apps: [{ id: app.data.id, name: 'Deploy Tools', slug: 'deploy-tools', cwd: null, order: 10 }],
     });
-    const notGet = await call(w.socketPath, 'POST', '/apps', { name: 'X' });
-    assert.equal(notGet.status, 404); // the picker is a read; writes stay console-side
+    // The other verbs exist now (§0's amendment — the tests below cover
+    // them); the surface's unknown-verb answer is still the Result 404.
+    const notAVerb = await call(w.socketPath, 'PUT', '/apps');
+    assert.equal(notAVerb.status, 404);
   } finally {
     await w.api.close();
   }
@@ -403,6 +405,107 @@ test('GET /apps: the picker rows over the socket; database_error when the apps d
     assert.equal(broken.json.code, 'database_error');
   } finally {
     await api.close();
+  }
+});
+
+// task/app-web (apps-plan §0's amendment): the app_save/app_delete
+// verbs — registration is the workspace side's power now, the same trust
+// level as job creation, mirroring the console routes 1:1 through the
+// same Apps domain calls and mappers (wire JSON byte-identical).
+test("POST /apps creates (name + optional cwd), the browser verb's bodies verbatim", async () => {
+  const w = await boot();
+  try {
+    const made = await call(w.socketPath, 'POST', '/apps', {
+      name: 'App Fixture',
+      cwd: w.root,
+    });
+    assert.equal(made.status, 200);
+    assert.equal(made.json.name, 'App Fixture');
+    assert.equal(made.json.slug, 'app-fixture');
+    assert.equal(made.json.cwd, w.root);
+    assert.ok(typeof made.json.id === 'string');
+
+    // the same success shape the console's POST /api/apps answers
+    const listed = await call(w.socketPath, 'GET', '/apps');
+    assert.equal(listed.json.apps.length, 1);
+    assert.equal(listed.json.apps[0].slug, 'app-fixture');
+
+    // the browser verb's failure bodies: closed codes, not messages
+    const dup = await call(w.socketPath, 'POST', '/apps', { name: 'app fixture' });
+    assert.equal(dup.status, 409);
+    assert.equal(dup.json.code, 'duplicate_slug');
+    assert.equal(dup.json.error, 'an app with the slug "app-fixture" already exists');
+
+    const badName = await call(w.socketPath, 'POST', '/apps', { name: '!!' });
+    assert.equal(badName.status, 400);
+    assert.equal(badName.json.code, 'invalid_name');
+
+    const badCwd = await call(w.socketPath, 'POST', '/apps', {
+      name: 'Elsewhere',
+      cwd: 'relative/x',
+    });
+    assert.equal(badCwd.status, 400);
+    assert.equal(badCwd.json.code, 'invalid_cwd');
+
+    const malformed = await call(w.socketPath, 'POST', '/apps', {});
+    assert.equal(malformed.status, 400);
+    assert.equal(malformed.json.code, 'validation_failure');
+  } finally {
+    await w.api.close();
+  }
+});
+
+test('PATCH /apps/:slug: rename / set-cwd / clear-cwd; invalid slug and app_not_found are the browser bodies', async () => {
+  const w = await boot();
+  try {
+    const made = await call(w.socketPath, 'POST', '/apps', { name: 'Notes', cwd: w.root });
+    assert.equal(made.status, 200);
+
+    const renamed = await call(w.socketPath, 'PATCH', '/apps/notes', { name: 'Journal' });
+    assert.equal(renamed.status, 200);
+    assert.equal(renamed.json.name, 'Journal');
+    assert.equal(renamed.json.slug, 'notes', 'the slug is stable');
+    assert.equal(renamed.json.cwd, w.root);
+
+    const cleared = await call(w.socketPath, 'PATCH', '/apps/notes', { cwd: null });
+    assert.equal(cleared.status, 200);
+    assert.equal(cleared.json.cwd, null);
+
+    const absent = await call(w.socketPath, 'PATCH', '/apps/notes', {});
+    assert.equal(absent.status, 200); // a no-op returns the row as it stands
+    assert.equal(absent.json.name, 'Journal');
+
+    const notFound = await call(w.socketPath, 'PATCH', '/apps/never', { name: 'X' });
+    assert.equal(notFound.status, 404);
+    assert.equal(notFound.json.code, 'app_not_found');
+
+    const badSlug = await call(w.socketPath, 'PATCH', '/apps/not%20a@slug', { name: 'X' });
+    assert.equal(badSlug.status, 400);
+    assert.equal(badSlug.json.code, 'invalid_app_slug');
+  } finally {
+    await w.api.close();
+  }
+});
+
+test('DELETE /apps/:slug unregisters: the row + cascade through the same domain, app_not_found on repeat', async () => {
+  const w = await boot();
+  try {
+    const made = await call(w.socketPath, 'POST', '/apps', { name: 'Poison', cwd: w.root });
+    assert.equal(made.status, 200);
+    const id = made.json.id;
+
+    const gone = await call(w.socketPath, 'DELETE', '/apps/poison');
+    assert.equal(gone.status, 200);
+    assert.deepEqual(gone.json, { id });
+
+    const repeat = await call(w.socketPath, 'DELETE', '/apps/poison');
+    assert.equal(repeat.status, 404);
+    assert.equal(repeat.json.code, 'app_not_found');
+
+    const listed = await call(w.socketPath, 'GET', '/apps');
+    assert.equal(listed.json.apps.length, 0, 'the row is gone');
+  } finally {
+    await w.api.close();
   }
 });
 
@@ -667,7 +770,10 @@ test('a live listener owns the socket: the typed error main.ts degrades on', asy
         // The typed marker is the contract: main.ts serves on (loud log,
         // listener disabled) ONLY for this error; every other failure
         // still stops the boot (plan §3, amended in integration).
-        assert.ok(err instanceof InternalSocketOwnedError, 'the typed marker, not just the message');
+        assert.ok(
+          err instanceof InternalSocketOwnedError,
+          'the typed marker, not just the message',
+        );
         assert.equal(err.socketPath, w.socketPath);
         assert.match(err.message, /another cybermole server owns the socket/);
         return true;
@@ -725,7 +831,9 @@ test('env: EMPTY CYBERMOLE_SOCK is off — the listener is disabled', () => {
 test('env: unset = the shape default; an absolute path wins', () => {
   const stateDir = fs.mkdtempSync(path.join(dir, 'state-'));
   const runCybermole = fs.existsSync('/run/cybermole');
-  const expected = runCybermole ? '/run/cybermole/cybermole.sock' : path.join(stateDir, 'cybermole.sock');
+  const expected = runCybermole
+    ? '/run/cybermole/cybermole.sock'
+    : path.join(stateDir, 'cybermole.sock');
   assert.equal(readSock({ CYBERMOLE_STATE_DIR: stateDir }).value, expected);
   assert.equal(readSock({ CYBERMOLE_SOCK: '/tmp/other.sock' }).value, '/tmp/other.sock');
 });

@@ -55,6 +55,10 @@ async function bootServer(env: Record<string, string> = {}): Promise<PrivateServ
       CYBERMOLE_PORT: String(PORT),
       CYBERMOLE_HOST: '127.0.0.1',
       CYBERMOLE_STATE_DIR: dir,
+      // task/app-web: this spec's server doesn't exercise the apps surface
+      // — empty CYBERMOLE_APPS_SOCK keeps the single-user spawn rule from
+      // starting a supervised app host beside this boot.
+      CYBERMOLE_APPS_SOCK: '',
       CYBERMOLE_TMUX_SOCKET: `cybermole-logs-itest-${process.pid}`,
       ...env,
     }),

@@ -1,5 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
-import { S3_ACCESS_KEY, S3_BUCKET, S3_PORT, TMUX_SOCKET, WORKSPACE } from './tests/env';
+import { S3_ACCESS_KEY, S3_BUCKET, S3_PORT, TMUX_SOCKET, WORKSPACE, STATE_DIR } from './tests/env';
 
 const PORT = 3470;
 
@@ -39,6 +39,19 @@ export default defineConfig({
       env: {
         CYBERMOLE_PORT: String(PORT),
         CYBERMOLE_HOST: '127.0.0.1',
+        // task/app-web: CYBERMOLE_STATE_DIR is pinned to a SIBLING of
+        // WORKSPACE purely for the apps surface — the webServer leaves
+        // CYBERMOLE_APPS_SOCK UNSET, so the server's single-user spawn
+        // rule (apps-plan §3) starts + supervises the app host itself at
+        // the state dir's default <STATE_DIR>/apps.sock. That default
+        // must NOT live inside WORKSPACE (global-setup rm -rf's it after
+        // this server boots, and the host's listener is created eagerly —
+        // the same reason CYBERMOLE_SOCK below is a sibling). The db and
+        // agent dir are explicitly pointed into WORKSPACE, so pinning the
+        // state dir moves nothing else. The host discovers apps over the
+        // internal socket below and retries until it answers (the boot
+        // race the host is built for); tests/apps.spec.ts is its consumer.
+        CYBERMOLE_STATE_DIR: STATE_DIR,
         // The suite is serial from one IP and legitimately upgrades far more
         // than a human (every terminal test attaches/pops/reconnects) — the
         // production default of 30/min refuses the jobs test's run attach.

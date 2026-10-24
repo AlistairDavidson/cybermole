@@ -22,7 +22,8 @@ const BASE = `http://127.0.0.1:${PORT}`;
 function bareEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined && !k.startsWith('CYBERMOLE_') && !k.startsWith('PI_CODING_AGENT')) env[k] = v;
+    if (v !== undefined && !k.startsWith('CYBERMOLE_') && !k.startsWith('PI_CODING_AGENT'))
+      env[k] = v;
   }
   return { ...env, ...extra };
 }
@@ -35,6 +36,10 @@ async function boot(dir: string): Promise<ChildProcess> {
       CYBERMOLE_HOST: '127.0.0.1',
       CYBERMOLE_STATE_DIR: dir,
       CYBERMOLE_TMUX_SOCKET: `cybermole-restart-itest-${process.pid}`,
+      // task/app-web: this spec's servers don't exercise the apps
+      // surface — empty CYBERMOLE_APPS_SOCK keeps the single-user spawn
+      // rule from starting a supervised app host alongside each boot.
+      CYBERMOLE_APPS_SOCK: '',
     }),
     stdio: ['ignore', 'pipe', 'pipe'],
   });

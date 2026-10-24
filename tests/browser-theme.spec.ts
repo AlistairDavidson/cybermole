@@ -214,6 +214,10 @@ async function spawnServer(): Promise<void> {
       CYBERMOLE_PORT: String(PORT),
       CYBERMOLE_HOST: '127.0.0.1',
       CYBERMOLE_STATE_DIR: dir,
+      // task/app-web: this spec's server doesn't exercise the apps surface
+      // — empty CYBERMOLE_APPS_SOCK keeps the single-user spawn rule from
+      // starting a supervised app host beside this boot.
+      CYBERMOLE_APPS_SOCK: '',
       // the editor upstream: configured (editor: true in the state the
       // console polls) but nothing listens — dead-on-arrival 502s only.
       CYBERMOLE_EDITOR_UPSTREAM: 'http://127.0.0.1:1',

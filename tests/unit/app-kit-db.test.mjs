@@ -110,6 +110,46 @@ test('createQb + SqliteDb: typed round-trip through the boundary Results', async
   assert.match(failed.errorMessage, /could not read: /);
 });
 
+// The replaced-file latch (task/app-web): the app host's boot discovery
+// legitimately opens the state db at server boot — before the e2e
+// global-setup resets the workspace — so the connection can latch onto a
+// file the reset then replaces. SqliteDb adopts the new file by inode at
+// the next query; a file merely deleted (no replacement) keeps serving
+// the open inode instead of silently adopting a fresh empty one.
+test('a replaced db file is adopted at the next query; a deleted one is not', async () => {
+  const file = freshFile('kit-db-replaced-');
+  const db = new SqliteDb(file, { schema: SCHEMA, version: 1 });
+  // Prime BOTH halves of the cache: the connection and a prepared statement.
+  db.run(qb.insertInto('notes').values({ id: 1, body: 'original' }));
+  assert.equal(db.get(qb.selectFrom('notes').select('body').where('id', '=', 1))?.body, 'original');
+
+  // The reset: a second file is built elsewhere and swapped in (like the
+  // e2e's workspace reset) with a row the old file never had.
+  const swap = path.join(path.dirname(file), 'swap.db');
+  const seeder = new SqliteDb(swap, { schema: SCHEMA, version: 1 });
+  seeder.run(qb.insertInto('notes').values({ id: 1, body: 'replacement' }));
+  fs.rmSync(file);
+  fs.copyFileSync(swap, file);
+
+  // The next query sees the NEW file — the old inode would read 'original'
+  // and fail every write readonly — and writes land on it.
+  assert.equal(
+    db.get(qb.selectFrom('notes').select('body').where('id', '=', 1))?.body,
+    'replacement',
+  );
+  const wrote = databaseUpdate('could not save the note', () =>
+    db.run(qb.insertInto('notes').values({ id: 2, body: 'second' })),
+  );
+  assert.equal(wrote.ok, true);
+  assert.equal(db.all(qb.selectFrom('notes').select('id')).length, 2);
+
+  // A deleted file (no replacement): the open connection keeps serving —
+  // reads still answer from the inode it holds; nothing resets to a fresh
+  // empty db behind the caller's back.
+  fs.rmSync(file);
+  assert.equal(db.get(qb.selectFrom('notes').select('body').where('id', '=', 2))?.body, 'second');
+});
+
 test('createQb only compiles: a query run through Kysely itself throws, never silently reads', async () => {
   const file = freshFile('kit-db-compile-only-');
   new SqliteDb(file, { schema: SCHEMA, version: 1 }).db();

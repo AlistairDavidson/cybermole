@@ -15,8 +15,9 @@
 // (localStorage, one key per app slug), is applied during render so a
 // poll never flickers rows open, and the toggle is a real <button>
 // flipping the DOM in place to what the next render would produce.
-import type { AppState, ConsoleState, WorkspaceState } from '../lib/types';
+import type { AppServingState, ConsoleState, WorkspaceState } from '../lib/types';
 import type { WorkspaceId } from '@cybermole/app-kit';
+import { BASE } from '../base';
 import '@awesome.me/webawesome/dist/components/input/input.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/badge/badge.js';
@@ -165,7 +166,12 @@ export class WorkspaceSidebar extends HTMLElement {
   /** A group section: header (collapse chevron, name + `+ workspace` +
    *  app delete when an app) + its workspace rows (name, live-terminal
    *  count badge, delete). */
-  private group(key: string, name: string, workspaces: WorkspaceState[], app?: AppState): string {
+  private group(
+    key: string,
+    name: string,
+    workspaces: WorkspaceState[],
+    app?: AppServingState,
+  ): string {
     const visible = workspaces.filter(w => this.matchesSearch(w));
     if (this.search.trim() && visible.length === 0) return ''; // a filter hides empty groups
     // Filter interaction: a non-empty filter forces groups open at render
@@ -176,6 +182,17 @@ export class WorkspaceSidebar extends HTMLElement {
     const collapsed = this.search.trim() === '' && navCollapsed().has(key);
     const rowsId = `ws-group-rows-${key}`;
     const hide = collapsed ? ' hidden' : '';
+    // task/app-web (apps-plan §4): the app group's open link — /apps/<slug>/
+    // in a new tab (the editor tab's target=_blank pattern). A plain <a>
+    // with an icon (no stateful wa-* — the poll discipline): serving=false
+    // (a dead host, or a registered-but-unbuilt tree) only demotes it —
+    // dimmed + the servingReason as its tooltip, still honest to click.
+    const open = app
+      ? `<a class="open-app-btn${app.serving ? '' : ' not-serving'}" ` +
+        `href="${BASE}/apps/${esc(app.slug)}/" target="_blank" rel="noopener" ` +
+        `title="${esc(app.serving ? `open ${app.name} in a new tab` : `${app.name} is not serving: ${app.servingReason ?? 'the app host is down'}`)}">` +
+        `<wa-icon name="arrow-up-right-from-square" label="open ${esc(app.name)}"></wa-icon></a>`
+      : '';
     const del = app
       ? `<wa-button class="del-app-btn" data-del-app="${esc(app.slug)}" size="xs" appearance="plain" ` +
         `title="delete the app ${esc(app.name)} (and its workspaces)">` +
@@ -202,6 +219,7 @@ export class WorkspaceSidebar extends HTMLElement {
       `<wa-icon name="chevron-down"></wa-icon></button>` +
       `<span class="g-name" title="${esc(title)}">${esc(name)}</span>` +
       `<span class="g-actions">` +
+      open +
       `<wa-button class="new-ws-btn" data-new-ws="${app ? esc(app.id) : ''}" size="xs" appearance="plain" ` +
       `title="new workspace in ${esc(name)}"><wa-icon name="plus" label="new workspace"></wa-icon></wa-button>` +
       del +
