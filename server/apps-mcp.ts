@@ -1,11 +1,15 @@
 // apps-mcp.ts — the apps MCP server `cybermole-apps` (task/app-scaffold,
 // docs/apps-plan.md §6): the ROOT agent's build-loop surface — scaffold,
-// check, build, reload, register, unregister, status. add_action,
-// describe and call are branch 5 (task/app-actions) and are deliberately
-// NOT stubbed here. Everything the tools do is the plan's loop (§1):
-// scaffold a starter → check green → register (the db row; the tree
-// existed since scaffold) → reload (the host's sync point) → serve; the
-// same reload after unregister drops the mount.
+// check, build, reload, register, unregister, status — plus the action
+// vocabulary (task/app-actions): add_action (the generator — one table
+// entry becomes route + MCP tool + UI stub + test stub + the AGENTS.md
+// action section, in lockstep) and describe/call (the emitted table's
+// read face and the root agent's use path; the app's own per-tree MCP
+// is the shim, server/app-mcp-shim.ts). Everything the tools do is the
+// plan's loop (§1): scaffold a starter → check green → register (the db
+// row; the tree existed since scaffold) → reload (the host's sync
+// point) → serve; the same reload after unregister drops the mount;
+// add_action extends a tree between check and reload.
 //
 // Result vocabulary, the jobs MCP's rule (server/mcp.ts): socket-backed
 // tools (reload/register/unregister/status) carry the APIs' wire JSON
@@ -38,6 +42,8 @@ import { APP_ROOT, readAppsRoot, readAppsSocket, readInternalApiSocket } from '.
 import { runChild } from '../src/lib/apps-child';
 import { scaffoldApp } from '../src/lib/apps-scaffold';
 import { buildApp, checkApp } from '../src/lib/apps-gate';
+import { ActionNameSchema, addAction } from '../src/lib/apps-actions';
+import { findAction, planActionRequest, readRouteTable } from '../src/lib/apps-route-table';
 import { joinAppsStatus, type StatusAppRow, type StatusHostAnswer } from '../src/lib/apps-status';
 import { requestInternalApi, type InternalApiAnswer } from '../src/lib/internal-api-client';
 
@@ -63,7 +69,11 @@ type SocketFetch =
 async function fetchSocket(
   socketPath: string | null,
   offWhy: string,
-  call: { method: 'GET' | 'POST' | 'DELETE'; path: string; body?: string },
+  call: {
+    method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
+    path: string;
+    body?: string;
+  },
   reachWhy: (socketPath: string, code: string | undefined, message: string) => string,
   timeoutMs = 10_000,
 ): Promise<SocketFetch> {
@@ -316,6 +326,78 @@ export async function statusTool(
   return json(data);
 }
 
+// ---------- the action vocabulary (add_action / describe / call — §6) ----------
+
+/** describe — the app's route table from dist/route-table.json, VERBATIM
+ *  (the emitted table: one entry per action — name, method, path, input
+ *  schema, description). An unbuilt app is a DOMAIN answer naming the
+ *  build, never isError. */
+export async function describeTool(deps: AppsMcpDeps, slug: string): Promise<CallToolResult> {
+  const read = readRouteTable(path.join(deps.appsRoot, slug));
+  if (!read.ok) {
+    return json({
+      ok: false,
+      resultType: 'describe_app',
+      errorCode: read.errorCode,
+      errorMessage: read.errorMessage,
+    });
+  }
+  return json(read.table);
+}
+
+/** call — invoke one action through the host socket: THE request the
+ *  table entry names (method + /apps/<slug> + path), params checked
+ *  leniently against the emitted input (the app's own handler is the
+ *  authority), the app's Result JSON answered VERBATIM. The root agent's
+ *  use path — the same Result JSON the UI face answers (§0). */
+export async function callActionTool(
+  deps: AppsMcpDeps,
+  input: { slug: string; action: string; params?: unknown },
+): Promise<CallToolResult> {
+  const read = readRouteTable(path.join(deps.appsRoot, input.slug));
+  if (!read.ok) {
+    return json({
+      ok: false,
+      resultType: 'call_action',
+      errorCode: read.errorCode,
+      errorMessage: read.errorMessage,
+    });
+  }
+  const entry = findAction(read.table, input.action);
+  if (entry === null) {
+    return json({
+      ok: false,
+      resultType: 'call_action',
+      errorCode: 'action_not_found',
+      errorMessage: `the app ${input.slug} has no action "${input.action}" — its route table has: ${read.table.map(e => e.name).join(', ') || '(no actions)'}`,
+    });
+  }
+  const planned = planActionRequest(input.slug, entry, input.params);
+  if (!planned.ok) {
+    return json({
+      ok: false,
+      resultType: 'call_action',
+      errorCode: 'invalid_params',
+      errorMessage: planned.errorMessage,
+      ...(planned.issues ? { issues: planned.issues } : {}),
+    });
+  }
+  const r = await fetchSocket(
+    deps.appsSocketPath,
+    APPS_OFF,
+    {
+      method: planned.request.method as 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
+      path: `${planned.request.pathname}${planned.request.search ? `?${planned.request.search}` : ''}`,
+      ...(planned.request.body !== undefined ? { body: planned.request.body } : {}),
+    },
+    (sock, code, message) =>
+      `could not reach the app host at ${sock} ${code ? `(${code})` : `: ${message}`} ` +
+      `— is the app ${input.slug} registered and the host running? status answers both`,
+    30_000,
+  );
+  return r.ok ? json(parseOrRaw(r.body)) : r.result;
+}
+
 // ---------- the server ----------
 
 /** Build the stdio MCP server. Paths are RESOLVED values (env.ts's
@@ -433,6 +515,74 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
       },
     },
     async ({ slug }) => statusTool(deps, slug),
+  );
+
+  server.registerTool(
+    'add_action',
+    {
+      description:
+        'THE action generator (§1 — route + MCP tool + UI stub + test stub + the AGENTS.md ' +
+        "action section, all from one table entry): append one entry to the app's route table " +
+        '(src/routes.ts — a working echo stub with a `text` input field, GET/POST as asked) and write ' +
+        'every other face from it in lockstep — src/lib/<name>.ts (the Result family), ' +
+        "tests/<name>.test.mjs (the tree's test glob runs it as-is), the UI island + its mount point on " +
+        'the page, and the AGENTS.md BEGIN/END ACTIONS block regenerated from the table. Does NOT build ' +
+        'or register — the loop stays agent-driven: check → build → reload. Idempotent by refusal: an ' +
+        'existing action name answers action_exists, never a mangled file.',
+      inputSchema: {
+        slug: AppSlugSchema.describe('the app, by its slug'),
+        name: ActionNameSchema.describe(
+          "the action's name — kebab/snake case (normalizeSlug rules, underscores kept): the table entry, the MCP tool name and the file stem",
+        ),
+        summary: z
+          .string()
+          .max(200)
+          .optional()
+          .describe("one line of intent — the entry's description and the manual's section line"),
+        method: z
+          .enum(['GET', 'POST'])
+          .optional()
+          .describe(
+            'where the input field lands: GET = query, POST = body. Default POST — an action does something',
+          ),
+      },
+    },
+    async ({ slug, name, summary, method }) =>
+      json(await addAction({ appsRoot: deps.appsRoot }, { slug, name, summary, method })),
+  );
+
+  server.registerTool(
+    'describe',
+    {
+      description:
+        "The app's action vocabulary: dist/route-table.json VERBATIM — one entry per action (name, " +
+        "method, path, input schema, description), the same table the app's pages, its own MCP shim and " +
+        'call all bind from. An unbuilt app answers not_built naming the build; a stale table means the ' +
+        'sources changed since — status reports buildStale.',
+      inputSchema: { slug: AppSlugSchema.describe('the app, by its slug') },
+    },
+    async ({ slug }) => describeTool(deps, slug),
+  );
+
+  server.registerTool(
+    'call',
+    {
+      description:
+        "Invoke one app action through the app host — the root agent's use path (the same Result JSON " +
+        "the app's UI and its own MCP tools answer, §0's one vocabulary). The request is the one the " +
+        "table entry names; params are checked leniently against the emitted input schema and the app's " +
+        'own handler is the authority — its failure JSON (ok:false, errorCode) comes back verbatim as a ' +
+        'NORMAL result. Only a transport failure (host unreachable, apps surface off) is isError.',
+      inputSchema: {
+        slug: AppSlugSchema.describe('the app, by its slug'),
+        action: z.string().min(1).describe('the action, by its table name (see describe)'),
+        params: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe("the action's input fields, as describe's schema names them"),
+      },
+    },
+    async ({ slug, action, params }) => callActionTool(deps, { slug, action, params }),
   );
 
   return server;
