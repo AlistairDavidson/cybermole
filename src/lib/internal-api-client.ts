@@ -16,9 +16,12 @@ import * as http from 'node:http';
 
 /** One request to the internal API: method + request path (params
  *  already interpolated, percent-encoded) and, for the body verbs, a
- *  PRE-SENT body string — sent with a Content-Length header, always. */
+ *  PRE-SENT body string — sent with a Content-Length header, always.
+ *  PUT rides along with PATCH (the kit's route table allows it as an
+ *  action method; app dispatch through this client must not be narrower
+ *  than the table). */
 export interface InternalApiCall {
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   path: string;
   body?: string;
 }
