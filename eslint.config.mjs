@@ -34,10 +34,13 @@ export default [
   js.configs.recommended,
   ...tseslint.configs.strict,
 
-  // Type-aware linting for the TypeScript surfaces. Both tsconfigs are listed
-  // explicitly: the project service only discovers configs named tsconfig.json,
-  // and src/lib + src/schemas + src/types + server + cli live in tsconfig.server.json.
-  // packages/app-kit has its own tsconfig.json (extends the server one, noEmit).
+  // Type-aware linting for the TypeScript surfaces. Both root tsconfigs are
+  // listed explicitly: the project service only discovers configs named
+  // tsconfig.json, and src/lib + src/schemas + server + cli live in
+  // tsconfig.server.json. packages/app-kit has its own tsconfig.json (the
+  // client-only island module needs DOM libs, which the server build
+  // excludes on purpose — preact's jsx types would drag lib.dom into a
+  // node-typed program).
   {
     files: [
       'src/**/*.ts',
@@ -49,7 +52,7 @@ export default [
     ],
     languageOptions: {
       parserOptions: {
-        project: ['./tsconfig.json', './tsconfig.server.json'],
+        project: ['./tsconfig.json', './tsconfig.server.json', './packages/app-kit/tsconfig.json'],
         tsconfigRootDir: import.meta.dirname,
       },
     },
