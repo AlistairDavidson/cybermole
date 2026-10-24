@@ -183,6 +183,128 @@ function withDuplicateSlugRecovery(body: unknown): CallToolResult {
   return json(body);
 }
 
+// ---------- the socket verbs (the tools 1:1; the e2e loop calls the same functions) ----------
+
+/** reload — POST /_admin/reload (the sync point). Verbatim report. */
+export async function reloadTool(
+  deps: AppsMcpDeps,
+  slug: string | undefined,
+): Promise<CallToolResult> {
+  const r = await fetchSocket(
+    deps.appsSocketPath,
+    APPS_OFF,
+    {
+      method: 'POST',
+      path: '/_admin/reload',
+      body: JSON.stringify(slug === undefined ? {} : { slug }),
+    },
+    (sock, code, message) =>
+      `could not reach the app host at ${sock} ${code ? `(${code})` : `: ${message}`} ` +
+      '— a dead host shows as the console badge; this tool cannot sync without it',
+    60_000,
+  );
+  return r.ok ? json(parseOrRaw(r.body)) : r.result;
+}
+
+/** register — the local precheck, then POST /apps (name from the
+ *  manifest, cwd = the tree). duplicate_slug grows the recovery text. */
+export async function registerTool(deps: AppsMcpDeps, slug: string): Promise<CallToolResult> {
+  const pre = registerPrecheck(deps.appsRoot, slug);
+  if (!pre.ok || pre.name === undefined) {
+    return json({
+      ok: false,
+      resultType: 'register_app',
+      errorCode: pre.failure!.errorCode,
+      errorMessage: pre.failure!.errorMessage,
+    });
+  }
+  const r = await fetchSocket(
+    deps.internalSocketPath,
+    INTERNAL_OFF,
+    {
+      method: 'POST',
+      path: '/apps',
+      body: JSON.stringify({ name: pre.name, cwd: pre.tree }),
+    },
+    unreachable,
+  );
+  if (!r.ok) return r.result;
+  return withDuplicateSlugRecovery(parseOrRaw(r.body));
+}
+
+/** unregister — DELETE /apps/:slug (the row + cascade; the tree never
+ *  touched), then the reload that drops the mount. */
+export async function unregisterTool(deps: AppsMcpDeps, slug: string): Promise<CallToolResult> {
+  const deleted = await fetchSocket(
+    deps.internalSocketPath,
+    INTERNAL_OFF,
+    { method: 'DELETE', path: `/apps/${encodeURIComponent(slug)}` },
+    unreachable,
+  );
+  if (!deleted.ok) return deleted.result;
+  const body = parseOrRaw(deleted.body);
+  // A green delete reloads (the sync point); a domain failure
+  // (app_not_found …) is the API's verbatim answer, nothing to sync.
+  if (deleted.status !== 200 || (body as { code?: unknown }).code !== undefined) {
+    return json(body);
+  }
+  const reload = await fetchSocket(
+    deps.appsSocketPath,
+    APPS_OFF,
+    { method: 'POST', path: '/_admin/reload', body: JSON.stringify({ slug }) },
+    (sock, code, message) =>
+      `the row is deleted, but the mount sync failed: could not reach the app host at ${sock} ` +
+      `${code ? `(${code})` : `: ${message}`} — reload again once the host answers; until then the ` +
+      'app still serves its last mounted build',
+    60_000,
+  );
+  if (!reload.ok) return reload.result;
+  return json({ unregister: body, reload: parseOrRaw(reload.body) });
+}
+
+/** status — the join (both sockets; transport failures are isError). */
+export async function statusTool(
+  deps: AppsMcpDeps,
+  slug: string | undefined,
+): Promise<CallToolResult> {
+  const rows = await fetchSocket(
+    deps.internalSocketPath,
+    INTERNAL_OFF,
+    { method: 'GET', path: '/apps' },
+    unreachable,
+  );
+  if (!rows.ok) return rows.result;
+  if (rows.status !== 200) {
+    return transportError(`the internal API answered ${rows.status} on GET /apps: ${rows.body}`);
+  }
+  const host = await fetchSocket(
+    deps.appsSocketPath,
+    APPS_OFF,
+    { method: 'GET', path: '/_admin/status' },
+    (sock, code, message) =>
+      `could not reach the app host at ${sock} ${code ? `(${code})` : `: ${message}`} ` +
+      '— this tool cannot say what is mounted without it',
+  );
+  if (!host.ok) return host.result;
+  if (host.status !== 200) {
+    return transportError(`the app host answered ${host.status} on /_admin/status: ${host.body}`);
+  }
+  const rowsBody = parseOrRaw(rows.body) as { apps?: unknown };
+  const hostBody = parseOrRaw(host.body) as StatusHostAnswer;
+  const rowList = Array.isArray(rowsBody.apps)
+    ? (rowsBody.apps as StatusAppRow[]).filter(r => typeof r?.slug === 'string')
+    : [];
+  let data = joinAppsStatus(deps.appsRoot, rowList, hostBody);
+  if (slug !== undefined) {
+    data = {
+      ...data,
+      apps: data.apps.filter(a => a.slug === slug),
+      unregisteredTrees: data.unregisteredTrees.filter(s => s === slug),
+    };
+  }
+  return json(data);
+}
+
 // ---------- the server ----------
 
 /** Build the stdio MCP server. Paths are RESOLVED values (env.ts's
@@ -259,22 +381,7 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
         slug: AppSlugSchema.optional().describe('scope the sync to one app; omit for every app'),
       },
     },
-    async ({ slug }) => {
-      const r = await fetchSocket(
-        deps.appsSocketPath,
-        APPS_OFF,
-        {
-          method: 'POST',
-          path: '/_admin/reload',
-          body: JSON.stringify(slug === undefined ? {} : { slug }),
-        },
-        (sock, code, message) =>
-          `could not reach the app host at ${sock} ${code ? `(${code})` : `: ${message}`} ` +
-          '— a dead host shows as the console badge; this tool cannot sync without it',
-        60_000,
-      );
-      return r.ok ? json(parseOrRaw(r.body)) : r.result;
-    },
+    async ({ slug }) => reloadTool(deps, slug),
   );
 
   server.registerTool(
@@ -287,29 +394,7 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
         'duplicate_slug names the recovery in its answer — no tree is touched.',
       inputSchema: { slug: AppSlugSchema.describe('the app, by its slug') },
     },
-    async ({ slug }) => {
-      const pre = registerPrecheck(deps.appsRoot, slug);
-      if (!pre.ok || pre.name === undefined) {
-        return json({
-          ok: false,
-          resultType: 'register_app',
-          errorCode: pre.failure!.errorCode,
-          errorMessage: pre.failure!.errorMessage,
-        });
-      }
-      const r = await fetchSocket(
-        deps.internalSocketPath,
-        INTERNAL_OFF,
-        {
-          method: 'POST',
-          path: '/apps',
-          body: JSON.stringify({ name: pre.name, cwd: pre.tree }),
-        },
-        unreachable,
-      );
-      if (!r.ok) return r.result;
-      return withDuplicateSlugRecovery(parseOrRaw(r.body));
-    },
+    async ({ slug }) => registerTool(deps, slug),
   );
 
   server.registerTool(
@@ -321,33 +406,7 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
         'sync point that drops the mount. Register again later to re-serve the same tree.',
       inputSchema: { slug: AppSlugSchema.describe('the app, by its slug') },
     },
-    async ({ slug }) => {
-      const deleted = await fetchSocket(
-        deps.internalSocketPath,
-        INTERNAL_OFF,
-        { method: 'DELETE', path: `/apps/${encodeURIComponent(slug)}` },
-        unreachable,
-      );
-      if (!deleted.ok) return deleted.result;
-      const body = parseOrRaw(deleted.body);
-      // A green delete reloads (the sync point); a domain failure
-      // (app_not_found …) is the API's verbatim answer, nothing to sync.
-      if (deleted.status !== 200 || (body as { code?: unknown }).code !== undefined) {
-        return json(body);
-      }
-      const reload = await fetchSocket(
-        deps.appsSocketPath,
-        APPS_OFF,
-        { method: 'POST', path: '/_admin/reload', body: JSON.stringify({ slug }) },
-        (sock, code, message) =>
-          `the row is deleted, but the mount sync failed: could not reach the app host at ${sock} ` +
-          `${code ? `(${code})` : `: ${message}`} — reload again once the host answers; until then the ` +
-          'app still serves its last mounted build',
-        60_000,
-      );
-      if (!reload.ok) return reload.result;
-      return json({ unregister: body, reload: parseOrRaw(reload.body) });
-    },
+    async ({ slug }) => unregisterTool(deps, slug),
   );
 
   server.registerTool(
@@ -362,48 +421,7 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
         slug: AppSlugSchema.optional().describe('scope to one app; omit for the whole picture'),
       },
     },
-    async ({ slug }) => {
-      const rows = await fetchSocket(
-        deps.internalSocketPath,
-        INTERNAL_OFF,
-        { method: 'GET', path: '/apps' },
-        unreachable,
-      );
-      if (!rows.ok) return rows.result;
-      if (rows.status !== 200) {
-        return transportError(
-          `the internal API answered ${rows.status} on GET /apps: ${rows.body}`,
-        );
-      }
-      const host = await fetchSocket(
-        deps.appsSocketPath,
-        APPS_OFF,
-        { method: 'GET', path: '/_admin/status' },
-        (sock, code, message) =>
-          `could not reach the app host at ${sock} ${code ? `(${code})` : `: ${message}`} ` +
-          '— this tool cannot say what is mounted without it',
-      );
-      if (!host.ok) return host.result;
-      if (host.status !== 200) {
-        return transportError(
-          `the app host answered ${host.status} on /_admin/status: ${host.body}`,
-        );
-      }
-      const rowsBody = parseOrRaw(rows.body) as { apps?: unknown };
-      const hostBody = parseOrRaw(host.body) as StatusHostAnswer;
-      const rowList = Array.isArray(rowsBody.apps)
-        ? (rowsBody.apps as StatusAppRow[]).filter(r => typeof r?.slug === 'string')
-        : [];
-      let data = joinAppsStatus(deps.appsRoot, rowList, hostBody);
-      if (slug !== undefined) {
-        data = {
-          ...data,
-          apps: data.apps.filter(a => a.slug === slug),
-          unregisteredTrees: data.unregisteredTrees.filter(s => s === slug),
-        };
-      }
-      return json(data);
-    },
+    async ({ slug }) => statusTool(deps, slug),
   );
 
   return server;

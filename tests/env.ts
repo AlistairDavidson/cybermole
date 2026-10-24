@@ -17,6 +17,10 @@ export const APPS_SOCKET = '/tmp/cybermole-itest-state/apps.sock';
 /** The webServer's internal API socket (playwright.config CYBERMOLE_SOCK)
  *  — the specs' registration/reload pokes ride it and the apps socket. */
 export const INTERNAL_SOCKET = `${WORKSPACE}.sock`;
+// task/app-scaffold: the apps root the in-process MCP verbs scaffold into
+// (under WORKSPACE so global-setup's reset owns it between runs; the
+// webServer needs no CYBERMOLE_APPS_ROOT — the MCP's deps carry this).
+export const APPS_ROOT = `${WORKSPACE}/apps`;
 export const USERNAME = 'tester';
 export const PASSWORD = 'correct-horse-9';
 export const TMUX_SOCKET = 'cybermole-itest';
