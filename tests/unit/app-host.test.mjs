@@ -71,7 +71,7 @@ async function bootWorld({ internalApi = true } = {}) {
  *  server/main.ts loads. /boom throws, /unmatched and /next-err drive
  *  next(); everything else answers MARKER (rewritten between reloads —
  *  the cache-bust assertion). */
-function entrySource(slug, marker) {
+function entrySource(marker) {
   return [
     `const marker = ${JSON.stringify(marker)};`,
     'export const handler = (req, res, next) => {',
@@ -108,7 +108,7 @@ function makeAppTree(root, slug, opts = {}) {
     fs.mkdirSync(path.join(cwd, 'dist', 'client', '_astro'), { recursive: true });
     fs.writeFileSync(
       path.join(cwd, 'dist', 'server', 'entry.mjs'),
-      opts.entry ?? entrySource(slug, `APP:${slug}:v1`),
+      opts.entry ?? entrySource(`APP:${slug}:v1`),
     );
     fs.writeFileSync(path.join(cwd, 'dist', 'client', '_astro', 'app.HASH.css'), 'body{}');
     fs.writeFileSync(path.join(cwd, 'dist', 'client', 'favicon.svg'), '<svg/>');
@@ -298,7 +298,7 @@ test('a half-built tree (entry.mjs without dist/client) is skipped — never the
     fs.mkdirSync(path.join(half, 'dist', 'server'), { recursive: true });
     fs.writeFileSync(
       path.join(half, 'dist', 'server', 'entry.mjs'),
-      entrySource('half-built', 'never'),
+      entrySource('never'),
     );
     await w.apps.saveApp('Half Built', half);
 
@@ -335,7 +335,7 @@ test('reload re-imports a rebuilt entry — the cache-bust', async () => {
     // cache would keep serving v1
     fs.writeFileSync(
       path.join(cwd, 'dist', 'server', 'entry.mjs'),
-      entrySource('app-fixture', 'APP:app-fixture:v2'),
+      entrySource('APP:app-fixture:v2'),
     );
     const report = await w.host.reload();
     assert.deepEqual(report.reimported, ['app-fixture']);
@@ -363,11 +363,11 @@ test('a scoped reload {slug} re-imports only that app; the rest carry over', asy
 
     fs.writeFileSync(
       path.join(a, 'dist', 'server', 'entry.mjs'),
-      entrySource('alpha', 'APP:alpha:v2'),
+      entrySource('APP:alpha:v2'),
     );
     fs.writeFileSync(
       path.join(b, 'dist', 'server', 'entry.mjs'),
-      entrySource('beta', 'APP:beta:v2'),
+      entrySource('APP:beta:v2'),
     );
 
     const report = await w.host.reload('alpha');
