@@ -385,9 +385,9 @@ test('the use loop through the console origin: list, capture on every face, find
 
   // ---- note_edit through the island on the note page (the editor's
   // other mode): the SSR'd note + the PATCH face ----
-  const toEdit = listed.body.data.notes.find(
-    (n: { title: string }) => n.title === 'from-call',
-  ) as { id: number };
+  const toEdit = listed.body.data.notes.find((n: { title: string }) => n.title === 'from-call') as {
+    id: number;
+  };
   await page.goto(`/apps/${SLUG}/notes/${toEdit.id}`);
   await expect(page.locator('wa-card h1')).toHaveText('from-call');
   await page.locator('.note-editor wa-input').nth(0).locator('input').fill('from-call, edited');
