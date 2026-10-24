@@ -175,7 +175,11 @@ export class SqliteDb {
       // inode until it fails loudly on write, never a silent fresh file.
       try {
         const st = fs.statSync(this.file);
-        if (this.openedOn === null || st.dev !== this.openedOn.dev || st.ino !== this.openedOn.ino) {
+        if (
+          this.openedOn === null ||
+          st.dev !== this.openedOn.dev ||
+          st.ino !== this.openedOn.ino
+        ) {
           this.dropConn();
         }
       } catch {

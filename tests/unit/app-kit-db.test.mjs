@@ -133,7 +133,10 @@ test('a replaced db file is adopted at the next query; a deleted one is not', as
 
   // The next query sees the NEW file — the old inode would read 'original'
   // and fail every write readonly — and writes land on it.
-  assert.equal(db.get(qb.selectFrom('notes').select('body').where('id', '=', 1))?.body, 'replacement');
+  assert.equal(
+    db.get(qb.selectFrom('notes').select('body').where('id', '=', 1))?.body,
+    'replacement',
+  );
   const wrote = databaseUpdate('could not save the note', () =>
     db.run(qb.insertInto('notes').values({ id: 2, body: 'second' })),
   );
