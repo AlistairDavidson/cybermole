@@ -298,6 +298,21 @@ function inspectRow(
 ):
   | { ok: true; manifest: AppManifest; entryPath: string; clientDir: string }
   | { ok: false; reason: string } {
+  try {
+    return inspectRowChecked(row);
+  } catch (err) {
+    // A malformed tree (permissions, a half-deleted dist, a race between
+    // the probes and the reads) must degrade to a SKIP reason — never
+    // reject the sync and poison every other app's mount with it.
+    return { ok: false, reason: `could not inspect the tree: ${(err as Error).message}` };
+  }
+}
+
+function inspectRowChecked(
+  row: AppRow,
+):
+  | { ok: true; manifest: AppManifest; entryPath: string; clientDir: string }
+  | { ok: false; reason: string } {
   if (row.cwd === null)
     return { ok: false, reason: 'row has no cwd (a console group row, not an app tree)' };
   if (!fs.existsSync(row.cwd)) return { ok: false, reason: `cwd does not exist: ${row.cwd}` };
@@ -329,8 +344,11 @@ function inspectRow(
   if (!fs.existsSync(entryPath)) {
     return { ok: false, reason: `dist/server/entry.mjs missing (${entryPath}) — build the app` };
   }
-  if (!fs.statSync(clientDir).isDirectory()) {
+  if (!fs.existsSync(clientDir)) {
     return { ok: false, reason: `dist/client missing (${clientDir}) — build the app` };
+  }
+  if (!fs.statSync(clientDir).isDirectory()) {
+    return { ok: false, reason: `dist/client is not a directory (${clientDir})` };
   }
   return { ok: true, manifest: { name: raw.name.trim(), description, slug }, entryPath, clientDir };
 }

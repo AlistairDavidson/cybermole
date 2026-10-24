@@ -288,6 +288,36 @@ test('GET /_admin/status: the shape — pid, uptime, sockets, mounted, skipped',
   }
 });
 
+test('a half-built tree (entry.mjs without dist/client) is skipped — never the whole surface', async () => {
+  const w = await bootWorld();
+  try {
+    // makeAppTree builds both halves; produce the permutation by hand
+    const healthy = makeAppTree(w.root, 'good');
+    await w.apps.saveApp('Good', healthy);
+    const half = makeAppTree(w.root, 'half-built', { dist: false });
+    fs.mkdirSync(path.join(half, 'dist', 'server'), { recursive: true });
+    fs.writeFileSync(
+      path.join(half, 'dist', 'server', 'entry.mjs'),
+      entrySource('half-built', 'never'),
+    );
+    await w.apps.saveApp('Half Built', half);
+
+    const report = await w.host.reload();
+    assert.deepEqual(report.mounted, ['good']);
+    assert.equal(report.skipped.length, 1);
+    assert.match(report.skipped[0].reason, /dist\/client missing/);
+    // the healthy sibling serves; the half-built one 404s as unmounted
+    assert.equal((await call(w.host.socketPath, 'GET', '/apps/good/')).status, 200);
+    assert.equal((await call(w.host.socketPath, 'GET', '/apps/half-built/')).status, 404);
+    // reloads keep answering 200 (the bad tree never poisons the sync)
+    const again = await callJson(w.host.socketPath, 'POST', '/_admin/reload', {});
+    assert.equal(again.status, 200);
+  } finally {
+    await w.host.close();
+    await w.internalApi.close();
+  }
+});
+
 // ---------- reload: mount / re-import / drop ----------
 
 test('reload re-imports a rebuilt entry — the cache-bust', async () => {
