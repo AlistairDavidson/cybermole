@@ -64,7 +64,7 @@ const base = import.meta.env.BASE_URL;
         <ul class="notes" style="list-style: none; padding: 0;">
           {notes.map(note => (
             <li style="margin: 0.5rem 0;">
-              <a href={`${base}notes/${note.id}`}>{note.title}</a>
+              <a href={`${base}/notes/${note.id}`}>{note.title}</a>
               {note.archived && <wa-badge>archived</wa-badge>}
               {note.body !== '' && (
                 <p style="margin: 0.1rem 0; opacity: 0.75;">
