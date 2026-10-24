@@ -146,6 +146,40 @@ export function readInternalApiSocket(): string | null {
   return raw;
 }
 
+/** App host socket default (task/app-host, apps-plan §3): the shared
+ *  /run/cybermole dir (the compose privilege split — the same setgid dir
+ *  the tmux and internal-API sockets live in) when it exists, else the
+ *  state dir (plain host). Pure — the fs probe is injected, like
+ *  internalSocketDefault. */
+export function appsSocketDefault(stateDir: string, runCybermoleExists: boolean): string {
+  return runCybermoleExists ? '/run/cybermole/apps.sock' : path.join(stateDir, 'apps.sock');
+}
+
+/** The app host's socket path (task/app-host, apps-plan §3), or null when
+ *  CYBERMOLE_APPS_SOCK is EMPTY — the apps surface is OFF: the host does
+ *  not listen, and every client (the future web proxy's /apps/* — 504s
+ *  until branch 2 — the reload verb, the app MCP shim) must fail with a
+ *  clear error naming the empty env. Unset = the shape default
+ *  (appsSocketDefault); a set value must be an ABSOLUTE path or the boot
+ *  stops — the CYBERMOLE_SOCK rules verbatim. A function, not an ENV
+ *  constant, so other entry points never trip over it. */
+export function readAppsSocket(): string | null {
+  const raw = RAW_ENV.CYBERMOLE_APPS_SOCK;
+  if (raw === undefined) {
+    const runCybermoleExists =
+      fs.existsSync('/run/cybermole') && fs.statSync('/run/cybermole').isDirectory();
+    return appsSocketDefault(stateDir, runCybermoleExists);
+  }
+  if (raw.trim() === '') return null;
+  if (!path.isAbsolute(raw)) {
+    throw new Error(
+      `CYBERMOLE_APPS_SOCK=${JSON.stringify(raw)} must be an absolute socket path ` +
+        '(or empty to disable the apps surface)',
+    );
+  }
+  return raw;
+}
+
 /** Loki push config for the winston-loki transport (src/lib/logger.ts), or
  *  null when CYBERMOLE_LOKI_URL is unset — console-only logging, identical to
  *  before the observability work. Validated at boot like the S3 vars: a

@@ -22,3 +22,6 @@ version.json
 *.yaml
 *.yml
 public/icons/
+
+# fixture app, built by its own toolchain
+tests/fixtures/app-fixture/

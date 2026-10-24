@@ -183,6 +183,13 @@ services:
       # console hides its affordances, /editor answers 404). No token or
       # launch URL: auth is the web session, folders are URL params.
       CYBERMOLE_EDITOR_UPSTREAM: ${CYBERMOLE_EDITOR_UPSTREAM-http://editor:3000}
+      # task/app-host (docs/apps-plan.md §3): the app host's socket, in
+      # the shared setgid dir. The web container is CLIENT-ONLY on it for
+      # now — branch 2 (task/app-web) adds the /apps/* proxy behind the
+      # session gate that forwards here. The web side NEVER spawns the
+      # host: the split's rule (the workspace entrypoint owns it). Set
+      # EMPTY to switch the apps surface off everywhere.
+      CYBERMOLE_APPS_SOCK: /run/cybermole/apps.sock
     networks: [default, storage]
     volumes:
       - cybermole-state:/state
@@ -220,6 +227,14 @@ services:
     environment:
       CYBERMOLE_TMUX_SOCKET: /run/cybermole/tmux
       CYBERMOLE_AGENT_DIR: /workspace/pi-agent
+      # task/app-host (apps-plan §3): this container RUNS the app host
+      # (its entrypoint's second supervised child, after the tmux
+      # server) on the shared socket — the working half of the split.
+      # Discovery goes through the internal API on the same shared dir
+      # (explicit here: path agreement across containers, like
+      # CYBERMOLE_TMUX_SOCKET; the web container serves that socket).
+      CYBERMOLE_APPS_SOCK: /run/cybermole/apps.sock
+      CYBERMOLE_SOCK: /run/cybermole/cybermole.sock
       # jobs-agent-plan §9: the workspace root's AGENTS.md target — the
       # same path the web side's CYBERMOLE_NEW_SESSION_CWD names (path
       # agreement, like the socket and the agent dir): the entrypoint

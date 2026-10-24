@@ -102,6 +102,17 @@ export const envSchema = {
   // then has no jobs socket). A set-but-non-absolute value stops the
   // server at boot, like the S3 vars.
   CYBERMOLE_SOCK: { type: 'string', context: 'server', access: 'secret', optional: true },
+  // task/app-host (docs/apps-plan.md §3): the app host's unix socket
+  // path — the workspace-side mini-main that mounts registered apps'
+  // built Astro middlewares under /apps/<slug>/. Unset = the shape default
+  // (env.ts readAppsSocket: /run/cybermole/apps.sock when that shared dir
+  // exists — the compose privilege-split shape — else <state dir>/apps.sock).
+  // EMPTY = the apps surface is off: the host does not listen, and every
+  // client (the future web proxy, the reload verb, the app MCP shim)
+  // must fail with a clear error. A set-but-non-absolute value stops the
+  // boot, like the S3 vars — the CYBERMOLE_SOCK rules verbatim, one env
+  // every client reads.
+  CYBERMOLE_APPS_SOCK: { type: 'string', context: 'server', access: 'secret', optional: true },
   // task/winston-loki: log aggregation — push URL of a Grafana Loki (the
   // compose `observability` profile runs one; e.g. http://loki:3100).
   // Unset = console-only logging, byte-for-byte today's behaviour (env.ts

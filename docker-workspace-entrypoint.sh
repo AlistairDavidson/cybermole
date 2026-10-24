@@ -92,11 +92,56 @@ tmux -S "$SOCKET" server-access -a "$WEB_USER"
 
 echo "cybermole workspace: tmux server on $SOCKET (web user: $WEB_USER, group: $SHARED_GROUP, pi agent dir: $AGENT_DIR)"
 
-# This container's whole job is keeping the tmux server alive (web's
-# never-fork guard depends on it). Exit when the server dies — docker's
-# restart policy brings the container (and a fresh server) back.
-while tmux -S "$SOCKET" show-options -g >/dev/null 2>&1; do
+# task/app-host (docs/apps-plan.md §3): the app host — the SECOND
+# supervised child, after the tmux server, same uid/env. It listens on
+# CYBERMOLE_APPS_SOCK (0660 after its own listen; the setgid socket dir
+# gives it the shared group) and mounts registered apps' built Astro
+# middlewares. It needs the internal API (CYBERMOLE_SOCK, served by the
+# web container) and retries discovery until it answers — the compose
+# boot race — so it may start before the web server is up.
+#
+# OWNERSHIP RULE (plan §3, the CYBERMOLE_TMUX_SOCKET precedent): in the
+# compose SPLIT, THIS entrypoint owns the app host — the web container
+# NEVER spawns it (web is only a client on the socket, branch 2's
+# /apps/* proxy). A SET CYBERMOLE_APPS_SOCK on a plain host = the
+# operator owns the process (systemd, a terminal). Single-user shapes
+# (the default socket, no split) spawn it from the web server's main.ts
+# as a supervised child instead — that wiring is a LATER branch of the
+# epic (branch 2, task/app-web); nothing here covers it.
+APP_HOST_PID=
+start_app_host() {
+  node /opt/cybermole/dist-server/server/app-host.js &
+  APP_HOST_PID=$!
+  echo "cybermole workspace: app host started (pid $APP_HOST_PID, socket ${CYBERMOLE_APPS_SOCK:-<shape default>})"
+}
+
+# Unset = the shape default (env.ts: /run/cybermole/apps.sock here — on);
+# set-and-empty = the apps surface is OFF — no host, and every client
+# (the web proxy, reload, the shim) fails with its clear error.
+if [ "${CYBERMOLE_APPS_SOCK+set}" != "set" ] || [ -n "$(echo "$CYBERMOLE_APPS_SOCK" | tr -d '[:space:]')" ]; then
+  start_app_host
+else
+  echo "cybermole workspace: apps surface off (CYBERMOLE_APPS_SOCK empty) — no app host"
+fi
+
+# This container's whole job is keeping the tmux server (and now the app
+# host) alive — web's never-fork guard depends on the tmux server.
+# tmux's death ends the container (docker's restart policy brings it,
+# and a fresh server, back); the app host's death restarts ONLY the app
+# host — neither child takes the other down, and a crashing host never
+# costs the terminals. 10s poll granularity, the old loop's cadence.
+while :; do
+  if ! tmux -S "$SOCKET" show-options -g >/dev/null 2>&1; then
+    echo "cybermole workspace: tmux server exited"
+    if [ -n "$APP_HOST_PID" ]; then
+      kill "$APP_HOST_PID" 2>/dev/null || true
+      wait "$APP_HOST_PID" 2>/dev/null || true
+    fi
+    exit 1
+  fi
+  if [ -n "$APP_HOST_PID" ] && ! kill -0 "$APP_HOST_PID" 2>/dev/null; then
+    echo "cybermole workspace: app host (pid $APP_HOST_PID) exited — restarting it"
+    start_app_host
+  fi
   sleep 10
 done
-echo "cybermole workspace: tmux server exited"
-exit 1
