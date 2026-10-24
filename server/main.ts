@@ -21,6 +21,7 @@ import {
   PI_BIN,
   PI_AGENT_DIR,
   PI_SESSION_DIR,
+  readAppsSocket,
   readInternalApiSocket,
   readObjectStoreConfig,
   readEditorUpstream,
@@ -43,6 +44,12 @@ import {
   type EditorUpstream,
 } from '../src/lib/editor';
 import { createServices, type ServerConfig, type CybermoleLocals } from '../src/lib/services';
+import { handleAppsRequest, isAppsHttpPath } from '../src/lib/apps-proxy';
+import { AppsServing } from '../src/lib/apps-serving';
+import {
+  startAppHostSupervisor,
+  type AppHostSupervisorHandle,
+} from '../src/lib/app-host-supervisor';
 import { grafanaExploreUrlFromEnv } from '../src/lib/grafana';
 import {
   resolvedAgentCommand,
@@ -240,6 +247,42 @@ bootLog.info(
     ? 'logs: not configured (CYBERMOLE_GRAFANA_URL unset) — /logs answers 404'
     : `logs: framing Grafana Explore (${CFG.grafanaExploreUrl})`,
 );
+
+// ---------- apps surface (task/app-web, apps-plan §3/§4) ----------
+// CYBERMOLE_APPS_SOCK (env.ts readAppsSocket) decides BOTH the shape and
+// the ownership, the CYBERMOLE_TMUX_SOCKET precedent's rule: UNSET = the
+// single-user shape — the web server OWNS the app host: it spawns
+// `node dist-server/server/app-host.js` as a supervised child at the
+// default socket path, same uid, same env (the child resolves the same
+// defaults from the inherited environment); SET = the split (compose,
+// e2e) — the operator/workspace entrypoint owns the process and the web
+// server is ONLY a client on the socket, never spawns; EMPTY = the apps
+// surface is off — /apps/* answers the Result-JSON 404 and every app
+// row reports serving:false with the off reason.
+const APPS_SOCK = readAppsSocket();
+let appHostSupervisor: AppHostSupervisorHandle | null = null;
+if (APPS_SOCK === null) {
+  bootLog.info('apps: off (CYBERMOLE_APPS_SOCK is empty) — /apps/* answers 404');
+} else if (RAW_ENV.CYBERMOLE_APPS_SOCK !== undefined) {
+  bootLog.info(
+    `apps: client-only on ${APPS_SOCK} (CYBERMOLE_APPS_SOCK set — the ` +
+      'workspace-side entrypoint or operator owns the app host process)',
+  );
+} else {
+  appHostSupervisor = startAppHostSupervisor({
+    command: process.execPath,
+    args: [path.join(APP_ROOT, 'dist-server', 'server', 'app-host.js')],
+    env: process.env,
+    log: componentLogger('app-host'),
+  });
+  bootLog.info(
+    `apps: single-user shape — spawning + supervising the app host (default socket ${APPS_SOCK})`,
+  );
+}
+// task/app-web (apps-plan §4): /api/state's serving ping over the
+// resolved apps socket (bounded + cached — src/lib/apps-serving.ts);
+// null socketPath = the off surface, answered serving:false forever.
+const appsServing = new AppsServing({ socketPath: APPS_SOCK });
 // task/ws-terminal (plan §4): a terminal tab's spawn/respawn — one
 // guarded new-session with the sessionEnv, shared by the workspaces
 // domain (through createServices) and the WS attach path's respawn. The
@@ -269,6 +312,8 @@ const services = createServices({
   spawnSession: spawnTerminalSession,
   // task/ws-console (plan §5): /api/state's live diff source.
   liveSessionNames: tmux.liveSessionNames,
+  // task/app-web (apps-plan §4): the serving join's host ping.
+  appsServing,
 });
 // The scheduler's single shutdown hook. The SIGTERM/SIGINT handler is a
 // sibling task (task/session-lifecycle, merged separately); at merge time
@@ -831,7 +876,9 @@ const quietAccessPath = (p: string): boolean =>
   p === route('/manifest.webmanifest') ||
   p.startsWith(route('/icons/')) ||
   // an IDE's worth of asset traffic at http level would bury the console
-  p.startsWith(route('/editor/'));
+  p.startsWith(route('/editor/')) ||
+  // task/app-web: an app page's hashed assets + API chatter ditto
+  p.startsWith(route('/apps/'));
 
 function logAccess(req: http.IncomingMessage, res: http.ServerResponse): void {
   const start = Date.now();
@@ -1063,6 +1110,29 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     disarmBodyDeadline();
     guardUploadStall(req);
     proxyEditorRequest(req, res, CFG.editorUpstream);
+    return;
+  }
+
+  // task/app-web (apps-plan §4): the /apps/* proxy — authenticated
+  // pages + API, never session-free. The session gate above already ran
+  // (an unauthenticated page GET rendered the login page in place; a
+  // non-GET answered 401), and the origin check ran before routing.
+  // HTTP only — WS rides a later branch of the epic (§12). Decision
+  // rules + transport: src/lib/apps-proxy.ts (off → 404 namespace,
+  // unknown slug → 404 before the host, host down → 502 fast).
+  if (isAppsHttpPath(CFG.base, url)) {
+    handleAppsRequest(
+      {
+        base: CFG.base,
+        socketPath: APPS_SOCK,
+        registered: slug => {
+          const listed = services.apps.listApps();
+          return listed.ok ? listed.data.apps.some(a => a.slug === slug) : null;
+        },
+      },
+      req,
+      res,
+    );
     return;
   }
 
@@ -1634,6 +1704,12 @@ const shutdownSteps: Array<() => void | Promise<void>> = [
   () => {
     autoUpdater.stop();
   }, // 0.5 stop the auto-update loop
+  () => {
+    // task/app-web: stop the supervised app host BEFORE the internal API
+    // below — the host discovers over that socket; SIGTERM (SIGKILL after
+    // a short grace — its own drain must not hold ours), no restart.
+    return appHostSupervisor?.stop();
+  }, // 0.55 supervised app host off
   () => {
     // task/jobs-socket: stop the internal listener and unlink the socket
     // file — the workspace side stops getting new job calls before the

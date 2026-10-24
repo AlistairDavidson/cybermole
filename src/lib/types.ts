@@ -24,6 +24,18 @@ export interface AppState {
   order: number;
 }
 
+/** AppState as GET /api/state serves it (task/app-web, apps-plan §4):
+ *  the row + the serving join over the app host's /_admin/status — an
+ *  ADDITIVE pair of fields (apps.listApps still answers the bare row
+ *  shape everywhere else). serving=false dims the sidebar's open link,
+ *  with servingReason as its tooltip (a dead host, or the host's own
+ *  skip reason for a registered-but-unbuilt tree). */
+export interface AppServingState extends AppState {
+  serving: boolean;
+  /** null when serving — the honest one-line story when not. */
+  servingReason: string | null;
+}
+
 /** One terminal tab: its row + the live diff's answer (the `t-<uuid>`
  *  tmux session is present — plan §4/§5). */
 export interface TerminalState {
@@ -56,7 +68,10 @@ export interface ConsoleState {
   editor: boolean;
   /** CYBERMOLE_NEW_SESSION_CWD — prefills the new-workspace dialog (plan §10). */
   defaultCwd: string;
-  apps: AppState[];
+  /** task/app-web (apps-plan §4): each app row + the serving join (the
+   *  app host ping) — additive fields on the row shape, clients may
+   *  ignore them. */
+  apps: AppServingState[];
   /** flat; the client groups by appId. */
   workspaces: WorkspaceState[];
 }

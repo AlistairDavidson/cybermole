@@ -239,6 +239,23 @@ workspace-sidebar {
 .nav .ws-group h2 .g-actions wa-button:hover, .nav .ws-group h2 .g-actions wa-button:focus-visible {
   color: var(--wa-color-brand-on-quiet);
 }
+/* task/app-web (apps-plan §4): the app group's open link — the wa-button
+   siblings' look (quiet, brand on hover, min click target), a plain <a>
+   because the poll discipline forbids stateful components here. A dead
+   host demotes it: dimmed, the serving reason rides the title tooltip. */
+.nav .ws-group h2 .g-actions .open-app-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: var(--wa-space-l); min-height: var(--wa-space-l);
+  border-radius: var(--wa-border-radius-s);
+  color: var(--wa-color-text-quiet);
+}
+.nav .ws-group h2 .g-actions .open-app-btn:hover,
+.nav .ws-group h2 .g-actions .open-app-btn:focus-visible {
+  color: var(--wa-color-brand-on-quiet);
+}
+.nav .ws-group h2 .g-actions .open-app-btn.not-serving {
+  opacity: 0.45;
+}
 .nav .ws-group h2 .g-actions .del-app-btn:hover,
 .nav .ws-group h2 .g-actions .del-app-btn:focus-visible {
   color: var(--wa-color-danger-on-quiet);

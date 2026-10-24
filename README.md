@@ -97,7 +97,13 @@ anything — an app delete just un-tags its jobs).
 The surface behind it: `GET /api/state` — the 15 s poll every open tab
 runs — serves the workspace tree (apps, workspaces with their terminals
 and live flags, plus `editor` on/off, `defaultCwd` and each app's own
-`cwd`). The rest are thin Astro routes: `POST /api/apps` (an optional
+`cwd`; each app row also carries a `serving` flag — a bounded ping of
+the app host's status route — so a dead host is visible, not
+mysterious: the sidebar's open link dims with the reason). Each app
+group in the sidebar has an **open** link to its app at
+`/apps/<slug>/` (a new tab) — registered apps are reachable only
+through that proxy, behind the session gate (a host that is down
+answers 502 through the proxy; an unregistered slug 404s). The rest are thin Astro routes: `POST /api/apps` (an optional
 `cwd` — where workspaces under the app start) + `PATCH`/
 `DELETE /api/apps/:slug` (the patch also renames and/or sets/clears
 the cwd); `POST /api/workspaces` — no `cwd` on the wire: the server
@@ -288,6 +294,7 @@ directly.
 | `CYBERMOLE_JOB_LOG_DIR` | `/workspace/.cybermole/job-logs` | root under which job runs persist their logs + exit files (`<dir>/<job>/<fired-at>.{log,exit}`) — a path that exists in both containers of the compose split (laid out by `workspace-init`); point it somewhere writable in other split shapes |
 | `CYBERMOLE_JOB_LOG_MAX` | `20971520` (20 MiB) | write-time cap on each job run's log — past it the run wrapper's appender stops writing (one `[truncated at N bytes]` marker line) but keeps draining the job's output, so a chatty or runaway job can neither fill the disk mid-run nor die of a broken pipe. A non-integer or negative value stops the server at boot |
 | `CYBERMOLE_SOCK` | `/run/cybermole/cybermole.sock` when `/run/cybermole` exists (the compose split), else `<state dir>/cybermole.sock` | the [internal jobs API](#scheduled-jobs-jobs--the-in-process-scheduler)'s unix socket: a second HTTP listener in the same server process serving the workspace side (agents) — see the jobs section. **Empty = the listener is off**; a set-but-non-absolute value stops the server at boot, like the S3 vars. The socket file is created `0660` — the file mode (the shared `cybermole` group in the split shape) is the only auth |
+| `CYBERMOLE_APPS_SOCK` | `/run/cybermole/apps.sock` when `/run/cybermole` exists, else `<state dir>/apps.sock` | the **app host**'s unix socket (`server/app-host.ts`, [docs/apps-plan.md](docs/apps-plan.md) §3): mounts registered apps' built Astro middlewares and serves them at `/apps/<slug>/*` through the console's proxy (behind the login, same session gate as everything else). The env var decides ownership too: **unset** = the single-user shape, where the web server spawns and supervises `dist-server/server/app-host.js` as a child (restarting it with backoff if it crashes); **set** = the split (compose) or an operator-owned process — the web server is only a client on the socket and never spawns; **empty** = the apps surface is off (`/apps/*` answers 404, every app row reports `serving: false` in `/api/state`). A set-but-non-absolute value stops the boot, like `CYBERMOLE_SOCK` |
 | `CYBERMOLE_TMUX_SOCKET` | `cybermole` | the tmux socket the app uses. A relative *name* is the single-user shape: the app's own server, forked on the first session-creating call, under the per-uid default dir. An **absolute path** switches on the privilege split ([below](#the-privilege-split-two-containers)): tmux runs as another uid/container on that shared socket (`-S` instead of `-L` — a relative name resolves per-uid and cannot be shared), and terminal spawns, job runs and attaches refuse to fork a server, erroring with "workspace tmux server not running" instead. The server lifecycle is then the workspace side's job (`docker-workspace-entrypoint.sh`, or the host-install equivalent below) |
 | `CYBERMOLE_TMUX_CONF` | `<app root>/tmux.conf` | tmux server config, applied when the tmux server starts (escape-time, scrollback, truecolour — see the file) |
 | `CYBERMOLE_DB_FILE` | `<state dir>/cybermole.db` | sqlite state db (0600): login credential, login sessions (`auth_sessions`), the workspace tree (`apps`, `workspaces`, `terminals`), scheduled-job tables (`jobs`, `job_runs` — the in-process scheduler + run logs), `settings` kv (the pi auto-update toggle + outcomes). Fresh setup: `npm run set-password` creates it |
@@ -367,9 +374,13 @@ jobs work in every install shape, the container included.
   family (`GET`/`POST /jobs`, `POST /jobs/validate`, `PATCH`/`DELETE
   /jobs/:name`, `GET /jobs/:name/runs`, `POST /jobs/:name/run`, `POST
   /jobs/:name/runs/:firedAt/kill`, `GET /jobs/:name/runs/:firedAt/log`,
-  plus `GET /apps` for the job-tag picker) and answering the same
-  Result JSON. Every verb calls the same `src/lib/jobs` service
-  functions the browser routes do — one source of
+  plus the apps family: `GET /apps`, and — the apps plan §0's recorded
+  amendment to the jobs plan's old "app management stays console-side"
+  boundary — `POST /apps` (create), `PATCH /apps/:slug` (rename / set or
+  clear the cwd), `DELETE /apps/:slug` (unregister: the row + cascade,
+  tree untouched), all mirroring the `/api/apps` routes 1:1) and
+  answering the same Result JSON. Every verb calls the same `src/lib`
+  service functions the browser routes do — one source of
   truth. No cookie/CSRF/rate-limit layer applies: the socket file's
   `0660` mode is the gate (full jobs control is the workspace side's own
   shell privilege — zero escalation), and nginx/the TLS proxy never see

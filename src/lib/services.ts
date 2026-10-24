@@ -37,6 +37,8 @@ import {
   type SaveTerminalDefaultsResult,
 } from './terminal-defaults';
 import * as tmux from './tmux';
+import type { AppsServing } from './apps-serving';
+import { joinServing } from './apps-serving';
 import type { EditorUpstream } from './editor';
 import type { CalendarCheck, ConsoleState, SettingsState } from './types';
 import type {
@@ -168,6 +170,12 @@ export interface ServiceDeps {
   /** Live tmux session names (tmux.liveSessionNames) — /api/state's live
    *  diff, injected into the workspaces domain like its siblings. */
   liveSessionNames: () => Promise<Set<TmuxSessionName>>;
+  /** task/app-web (apps-plan §4): /api/state's per-app serving join —
+   *  main.ts builds the AppsServing over the resolved apps socket (or
+   *  the instance answers serving:false with the surface-off reason
+   *  when CYBERMOLE_APPS_SOCK is empty) and hands it here;
+   *  consoleState() joins its snapshot onto the app rows. */
+  appsServing: Pick<AppsServing, 'info'>;
 }
 
 export function createServices(deps: ServiceDeps): CybermoleServices {
@@ -219,6 +227,10 @@ export function createServices(deps: ServiceDeps): CybermoleServices {
       if (!configured.ok) return fail(configured.errorMessage ?? 'could not read the credential');
       const listed = apps.listApps();
       if (!listed.ok) return fail(listed.errorMessage ?? 'could not read apps');
+      // task/app-web (apps-plan §4): the serving join — one bounded host
+      // ping per poll window (apps-serving.ts); a dead or off surface
+      // degrades to serving:false rows, never a failed state read.
+      const servingInfo = await deps.appsServing.info();
       const tree = await workspaces.workspaceTree();
       if (!tree.ok) return fail(tree.errorMessage ?? 'could not read workspaces');
       return {
@@ -231,7 +243,7 @@ export function createServices(deps: ServiceDeps): CybermoleServices {
           // (CYBERMOLE_EDITOR_UPSTREAM set?) — false hides the editor tab.
           editor: cfg.editorUpstream !== null,
           defaultCwd: cfg.newSessionCwd,
-          apps: listed.data.apps,
+          apps: joinServing(listed.data.apps, servingInfo),
           workspaces: tree.data.workspaces,
         },
       } satisfies ConsoleStateSuccess;
