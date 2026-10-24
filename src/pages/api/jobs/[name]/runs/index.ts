@@ -7,9 +7,8 @@ import { assertCybermoleLocals } from '../../../../../lib/web/locals';
 import {
   invalidJobNameResponse,
   jobFailureResponse,
-  jsonResponse,
 } from '../../../../../lib/web/responses.service';
-import { JobNameSchema } from '@cybermole/app-kit';
+import { jsonResponse, JobNameSchema } from '@cybermole/app-kit';
 
 export const GET: APIRoute = async ({ locals, params }) => {
   const { cybermole } = assertCybermoleLocals(locals);

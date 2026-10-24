@@ -23,7 +23,7 @@ import {
 } from '../../dist-server/src/schemas/api.js';
 import { JobSaveSchema } from '../../dist-server/src/schemas/jobs.js';
 import { parseZod } from '../../dist-server/src/lib/web/parsing.service.js';
-import { firstIssueText } from '../../dist-server/src/lib/web/responses.service.js';
+import { firstIssueText } from '../../dist-server/packages/app-kit/src/web/responses.service.js';
 
 /** The one-line 400 text a failed body renders as. */
 const issueText = (schema, v) => {

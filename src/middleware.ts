@@ -8,7 +8,7 @@
 // (docs/CODE_STYLE.md §6). Pages carry no data of their own without
 // locals, so they render normally.
 import { defineMiddleware } from 'astro:middleware';
-import { jsonResponse } from './lib/web/responses.service';
+import { jsonResponse } from '@cybermole/app-kit';
 
 const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
 const GUARDED = [`${base}/api/`, `${base}/partials/`];

@@ -7,11 +7,10 @@ import { parseAndValidateAPIRequest } from '../../../lib/web/parsing.service';
 import {
   failureResponse,
   invalidWorkspaceIdResponse,
-  jsonResponse,
   workspaceFailureResponse,
 } from '../../../lib/web/responses.service';
 import { workspacePatchBody } from '../../../schemas/api';
-import { WorkspaceIdSchema } from '@cybermole/app-kit';
+import { jsonResponse, WorkspaceIdSchema } from '@cybermole/app-kit';
 
 export const PATCH: APIRoute = async ({ locals, params, request }) => {
   const { cybermole } = assertCybermoleLocals(locals);

@@ -10,11 +10,8 @@
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../../lib/web/locals';
 import { streamFileUpload } from '../../../lib/web/parsing.service';
-import {
-  failureResponse,
-  jsonResponse,
-  objectStoreFailureResponse,
-} from '../../../lib/web/responses.service';
+import { failureResponse, objectStoreFailureResponse } from '../../../lib/web/responses.service';
+import { jsonResponse } from '@cybermole/app-kit';
 import { UPLOAD_ALLOWED_MIME_TYPES, UPLOAD_MAX_FILE_BYTES } from '../../../schemas/uploads';
 
 export const POST: APIRoute = async ({ locals, request }) => {

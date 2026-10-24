@@ -4,7 +4,8 @@
 // there).
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../lib/web/locals';
-import { consoleStateFailureResponse, jsonResponse } from '../../lib/web/responses.service';
+import { consoleStateFailureResponse } from '../../lib/web/responses.service';
+import { jsonResponse } from '@cybermole/app-kit';
 
 export const GET: APIRoute = async ({ locals }) => {
   const { cybermole, session } = assertCybermoleLocals(locals);

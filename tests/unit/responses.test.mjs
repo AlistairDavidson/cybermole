@@ -1,15 +1,17 @@
 // responses.test.mjs — src/lib/web/responses.service.ts: every error code
-// of every family maps to its status and the body the browser reads. The
+// of every family maps to its status and the body the browser reads
+// (firstIssueText moved to the kit — task/app-kit; the rest are the
+// console's domain mappers). The
 // wire statuses are the ones server/main.ts answered before the API moved
 // into Astro routes (the e2e suite asserts them too).
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { firstIssueText } from '../../dist-server/packages/app-kit/src/web/responses.service.js';
 import {
   appFailureResponse,
   consoleStateFailureResponse,
   databaseUpdateFailureResponse,
   failureResponse,
-  firstIssueText,
   invalidAppSlugResponse,
   invalidFiredAtResponse,
   invalidJobNameResponse,

@@ -7,11 +7,10 @@ import { parseAndValidateAPIRequest } from '../../../lib/web/parsing.service';
 import {
   failureResponse,
   invalidTerminalIdResponse,
-  jsonResponse,
   terminalFailureResponse,
 } from '../../../lib/web/responses.service';
 import { terminalPatchBody } from '../../../schemas/api';
-import { TerminalIdSchema } from '@cybermole/app-kit';
+import { jsonResponse, TerminalIdSchema } from '@cybermole/app-kit';
 
 export const PATCH: APIRoute = async ({ locals, params, request }) => {
   const { cybermole } = assertCybermoleLocals(locals);
