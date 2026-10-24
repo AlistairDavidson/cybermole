@@ -13,18 +13,20 @@
 // never stored — logged, never failing the delete. Jobs are untouched:
 // jobs.app_id is a TAG (ON DELETE SET NULL), not ownership.
 import { randomUUID } from 'node:crypto';
-import { databaseRead, databaseUpdate, qb, type StateDb } from './db';
+import { qb, type StateDb } from './db';
 import { componentLogger } from './logger';
 import { terminalSessionName } from './tmux';
 import { checkedCwd } from './workspaces';
-import type { DatabaseReadResult } from './db';
 import {
   asAppId,
   asAppSlug,
   APP_SLUG_RE,
+  databaseRead,
+  databaseUpdate,
   normalizeSlug,
   type AppId,
   type AppSlug,
+  type DatabaseReadResult,
   type ResultFailure,
   type ResultSuccess,
   type TmuxSessionName,

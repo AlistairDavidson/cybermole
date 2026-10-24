@@ -13,7 +13,8 @@
 // (installed by hand via the button) is left alone: latest-in-range <
 // installed means no update, and auto-update never downgrades into range.
 import { execFile } from 'node:child_process';
-import { databaseRead, databaseUpdate, type StateDb } from './db';
+import type { StateDb } from './db';
+import { databaseRead, databaseUpdate } from '@cybermole/app-kit';
 import { componentLogger } from './logger';
 import type { AutoUpdateCheck, AutoUpdateResult } from './types';
 import { PI_PACKAGE, npmPath, piDeclared, piInstalled, runPiUpdate } from './settings';

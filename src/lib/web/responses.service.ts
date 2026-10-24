@@ -11,8 +11,11 @@
 // (jsonResponse, successResponse, firstIssueText, validationFailureResponse)
 // moved to @cybermole/app-kit's web/responses.service.ts; this file keeps
 // the console's domain mappers and imports the generic pieces from the kit.
-import { jsonResponse, validationFailureResponse } from '@cybermole/app-kit';
-import type { DatabaseUpdateFailure } from '../db';
+import {
+  jsonResponse,
+  validationFailureResponse,
+  type DatabaseUpdateFailure,
+} from '@cybermole/app-kit';
 import type { DeleteAppFailure, ListAppsFailure, SaveAppFailure } from '../apps';
 import type {
   DeleteJobFailure,

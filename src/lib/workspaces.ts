@@ -13,7 +13,8 @@
 // killed best-effort, logged, never failing the delete.
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
-import { databaseRead, databaseUpdate, qb, type DatabaseReadResult, type StateDb } from './db';
+import { qb, type StateDb } from './db';
+import { databaseRead, databaseUpdate, type DatabaseReadResult } from '@cybermole/app-kit';
 import { componentLogger } from './logger';
 import { terminalSessionName } from './tmux';
 import { splitCommandLine } from './terminal-defaults';

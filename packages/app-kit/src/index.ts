@@ -15,3 +15,4 @@ export * from './types/branded';
 export * from './schemas/patterns';
 export * from './schemas/ids';
 export * from './web/responses.service';
+export * from './db/sqlite';
