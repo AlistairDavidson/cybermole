@@ -39,11 +39,13 @@ import {
   runLogResponse,
 } from '../src/lib/web/responses.service';
 import { parseAndValidateAPIRequest } from '../src/lib/web/parsing.service';
+import { appCreateBody, appPatchBody } from '../src/schemas/api';
 import {
   jsonResponse,
   AppSlugSchema,
   JobNameSchema,
   type AppId,
+  type AppSlug,
   type JobName,
 } from '@cybermole/app-kit';
 import {
@@ -69,8 +71,11 @@ export interface InternalApiDeps {
    *  Astro handler in locals, never a second Scheduler). */
   scheduler: Scheduler;
   /** the app domain — GET /jobs' ?app=<slug> filter resolves the slug to
-   *  the app row's id (jobs store app_id, not slug). */
-  apps: Pick<Apps, 'listApps'>;
+   *  the app row's id (jobs store app_id, not slug), GET /apps lists the
+   *  rows for the picker, and (apps-plan §0's amendment, below) the
+   *  app_save/app_delete verbs mutate through the same domain the
+   *  console routes use. */
+  apps: Pick<Apps, 'listApps' | 'saveApp' | 'renameApp' | 'deleteApp'>;
 }
 
 export interface InternalApiHandle {
@@ -333,11 +338,27 @@ function createRoutes(
     }
 
     if (segments.length === 1 && segments[0] === 'apps') {
-      // GET only: the picker is a READ (plan §6 — the MCP's apps_list tool,
-      // the same rows the browser dialog renders). Creating and managing
-      // apps stays on the console surface — §2 granted the workspace side
-      // jobs control, not app management.
+      // GET is the picker's READ (plan §6 — the MCP's apps_list tool, the
+      // same rows the browser dialog renders). Creating, patching and
+      // unregistering apps is ALSO here now: apps-plan §0's recorded
+      // amendment to jobs-agent-plan §2 (which drew the line at app
+      // management on the workspace side) — registration IS the
+      // workspace side's power, the same trust level as job creation
+      // (the socket is the gate). POST/PATCH/DELETE below mirror the
+      // console routes 1:1 through the SAME Apps domain calls and
+      // mappers — wire JSON byte-identical to the browser API's, no
+      // second vocabulary.
       if (req.method === 'GET') return listApps(res);
+      if (req.method === 'POST') return saveApp(req, res);
+      return sendWebResponse(res, notFoundResponse());
+    }
+    if (segments.length === 2 && segments[0] === 'apps') {
+      // The path slug passes AppSlugSchema before the domain is reached,
+      // exactly like the console's /api/apps/:slug routes.
+      const slug = AppSlugSchema.safeParse(segments[1]);
+      if (!slug.success) return sendWebResponse(res, invalidAppSlugResponse());
+      if (req.method === 'PATCH') return patchApp(req, res, slug.data);
+      if (req.method === 'DELETE') return deleteApp(res, slug.data);
       return sendWebResponse(res, notFoundResponse());
     }
 
@@ -389,6 +410,46 @@ function createRoutes(
     const listed = apps.listApps();
     if (!listed.ok) return sendWebResponse(res, appFailureResponse(listed));
     return sendWebResponse(res, jsonResponse(listed.data, 200));
+  }
+
+  /** POST /apps — create (apps-plan §0's amendment): the browser's POST
+   *  /api/apps verb verbatim — name + optional cwd (task/app-cwd), the
+   *  same zod schema, the same Apps domain call, the same mappers, so
+   *  the wire body is byte-identical. */
+  async function saveApp(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const body = await readRequest(req);
+    if (!body.ok) return sendWebResponse(res, body.response);
+    const parsed = await parseAndValidateAPIRequest(body.request, appCreateBody);
+    if (!parsed.ok) return sendWebResponse(res, failureResponse(parsed));
+    const saved = await apps.saveApp(parsed.data.name, parsed.data.cwd);
+    if (!saved.ok) return sendWebResponse(res, appFailureResponse(saved));
+    return sendWebResponse(res, jsonResponse(saved.data, 200));
+  }
+
+  /** PATCH /apps/:slug — rename and/or set/clear the cwd (the browser's
+   *  PATCH /api/apps/:slug verb; the slug is stable once created). */
+  async function patchApp(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    slug: AppSlug,
+  ): Promise<void> {
+    const body = await readRequest(req);
+    if (!body.ok) return sendWebResponse(res, body.response);
+    const parsed = await parseAndValidateAPIRequest(body.request, appPatchBody);
+    if (!parsed.ok) return sendWebResponse(res, failureResponse(parsed));
+    const saved = await apps.renameApp(slug, parsed.data.name, parsed.data.cwd);
+    if (!saved.ok) return sendWebResponse(res, appFailureResponse(saved));
+    return sendWebResponse(res, jsonResponse(saved.data, 200));
+  }
+
+  /** DELETE /apps/:slug — unregister (§0's amendment): the row + the
+   *  cascade (workspaces/terminals, best-effort tmux kills), the tree
+   * untouched — the console verb's exact semantics through the same
+   * domain call. */
+  async function deleteApp(res: http.ServerResponse, slug: AppSlug): Promise<void> {
+    const deleted = await apps.deleteApp(slug);
+    if (!deleted.ok) return sendWebResponse(res, appFailureResponse(deleted));
+    return sendWebResponse(res, jsonResponse(deleted.data, 200));
   }
 
   /** GET /jobs (?app=<slug> — filter to one app's tagged jobs; an
