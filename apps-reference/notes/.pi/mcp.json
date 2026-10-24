@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "cybermole-apps": {
+      "enabled": false
+    },
+    "notes": {
+      "command": "node",
+      "args": ["/opt/cybermole/dist-server/server/app-mcp-shim.js", "notes"],
+      "description": "this app's actions, 1:1 with its route table (dist/route-table.json) — the use-path MCP for agents working in this tree",
+      "exposure": "direct"
+    }
+  }
+}

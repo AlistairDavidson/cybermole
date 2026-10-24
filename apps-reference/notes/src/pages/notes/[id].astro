@@ -1,0 +1,91 @@
+---
+// The note page — the note_get action's UI face (the same domain call,
+// rendered server-side) carrying the editor island (note_edit +
+// note_archive). A missing note answers 404 with an honest card, the
+// family's own code named. Frontmatter imports SSR the wa-* components;
+// the client script below re-imports them — BOTH halves, always.
+import '@awesome.me/webawesome/dist/components/card/card.js';
+import '@awesome.me/webawesome/dist/components/button/button.js';
+import '@awesome.me/webawesome/dist/components/input/input.js';
+import '@awesome.me/webawesome/dist/components/textarea/textarea.js';
+import '@awesome.me/webawesome/dist/components/badge/badge.js';
+import { getAppDb } from '../../lib/notes-db';
+import { noteGetResult } from '../../lib/note_get';
+import type { Note } from '../../lib/notes-core';
+
+const id = Number(Astro.params.id);
+const got = Number.isInteger(id) && id > 0 ? noteGetResult(getAppDb(), id) : null;
+const note: Note | null = got !== null && got.ok ? got.data.note : null;
+if (note === null) Astro.response.status = 404;
+const base = import.meta.env.BASE_URL;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{note !== null ? `${note.title} — Notes` : 'note not found — Notes'}</title>
+    <link rel="icon" type="image/svg+xml" href="/apps/notes/favicon.svg" />
+  </head>
+  <body>
+    <main style="font-family: system-ui; max-width: 40rem; margin: 3rem auto; padding: 0 1rem;">
+      <wa-card>
+        <h1 slot="header">{note !== null ? note.title : 'note not found'}</h1>
+        {note === null ? (
+          <p>
+            no note by that id — <a href={base}>back to the list</a>.
+          </p>
+        ) : (
+          <>
+            <p style="margin: 0.1rem 0;">
+              {note.archived && <wa-badge>archived</wa-badge>}
+              {note.tags.map(t => (
+                <wa-badge>{t}</wa-badge>
+              ))}
+            </p>
+            <!-- The editor island's HOST: the SSR'd note rides along in
+                 data-note (the client script parses it into the island's
+                 props); the island takes the region over and wires
+                 note_edit + note_archive. Without JS the note still
+                 reads. -->
+            <section class="note-editor" data-note={JSON.stringify(note)}>
+              <wa-input label="title" value={note.title}></wa-input>
+              <wa-textarea label="body" value={note.body}></wa-textarea>
+              <wa-input label="tags (comma-separated)" value={note.tags.join(', ')}></wa-input>
+              <wa-button variant="brand">save changes</wa-button>
+              <wa-button variant="danger">archive</wa-button>
+              <p aria-live="polite">— nothing saved yet —</p>
+            </section>
+            <p>
+              <a href={base}>back to the list</a>
+            </p>
+          </>
+        )}
+      </wa-card>
+    </main>
+    <script>
+      // Support modules MUST precede the wa-* imports — if the SSR'd
+      // elements define before lit hydration support installs, they
+      // render twice (@awesome.me/astro-lit README).
+      import '@cybermole/app-kit/wa-client';
+      import '@awesome.me/webawesome/dist/components/card/card.js';
+      import '@awesome.me/webawesome/dist/components/button/button.js';
+      import '@awesome.me/webawesome/dist/components/input/input.js';
+      import '@awesome.me/webawesome/dist/components/textarea/textarea.js';
+      import '@awesome.me/webawesome/dist/components/badge/badge.js';
+      import { mountIsland } from '@cybermole/app-kit/island';
+
+      import NoteEditorIsland from '../../islands/NoteEditorIsland';
+      import type { NoteEditorProps } from '../../islands/NoteEditorIsland';
+      import type { Note } from '../../lib/notes-core';
+
+      const host = document.querySelector<HTMLElement>('.note-editor');
+      if (host?.dataset.note !== undefined) {
+        mountIsland('.note-editor', NoteEditorIsland, {
+          mode: 'edit',
+          note: JSON.parse(host.dataset.note) as Note,
+        } satisfies NoteEditorProps);
+      }
+    </script>
+  </body>
+</html>
