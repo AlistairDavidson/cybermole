@@ -35,6 +35,8 @@
     "dist-server/",
     "pi/",
     "root-agents/",
+    "app-starter/",
+    "apps-agent-template/",
     "tmux.conf"
   ],
   "dependencies": {

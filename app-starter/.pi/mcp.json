@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "cybermole-apps": {
+      "enabled": false
+    },
+    "__APP_SLUG__": {
+      "command": "node",
+      "args": ["__APP_MCP_SHIM__", "__APP_SLUG__"],
+      "description": "this app's actions, 1:1 with its route table (dist/route-table.json) — the use-path MCP for agents working in this tree",
+      "exposure": "direct"
+    }
+  }
+}

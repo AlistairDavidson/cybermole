@@ -1,0 +1,49 @@
+---
+// Frontmatter imports SSR the wa-* components (astro-lit, declarative
+// shadow DOM); the client script below re-imports them so the browser
+// upgrades them — BOTH halves, always (the repo rule "SSR imports ≠
+// client imports"; @cybermole/app-kit's wa-client carries the why).
+import '@awesome.me/webawesome/dist/components/card/card.js';
+import '@awesome.me/webawesome/dist/components/button/button.js';
+import '@awesome.me/webawesome/dist/components/input/input.js';
+const builtAt = new Date().toISOString();
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>__APP_NAME__</title>
+    <link rel="icon" type="image/svg+xml" href="/apps/__APP_SLUG__/favicon.svg" />
+  </head>
+  <body>
+    <main style="font-family: system-ui; max-width: 40rem; margin: 3rem auto; padding: 0 1rem;">
+      <wa-card>
+        <h1 slot="header">__APP_NAME__</h1>
+        <p>__APP_DESCRIPTION__</p>
+        <!-- The island's HOST: this SSR'd markup is the initial content —
+             the island (client script below) takes the region over and
+             wires the example action. Without JS the page still renders. -->
+        <section class="ping-island">
+          <wa-input label="name" value="world"></wa-input>
+          <wa-button variant="brand">ping</wa-button>
+          <p aria-live="polite">— not pinged yet —</p>
+        </section>
+        <p style="opacity: 0.6">built at {builtAt}</p>
+      </wa-card>
+    </main>
+    <script>
+      // Support modules MUST precede the wa-* imports — if the SSR'd
+      // elements define before lit hydration support installs, they
+      // render twice (@awesome.me/astro-lit README).
+      import '@cybermole/app-kit/wa-client';
+      import '@awesome.me/webawesome/dist/components/card/card.js';
+      import '@awesome.me/webawesome/dist/components/button/button.js';
+      import '@awesome.me/webawesome/dist/components/input/input.js';
+      import { mountIsland } from '@cybermole/app-kit/island';
+      import PingIsland from '../islands/PingIsland';
+
+      mountIsland('.ping-island', PingIsland, {});
+    </script>
+  </body>
+</html>
