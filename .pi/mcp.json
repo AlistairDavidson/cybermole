@@ -1,3 +1,11 @@
 {
-  "mcpServers": {}
+  "mcpServers": {
+    "cybermole-dev": {
+      "command": "node",
+      "args": ["tools/dev-mcp/server.mjs"],
+      "description": "cybermole's validation ladder as quiet structured tools — run_check, run_lint, run_format_check, run_build, run_unit_tests, run_e2e: one {passed, counts, failures[], output} envelope so context fills with failure detail only.",
+      "exposure": "direct",
+      "timeout": 3660
+    }
+  }
 }

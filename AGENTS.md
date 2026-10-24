@@ -13,6 +13,19 @@ and comment density aren't prescribed; match the surrounding code.
 
 ## Testing
 
+Validation runs through the `cybermole-dev` MCP tools (registered by
+`.pi/mcp.json`, implemented in `tools/dev-mcp/` — docs/dev-test-mcp-plan.md):
+`run_check`, `run_lint`, `run_format_check`, `run_build`, `run_unit_tests`,
+`run_e2e` — one per npm script below. Every tool answers ONE quiet envelope
+(`{passed, returncode, duration_s, quiet, timed_out, output, counts?,
+failures?}`): read `passed` first, counts on a glance, failure detail in
+`failures[]` — success costs ~2 lines of context instead of per-test
+reporting (a full e2e run is two lines). `run_unit_tests` narrows by `file`
+(stem) and `name` (pattern, needs file), `run_e2e` by `grep`/`file` — targeted
+before full. `quiet: false` is for debugging the reporting itself. Bash the
+npm scripts only for interactive debugging (a REPL loop, watching a run
+live); they stay the substrate and the tools' contract.
+
 `npm run check` — `astro check` (the `.astro` files, `src/components`,
 tests) plus a no-emit `tsc` of the server build. `astro build` does
 not type-check, so run this before review.

@@ -1,0 +1,71 @@
+[
+  {
+    "filePath": "/repo/src/lib/broken.ts",
+    "messages": [
+      {
+        "ruleId": "no-unused-vars",
+        "severity": 2,
+        "message": "'orphan' is defined but never used.",
+        "line": 12,
+        "column": 7,
+        "nodeType": "Identifier",
+        "messageId": "unusedVar",
+        "endLine": 12,
+        "endColumn": 13
+      }
+    ],
+    "suppressedMessages": [],
+    "errorCount": 1,
+    "fatalErrorCount": 0,
+    "warningCount": 0,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  },
+  {
+    "filePath": "/repo/src/pages/meh.ts",
+    "messages": [
+      {
+        "ruleId": "no-empty",
+        "severity": 1,
+        "message": "Empty block statement.",
+        "line": 3,
+        "column": 9,
+        "nodeType": "BlockStatement",
+        "messageId": "unexpected",
+        "endLine": 3,
+        "endColumn": 10
+      },
+      {
+        "ruleId": "semi",
+        "severity": 2,
+        "message": "Missing semicolon.",
+        "line": 8,
+        "column": 22,
+        "nodeType": "ReturnStatement",
+        "messageId": "missingSemi",
+        "endLine": 8,
+        "endColumn": 22,
+        "fix": { "range": [171, 171], "text": ";" }
+      }
+    ],
+    "suppressedMessages": [],
+    "errorCount": 1,
+    "fatalErrorCount": 0,
+    "warningCount": 1,
+    "fixableErrorCount": 1,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  },
+  {
+    "filePath": "/repo/src/lib/clean.ts",
+    "messages": [],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 0,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  }
+]
