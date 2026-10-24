@@ -2,12 +2,13 @@
 // /api/state's serving flag source — the app host /_admin/status ping
 // over a REAL tmp-dir unix socket (a stub host, counting requests),
 // plus the pure join. Covers: the snapshot parse, the single-flight +
-// TTL cache (one attempt per window — concurrent callers share it), the
-// NEGATIVE cache (a failure answers from cache until the window passes,
-// then retries), the off surface (socketPath null: serving:false
-// forever, zero requests), malformed host answers degrading to
-// failures, and joinServing's honest reasons (mounted / the host's own
-// skip reason / not-mounted / unreachable).
+// TTL cache (one attempt per window — concurrent callers share it),
+// FAILURES NOT CACHED (a failure retried on the next call — a stale
+// negative would dim an app that just mounted; single-flight + the ping
+// timeout bound a hung socket without any cache), the off surface
+// (socketPath null: serving:false forever, zero requests), malformed
+// host answers degrading to failures, and joinServing's honest reasons
+// (mounted / the host's own skip reason / not-mounted / unreachable).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as http from 'node:http';
@@ -87,25 +88,21 @@ test('info(): reachable snapshot from a real host ping; cached within the window
   }
 });
 
-test('the failure is NEGATIVELY cached: a dead host answers from cache until the window passes, then retries', async () => {
+test('a failure is NOT cached: the next call retries (a mount must not wait out a window)', async () => {
   const socketPath = path.join(dir, 'down.sock');
   // Nothing on the socket yet.
-  const serving = new AppsServing({ socketPath, ttlMs: 80, timeoutMs: 200 });
+  const serving = new AppsServing({ socketPath, ttlMs: 5000, timeoutMs: 200 });
   const dead = await serving.info();
   assert.equal(dead.reachable, false);
   assert.ok(dead.failureReason.includes('unreachable'), dead.failureReason);
 
-  // The host comes up; the cached failure still answers (no request made).
+  // The host comes up; the NEXT call retries immediately — no negative
+  // window to wait out (e2e caught the stale dimming a just-mounted app).
   const host = stubHost(socketPath, STATUS_OK);
   await host.listen();
   try {
-    const cached = await serving.info();
-    assert.equal(cached.reachable, false, 'the failure is still cached');
-    assert.equal(host.state.requests, 0);
-    // Past the window the next poll retries — and succeeds.
-    await new Promise(resolve => setTimeout(resolve, 100));
     const retried = await serving.info();
-    assert.equal(retried.reachable, true);
+    assert.equal(retried.reachable, true, 'the failure did not linger');
     assert.equal(host.state.requests, 1);
   } finally {
     await host.close();

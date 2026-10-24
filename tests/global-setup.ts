@@ -11,7 +11,15 @@ import { Apps } from '../src/lib/apps';
 import { Workspaces } from '../src/lib/workspaces';
 import { terminalSessionName } from '../src/lib/tmux';
 import { asAppId, asTerminalId } from '@cybermole/app-kit';
-import { AGENT_MARKER, MARKER, PASSWORD, TMUX_SOCKET, USERNAME, WORKSPACE } from './env';
+import {
+  AGENT_MARKER,
+  MARKER,
+  PASSWORD,
+  TMUX_SOCKET,
+  USERNAME,
+  WORKSPACE,
+  writeSharedSessionCookie,
+} from './env';
 
 /** task/app-web: the fixture app's tree + build. Built when its dist/ is
  *  missing or older than its sources (setup-node-modules.mjs when the
@@ -211,5 +219,32 @@ export default async function globalSetup(): Promise<void> {
   // The server serves dist/ + dist-server/ — build if they're missing.
   if (!fs.existsSync('dist/server/entry.mjs') || !fs.existsSync('dist-server/server/main.js')) {
     execFileSync('npm', ['run', 'build'], { stdio: 'inherit' });
+  }
+
+  // ONE sign-in for the whole run, here at setup (task/app-actions
+  // integration): the per-IP login budget is 10 attempts / 15 min and
+  // the suite's spec files (browser-theme, e2e's own + its post-logout
+  // re-logins) already sit at its edge — the three apps spec files'
+  // sign-ins tipped it over (the late re-logins ate 429s and timed out
+  // at the form). The apps specs' login() helpers read this shared
+  // cookie file first (env.ts), so they cost the run ZERO sign-ins.
+  // Best-effort: a failed seed just falls back to the first spec's own
+  // form sign-in (the pre-shared behavior).
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      const res = await fetch(`http://127.0.0.1:3470/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: USERNAME, password: PASSWORD }),
+      });
+      const cookie = res.headers.get('set-cookie');
+      if (res.status === 200 && cookie !== null) {
+        writeSharedSessionCookie(cookie.split(';')[0]);
+        break;
+      }
+    } catch {
+      /* the webServer may still be coming up — retry below */
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000));
   }
 }

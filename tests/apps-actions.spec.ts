@@ -23,12 +23,21 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { APPS_ROOT, APPS_SOCKET, INTERNAL_SOCKET, PASSWORD, USERNAME } from './env';
+import {
+  APPS_ROOT,
+  APPS_SOCKET,
+  INTERNAL_SOCKET,
+  PASSWORD,
+  USERNAME,
+  readSharedSessionCookie,
+  writeSharedSessionCookie,
+} from './env';
 import {
   callActionTool,
   describeTool,
   registerTool,
   reloadTool,
+  statusTool,
   unregisterTool,
 } from '../dist-server/server/apps-mcp.js';
 import { addAction } from '../dist-server/src/lib/apps-actions.js';
@@ -37,7 +46,10 @@ import { runChild } from '../dist-server/src/lib/apps-child.js';
 
 const REPO = path.resolve(__dirname, '..');
 const SLUG = 'actions-probe';
-
+/** The entry sweep's once-per-run latch (see beforeAll): inside
+ * APPS_ROOT, so the hermetic WORKSPACE's per-run rm -rf makes it
+ * run-scoped — nothing else ever needs to clear it. */
+const SWEEP_MARKER = path.join(APPS_ROOT, `.${SLUG}.swept`);
 /** The MCP's own deps shape, resolved like main() would — against THIS
  *  suite's sockets and hermetic apps root (apps-scaffold.spec.ts's shape). */
 const deps = {
@@ -83,10 +95,28 @@ Promise<{ status: number; json: any }> {
   );
 }
 
-/** Signs in ONCE for this file, the cookie reused after (the shared
- *  10/15-min login budget). */
+/** Signs in ONCE for the whole RUN — the cookie is shared with the
+ *  sibling apps specs through the workspace file (env.ts's helpers:
+ *  the three apps files were each burning one of the 10/15-min login
+ *  attempts, pushing the suite's late re-logins into 429s). */
 let sessionCookie: Cookie | null = null;
 async function login(page: Page): Promise<void> {
+  if (!sessionCookie) {
+    const shared = readSharedSessionCookie();
+    if (shared !== null) {
+      const [name, ...rest] = shared.split('=');
+      sessionCookie = {
+        name,
+        value: rest.join('='),
+        domain: '127.0.0.1',
+        path: '/',
+        httpOnly: true,
+        secure: false,
+        sameSite: 'Strict',
+        expires: -1,
+      };
+    }
+  }
   if (sessionCookie) {
     await page.context().addCookies([sessionCookie]);
     await page.goto('/');
@@ -98,28 +128,30 @@ async function login(page: Page): Promise<void> {
     await page.waitForURL(u => u.pathname === '/');
     sessionCookie =
       (await page.context().cookies()).find(c => c.name === 'cybermole_session') ?? null;
+    if (sessionCookie) writeSharedSessionCookie(`${sessionCookie.name}=${sessionCookie.value}`);
   }
   await page.waitForSelector('workspace-sidebar .nav');
 }
 
 test.beforeAll(async () => {
-  // A leftover from an aborted run must not wedge scaffold or register:
-  // drop it through the verbs + fs, the same cleanup afterAll performs.
+  // ENTRY sweep — idempotent by INTENT, but GATED once per run by the
+  // marker: the scheduler may split this file across workers, and a
+  // replacement worker's re-run beforeAll would otherwise unregister +
+  // rm the app an earlier worker's tests in THIS run just built (the
+  // observed mid-test vanishing). The marker lives inside APPS_ROOT
+  // (under the hermetic WORKSPACE — global-setup's per-run rm -rf makes
+  // it run-scoped) and NOTHING removes it mid-run (there is no afterAll:
+  // the run's true cleanup is structural — rows die with the per-run db,
+  // trees with the per-run WORKSPACE rm; later files sweep their own
+  // slugs at entry the same way).
+  if (fs.existsSync(SWEEP_MARKER)) return;
+  fs.mkdirSync(APPS_ROOT, { recursive: true });
+  fs.writeFileSync(SWEEP_MARKER, `${process.pid} ${Date.now()}\n`);
+  fs.rmSync(path.join(APPS_ROOT, SLUG), { recursive: true, force: true });
   try {
     await unregisterTool(deps, SLUG);
   } catch {
     /* no row — fine */
-  }
-  fs.rmSync(path.join(APPS_ROOT, SLUG), { recursive: true, force: true });
-});
-
-test.afterAll(async () => {
-  // Leave the fixture world exact: row dropped, mount synced away, tree gone.
-  try {
-    await unregisterTool(deps, SLUG);
-    fs.rmSync(path.join(APPS_ROOT, SLUG), { recursive: true, force: true });
-  } catch {
-    /* the suite's server is gone — nothing left to clean */
   }
 });
 
@@ -192,10 +224,36 @@ test('the extended loop: scaffold → add_action → check green → register + 
   ).toContain(SLUG);
 });
 
+/** The page test's shared precondition: the app REGISTERED and
+ *  MOUNTED, established idempotently — the scheduler-split note in
+ *  beforeAll means no file-order state assumptions. Cheap when the
+ *  world is already right: one statusTool round-trip. */
+async function ensureRegisteredAndMounted(): Promise<void> {
+  const status = await tool(statusTool(deps, SLUG));
+  expect(status.isError, JSON.stringify(status)).toBe(false);
+  const app = status.body.apps[0] as { registered: boolean } | undefined;
+  if (!app?.registered) {
+    const registered = await tool(registerTool(deps, SLUG));
+    // duplicate_slug = another worker just registered it (green);
+    // isError + anything else is a real failure.
+    expect(
+      !registered.isError || registered.body?.code === 'duplicate_slug',
+      JSON.stringify(registered),
+    ).toBe(true);
+  }
+  const reloaded = await tool(reloadTool(deps, SLUG));
+  expect(reloaded.isError, JSON.stringify(reloaded)).toBe(false);
+  expect(
+    [...(reloaded.body.mounted ?? []), ...(reloaded.body.reimported ?? [])],
+    JSON.stringify(reloaded.body),
+  ).toContain(SLUG);
+}
+
 test('every face of the one vocabulary: describe, the UI island, call, and one shim round-trip', async ({
   page,
 }) => {
   test.setTimeout(120_000);
+  await ensureRegisteredAndMounted();
   await login(page);
 
   // describe — the emitted table, the new action in it.

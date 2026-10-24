@@ -107,6 +107,13 @@ export const runChild: RunChildFn = (command, args, options) =>
     }
     child.on('close', code => {
       if (killer !== null) clearTimeout(killer);
+      // The leader's exit does NOT take its detached group with it — npm
+      // done can leave `astro check`'s language-server grandchildren
+      // running (observed starving a test host until Playwright restarted
+      // its worker mid-file). The group is this child's OWN (never ours);
+      // TERM the stragglers, KILL a beat later, best-effort both.
+      killGroup(child, 'SIGTERM');
+      setTimeout(() => killGroup(child, 'SIGKILL'), 2000).unref?.();
       resolve({
         code,
         stdout,

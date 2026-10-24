@@ -19,7 +19,14 @@ import { expect, test } from '@playwright/test';
 import type { Cookie, Page } from '@playwright/test';
 import * as http from 'node:http';
 import * as path from 'node:path';
-import { APPS_SOCKET, INTERNAL_SOCKET, PASSWORD, USERNAME } from './env';
+import {
+  APPS_SOCKET,
+  INTERNAL_SOCKET,
+  PASSWORD,
+  USERNAME,
+  readSharedSessionCookie,
+  writeSharedSessionCookie,
+} from './env';
 
 const FIXTURE_TREE = path.resolve(__dirname, 'fixtures', 'app-fixture');
 
@@ -85,9 +92,28 @@ Promise<{ status: number; json: any }> {
 }
 
 /** Lands on the signed-in console (e2e.spec.ts's helper, copied — one
- *  sign-in per file, the cookie reused after). */
+ *  sign-in per file, the cookie reused after — and shared across the
+ *  three apps specs via the workspace file, env.ts's helpers: each
+ *  file-level sign-in was one of the 10/15-min budget's attempts, and
+ *  three of them pushed the suite's late re-logins into 429s). */
 let sessionCookie: Cookie | null = null;
 async function login(page: Page): Promise<void> {
+  if (!sessionCookie) {
+    const shared = readSharedSessionCookie();
+    if (shared !== null) {
+      const [name, ...rest] = shared.split('=');
+      sessionCookie = {
+        name,
+        value: rest.join('='),
+        domain: '127.0.0.1',
+        path: '/',
+        httpOnly: true,
+        secure: false,
+        sameSite: 'Strict',
+        expires: -1,
+      };
+    }
+  }
   if (sessionCookie) {
     await page.context().addCookies([sessionCookie]);
     await page.goto('/');
@@ -99,6 +125,7 @@ async function login(page: Page): Promise<void> {
     await page.waitForURL(u => u.pathname === '/');
     sessionCookie =
       (await page.context().cookies()).find(c => c.name === 'cybermole_session') ?? null;
+    if (sessionCookie) writeSharedSessionCookie(`${sessionCookie.name}=${sessionCookie.value}`);
   }
   await page.waitForSelector('workspace-sidebar .nav');
 }
@@ -110,6 +137,18 @@ async function login(page: Page): Promise<void> {
 async function registerFixtureApp(): Promise<void> {
   const listed = await callSocket(INTERNAL_SOCKET, 'GET', '/apps');
   expect(listed.status, JSON.stringify(listed.json)).toBe(200);
+  // This file runs LAST of the three apps specs (alphabetical: actions,
+  // scaffold, apps) — the siblings clean up after themselves, but their
+  // specs have NO afterAll (the scheduler-split note in those files:
+  // teardown raced in-flight tests), so their rows can linger into
+  // e2e.spec's sidebar-count assertions. Sweep the siblings' leftovers
+  // here, best-effort (their trees are inert files; global-setup's
+  // per-run WORKSPACE rm retires those).
+  for (const leftover of listed.json.apps as Array<{ slug: string }>) {
+    if (leftover.slug !== 'app-fixture' && leftover.slug !== 'alpha-app') {
+      await callSocket(INTERNAL_SOCKET, 'DELETE', `/apps/${leftover.slug}`);
+    }
+  }
   if (listed.json.apps.some((a: { slug: string }) => a.slug === 'app-fixture')) {
     const dropped = await callSocket(INTERNAL_SOCKET, 'DELETE', '/apps/app-fixture');
     expect(dropped.status, JSON.stringify(dropped.json)).toBe(200);

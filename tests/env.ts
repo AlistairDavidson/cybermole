@@ -1,5 +1,8 @@
 // Shared constants for the e2e suite (also used by global-setup and the
 // playwright.config webServer env).
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
 export const WORKSPACE = '/tmp/cybermole-itest';
 // task/app-web: the webServer's CYBERMOLE_STATE_DIR — a SIBLING of
 // WORKSPACE (global-setup rm -rf's WORKSPACE after the server boots,
@@ -23,6 +26,37 @@ export const INTERNAL_SOCKET = `${WORKSPACE}.sock`;
 export const APPS_ROOT = `${WORKSPACE}/apps`;
 export const USERNAME = 'tester';
 export const PASSWORD = 'correct-horse-9';
+
+// task/app-actions (integration): the suite's per-IP login budget is
+// 10 attempts / 15 min and EVERY spec file that needs a browser signs
+// in once through its own login() helper. The three apps specs pushed
+// the count over (the post-logout re-logins late in e2e.spec started
+// eating 429s — timed out at the sign-in form), so the apps specs share
+// ONE session cookie through this file instead: the first apps file to
+// sign in writes it, the others reuse it. The file lives under WORKSPACE
+// (global-setup rm -rf's it per run, so it is run-scoped — never stale
+// across runs). e2e.spec deliberately stays on its own isolated sign-in:
+// its logout tests invalidate cookies, and its usage was already inside
+// the budget before the apps specs existed.
+export function readSharedSessionCookie(): string | null {
+  try {
+    const v = fs.readFileSync(SHARED_COOKIE_FILE, 'utf8').trim();
+    return v === '' ? null : v;
+  } catch {
+    return null;
+  }
+}
+
+export function writeSharedSessionCookie(header: string): void {
+  try {
+    fs.mkdirSync(path.dirname(SHARED_COOKIE_FILE), { recursive: true });
+    fs.writeFileSync(SHARED_COOKIE_FILE, header);
+  } catch {
+    /* best-effort — a failed write just costs the next file a sign-in */
+  }
+}
+const SHARED_COOKIE_FILE = path.join(WORKSPACE, '.apps-session-cookie');
+
 export const TMUX_SOCKET = 'cybermole-itest';
 export const MARKER = 'ITEST_MARKER_READY';
 // task/defaults-settings: the auto-opened first terminal of a new

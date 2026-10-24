@@ -102,9 +102,16 @@ export interface AppsServingDeps {
   /** Ping timeout. Default 500 ms — the status route is a registry
    *  read; anything slower is a wedging host. */
   timeoutMs?: number;
-  /** Cache window — success and failure alike — default 10 s (under
-   *  the 15 s state poll, so each poll's join sees a fresh-enough
-   *  snapshot while concurrent tabs share one attempt). */
+  /** Cache window for SUCCESSFUL snapshots, default 10 s (under the
+   *  15 s state poll — each poll's join sees a fresh-enough snapshot
+   *  while concurrent tabs share one attempt). FAILURES ARE NOT CACHED:
+   *  a dead socket answers ECONNREFUSED in ~0.1 ms (free to retry every
+   *  poll), and a stale negative would lie about an app that just
+   * mounted — observed in e2e: register + reload, the page serves, and
+   * /api/state still dimmed the app for the rest of a success-only
+   * window. A HUNG socket — the case the plan's "failure cached" wording
+   * guarded — is bounded by the ping timeout + single-flight, not by
+   * the cache. */
   ttlMs?: number;
   /** Clock injectable for units. */
   now?: () => number;
@@ -122,15 +129,18 @@ export class AppsServing {
     this.deps = deps;
   }
 
-  /** One snapshot, cached for the window: the first caller of a window
-   *  does the attempt (single-flight — every open tab's poll awaits the
-   *  SAME promise, so a hung socket costs its timeout once); callers
-   *  inside the window get the cached answer, failure included. */
+  /** One snapshot: SUCCESS cached for the window, FAILURE served fresh
+   *  (the first caller of a window does the attempt — single-flight:
+   *  every open tab's poll awaits the SAME promise, so a hung socket
+   *  costs its timeout once). */
   info(): Promise<AppsServingInfo> {
     if (this.deps.socketPath === null && this.cached) return Promise.resolve(this.cached);
     const now = this.deps.now ?? Date.now;
     const ttl = this.deps.ttlMs ?? 10_000;
-    if (this.cached !== null && now() - this.cachedAt < ttl) return Promise.resolve(this.cached);
+    const fresh = this.cached !== null && now() - this.cachedAt < ttl;
+    // A cached SUCCESS inside the window serves; a cached FAILURE never
+    // does (see ttlMs's comment — no stale negatives).
+    if (this.cached !== null && this.cached.reachable && fresh) return Promise.resolve(this.cached);
     if (this.inFlight) return this.inFlight;
     const attempt = (async (): Promise<AppsServingInfo> => {
       if (this.deps.socketPath === null) {

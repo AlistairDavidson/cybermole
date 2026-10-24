@@ -21,7 +21,15 @@ import { expect, test } from '@playwright/test';
 import type { Cookie, Page } from '@playwright/test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { APPS_ROOT, APPS_SOCKET, INTERNAL_SOCKET, PASSWORD, USERNAME } from './env';
+import {
+  APPS_ROOT,
+  APPS_SOCKET,
+  INTERNAL_SOCKET,
+  PASSWORD,
+  USERNAME,
+  readSharedSessionCookie,
+  writeSharedSessionCookie,
+} from './env';
 import {
   registerTool,
   reloadTool,
@@ -34,7 +42,10 @@ import { checkApp } from '../dist-server/src/lib/apps-gate.js';
 
 const REPO = path.resolve(__dirname, '..');
 const SLUG = 'loop-probe';
-
+/** The entry sweep's once-per-run latch (see beforeAll): inside
+ * APPS_ROOT, so the hermetic WORKSPACE's per-run rm -rf makes it
+ * run-scoped — nothing else ever needs to clear it. */
+const SWEEP_MARKER = path.join(APPS_ROOT, `.${SLUG}.swept`);
 /** The MCP's own deps shape, resolved like main() would — against THIS
  *  suite's sockets and hermetic apps root. */
 const deps = {
@@ -77,8 +88,27 @@ Promise<{ status: number; json: any }> {
 
 /** Signs in ONCE for this file, the cookie reused after (apps.spec.ts's
  *  helper, copied — the shared 10/15-min login budget). */
+/** Signs in ONCE for the whole RUN — the shared cookie file first (the
+ *  sibling apps specs' login budget note, env.ts), this file's own
+ *  sign-in only when nobody has signed in yet. */
 let sessionCookie: Cookie | null = null;
 async function login(page: Page): Promise<void> {
+  if (!sessionCookie) {
+    const shared = readSharedSessionCookie();
+    if (shared !== null) {
+      const [name, ...rest] = shared.split('=');
+      sessionCookie = {
+        name,
+        value: rest.join('='),
+        domain: '127.0.0.1',
+        path: '/',
+        httpOnly: true,
+        secure: false,
+        sameSite: 'Strict',
+        expires: -1,
+      };
+    }
+  }
   if (sessionCookie) {
     await page.context().addCookies([sessionCookie]);
     await page.goto('/');
@@ -90,29 +120,43 @@ async function login(page: Page): Promise<void> {
     await page.waitForURL(u => u.pathname === '/');
     sessionCookie =
       (await page.context().cookies()).find(c => c.name === 'cybermole_session') ?? null;
+    if (sessionCookie) writeSharedSessionCookie(`${sessionCookie.name}=${sessionCookie.value}`);
   }
   await page.waitForSelector('workspace-sidebar .nav');
 }
 
 test.beforeAll(async () => {
-  // A leftover from an aborted run must not wedge scaffold (never
-  // overwrites): drop it through the verbs + fs, the same cleanup
-  // afterAll performs.
+  // ENTRY sweep — idempotent by INTENT, but GATED once per run by the
+  // marker: the scheduler may split this file across workers, and a
+  // replacement worker's re-run beforeAll would otherwise unregister +
+  // rm the app an earlier worker's tests in THIS run just built (the
+  // observed mid-test vanishing). The marker lives inside APPS_ROOT
+  // (under the hermetic WORKSPACE — global-setup's per-run rm -rf makes
+  // it run-scoped) and NOTHING removes it mid-run (there is no afterAll:
+  // the run's true cleanup is structural — rows die with the per-run db,
+  // trees with the per-run WORKSPACE rm; later files sweep their own
+  // slugs at entry the same way).
+  if (fs.existsSync(SWEEP_MARKER)) return;
+  fs.mkdirSync(APPS_ROOT, { recursive: true });
+  fs.writeFileSync(SWEEP_MARKER, `${process.pid} ${Date.now()}\n`);
   fs.rmSync(path.join(APPS_ROOT, SLUG), { recursive: true, force: true });
-});
-
-test.afterAll(async () => {
-  // Leave the fixture world exact: row dropped (the tree-following
-  // cascade is the API's own semantics), mount synced away, tree gone.
   try {
     await unregisterTool(deps, SLUG);
-    fs.rmSync(path.join(APPS_ROOT, SLUG), { recursive: true, force: true });
   } catch {
-    /* the suite's server is gone — nothing left to clean */
+    /* no row — fine */
   }
 });
 
-test('the build loop: scaffold → check green → register + reload → serving', async () => {
+test('the build loop: scaffold → check green → register + reload → serving', async ({
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- the fixture is the point: a uniform signature per file (see below)
+  page: _page,
+}) => {
+  // `page` asked for (and unused): every test in this file then carries
+  // the SAME fixture signature, so Playwright's scheduler keeps the file
+  // in ONE worker — a mixed fixture set let it split the file across
+  // workers, whose re-run hooks and racing teardowns made the shared
+  // app row vanish mid-test (the pair-run flake). The unused browser
+  // context is ~300ms once per file.
   test.setTimeout(240_000);
 
   // scaffold — the real template, baked, linked, committed.
@@ -169,9 +213,42 @@ test('the build loop: scaffold → check green → register + reload → serving
   ).toContain(SLUG);
 });
 
+/** The browser tests' shared precondition: the app REGISTERED and
+ *  MOUNTED, established idempotently. The suite's Playwright scheduler
+ *  may split this file across workers (observed: hooks re-run in a
+ *  replacement worker while another worker's afterAll tears down the
+ *  previous state — the registration a file-order assumption made
+ *  vanish mid-test), so each page test re-asserts the world it needs
+ *  instead of inheriting it from the previous test. Cheap when the
+ *  world is already right: one statusTool round-trip. */
+async function ensureRegisteredAndMounted(): Promise<void> {
+  const status = await tool(statusTool(deps, SLUG));
+  expect(status.isError, JSON.stringify(status)).toBe(false);
+  const app = status.body.apps[0] as { registered: boolean } | undefined;
+  if (!app?.registered) {
+    const registered = await tool(registerTool(deps, SLUG));
+    expect(registered.isError, JSON.stringify(registered)).toBe(false);
+    // duplicate_slug is the API's green "already there" answer for a
+    // row another worker just registered (the scheduler-split note in
+    // beforeAll) — it satisfies the precondition the same as a fresh
+    // register; every other body is a failure the expect above caught.
+    expect(
+      [true, registered.body?.code === 'duplicate_slug'].some(Boolean),
+      JSON.stringify(registered),
+    ).toBe(true);
+  }
+  const reloaded = await tool(reloadTool(deps, SLUG));
+  expect(reloaded.isError, JSON.stringify(reloaded)).toBe(false);
+  expect(
+    [...(reloaded.body.mounted ?? []), ...(reloaded.body.reimported ?? [])],
+    JSON.stringify(reloaded.body),
+  ).toContain(SLUG);
+}
+
 test('the scaffolded app serves through the console origin, and /api/state reports it', async ({
   page,
 }) => {
+  await ensureRegisteredAndMounted();
   await login(page);
   // The SSR page (the wa-card's header slot is light DOM inside the
   // astro-lit declarative-shadow-DOM pipeline) — through the origin,
@@ -186,18 +263,30 @@ test('the scaffolded app serves through the console origin, and /api/state repor
   const ping = await api(page, 'GET', `/apps/${SLUG}/api/ping?name=loop`);
   expect(ping.status, JSON.stringify(ping.json)).toBe(200);
   expect(ping.json).toMatchObject({ ok: true, resultType: 'ping', data: { hello: 'loop' } });
-  // /api/state carries the app as serving (the web side's host ping).
-  const state = await api(page, 'GET', '/api/state');
-  const serving = (state.json.apps as Array<{ slug: string; serving: boolean }>).find(
-    a => a.slug === SLUG,
-  );
-  expect(serving, JSON.stringify(state.json.apps)).toBeDefined();
-  expect(serving?.serving).toBe(true);
+  // /api/state carries the app as serving — EVENTUALLY: the flag rides
+  // a ~10 s success-cached host-status snapshot (apps-serving.ts — a
+  // still-open tab's poll can cache a pre-mount snapshot a moment before
+  // the reload lands), so the assertion POLLS past the cache window
+  // instead of demanding an instant the design deliberately doesn't
+  // promise.
+  await expect
+    .poll(
+      async () => {
+        const state = await api(page, 'GET', '/api/state');
+        const serving = (state.json.apps as Array<{ slug: string; serving: boolean }>).find(
+          a => a.slug === SLUG,
+        );
+        return serving?.serving === true;
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(true);
 });
 
 test('after unregister the app stops serving but the tree stands (status shows it unregistered)', async ({
   page,
 }) => {
+  await ensureRegisteredAndMounted();
   await login(page);
   const dropped = await tool(unregisterTool(deps, SLUG));
   expect(dropped.isError, JSON.stringify(dropped)).toBe(false);
