@@ -132,8 +132,13 @@ const singleQuoted = (block: string, key: string): string | null => {
 const FIELD_LINE_RE = /^[ \t]+([A-Za-z_$][A-Za-z0-9_$]*):[ \t]*z[.\s[(]/gm;
 
 /** The entry's own property keys — schemas, not fields (params/query/body
- *  name z schemas themselves; their INDENTED members are the fields). */
+ *  name z schemas themselves; their INDENTED members are the fields).
+ *  A property line is a NAMESPACE only when the name is one of those
+ *  keys AND its value names an object schema — a FIELD named `body`
+ *  (`body: z.string()`, the notes app's case) is a field, not a
+ *  namespace. */
 const NAMESPACE_KEYS = new Set(['params', 'query', 'body']);
+const NAMESPACE_VALUE_RE = /^z\s*\.\s*(?:looseObject|object)\s*\(/;
 
 /** The input fields of one block: every `name: z…` property line inside
  *  its params/query/body schemas (the flattened key space the emitted
@@ -142,7 +147,13 @@ const NAMESPACE_KEYS = new Set(['params', 'query', 'body']);
  *  dist/route-table.json is the precise shape; this is the manual's one
  *  line per field. */
 function parseFields(block: string): ParsedAction['fields'] {
-  const matches = [...block.matchAll(FIELD_LINE_RE)].filter(m => !NAMESPACE_KEYS.has(m[1]!));
+  const matches = [...block.matchAll(FIELD_LINE_RE)].filter(m => {
+    if (!NAMESPACE_KEYS.has(m[1]!)) return true;
+    // the match ends one char INTO the value (the regex's trailing `z`
+    // plus one delimiter), so the slice starts at the schema's own name
+    const value = block.slice((m.index ?? 0) + m[0].length - 2);
+    return !NAMESPACE_VALUE_RE.test(value);
+  });
   const fields: ParsedAction['fields'] = [];
   for (let i = 0; i < matches.length; i++) {
     const m = matches[i]!;

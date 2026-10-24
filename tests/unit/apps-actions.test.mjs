@@ -133,6 +133,35 @@ export const routes: RouteTable = [
   ]);
 });
 
+test('parseRouteTableSource: a field NAMED body/query/params is a field, not a namespace (the notes app)', () => {
+  const source = `
+export const routes: RouteTable = [
+  defineRoute({
+    name: 'note_create',
+    description: 'capture a note — a body field inside the body schema',
+    method: 'POST',
+    path: '/api/notes',
+    params: z.object({}),
+    body: z.object({
+      title: z.string(),
+      body: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+    }),
+    errorStatus: { invalid_title: 400 },
+    handler: ({ body }) => noteCreateResult(notesStore(), body),
+  }),
+];
+`;
+  const actions = parseRouteTableSource(source);
+  assert.deepEqual(actions[0].fields, [
+    { name: 'title', type: 'string', optional: false },
+    { name: 'body', type: 'string', optional: true },
+    // best-effort by design: z.array(z.string()) reads as 'string' — the
+    // emitted dist/route-table.json is the precise shape
+    { name: 'tags', type: 'string', optional: true },
+  ]);
+});
+
 // ---------- the AGENTS.md block regeneration ----------
 
 test('the AGENTS.md block regeneration round-trips: idempotent, table-driven, markers preserved', async () => {
