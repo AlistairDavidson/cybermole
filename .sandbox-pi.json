@@ -1,9 +1,11 @@
 {
   "image": "agent-sandbox-node",
   "shm_size": "256m",
+  "projectMcpServers": ["cybermole-dev"],
   "mount": [
     "~/.cache/ms-playwright:/home/workspace/.cache/ms-playwright:ro",
     "~/.cache/sandbox-pi/npm:/home/workspace/.npm",
     "~/.cache/sandbox-pi/node-gyp:/home/workspace/.cache/node-gyp"
   ]
 }
+
