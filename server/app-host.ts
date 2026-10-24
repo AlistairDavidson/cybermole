@@ -33,7 +33,7 @@ import { pathToFileURL } from 'node:url';
 import { componentLogger } from '../src/lib/logger';
 import { readAppsSocket, readInternalApiSocket } from '../src/lib/env';
 import { requestInternalApi } from '../src/lib/internal-api-client';
-import { AppSlugSchema } from '../src/schemas/ids';
+import { AppSlugSchema } from '@cybermole/app-kit';
 import { probeSocketFile } from './internal-api';
 
 const log = componentLogger('app-host');
