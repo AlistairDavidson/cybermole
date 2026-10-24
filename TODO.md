@@ -1,4 +1,18 @@
-## Agentic development
+## Apps
+Build out apps feature properly (its own future epic — apps own their lifecycle
+via jobs + git, no cybermole deploy/rollback machinery; docs/jobs-agent-plan.md §0)
+
+## Human UX tasks
+Skills and other methods to enforce my coding patterns
+Write a refined agent workflow
+HIG skill
+
+## Agentic shit
+Code style skill - typescript branded types etc
+Component skills
+Development / testing process
+commits
+How to scaffold an app eg write its AGENTS.md, always make an mcp with tools that match every user action
 
 ## Infrastructure
 preact signals - make this available for any frontend state needs apps might have in future
@@ -34,27 +48,12 @@ pi-session resume as a workspace action ("resume a past agent session into a new
 
 job exit-code notification hooks (deferred — jobs-agent-plan.md §11)
 
-## Apps
-Build out apps feature properly (its own future epic — apps own their lifecycle
-via jobs + git, no cybermole deploy/rollback machinery; docs/jobs-agent-plan.md §0)
-
 ## Distribution
 installation instructions / script for agents / actual scripts
 
 ## Packaging
 Pull my typescript and astro and zod stuff out to packages
 
-## Human UX tasks
-Skills and other methods to enforce my coding patterns
-Write a refined agent workflow
-HIG skill
-
-## Agentic shit
-Code style skill - typescript branded types etc
-Component skills
-Development / testing process
-commits
-How to scaffold an app eg write its AGENTS.md, always make an mcp with tools that match every user action
 
 ## Deferred, ignore
 postgres option
