@@ -15,10 +15,10 @@
 //     reasons, the booting case, unregistered trees, non-tree dirs
 //     ignored.
 // The MCP's own tool WIRING gets one real child over stdio (the mcp.test
-// mcp shape, one boot): the tool list is exactly this branch's set
-// (add_action/describe/call are branch 5, absent), a status call answers
-// through both stub sockets, and an empty CYBERMOLE_APPS_SOCK turns
-// reload into the clear off-surface isError.
+// mcp shape, one boot): the tool list is the full set (scaffold's seven +
+// the action vocabulary add_action/describe/call, task/app-actions), a
+// status call answers through both stub sockets, and an empty
+// CYBERMOLE_APPS_SOCK turns reload into the clear off-surface isError.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as http from 'node:http';
@@ -553,8 +553,19 @@ test("the MCP wiring: tools/list is exactly this branch's set; status answers th
   const tools = await client.listTools();
   assert.deepEqual(
     tools.tools.map(t => t.name).sort(),
-    ['build', 'check', 'register', 'reload', 'scaffold', 'status', 'unregister'],
-    "exactly this branch's set — add_action/describe/call are branch 5",
+    [
+      'add_action',
+      'build',
+      'call',
+      'check',
+      'describe',
+      'register',
+      'reload',
+      'scaffold',
+      'status',
+      'unregister',
+    ],
+    "scaffold's seven + the action vocabulary (add_action/describe/call — task/app-actions)",
   );
   const status = await call(client, 'status', {});
   assert.equal(status.isError, false);
