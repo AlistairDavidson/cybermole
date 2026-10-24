@@ -16,7 +16,7 @@
 // poll never flickers rows open, and the toggle is a real <button>
 // flipping the DOM in place to what the next render would produce.
 import type { AppState, ConsoleState, WorkspaceState } from '../lib/types';
-import type { WorkspaceId } from '../types/branded';
+import type { WorkspaceId } from '@cybermole/app-kit';
 import '@awesome.me/webawesome/dist/components/input/input.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/badge/badge.js';

@@ -6,11 +6,8 @@
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../../lib/web/locals';
 import { parseAndValidateAPIRequest } from '../../../lib/web/parsing.service';
-import {
-  failureResponse,
-  jsonResponse,
-  workspaceFailureResponse,
-} from '../../../lib/web/responses.service';
+import { failureResponse, workspaceFailureResponse } from '../../../lib/web/responses.service';
+import { jsonResponse } from '@cybermole/app-kit';
 import { workspaceCreateBody } from '../../../schemas/api';
 
 export const POST: APIRoute = async ({ locals, request }) => {

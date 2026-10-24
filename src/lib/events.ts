@@ -20,7 +20,7 @@
 // workspace sidebar's 15 s poll — deliberately NOT this task): new
 // topics extend DomainEvent's union, never a second bus.
 import { EventEmitter } from 'node:events';
-import type { JobName } from '../types/branded';
+import type { JobName } from '@cybermole/app-kit';
 
 /** What happened on the jobs domain. run_finished fires when the
  *  scheduler tick OBSERVES a run's end (the session gone + the exit file

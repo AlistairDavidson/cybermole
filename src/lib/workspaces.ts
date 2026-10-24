@@ -13,13 +13,21 @@
 // killed best-effort, logged, never failing the delete.
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
-import { databaseRead, databaseUpdate, qb, type DatabaseReadResult, type StateDb } from './db';
+import { qb, type StateDb } from './db';
+import { databaseRead, databaseUpdate, type DatabaseReadResult } from '@cybermole/app-kit';
 import { componentLogger } from './logger';
 import { terminalSessionName } from './tmux';
 import { splitCommandLine } from './terminal-defaults';
-import type { ResultFailure, ResultSuccess } from '../types/result';
-import type { AppId, TerminalId, TmuxSessionName, WorkspaceId } from '../types/branded';
-import { asTerminalId, asWorkspaceId } from '../types/branded';
+import {
+  asTerminalId,
+  asWorkspaceId,
+  type AppId,
+  type ResultFailure,
+  type ResultSuccess,
+  type TerminalId,
+  type TmuxSessionName,
+  type WorkspaceId,
+} from '@cybermole/app-kit';
 import type { WorkspaceState } from './types';
 import type { TmuxSessionFailure, TmuxSessionSuccess } from './tmux';
 

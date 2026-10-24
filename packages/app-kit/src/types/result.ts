@@ -2,6 +2,8 @@
 // soothing-booking; docs/CODE_STYLE.md §1). Success and failure share a
 // `resultType` discriminator per family; failures carry a closed
 // `errorCode` union.
+// Moved from src/types/result.ts by task/app-kit (docs/apps-plan.md §5)
+// — unchanged apart from the move.
 
 export type ResultSuccess<ResultType extends string, DataType extends object> = {
   ok: true;

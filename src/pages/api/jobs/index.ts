@@ -3,11 +3,8 @@
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../../lib/web/locals';
 import { parseAndValidateAPIRequest } from '../../../lib/web/parsing.service';
-import {
-  failureResponse,
-  jobFailureResponse,
-  jsonResponse,
-} from '../../../lib/web/responses.service';
+import { failureResponse, jobFailureResponse } from '../../../lib/web/responses.service';
+import { jsonResponse } from '@cybermole/app-kit';
 import { JobSaveSchema } from '../../../schemas/jobs';
 
 export const GET: APIRoute = async ({ locals }) => {

@@ -16,7 +16,8 @@ import {
   parseZod,
   streamFileUpload,
 } from '../../dist-server/src/lib/web/parsing.service.js';
-import { failureResponse, jsonResponse } from '../../dist-server/src/lib/web/responses.service.js';
+import { failureResponse } from '../../dist-server/src/lib/web/responses.service.js';
+import { jsonResponse } from '../../dist-server/packages/app-kit/src/web/responses.service.js';
 
 const TestSchema = z.object({
   name: z.string().min(1, 'Name is required'),

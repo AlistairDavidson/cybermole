@@ -35,7 +35,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { readInternalApiSocket } from '../src/lib/env';
-import { AppSlugSchema, JobNameSchema } from '../src/schemas/ids';
+import { AppSlugSchema, JobNameSchema } from '@cybermole/app-kit';
 import { FiredAtSchema, JobPatchSchema, JobSaveSchema, JobValidateSchema } from '../src/schemas/jobs';
 
 // ---------- the internal API socket client (plan §6) ----------

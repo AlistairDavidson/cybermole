@@ -5,11 +5,12 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { setCredential } from '../src/lib/auth';
-import { StateDb, qb, type DatabaseReadResult } from '../src/lib/db';
+import { StateDb, qb } from '../src/lib/db';
+import type { DatabaseReadResult } from '@cybermole/app-kit';
 import { Apps } from '../src/lib/apps';
 import { Workspaces } from '../src/lib/workspaces';
 import { terminalSessionName } from '../src/lib/tmux';
-import { asAppId, asTerminalId } from '../src/types/branded';
+import { asAppId, asTerminalId } from '@cybermole/app-kit';
 import { AGENT_MARKER, MARKER, PASSWORD, TMUX_SOCKET, USERNAME, WORKSPACE } from './env';
 
 export default async function globalSetup(): Promise<void> {

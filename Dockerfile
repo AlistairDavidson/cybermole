@@ -12,6 +12,9 @@ WORKDIR /repo
 # its postinstall browser download (~300MB of fetch per build).
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 COPY package.json package-lock.json ./
+# npm ci with workspaces links packages/* — the kit's manifest must be
+# present for it (the source itself arrives with the COPY . . below).
+COPY packages/app-kit/package.json packages/app-kit/package.json
 RUN npm ci
 COPY . .
 

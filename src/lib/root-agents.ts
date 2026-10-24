@@ -13,7 +13,7 @@
 // leave node-owned files the workspace uid can't replace.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { ResultFailure, ResultSuccess } from '../types/result';
+import type { ResultFailure, ResultSuccess } from '@cybermole/app-kit';
 
 export type SeedRootAgentsData = { target: string; seeded: boolean };
 export type SeedRootAgentsErrorCode = 'template_missing' | 'seed_failed';

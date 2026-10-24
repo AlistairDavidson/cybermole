@@ -34,7 +34,7 @@
 // moved; <console-app> explains). All bubble to <console-app>, which
 // owns the dialogs and the API calls.
 import type { TerminalState, WorkspaceState } from '../../lib/types';
-import type { TerminalId, TmuxSessionName, WorkspaceId } from '../../types/branded';
+import type { TerminalId, TmuxSessionName, WorkspaceId } from '@cybermole/app-kit';
 import { BASE } from '../../base';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';

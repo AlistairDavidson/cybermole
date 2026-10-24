@@ -1,8 +1,11 @@
 // branded.ts — nominal types for the IDs that cross module boundaries
 // (docs/CODE_STYLE.md §4). A bare string is not accepted where one is
 // expected. Untrusted input gets its brand from the validating schemas in
-// src/schemas/ids.ts; the as*() casts are for trusted sources only (pi's
-// own session files, tmux output, a token the server minted, the state db).
+// schemas/ids.ts (the kit's); the as*() casts are for trusted sources only
+// (pi's own session files, tmux output, a token the server minted, the
+// state db).
+// Moved from src/types/branded.ts by task/app-kit (docs/apps-plan.md §5)
+// — unchanged apart from the move.
 declare const __brand: unique symbol;
 type Brand<T, B extends string> = T & { readonly [__brand]: B };
 

@@ -1,4 +1,4 @@
-// ids.test.mjs — the ID rules (src/schemas/patterns.ts + ids.ts): what each
+// ids.test.mjs — the ID rules (the kit's schemas/patterns.ts + ids.ts — task/app-kit moved them to @cybermole/app-kit): what each
 // validating schema accepts and rejects, that a pass yields the same string
 // (the brand is type-only), and that every pattern still compiles as an
 // HTML `pattern` attribute (the `v` flag — an unescaped `-` in a character
@@ -12,8 +12,11 @@ import {
   OBJECT_KEY_RE,
   UUID_RE,
   normalizeJobName,
-} from '../../dist-server/src/schemas/patterns.js';
-import { JobNameSchema, TmuxSessionNameSchema } from '../../dist-server/src/schemas/ids.js';
+} from '../../dist-server/packages/app-kit/src/schemas/patterns.js';
+import {
+  JobNameSchema,
+  TmuxSessionNameSchema,
+} from '../../dist-server/packages/app-kit/src/schemas/ids.js';
 
 const ok = (schema, v) => schema.safeParse(v).success;
 

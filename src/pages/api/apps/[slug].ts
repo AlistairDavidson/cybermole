@@ -9,10 +9,9 @@ import {
   appFailureResponse,
   failureResponse,
   invalidAppSlugResponse,
-  jsonResponse,
 } from '../../../lib/web/responses.service';
 import { appPatchBody } from '../../../schemas/api';
-import { AppSlugSchema } from '../../../schemas/ids';
+import { jsonResponse, AppSlugSchema } from '@cybermole/app-kit';
 
 export const PATCH: APIRoute = async ({ locals, params, request }) => {
   const { cybermole } = assertCybermoleLocals(locals);

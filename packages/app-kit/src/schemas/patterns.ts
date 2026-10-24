@@ -1,11 +1,13 @@
 // patterns.ts — the ID rules as plain regexes (no zod import, so browser
-// code that only needs a pattern doesn't bundle zod). src/schemas/ids.ts
-// builds the validating, branding schemas from these.
+// code that only needs a pattern doesn't bundle zod). schemas/ids.ts (the
+// kit's) builds the validating, branding schemas from these.
 //
 // Every literal `-` inside a character class is escaped: these patterns
 // also become HTML `pattern` attributes, which compile with the `v` flag,
 // where an unescaped `-` in a class is a syntax error and the browser
 // silently ignores the whole pattern.
+// Moved from src/schemas/patterns.ts by task/app-kit (docs/apps-plan.md
+// §5) — unchanged apart from the move.
 
 /** tmux session names on the app socket. 64, not 40: a job run's session
  *  is `cybermole-<job name>` and job names go up to 40 (JOB_NAME_RE), so a
@@ -25,7 +27,9 @@ export const MAX_JOB_NAME = 40;
 /** Job name charset: tmux-session-name-safe. Names starting with "cybermole-"
  *  are rejected so a job can never produce a doubly-prefixed (confusingly
  *  nested) cybermole-cybermole-* run session. */
-export const JOB_NAME_RE = new RegExp(`^(?!cybermole-)[a-z0-9][a-z0-9_\\-]{0,${MAX_JOB_NAME - 1}}$`);
+export const JOB_NAME_RE = new RegExp(
+  `^(?!cybermole-)[a-z0-9][a-z0-9_\\-]{0,${MAX_JOB_NAME - 1}}$`,
+);
 
 /** Normalize a job-supplied name (the shared slug rules). */
 export function normalizeJobName(raw: string): string {

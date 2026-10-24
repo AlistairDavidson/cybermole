@@ -33,7 +33,8 @@ const {
   BACKFILL_LINES,
   paneHistorySize,
 } = await import('../../dist-server/src/lib/tmux.js');
-const { TmuxSessionNameSchema } = await import('../../dist-server/src/schemas/ids.js');
+const { TmuxSessionNameSchema } =
+  await import('../../dist-server/packages/app-kit/src/schemas/ids.js');
 
 const SOCKET = process.env.CYBERMOLE_TMUX_SOCKET;
 
@@ -185,7 +186,7 @@ function startServer() {
   // Wait out the unlink; if the file outlives the wait it is a dead
   // server's stale leftover — remove it, like the entrypoint's
   // stale-socket handling.
-  const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  const sleep = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
   for (let i = 0; i < 500 && fs.existsSync(SOCKET); i += 1) sleep(10);
   if (fs.existsSync(SOCKET)) fs.rmSync(SOCKET, { force: true });
   const conf = path.join(dir, 'server.conf');

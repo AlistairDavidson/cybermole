@@ -8,9 +8,18 @@
 // close-terminal). Page navigation (and sign-out) lives in the global
 // <app-header>.
 import type { ConsoleState, WorkspaceState } from '../../lib/types';
-import type { AppId, AppSlug, TerminalId, TmuxSessionName, WorkspaceId } from '../../types/branded';
-import { asTerminalId, asTmuxSessionName, asWorkspaceId } from '../../types/branded';
-import { TMUX_SESSION_NAME_RE, UUID_RE } from '../../schemas/patterns';
+import {
+  asTerminalId,
+  asTmuxSessionName,
+  asWorkspaceId,
+  TMUX_SESSION_NAME_RE,
+  UUID_RE,
+  type AppId,
+  type AppSlug,
+  type TerminalId,
+  type TmuxSessionName,
+  type WorkspaceId,
+} from '@cybermole/app-kit';
 import { BASE } from '../../base';
 import { signedInFetch, type SignedInFetchFailure } from '../signed-in-fetch';
 // Registers <validation-enhancer-zod> (and the base <validation-enhancer>).

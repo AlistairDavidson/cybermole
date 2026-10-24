@@ -6,20 +6,23 @@
   "engines": {
     "node": ">=22.13.0"
   },
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "docker compose --profile dev up --build dev",
     "dev:set-password": "docker compose --profile dev exec dev npm run set-password",
     "dev:server": "node tools/dev-server-watch.mjs",
-    "build": "astro build && tsc -p tsconfig.server.json",
+    "build": "astro build && tsc -p tsconfig.server.json && node tools/place-kit-manifest.mjs",
     "start": "docker compose up -d --build",
     "set-password": "node dist-server/server/set-password.js",
-    "check": "astro check && tsc -p tsconfig.server.json --noEmit",
+    "check": "astro check && tsc -p tsconfig.server.json --noEmit && tsc -p packages/app-kit/tsconfig.json --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:e2e": "playwright test",
-    "test:unit": "tsc -p tsconfig.server.json && node --test tests/unit/*.test.mjs",
+    "test:unit": "tsc -p tsconfig.server.json && node tools/place-kit-manifest.mjs && node --test tests/unit/*.test.mjs",
     "prepack": "npm run build && node tools/prepack.mjs"
   },
   "bin": {
@@ -38,8 +41,6 @@
     "@astrojs/node": "^11.1.6",
     "@awesome.me/astro-lit": "^5.0.4",
     "@awesome.me/webawesome": "^3.14.0",
-    "@aws-sdk/client-s3": "^3.1149.0",
-    "@aws-sdk/lib-storage": "^3.1149.0",
     "@earendil-works/pi-coding-agent": "^1.0.1",
     "@fastify/busboy": "^3.2.3",
     "@modelcontextprotocol/sdk": "^1.32.1",
@@ -53,6 +54,8 @@
     "cron-parser": "^5.10.1",
     "kysely": "^0.29.6",
     "node-pty": "^1.0.0",
+    "preact": "^10.27.2",
+    "@preact/signals": "^2.3.1",
     "validation-enhancer": "^1.0.6",
     "winston": "^3.19.0",
     "winston-loki": "^6.1.7",

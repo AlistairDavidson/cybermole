@@ -11,7 +11,7 @@
 // normalization that isn't part of a form (name slugification in the
 // apps domain, resize clamps).
 import { z } from 'zod';
-import { AppIdSchema } from './ids';
+import { AppIdSchema } from '@cybermole/app-kit';
 
 /** POST /login — both fields must be strings; a parse failure answers 401
  *  upstream (like the old typeof check), because fail2ban counts 401/429

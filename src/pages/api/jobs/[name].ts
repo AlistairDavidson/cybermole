@@ -2,12 +2,8 @@
 // live run's tmux session is deliberately left alone (kill it from Live).
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../../lib/web/locals';
-import {
-  invalidJobNameResponse,
-  jobFailureResponse,
-  jsonResponse,
-} from '../../../lib/web/responses.service';
-import { JobNameSchema } from '../../../schemas/ids';
+import { invalidJobNameResponse, jobFailureResponse } from '../../../lib/web/responses.service';
+import { jsonResponse, JobNameSchema } from '@cybermole/app-kit';
 
 export const DELETE: APIRoute = async ({ locals, params }) => {
   const { cybermole } = assertCybermoleLocals(locals);

@@ -6,7 +6,16 @@
 // `{ error: <human message>, code, … }` — `error` stays the text the
 // browser shows (console toasts, /jobs, /settings read it).
 // Type-only imports from the domain modules: safe for the Astro bundle.
-import type { DatabaseUpdateFailure } from '../db';
+//
+// task/app-kit (docs/apps-plan.md §5): the GENERIC half of this mapping
+// (jsonResponse, successResponse, firstIssueText, validationFailureResponse)
+// moved to @cybermole/app-kit's web/responses.service.ts; this file keeps
+// the console's domain mappers and imports the generic pieces from the kit.
+import {
+  jsonResponse,
+  validationFailureResponse,
+  type DatabaseUpdateFailure,
+} from '@cybermole/app-kit';
 import type { DeleteAppFailure, ListAppsFailure, SaveAppFailure } from '../apps';
 import type {
   DeleteJobFailure,
@@ -40,23 +49,6 @@ import type { UpdateResult } from '../types';
 import { UPLOAD_ALLOWED_MIME_TYPES } from '../../schemas/uploads';
 import type { FileUploadFailure, ParseFailure, ValidationFailure } from './parsing.service';
 
-export function jsonResponse(
-  body: unknown,
-  status: number,
-  headers?: Record<string, string>,
-): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    // no-store: these bodies are per-user state (and the service worker
-    // never caches /api either).
-    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers },
-  });
-}
-
-export function successResponse<DataType extends object>(data: DataType): Response {
-  return jsonResponse({ success: true, data }, 200);
-}
-
 /** Request parse / validation / upload failures. */
 export function failureResponse<DataType extends object>(
   result: ParseFailure<DataType> | FileUploadFailure | ValidationFailure<DataType>,
@@ -88,24 +80,6 @@ export function failureResponse<DataType extends object>(
     default:
       return result satisfies never;
   }
-}
-
-/** The first issue as one line — 'field: message', or the bare message
- *  for a root-level issue (e.g. a failed union). */
-export function firstIssueText(issues: Record<string, string>): string {
-  const first = Object.entries(issues)[0];
-  if (!first) return 'bad request';
-  const [field, message] = first;
-  return field ? `${field}: ${message}` : message;
-}
-
-export function validationFailureResponse<DataType extends object>(
-  result: ValidationFailure<DataType>,
-): Response {
-  return jsonResponse(
-    { error: firstIssueText(result.issues), code: result.errorCode, issues: result.issues },
-    400,
-  );
 }
 
 // ---------- domain mappers ----------

@@ -7,7 +7,7 @@
 // tracking (logout / "log out everywhere" must cut editor shells too —
 // the integrated terminal makes the editor another shell as uid 2000).
 
-import type { SessionToken } from '../types/branded';
+import type { SessionToken } from '@cybermole/app-kit';
 import { UPLOAD_MAX_BODY_BYTES } from '../schemas/uploads';
 
 /** Response/request headers that must not be copied verbatim across a

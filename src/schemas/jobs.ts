@@ -5,9 +5,9 @@
 // here: cron-parser stays server-side — saveJob checks it (and the
 // dialog's live feedback asks POST /api/jobs/validate).
 import { z } from 'zod';
-import { asJobName } from '../types/branded';
-import { AppIdSchema } from './ids';
-import { JOB_NAME_RE, MAX_JOB_NAME, normalizeJobName } from './patterns';
+import { asJobName } from '@cybermole/app-kit';
+import { AppIdSchema } from '@cybermole/app-kit';
+import { JOB_NAME_RE, MAX_JOB_NAME, normalizeJobName } from '@cybermole/app-kit';
 
 export const MAX_SCHEDULE = 120;
 export const MAX_COMMAND = 4000;

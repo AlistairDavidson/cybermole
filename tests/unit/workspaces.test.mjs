@@ -13,8 +13,11 @@ import { StateDb, qb } from '../../dist-server/src/lib/db.js';
 import { Workspaces } from '../../dist-server/src/lib/workspaces.js';
 import { Apps } from '../../dist-server/src/lib/apps.js';
 import { terminalSessionName, SERVER_NOT_RUNNING_MSG } from '../../dist-server/src/lib/tmux.js';
-import { UUID_RE } from '../../dist-server/src/schemas/patterns.js';
-import { WorkspaceIdSchema, TerminalIdSchema } from '../../dist-server/src/schemas/ids.js';
+import { UUID_RE } from '../../dist-server/packages/app-kit/src/schemas/patterns.js';
+import {
+  WorkspaceIdSchema,
+  TerminalIdSchema,
+} from '../../dist-server/packages/app-kit/src/schemas/ids.js';
 
 const USERNAME = { ok: true, resultType: 'database_read', data: { value: 'tester' } };
 const USERNAME_FAIL = {
@@ -26,7 +29,9 @@ const USERNAME_FAIL = {
 const MISSING_WS = '99999999-9999-4999-8999-999999999999'; // a well-formed uuid v4 that is not ours
 
 function freshDb() {
-  return new StateDb(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-ws-')), 'cybermole.db'));
+  return new StateDb(
+    path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-ws-')), 'cybermole.db'),
+  );
 }
 
 function brokenDb() {
@@ -302,7 +307,11 @@ test('delete_workspace: cascades its terminals, kills their sessions best-effort
   // the auto-opened agent tab (task/defaults-settings) dies with them too
   assert.deepEqual(
     killed.sort(),
-    [terminalSessionName(doomedAuto), terminalSessionName(t1.id), terminalSessionName(t2.id)].sort(),
+    [
+      terminalSessionName(doomedAuto),
+      terminalSessionName(t1.id),
+      terminalSessionName(t2.id),
+    ].sort(),
   );
   assert.equal(killed.includes(terminalSessionName(otherTerm.id)), false);
   assert.deepEqual(

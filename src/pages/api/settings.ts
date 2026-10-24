@@ -8,10 +8,10 @@ import { assertCybermoleLocals } from '../../lib/web/locals';
 import { parseAndValidateAPIRequest } from '../../lib/web/parsing.service';
 import {
   failureResponse,
-  jsonResponse,
   settingsStateFailureResponse,
   terminalDefaultsFailureResponse,
 } from '../../lib/web/responses.service';
+import { jsonResponse } from '@cybermole/app-kit';
 import { terminalDefaultsBody } from '../../schemas/api';
 
 export const GET: APIRoute = ({ locals }) => {

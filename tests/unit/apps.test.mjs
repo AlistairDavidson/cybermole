@@ -11,8 +11,12 @@ import { StateDb, qb } from '../../dist-server/src/lib/db.js';
 import { Apps } from '../../dist-server/src/lib/apps.js';
 import { Workspaces } from '../../dist-server/src/lib/workspaces.js';
 import { terminalSessionName } from '../../dist-server/src/lib/tmux.js';
-import { APP_SLUG_RE, UUID_RE, normalizeSlug } from '../../dist-server/src/schemas/patterns.js';
-import { AppIdSchema, AppSlugSchema } from '../../dist-server/src/schemas/ids.js';
+import {
+  APP_SLUG_RE,
+  UUID_RE,
+  normalizeSlug,
+} from '../../dist-server/packages/app-kit/src/schemas/patterns.js';
+import { AppIdSchema, AppSlugSchema } from '../../dist-server/packages/app-kit/src/schemas/ids.js';
 
 const USERNAME = { ok: true, resultType: 'database_read', data: { value: 'tester' } };
 const USERNAME_FAIL = {
@@ -23,7 +27,9 @@ const USERNAME_FAIL = {
 };
 
 function freshDb() {
-  return new StateDb(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-apps-')), 'cybermole.db'));
+  return new StateDb(
+    path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-apps-')), 'cybermole.db'),
+  );
 }
 
 /** A db that cannot open: a path under a regular file (mkdir of its parent
@@ -300,9 +306,7 @@ test("delete_app: cascades workspaces and terminals, un-tags jobs, best-effort-k
 
   // the auto-opened tabs exist from the creates (task/defaults-settings):
   // captured BEFORE the delete — the cascade removes the app's one
-  const appAuto = db.get(
-    qb.selectFrom('terminals').select('id').where('workspace_id', '=', ws.id),
-  );
+  const appAuto = db.get(qb.selectFrom('terminals').select('id').where('workspace_id', '=', ws.id));
   const consoleAuto = db.get(
     qb.selectFrom('terminals').select('id').where('workspace_id', '=', consoleWs.id),
   );
@@ -320,7 +324,9 @@ test("delete_app: cascades workspaces and terminals, un-tags jobs, best-effort-k
     [consoleWs.id],
   );
   assert.deepEqual(
-    rows(db, 'terminals').map(r => r.id).sort(),
+    rows(db, 'terminals')
+      .map(r => r.id)
+      .sort(),
     [consoleAuto.id, consoleTerm.id].sort(),
   );
   // jobs are un-tagged, never deleted (spread: node:sqlite rows carry a
