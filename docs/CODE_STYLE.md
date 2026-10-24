@@ -6,7 +6,7 @@ Correctness conventions for cybermole. This file is about **using the type syste
 
 ## 1. `Result` is the contract for anything that can fail
 
-`src/types/result.ts`:
+`@cybermole/app-kit` (`packages/app-kit/src/types/result.ts` — moved there from src/ by task/app-kit):
 
 ```ts
 export type Result<ResultType extends string, DataType extends object, ErrorCodeType extends string> =
@@ -73,19 +73,19 @@ can emit, not every code the family allows.
 
 Domain modules (`src/lib/*`) never know about HTTP. Error codes map to
 statuses in one exhaustive switch per family, in
-`src/lib/web/responses.service.ts`. That's the only place where "job not
+`src/lib/web/responses.service.ts` (generic half in `@cybermole/app-kit`). That's the only place where "job not
 found" becomes 404 or "busy" becomes 409.
 
 ## 4. Branded IDs
 
-`src/types/branded.ts` defines nominal types for every ID that crosses a
+`@cybermole/app-kit`'s `types/branded.ts` defines nominal types for every ID that crosses a
 module boundary: `PiSessionId`, `TmuxSessionName`, `JobName`,
 `SessionToken`. A bare `string` is not accepted where one is expected, so
 `hasSession(jobName)` (instead of `hasSession(jobSessionName(jobName))`)
 is a type error.
 
 - **Untrusted input** (request bodies, path params, WS frames) gets its
-  brand by passing the validating schema in `src/schemas/ids.ts`
+  brand by passing the validating schema in the kit's `schemas/ids.ts`
   (`JobNameSchema`, `PiSessionIdSchema`, …). The regex and the brand
   live together there.
 - **Trusted sources** (pi's own session files, tmux output, a token the

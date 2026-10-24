@@ -34,7 +34,7 @@ not type-check, so run this before review.
 (`eslint.config.mjs`): typescript-eslint strict + type-checked promise
 rules over `src/`, `server/`, `tests/`, `tools/` and the `.mjs` configs.
 Per-line disables in the code mark deliberate idioms (escaped `\-` in
-schema regexes, the distribution `any` in `src/types/result.ts`,
+schema regexes, the distribution `any` in the kit's `types/result.ts`,
 computed `delete`s) — don't "fix" those.
 
 `npm run format` / `npm run format:check` — Prettier (`.prettierrc`,
