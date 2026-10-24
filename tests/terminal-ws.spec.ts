@@ -27,7 +27,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 function bareEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined && !k.startsWith('CYBERMOLE_') && !k.startsWith('PI_CODING_AGENT')) env[k] = v;
+    if (v !== undefined && !k.startsWith('CYBERMOLE_') && !k.startsWith('PI_CODING_AGENT'))
+      env[k] = v;
   }
   return { ...env, ...extra };
 }
@@ -58,6 +59,10 @@ async function bootServer(
       CYBERMOLE_PORT: String(PORT),
       CYBERMOLE_HOST: '127.0.0.1',
       CYBERMOLE_STATE_DIR: dir,
+      // task/app-web: this spec's server doesn't exercise the apps surface
+      // — empty CYBERMOLE_APPS_SOCK keeps the single-user spawn rule from
+      // starting a supervised app host beside this boot.
+      CYBERMOLE_APPS_SOCK: '',
       CYBERMOLE_TMUX_SOCKET: socket,
       CYBERMOLE_NEW_SESSION_CWD: os.tmpdir(), // deliberately NOT the workspace cwd
       CYBERMOLE_COMMAND: cmd,

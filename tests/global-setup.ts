@@ -13,7 +13,47 @@ import { terminalSessionName } from '../src/lib/tmux';
 import { asAppId, asTerminalId } from '@cybermole/app-kit';
 import { AGENT_MARKER, MARKER, PASSWORD, TMUX_SOCKET, USERNAME, WORKSPACE } from './env';
 
+/** task/app-web: the fixture app's tree + build. Built when its dist/ is
+ *  missing or older than its sources (setup-node-modules.mjs when the
+ *  per-package links are absent too); the §5 self-containment gate runs
+ *  on every real build so a broken one can never reach the host. */
+function buildFixtureApp(): void {
+  const fixture = path.resolve(__dirname, 'fixtures', 'app-fixture');
+  const entry = path.join(fixture, 'dist', 'server', 'entry.mjs');
+  const newestUnder = (dir: string): number =>
+    fs
+      .readdirSync(dir, { withFileTypes: true })
+      .flatMap(e => {
+        const p = path.join(dir, e.name);
+        return e.isDirectory() ? newestUnder(p) : [fs.statSync(p).mtimeMs];
+      })
+      .reduce((a, b) => Math.max(a, b), 0);
+  const sources = [
+    newestUnder(path.join(fixture, 'src')),
+    newestUnder(path.join(fixture, 'public')),
+    ...['app.json', 'astro.config.mjs', 'package.json', 'setup-node-modules.mjs'].map(
+      f => fs.statSync(path.join(fixture, f)).mtimeMs,
+    ),
+  ].reduce((a, b) => Math.max(a, b), 0);
+  if (fs.existsSync(entry) && fs.statSync(entry).mtimeMs >= sources) return; // fresh: skip fast
+  if (!fs.existsSync(path.join(fixture, 'node_modules', '.bin', 'astro'))) {
+    execFileSync('node', ['setup-node-modules.mjs'], { cwd: fixture, stdio: 'inherit' });
+  }
+  execFileSync(path.join(fixture, 'node_modules', '.bin', 'astro'), ['build'], {
+    cwd: fixture,
+    stdio: 'inherit',
+  });
+  execFileSync(
+    'node',
+    [path.resolve(__dirname, '..', 'tools', 'check-app-selfcontained.mjs'), entry],
+    {
+      stdio: 'inherit',
+    },
+  );
+}
+
 export default async function globalSetup(): Promise<void> {
+  buildFixtureApp();
   fs.rmSync(WORKSPACE, { recursive: true, force: true });
   fs.mkdirSync(WORKSPACE, { recursive: true });
 

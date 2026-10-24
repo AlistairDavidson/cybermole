@@ -1184,10 +1184,7 @@ test("popping a tab moves the pane to a new tab: main socket down, popped tab at
   await expect(page.locator('terminal-tabs .tb-pop-out')).toHaveCount(1);
 
   // --- pop: the pane MOVES to the new tab (the ?t= deep-link path)
-  const [popout] = await Promise.all([
-    page.waitForEvent('popup'),
-    popBtn.click(),
-  ]);
+  const [popout] = await Promise.all([page.waitForEvent('popup'), popBtn.click()]);
   await popout.waitForSelector('workspace-sidebar .nav');
   await expect(popout.locator(`terminal-tabs .tab[data-term="${id}"]`)).toHaveClass(/active/);
   await expect(popout.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`);
@@ -1224,10 +1221,7 @@ test("popping a tab moves the pane to a new tab: main socket down, popped tab at
 
   // --- pop again, then CLOSE the popped tab: the pagehide (the held
   //     handle, same origin) re-attaches the active tab with no click at all
-  const [popout2] = await Promise.all([
-    page.waitForEvent('popup'),
-    popBtn.click(),
-  ]);
+  const [popout2] = await Promise.all([page.waitForEvent('popup'), popBtn.click()]);
   await popout2.waitForSelector('workspace-sidebar .nav');
   await expect(popout2.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`);
   await expect(page.locator('terminal-tabs agent-terminal')).toHaveCount(0);
@@ -1472,6 +1466,10 @@ test('jobs persist across a server restart; missed runs catch up', async () => {
     env: {
       ...process.env,
       CYBERMOLE_PORT: String(PORT2),
+      // task/app-web: this spec's server doesn't exercise the apps surface
+      // — empty CYBERMOLE_APPS_SOCK keeps the single-user spawn rule from
+      // starting a supervised app host beside this boot.
+      CYBERMOLE_APPS_SOCK: '',
       CYBERMOLE_HOST: '127.0.0.1',
       CYBERMOLE_DB_FILE: dbCopy,
       CYBERMOLE_AGENT_DIR: `${WORKSPACE}/pi-agent`,
@@ -2446,6 +2444,10 @@ test('SIGTERM: every socket gets restart, closes, and the process exits 0', asyn
       CYBERMOLE_HOST: '127.0.0.1',
       CYBERMOLE_DB_FILE: dbFile,
       CYBERMOLE_AGENT_DIR: path.join(dir, 'pi-agent'),
+      // task/app-web: this spec's server doesn't exercise the apps surface
+      // — empty CYBERMOLE_APPS_SOCK keeps the single-user spawn rule from
+      // starting a supervised app host beside this boot.
+      CYBERMOLE_APPS_SOCK: '',
       CYBERMOLE_NEW_SESSION_CWD: dir,
       CYBERMOLE_TMUX_SOCKET: tmuxSocket,
       CYBERMOLE_COMMAND: '/bin/sh',
@@ -2754,6 +2756,10 @@ test('a terminal tab survives a WEB restart: tmux keeps the session, the client 
     ...process.env,
     CYBERMOLE_PORT: String(port),
     CYBERMOLE_HOST: '127.0.0.1',
+    // task/app-web: this spec's server doesn't exercise the apps surface
+    // — empty CYBERMOLE_APPS_SOCK keeps the single-user spawn rule from
+    // starting a supervised app host beside this boot.
+    CYBERMOLE_APPS_SOCK: '',
     CYBERMOLE_DB_FILE: dbFile,
     CYBERMOLE_AGENT_DIR: path.join(dir, 'pi-agent'),
     CYBERMOLE_NEW_SESSION_CWD: cwd,

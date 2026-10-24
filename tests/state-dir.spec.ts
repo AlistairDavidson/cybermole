@@ -67,6 +67,9 @@ async function bootServer(env: Record<string, string>): Promise<void> {
       CYBERMOLE_PORT: '0',
       CYBERMOLE_HOST: '127.0.0.1',
       CYBERMOLE_TMUX_SOCKET: 'cybermole-state-itest',
+      // task/app-web: no apps surface here — keeps the single-user spawn
+      // rule from starting a supervised app host beside each boot.
+      CYBERMOLE_APPS_SOCK: '',
       ...env,
     }),
     stdio: ['ignore', 'pipe', 'pipe'],
