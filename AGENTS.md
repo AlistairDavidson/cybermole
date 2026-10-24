@@ -61,6 +61,23 @@ For authenticated API calls use in-page `fetch` (`page.evaluate`), not
 cookie over the suite's plain-http origin. Build first (`npm run build`)
 or let global-setup do it when dist/ is missing.
 
+The `tests/apps-*.spec.ts` files add the apps-e2e discipline (their
+header comments are the pattern): the whole suite's login budget is
+shared through the cookie file in `tests/env.ts` (readSharedSessionCookie
+— the first apps spec to need a browser signs in, the rest reuse the
+cookie; never a fresh form sign-in per file), each spec sweeps its OWN
+slug's world at entry (marker-gated once per run inside the hermetic
+APPS_ROOT, which global-setup's per-run rm -rf makes run-scoped), there
+is deliberately NO afterAll teardown (the run's cleanup is structural —
+rows die with the per-run db, trees with the per-run workspace rm), and
+per-test preconditions are re-established idempotently
+(`ensureRegisteredAndMounted`), because the scheduler may split a file
+across replacement workers. New app-touching specs follow the same
+shape — and `tests/apps-notes.spec.ts` is the worked example: it seeds
+the shipped `apps-reference/notes` tree into the hermetic apps root,
+gates it green through the check verb, and walks the use loop through
+the console origin on every face.
+
 The e2e suite also runs inside fleet sandboxes: the repo's
 `.sandbox-pi.json` selects the `agent-sandbox-node` image (tmux,
 node-pty's build toolchain, chromium's runtime libs + fonts — see

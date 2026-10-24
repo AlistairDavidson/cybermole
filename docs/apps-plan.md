@@ -1,14 +1,28 @@
 # The apps plan — extensions: agent-built webapps mounted in cybermole
 
-Status: **proposed** — agreed in the design discussion, recorded here; no
-branch cut yet; revised once after review (the build loop's order
-fixed — register before reload, reload is the host's sync point; the
-node_modules shape pinned to per-package symlinks, with the built
-entry's self-containment made a branch-1 gate; the host's action
-dispatch named — actions are their own HTTP). The epic TODO.md points
-at ("Build out apps feature properly") is this plan. When branches
-land, this header flips the way the other plans' did, with the merge
-list and any integration amendments.
+Status: **shipped** — all six §11 branches landed on main, in build
+order: `task/app-host` (c8ffa78, §3), `task/app-kit` (39b4518, §5 —
+landed second: the host's fixture run wanted the kit's shape settled
+before the web side built on it), `task/app-web` (c8ccb86, §4),
+`task/app-scaffold` (900eeee, §6+the starter), `task/app-actions`
+(471a923, §1's add_action/describe/call + the shim), and
+`task/app-notes` (this branch — §9's reference app, built through the
+verbs as the acceptance run, plus the docs flip that flipped this
+header). Integration amendments, told where they changed the agreed
+plan: main.ts's static+middleware factoring stayed a stretch and was
+not taken — the app host carries its own small serve helper (§3); the
+socket-client unification landed as src/lib/internal-api-client.ts in
+branch 1, and mcp.ts still has its local one (the jobs MCP was left
+untouched by the apps epic); branch 4 added CYBERMOLE_APPS_ROOT (the
+apps root env the verbs and the host share); the reference app's run
+found and fixed two real kit/generator bugs — zodToJSONSchema read
+optionality after unwrap() so every .optional() field emitted as
+required, and add_action's manual parser swallowed a field literally
+named `body`/`query`/`params`; and the shipped reference tree lives at
+apps-reference/notes with image-baked install paths (/opt/cybermole),
+seeded only-where-absent by the workspace entrypoint, its e2e re-seeding
+the same tree into the hermetic apps root per run. The body below is
+the plan as agreed — the historical record, unchanged.
 
 ## 0. Positioning (locked)
 

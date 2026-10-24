@@ -431,6 +431,41 @@ jobs work in every install shape, the container included.
   cybermole user, on the app's socket, per the security model — the terminal
   is the product.
 
+## Apps (/apps/) — agent-built webapps on the app host
+
+Extensions, not publishable apps: an **app** is a small Astro SSR
+webapp (same stack and standards as the console — Web Awesome, zod, the
+Result family, `node:sqlite`) that the **app host** — a second
+supervised Node process on the workspace side, uid 2000, a unix socket
+like the internal jobs API — mounts behind the console's session gate
+at `/apps/<slug>/`. The web container proxies and never imports app
+code; a registered app is reachable only through that proxy (an
+unregistered slug 404s, a down host 502s — the sidebar's app group
+links what serves, with a dimmed reason when it doesn't).
+
+The build loop belongs to the **root agent**, through the
+`cybermole-apps` MCP every root-agent session gets: `scaffold` (the
+image's `app-starter/` template, baked and linked), `check` (the gate —
+the tree's own typecheck + unit tests + build + the self-containment
+check, one quiet envelope), `register` (the db row — the privileged
+act), `reload` (the host's sync point), then `add_action` to extend it:
+one route-table entry becomes the HTTP route, the UI stub, the shim
+tool and the manual's section in lockstep. **App agents operate, never
+build**: a pi session in a workspace under the app gets the app's own
+MCP (its tools 1:1 with the route table, registered by the tree's
+`.pi/mcp.json`; `cybermole-apps` is disabled there on purpose). Every
+face — the pages, the app's tools, the root agent's `describe`/`call` —
+answers the same Result JSON with the same closed error codes. Design:
+[docs/apps-plan.md](docs/apps-plan.md) (status: shipped).
+
+The image ships one finished tree as living documentation:
+**`apps-reference/notes`** — the notes/journal reference app, built
+through the verbs as the epic's acceptance run (capture, search + tag
+filter, edit, archive — a flag, never a delete). It seeds into the
+install's apps root only-where-absent, nothing auto-registers; one
+`register` + `reload` makes it live, and `status` shows it standing
+unregistered until then.
+
 ## Pi: dependency & config isolation
 
 pi is a versioned dependency (`@earendil-works/pi-coding-agent` in
@@ -1153,7 +1188,11 @@ standalone-workspace install above (`CYBERMOLE_AGENT_COMMAND`).
 - `pi/` — the controlled pi agent-dir template (settings, MCPs, skills,
   extensions) seeded into the runtime dir; `root-agents/` — the one-file
   workspace-root `AGENTS.md` template (the root agent's jobs
-  conventions), seeded by the same boot halves; `cli/` — the `cybermole-cli`
+  conventions), seeded by the same boot halves; `apps-reference/notes/`
+  — the shipped reference app tree (apps-plan §9: seeded
+  only-where-absent per install, registered by hand); `app-starter/` +
+  `apps-agent-template/` — the scaffold's templates every new app grows
+  from; `cli/` — the `cybermole-cli`
   bin: the jobs verbs + `cybermole-cli mcp`, a zero-runtime-dep client over the
   internal socket; `tmux.conf` at the root is the
   tmux server config — together they're the shipped "environment config"
