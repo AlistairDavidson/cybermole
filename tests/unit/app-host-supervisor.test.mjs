@@ -168,9 +168,25 @@ test('a restart scheduled before stop() is cancelled', async () => {
   assert.equal(handle.starts, 1, 'the pending restart never ran');
 });
 
-test('a spawn error is logged, and the exit path still owns restarts', async () => {
-  const { handle, log, spawns } = harness();
-  spawns[0].child.emit('error', new Error('spawn ENOENT'));
-  assert.ok(log.lines.some(([lvl, m]) => lvl === 'error' && m.includes('ENOENT')));
+test("a failed spawn ('error', never 'exit') is a death: logged, restarted with backoff, and stop() resolves", async () => {
+  // Node emits 'error' (+'close') but NOT 'exit' when spawn() itself fails
+  // (EMFILE, ENOENT) — the supervisor must treat it like a crash, or it
+  // would never restart and a later stop() would wedge on the exit that
+  // never comes.
+  const { handle, log, spawns } = harness({ restartDelayMs: 15 });
+  spawns[0].child.emit('error', new Error('spawn EMFILE'));
+  assert.ok(log.lines.some(([lvl, m]) => lvl === 'error' && m.includes('EMFILE')));
+  assert.equal(handle.pid, null, 'the failed child is no longer current');
+  await sleep(40); // the backoff restart fires (no exit event ever came)
+  assert.equal(handle.starts, 2, 'the failed spawn restarted');
+  // And stop() resolves on the SECOND child's real exit — no wedge.
   await stopWithExit(handle, spawns);
+});
+
+test('stop() resolves after a spawn failure with no live child and no pending restart', async () => {
+  const { handle, spawns } = harness();
+  spawns[0].child.emit('error', new Error('spawn ENOENT')); // death, no restart armed yet
+  await handle.stop(); // resolves immediately: child === null, no timer
+  await sleep(40);
+  assert.equal(handle.starts, 1, 'no restart after stop');
 });

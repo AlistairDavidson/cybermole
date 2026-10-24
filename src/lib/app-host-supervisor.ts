@@ -143,12 +143,16 @@ export function startAppHostSupervisor(deps: AppHostSupervisorDeps): AppHostSupe
     pipeLines(c.stdout, log);
     pipeLines(c.stderr, log);
     log.info(`app host started (pid ${c.pid ?? '?'})`);
-    c.on('error', err => log.error(`app host could not be spawned: ${err.message}`));
-    c.on('exit', (code, signal) => {
+
+    // One death handler for both faces of dying: a crashed child emits
+    // 'exit'; a spawn that never happened (EMFILE, a missing script) emits
+    // 'error' only. Either way: a pending stop() resolves and a live
+    // supervisor arms the backoff restart.
+    const onDeath = (code: number | null, signal: string | null): void => {
       if (c !== child) return; // a superseded child (stop() already ran): not ours anymore
       child = null;
       if (stopDone !== null) {
-        // stop() is waiting on exactly this exit.
+        // stop() is waiting on exactly this death.
         stopDone();
         stopDone = null;
         return;
@@ -167,7 +171,16 @@ export function startAppHostSupervisor(deps: AppHostSupervisorDeps): AppHostSupe
         spawnChild();
       }, wait);
       restartTimer.unref();
+    };
+    c.on('error', err => {
+      log.error(`app host could not be spawned: ${err.message}`);
+      // A FAILED spawn emits 'error' (+'close') but never 'exit' — treat it
+      // as a death like any other (the same bookkeeping: a pending stop()
+      // resolves, a live supervisor schedules the backoff restart). The
+      // c===child guard makes the post-exit socket-error case a no-op.
+      onDeath(null, null);
     });
+    c.on('exit', (code, signal) => onDeath(code, signal));
   };
   spawnChild();
 
