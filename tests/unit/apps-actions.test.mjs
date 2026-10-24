@@ -236,7 +236,10 @@ test('add_action: the lockstep — every artifact written, in order, from one ta
 
   // 4 — the island + the page mount points inside the marked blocks.
   const island = fs.readFileSync(path.join(tree, 'src/islands/CreateNoteIsland.tsx'), 'utf8');
-  assert.match(island, /client\.create-note\(\{ params: \{\}, body: \{ text \} \}\)/);
+  // Bracket access, keyed by the literal name — a kebab name is not a
+  // dot-access identifier (the typed client keys methods by route name
+  // verbatim), so the generated island must compile for EVERY accepted name.
+  assert.match(island, /client\['create-note'\]\(\{ params: \{\}, body: \{ text \} \}\)/);
   const page = fs.readFileSync(path.join(tree, 'src/pages/index.astro'), 'utf8');
   const mounts = page.match(/<!-- BEGIN ACTION MOUNTS[\s\S]*?<!-- END ACTION MOUNTS -->/)[0];
   assert.match(mounts, /ping-island[\s\S]*?create-note-island/); // appended after ping
@@ -271,7 +274,66 @@ test('add_action: the GET parameterization — the input lands in the query', as
   );
   assert.match(routes, /handler: \(\{ query \}\) => lookupResult\(query\.text\),/);
   const island = fs.readFileSync(path.join(tree, 'src/islands/LookupIsland.tsx'), 'utf8');
-  assert.match(island, /client\.lookup\(\{ params: \{\}, query: \{ text \} \}\)/);
+  assert.match(island, /client\['lookup'\]\(\{ params: \{\}, query: \{ text \} \}\)/);
+});
+
+test('add_action: the generated island compiles for every accepted name form — plain, kebab, snake', async () => {
+  // The typed client keys its methods by the route name VERBATIM, so the
+  // island must call through bracket access with the literal name. One
+  // scaffolded tree, three names, three islands — each emitting exactly
+  // the bracket form its name requires.
+  const { root, slug, tree } = await world('names');
+  for (const name of ['echo', 'create-note', 'note_create']) {
+    const r = await addAction({ appsRoot: root }, { slug, name });
+    assert.equal(r.ok, true, JSON.stringify(r));
+  }
+  const camelToStem = { echo: 'Echo', 'create-note': 'CreateNote', note_create: 'NoteCreate' };
+  for (const [name, stem] of Object.entries(camelToStem)) {
+    const island = fs.readFileSync(path.join(tree, 'src', 'islands', `${stem}Island.tsx`), 'utf8');
+    const expected = `client['${name}']({ params: {}, body: { text } })`;
+    assert.ok(island.includes(expected), `${name}: bracket access with the literal name`);
+    assert.ok(!island.includes(`client.${name}(`), `${name}: never dot access`);
+  }
+  // and the tree's own table carries all three, parseable.
+  const routes = fs.readFileSync(path.join(tree, 'src', 'routes.ts'), 'utf8');
+  assert.deepEqual(
+    parseRouteTableSource(routes).map(a => a.name),
+    ['ping', 'echo', 'create-note', 'note_create'],
+  );
+  // the compile proof: the tree's OWN typecheck (astro check + tsc) runs
+  // green over every generated island — the check gate the tool's answer
+  // names as the next verb must hold for every accepted name form.
+  const typecheck = await runChild('npm', ['run', 'typecheck'], { cwd: tree, timeoutMs: 120_000 });
+  assert.equal(typecheck.code, 0, `${typecheck.stdout}\n${typecheck.stderr}`);
+});
+
+test('add_action: a summary with newlines, backslashes and quotes stays one escaped line — the table parses back', async () => {
+  const { root, slug, tree } = await world('summary');
+  const r = await addAction(
+    { appsRoot: root },
+    { slug, name: 'note', summary: "captures\na note\n\twith 'quotes' and \\ backslashes" },
+  );
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const routes = fs.readFileSync(path.join(tree, 'src', 'routes.ts'), 'utf8');
+  // the generated literal is ONE line: every description line is a
+  // complete single-quoted string (no raw newline inside it).
+  const descLines = routes.split('\n').filter(l => l.includes("description: '"));
+  assert.equal(descLines.length, 2); // ping + note
+  for (const line of descLines) {
+    assert.match(
+      line.trim(),
+      /^description: '((?:[^'\\\n]|\\.)*)',$/,
+      'one complete, escaped single-quoted literal',
+    );
+  }
+  // round-trip: the parser reads the summary back as the collapsed line.
+  const parsed = parseRouteTableSource(routes).find(a => a.name === 'note');
+  assert.equal(parsed?.description, "captures a note with 'quotes' and \\ backslashes");
+  // the manual's section carries the same one line.
+  const block = fs
+    .readFileSync(path.join(tree, 'AGENTS.md'), 'utf8')
+    .match(/<!-- BEGIN ACTIONS[\s\S]*?<!-- END ACTIONS -->/)[0];
+  assert.match(block, /### note\n\ncaptures a note with 'quotes' and \\ backslashes\n/);
 });
 
 test('add_action: idempotence — the same name is a clear action_exists, no file touched', async () => {
