@@ -508,7 +508,7 @@ test("the MCP wiring: tools/list is exactly this branch's set; status answers th
   const internalSocket = path.join(root, 'internal.sock');
   const hostSocket = path.join(root, 'apps.sock');
   synthTree(appsRoot, 'wired-app');
-  const internal = await stubSocket(internalSocket, {
+  const internalAnswers = {
     'GET /apps': { status: 200, body: { apps: [] } },
     'POST /apps': {
       status: 409,
@@ -519,7 +519,8 @@ test("the MCP wiring: tools/list is exactly this branch's set; status answers th
       },
     },
     'DELETE /apps/wired-app': { status: 200, body: { id: 'x' } },
-  });
+  };
+  const internal = await stubSocket(internalSocket, internalAnswers);
   const host = await stubSocket(hostSocket, {
     'GET /_admin/status': {
       status: 200,
@@ -575,7 +576,21 @@ test("the MCP wiring: tools/list is exactly this branch's set; status answers th
   const dupBody = JSON.parse(dup.text);
   assert.equal(dupBody.code, 'duplicate_slug');
   assert.match(dupBody.error, /recovery/);
-  assert.match(dupBody.error, /no tree\s+i?s? touched/);
+  // A non-200 from a socket is that API's own failure JSON — VERBATIM, a
+  // normal result (only transport failures are isError; a database_error
+  // on GET /apps is information, not a malfunction).
+  internalAnswers['GET /apps'] = {
+    status: 500,
+    body: { error: 'the apps table is unreadable', detail: null, code: 'database_error' },
+  };
+  const broken = await call(client, 'status', {});
+  assert.equal(broken.isError, false, broken.text);
+  assert.deepEqual(JSON.parse(broken.text), {
+    error: 'the apps table is unreadable',
+    detail: null,
+    code: 'database_error',
+  });
+  internalAnswers['GET /apps'] = { status: 200, body: { apps: [] } };
   await client.close();
 
   // Boot two: the apps surface OFF (empty socket env) — reload answers

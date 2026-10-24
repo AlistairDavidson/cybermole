@@ -23,7 +23,7 @@ import { pathToFileURL } from 'node:url';
 
 const entry = process.argv[2];
 if (entry === undefined) {
-  console.error('usage: node tools/check-app-selfcontained.mjs <dist/server/entry.mjs>');
+  console.error('usage: node scripts/check-selfcontained.mjs <dist/server/entry.mjs>');
   process.exit(1);
 }
 const root = path.resolve(entry);

@@ -285,9 +285,11 @@ export async function statusTool(
     unreachable,
   );
   if (!rows.ok) return rows.result;
-  if (rows.status !== 200) {
-    return transportError(`the internal API answered ${rows.status} on GET /apps: ${rows.body}`);
-  }
+  // A non-200 from either socket is that API's own failure JSON — verbatim,
+  // a normal result (the module's contract: only TRANSPORT failures are
+  // isError, never a domain code — a database_error on GET /apps is
+  // information the model must read).
+  if (rows.status !== 200) return json(parseOrRaw(rows.body));
   const host = await fetchSocket(
     deps.appsSocketPath,
     APPS_OFF,
@@ -297,9 +299,7 @@ export async function statusTool(
       '— this tool cannot say what is mounted without it',
   );
   if (!host.ok) return host.result;
-  if (host.status !== 200) {
-    return transportError(`the app host answered ${host.status} on /_admin/status: ${host.body}`);
-  }
+  if (host.status !== 200) return json(parseOrRaw(host.body));
   const rowsBody = parseOrRaw(rows.body) as { apps?: unknown };
   const hostBody = parseOrRaw(host.body) as StatusHostAnswer;
   const rowList = Array.isArray(rowsBody.apps)
