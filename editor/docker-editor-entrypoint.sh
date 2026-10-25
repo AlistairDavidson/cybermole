@@ -1,11 +1,11 @@
 #!/bin/sh
 # docker-editor-entrypoint.sh — boots the VSCodium reh-web editor container
-# (profile `editor`, docs/editor-webapp.md). One process: the tarball's own
+# (profile `editor`, docs/guides/editor-webapp.md). One process: the tarball's own
 # server component, as the workspace user (uid 2000), with umask 0007 so
 # what the editor writes under /workspace stays group-shared (the same
 # discipline as the workspace half of the split).
 #
-# Flags are pinned by the spike (docs/editor-spike.md):
+# Flags are pinned by the spike (docs/plans/editor-spike.md):
 #   --server-base-path ${CYBERMOLE_BASE%/}/editor  the proxy mounts the app at
 #       <base>/editor and the workbench's asset URLs must line up;
 #   --without-connection-token  auth is upstream — cybermole's session gate;

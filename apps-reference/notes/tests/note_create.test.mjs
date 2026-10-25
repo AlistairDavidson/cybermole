@@ -1,6 +1,6 @@
 // The note_create action's unit tests — grown from the add_action stub:
 // the real capture rules against the in-memory store (one test per error
-// code, not just the happy path — docs/CODE_STYLE.md §9). The sqlite half
+// code, not just the happy path — docs/conventions/CODE_STYLE.md §9). The sqlite half
 // is exercised end-to-end through every face.
 import test from 'node:test';
 import assert from 'node:assert/strict';

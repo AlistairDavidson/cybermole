@@ -1,4 +1,4 @@
-// mcp.ts — the jobs MCP server (docs/jobs-agent-plan.md §6): a stdio MCP
+// mcp.ts — the jobs MCP server (docs/plans/jobs-agent-plan.md §6): a stdio MCP
 // server whose tools are 1:1 with the internal jobs API's verbs
 // (server/internal-api.ts, plan §3–§4) plus apps_list, exposing the jobs
 // surface to pi sessions as tools instead of CLI round-trips. The CLI

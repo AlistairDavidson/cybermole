@@ -176,14 +176,14 @@ services:
       # (the internal http://grafana:3000 is not routable from outside).
       # Unset/empty: no logs link, /logs answers 404.
       CYBERMOLE_GRAFANA_URL: ${CYBERMOLE_GRAFANA_URL:-}
-      # task/ws-editor (docs/editor-webapp.md): the editor webapp's
+      # task/ws-editor (docs/guides/editor-webapp.md): the editor webapp's
       # upstream on the compose network — THE single switch. The stack
       # ships the editor container (header note), so the default wires the
       # proxy on; set it EMPTY in .env to switch the editor off (the
       # console hides its affordances, /editor answers 404). No token or
       # launch URL: auth is the web session, folders are URL params.
       CYBERMOLE_EDITOR_UPSTREAM: ${CYBERMOLE_EDITOR_UPSTREAM-http://editor:3000}
-      # task/app-host (docs/apps-plan.md §3): the app host's socket, in
+      # task/app-host (docs/plans/apps-plan.md §3): the app host's socket, in
       # the shared setgid dir. The web container is CLIENT-ONLY on it for
       # now — branch 2 (task/app-web) adds the /apps/* proxy behind the
       # session gate that forwards here. The web side NEVER spawns the
@@ -388,7 +388,7 @@ services:
         limits: { memory: 512m, cpus: "0.5" }
     restart: unless-stopped
   # task/ws-editor: the VSCodium reh-web editor — part of the plain
-  # stack (docs/editor-webapp.md; the header's opt-out note). The image
+  # stack (docs/guides/editor-webapp.md; the header's opt-out note). The image
   # (editor/) vendors the PINNED reh-web tarball and runs its server
   # component as the workspace uid (2000) so it edits the shared
   # checkouts; it never touches the tmux socket or web state, and it

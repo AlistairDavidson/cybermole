@@ -1,5 +1,5 @@
 // apps-mcp.ts — the apps MCP server `cybermole-apps` (task/app-scaffold,
-// docs/apps-plan.md §6): the ROOT agent's build-loop surface — scaffold,
+// docs/plans/apps-plan.md §6): the ROOT agent's build-loop surface — scaffold,
 // check, build, reload, register, unregister, status — plus the action
 // vocabulary (task/app-actions): add_action (the generator — one table
 // entry becomes route + MCP tool + UI stub + test stub + the AGENTS.md

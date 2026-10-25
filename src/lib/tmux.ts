@@ -53,7 +53,7 @@ export function jobSessionName(job: JobName): TmuxSessionName {
   return asTmuxSessionName(`cybermole-${job}`);
 }
 
-/** Session name a terminal tab runs under (docs/workspaces-plan.md §4):
+/** Session name a terminal tab runs under (docs/plans/workspaces-plan.md §4):
  *  't-' + the terminal row's uuid — DERIVED, never stored, so the db row
  *  and the tmux session can never drift apart. Always a valid session
  *  name: a uuid v4 is 36 chars, 't-' + 36 = 38 fits TMUX_SESSION_NAME_RE's

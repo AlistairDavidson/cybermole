@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// job-log-appender.ts — plan §8 (docs/jobs-agent-plan.md): the write-time
+// job-log-appender.ts — plan §8 (docs/plans/jobs-agent-plan.md): the write-time
 // cap on job run logs. The run wrapper (runCommandArgv, src/lib/jobs.ts)
 // pipes the job's output through this instead of tee:
 //

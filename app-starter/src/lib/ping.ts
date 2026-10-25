@@ -1,5 +1,5 @@
 // The ping action's logic — the app's domain code, one Result family per
-// concern (docs/CODE_STYLE.md §1, the house rules this template bakes in).
+// concern (docs/conventions/CODE_STYLE.md §1, the house rules this template bakes in).
 // Kept node-free AND runtime-kit-free (the family's TYPES are an
 // `import type` — stripped before execution) so the unit tests import
 // this file with plain node: the kit ships TS sources, and node refuses

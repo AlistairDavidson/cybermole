@@ -63,7 +63,7 @@ export interface ConsoleState {
   me: 'ok';
   configured: boolean;
   /** the editor webapp is configured (CYBERMOLE_EDITOR_UPSTREAM set — the
-   *  same-origin `${BASE}/editor/` proxy, docs/editor-webapp.md): false
+   *  same-origin `${BASE}/editor/` proxy, docs/guides/editor-webapp.md): false
    *  hides the editor tab (plan §8). */
   editor: boolean;
   /** CYBERMOLE_NEW_SESSION_CWD — prefills the new-workspace dialog (plan §10). */

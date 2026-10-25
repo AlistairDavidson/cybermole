@@ -25,7 +25,7 @@ behalf; the human does the same through the app's pages.
 
 ## What this app is for
 
-The reference app of the apps epic (docs/apps-plan.md §9 — built
+The reference app of the apps epic (docs/plans/apps-plan.md §9 — built
 through the verbs, the build loop's acceptance run): a small honest
 notes/journal. Capture a note with a title, a body and tags; find them
 again by search, by tag, or by browsing; keep the standup journal in

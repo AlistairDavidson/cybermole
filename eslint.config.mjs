@@ -12,7 +12,7 @@
 // rest of the type-checked family (no-unsafe-*, switch-exhaustiveness-check,
 // …) is deliberately skipped: this repo is carefully typed (branded IDs,
 // Result families with `satisfies`-narrowed error codes — see
-// docs/CODE_STYLE.md), so the compiler already catches what those would,
+// docs/conventions/CODE_STYLE.md), so the compiler already catches what those would,
 // and their findings here would be noise at intentional boundary casts.
 import js from '@eslint/js';
 import globals from 'globals';

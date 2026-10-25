@@ -1,4 +1,4 @@
-// mcp.test.mjs — task/jobs-mcp (docs/jobs-agent-plan.md §6) units: the
+// mcp.test.mjs — task/jobs-mcp (docs/plans/jobs-agent-plan.md §6) units: the
 // jobs MCP server as a REAL child process over stdio (node
 // dist-server/server/mcp.js, CYBERMOLE_SOCK pointed at a real internal API
 // booted in-process on a tmp socket — the internal-api.test.mjs world +

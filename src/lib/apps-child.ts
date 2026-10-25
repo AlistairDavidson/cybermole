@@ -5,7 +5,7 @@
 // timeout that only killed npm would leave them running), and one typed
 // failure for a missing command (git/npm not on PATH — a clear answer,
 // never a stack trace). Plain data out: the callers map to their own
-// Result families or envelopes (docs/CODE_STYLE.md §2 — the boundary
+// Result families or envelopes (docs/conventions/CODE_STYLE.md §2 — the boundary
 // catches; nothing above it sees an exception from here).
 import { type ChildProcess, spawn } from 'node:child_process';
 

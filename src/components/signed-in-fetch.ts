@@ -1,6 +1,6 @@
 // signed-in-fetch.ts — fetch() for the signed-in pages' components. It
 // never rejects: a request that gets no answer is a failure Result
-// (docs/CODE_STYLE.md §1), and a 401 (the session expired, or was logged
+// (docs/conventions/CODE_STYLE.md §1), and a 401 (the session expired, or was logged
 // out everywhere) sends the page to /login here, once for every caller.
 import type { ResultFailure, ResultSuccess } from '@cybermole/app-kit';
 import { BASE } from '../base';

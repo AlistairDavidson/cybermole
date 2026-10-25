@@ -1,5 +1,5 @@
 // app-host-supervisor.ts — the SINGLE-USER spawn rule (task/app-web,
-// docs/apps-plan.md §3, the CYBERMOLE_TMUX_SOCKET precedent): when
+// docs/plans/apps-plan.md §3, the CYBERMOLE_TMUX_SOCKET precedent): when
 // CYBERMOLE_APPS_SOCK is UNSET (the default single-user shape),
 // server/main.ts OWNS the app host — it spawns
 // `node dist-server/server/app-host.js` as a supervised child at the

@@ -1,5 +1,5 @@
 // editor.test.mjs — src/lib/editor.ts (the same-origin editor proxy's
-// policy surface, docs/editor-webapp.md) + the CYBERMOLE_EDITOR_UPSTREAM boot
+// policy surface, docs/guides/editor-webapp.md) + the CYBERMOLE_EDITOR_UPSTREAM boot
 // checks (src/lib/env.ts). One test per behavior the proxy relies on: path
 // routing (HTTP + WS), the header set that overrides the global DENY, the
 // body-cap/chunked policy, the upstream WS handshake headers (the
@@ -70,7 +70,7 @@ test('editorSecurityHeaders: framable + the VS Code web CSP the spike pinned', (
   const csp = h['Content-Security-Policy'];
   assert.match(csp, /frame-ancestors 'self'/);
   // blob workers (the web-worker extension host) and data/blob images —
-  // verified against a real browser (docs/editor-spike.md).
+  // verified against a real browser (docs/plans/editor-spike.md).
   assert.match(csp, /worker-src 'self' blob:/);
   assert.match(csp, /img-src 'self' data: blob:/);
   // same-origin frames: the webWorkerExtensionHostIframe

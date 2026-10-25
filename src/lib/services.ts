@@ -1,6 +1,6 @@
 // services.ts — everything stateful the Astro side may use, as ONE object
 // server/main.ts builds once and hands to the Astro handler in `locals`
-// (docs/CODE_STYLE.md §6).
+// (docs/conventions/CODE_STYLE.md §6).
 //
 // RUNTIME-IMPORTED ONLY BY server/main.ts. Astro code (routes, pages,
 // middleware) imports this module's TYPES only. Vite bundles its own copy
@@ -111,7 +111,7 @@ export interface CybermoleServices {
   autoUpdater: AutoUpdater;
   /** Object storage (S3-compatible): POST /api/files stores uploads here. */
   objectStore: ObjectStore;
-  // task/ws-schema (docs/workspaces-plan.md §3): the app and
+  // task/ws-schema (docs/plans/workspaces-plan.md §3): the app and
   // workspace/terminal domains, constructed once here and reached by the
   // /api/apps, /api/workspaces, /api/terminals routes.
   /** The app domain — apps.ts. */
@@ -239,7 +239,7 @@ export function createServices(deps: ServiceDeps): CybermoleServices {
         data: {
           me: 'ok',
           configured: configured.data.value,
-          // task/ws-editor (docs/editor-webapp.md): the same-origin editor
+          // task/ws-editor (docs/guides/editor-webapp.md): the same-origin editor
           // (CYBERMOLE_EDITOR_UPSTREAM set?) — false hides the editor tab.
           editor: cfg.editorUpstream !== null,
           defaultCwd: cfg.newSessionCwd,

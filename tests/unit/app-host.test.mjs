@@ -1,4 +1,4 @@
-// app-host.test.mjs — task/app-host (docs/apps-plan.md §3) units: the
+// app-host.test.mjs — task/app-host (docs/plans/apps-plan.md §3) units: the
 // host booted on a tmp-dir socket against a REAL internal-api fixture
 // (internal-api.test.mjs's pattern), discovering SYNTHETIC app trees —
 // tmp dirs with app.json + a stub dist (a hand-written entry.mjs

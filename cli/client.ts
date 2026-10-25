@@ -1,5 +1,5 @@
 // client.ts — the CLI's transport over the internal API's unix socket
-// (task/jobs-cli, docs/jobs-agent-plan.md §5). Zero new runtime deps:
+// (task/jobs-cli, docs/plans/jobs-agent-plan.md §5). Zero new runtime deps:
 // node:http with socketPath. Deliberately standalone and verb-free —
 // one request function, one response shape, one unreachable-socket
 // error — so the MCP server (plan §6) reuses this layer verbatim.

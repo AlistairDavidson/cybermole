@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// server.mjs — the cybermole-dev MCP server (docs/dev-test-mcp-plan.md):
+// server.mjs — the cybermole-dev MCP server (docs/plans/dev-test-mcp-plan.md):
 // the repo's validation ladder (AGENTS.md, Testing) as six stdio MCP tools
 // that answer in ONE structured envelope, so an agent's context fills with
 // failure detail only, not per-test reporting. The npm scripts stay the

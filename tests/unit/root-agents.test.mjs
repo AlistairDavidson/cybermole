@@ -1,5 +1,5 @@
 // root-agents.test.mjs — the workspace-root AGENTS.md seeding
-// (src/lib/root-agents.ts, docs/jobs-agent-plan.md §9): the
+// (src/lib/root-agents.ts, docs/plans/jobs-agent-plan.md §9): the
 // only-where-absent policy in one function, so the server boot (single
 // user — server/main.ts, next to seedAgentDir) and the split's
 // workspace entrypoint (docker-workspace-entrypoint.sh, uid 2000 — a

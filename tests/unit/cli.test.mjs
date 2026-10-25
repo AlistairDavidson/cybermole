@@ -1,4 +1,4 @@
-// cli.test.mjs — task/jobs-cli (docs/jobs-agent-plan.md §5) units: the
+// cli.test.mjs — task/jobs-cli (docs/plans/jobs-agent-plan.md §5) units: the
 // `cybermole-cli` CLI, driven against a REAL internal API booted on a tmp-dir
 // socket (the internal-api.test.mjs pattern, including its fake-tmux
 // stand-in for run/kill). The command layer runs IN-PROCESS — runCli

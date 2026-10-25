@@ -1,4 +1,4 @@
-// workspaces.ts — the workspace and terminal domain (docs/workspaces-plan.md
+// workspaces.ts — the workspace and terminal domain (docs/plans/workspaces-plan.md
 // §1–§4). A workspace = a cwd + terminal tabs (+, later, one editor tab);
 // it belongs to the console (app_id NULL — the console is NOT an app row)
 // or to exactly one app. Terminals live here: a terminal tab is
@@ -8,7 +8,7 @@
 // (plan §4: a dead tab — the first attach retries the spawn).
 //
 // Constructed once per process (services.ts, fed by server/main.ts) and
-// reached by routes through locals.cybermole (docs/CODE_STYLE.md §6).
+// reached by routes through locals.cybermole (docs/conventions/CODE_STYLE.md §6).
 // Deletion cascades through FKs; the deleted terminals' tmux sessions are
 // killed best-effort, logged, never failing the delete.
 import { randomUUID } from 'node:crypto';

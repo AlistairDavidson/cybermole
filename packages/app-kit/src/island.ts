@@ -1,4 +1,4 @@
-// island.ts — the preact-signals island convention (docs/apps-plan.md §0/
+// island.ts — the preact-signals island convention (docs/plans/apps-plan.md §0/
 // §5: pages render server-side; preact islands with @preact/signals carry
 // the interactive regions; the console adopts whatever proves out — the
 // epic TODO's preact item lands here, in the kit, not in the console yet).
@@ -6,7 +6,7 @@
 // The convention an app follows:
 // - The page (SSR) renders the island's host element with its initial
 //   content as plain HTML — the island ENHANCES markup, never replaces a
-//   placeholder (docs/CODE_STYLE.md §7's rule, carried into apps).
+//   placeholder (docs/conventions/CODE_STYLE.md §7's rule, carried into apps).
 // - The island component is a plain preact component; client state is
 //   signals (@preact/signals — signal()/computed() at module or component
 //   scope) so prop-drilling and effect-chains stay out of small UIs.

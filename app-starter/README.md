@@ -1,6 +1,6 @@
 # a cybermole app, scaffolded
 
-This tree is a cybermole app (docs/apps-plan.md — the image's app-starter
+This tree is a cybermole app (docs/plans/apps-plan.md — the image's app-starter
 template, baked by the `cybermole-apps` scaffold): an Astro SSR webapp on
 `@cybermole/app-kit`, served by the cybermole app host at `/apps/<slug>/`
 behind the console's login once it is registered and built.

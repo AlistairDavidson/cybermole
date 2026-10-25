@@ -3,7 +3,7 @@
 // Everything the app itself writes lives in ENV.CYBERMOLE_DB_FILE (default
 // <state dir>/cybermole.db): the login credential (single row), the login
 // sessions (`auth_sessions` — token hashes only, src/lib/auth.ts), the
-// apps/workspaces/terminals tables (docs/workspaces-plan.md §2 —
+// apps/workspaces/terminals tables (docs/plans/workspaces-plan.md §2 —
 // src/lib/apps.ts, src/lib/workspaces.ts; the pi-session `sessions`
 // overlay died with the scan that read it, plan §11),
 // the scheduled-jobs tables (`jobs` definitions,
@@ -26,7 +26,7 @@
 //   SQL on its own synchronous connection (all/get/run). Kysely's own
 //   execute() is async — it would make every caller async for nothing.
 //
-// task/app-kit (docs/apps-plan.md §5): the generic half of this file —
+// task/app-kit (docs/plans/apps-plan.md §5): the generic half of this file —
 // the lazily-opened connection with cached statements (SqliteDb), the
 // compile-only query-builder factory (createQb) and the
 // databaseRead/databaseUpdate boundary Results — moved to
@@ -54,7 +54,7 @@ const SCHEMA = `
   -- together with the code that read it in task/ws-console): idempotent,
   -- runs at every open — no version bookkeeping, user_version stays 6.
   DROP TABLE IF EXISTS sessions;
-  -- Apps / workspaces / terminals (docs/workspaces-plan.md §2, schema v6):
+  -- Apps / workspaces / terminals (docs/plans/workspaces-plan.md §2, schema v6):
   -- apps 1—M workspaces 1—M terminals, console = the NULL app. ids are
   -- uuid v4 minted by the server; sort_order is explicit (steps of 10),
   -- ordering never relies on the id; created_by/updated_by carry the
@@ -244,7 +244,7 @@ function addColumnIfMissing(db: DatabaseSync, table: string, column: string, ddl
 }
 
 /** The v6 migration: jobs gains its optional app tag, job_runs the
- *  persisted-run columns (docs/workspaces-plan.md §2), and apps its
+ *  persisted-run columns (docs/plans/workspaces-plan.md §2), and apps its
  *  optional cwd (task/app-cwd — the workspace-create default derivation).
  *  Additive only —
  * the `sessions` table stays untouched in this branch (it dies, with its

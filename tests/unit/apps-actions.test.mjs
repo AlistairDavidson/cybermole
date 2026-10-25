@@ -1,4 +1,4 @@
-// apps-actions.test.mjs — task/app-actions (docs/apps-plan.md §6/§10)
+// apps-actions.test.mjs — task/app-actions (docs/plans/apps-plan.md §6/§10)
 // units: the action vocabulary's generator half.
 //   src/lib/apps-actions.ts: the action-name rule (defined once), the
 //     light route-table parse (the AGENTS.md regeneration's source of

@@ -1,5 +1,5 @@
 // internal-api.ts — the internal jobs API (task/jobs-socket,
-// docs/jobs-agent-plan.md §3–§4): a second HTTP listener on a unix
+// docs/plans/jobs-agent-plan.md §3–§4): a second HTTP listener on a unix
 // domain socket, served by the same Node process as the console, serving
 // the WORKSPACE side (agents) the jobs surface. JSON only; nginx / the
 // TLS proxy never see this listener (it is not a TCP port).

@@ -1,5 +1,5 @@
 // apps-scaffold.ts — the scaffold half of the cybermole-apps MCP
-// (task/app-scaffold, docs/apps-plan.md §6): create a real app tree at
+// (task/app-scaffold, docs/plans/apps-plan.md §6): create a real app tree at
 // the apps root from the image's app-starter template — slug derived like
 // the console's (normalizeSlug), base '/apps/<slug>' baked, node_modules
 // as per-package symlinks (§5), a git repo whose first commit is the

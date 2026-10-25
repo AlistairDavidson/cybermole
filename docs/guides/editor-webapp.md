@@ -7,7 +7,7 @@ reh-web build** ("`codium serve-web`" — self-hosted VS Code in the browser
 with server-side files), served through cybermole's **same-origin
 `/editor` proxy** behind the session gate. The spike that pinned this
 design (against a real browser, through a real proxy) is
-**docs/editor-spike.md** — read it first; this document describes what
+**docs/plans/editor-spike.md** — read it first; this document describes what
 shipped.
 
 ## Architecture
@@ -194,7 +194,7 @@ page); unconfigured answers **404**.
 
 ## Host-side verification
 
-docs/editor-spike.md has the checklist (framing, trust dialog, terminal as
+docs/plans/editor-spike.md has the checklist (framing, trust dialog, terminal as
 uid 2000, logout cutting shells, nested-base deployments, and the one
 Extensions-viewlet CSP check). The sandbox verified everything at the
 proxy+browser level; the container wiring (compose, init chown, umask) is

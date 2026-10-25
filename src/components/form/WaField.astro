@@ -1,7 +1,7 @@
 ---
 // WaField.astro — a <wa-input> (or, with as="textarea", a <wa-textarea>)
 // whose validation message lives in its hint slot (the soothing-booking
-// SbInput idea, on Web Awesome; docs/CODE_STYLE.md §8). Why the hint slot:
+// SbInput idea, on Web Awesome; docs/conventions/CODE_STYLE.md §8). Why the hint slot:
 // the real <input>/<textarea> is inside the wa-* element's shadow DOM, so
 // aria-errormessage / aria-invalid on the host never reach it — but its
 // aria-describedby points at the hint slot, so a message slotted there is

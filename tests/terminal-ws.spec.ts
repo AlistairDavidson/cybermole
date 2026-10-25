@@ -1,4 +1,4 @@
-// terminal-ws.spec.ts — task/ws-terminal (docs/workspaces-plan.md §4/§7),
+// terminal-ws.spec.ts — task/ws-terminal (docs/plans/workspaces-plan.md §4/§7),
 // end to end against the compiled server: the terminal routes wired to
 // tmux spawns, the WS 'terminal' attach mode — including the dead-tab
 // RESPAWN at the workspace cwd — and the 'run' mode's never-respawn gate,

@@ -1,6 +1,6 @@
 // apps-route-table.ts — the describe/call half of the cybermole-apps MCP
 // and the app MCP shim's shared table reader (task/app-actions,
-// docs/apps-plan.md §6): dist/route-table.json — the build's emitted
+// docs/plans/apps-plan.md §6): dist/route-table.json — the build's emitted
 // table (the kit's route-table-emit, written by the tree's astro config)
 // — read, leniently validated against, and turned into THE request the
 // entry itself names. §3's rule verbatim: "a route-table entry already

@@ -1,5 +1,5 @@
 // apps-status.ts — the status half of the cybermole-apps MCP
-// (task/app-scaffold, docs/apps-plan.md §6): the JOIN the status tool
+// (task/app-scaffold, docs/plans/apps-plan.md §6): the JOIN the status tool
 // answers — every app as one row of REGISTERED (the internal API's rows)
 // × MOUNTED (the app host's /_admin/status) × BUILD-STALE (an mtime walk:
 // sources newer than the build artifacts), plus the UNREGISTERED TREES

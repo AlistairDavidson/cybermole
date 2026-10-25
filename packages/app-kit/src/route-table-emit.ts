@@ -1,7 +1,7 @@
 // route-table-emit.ts — the build half of the route-table binder: write
 // dist/route-table.json (the serialized table — name, method, path, input
 // schema, description) for the describe/call tools and the app's MCP shim
-// (docs/apps-plan.md §5/§6). An app's build script imports the table and
+// (docs/plans/apps-plan.md §5/§6). An app's build script imports the table and
 // calls this with its dist/ path; the core faces stay node-free in
 // route-table.ts so islands can import the client.
 import * as fs from 'node:fs';

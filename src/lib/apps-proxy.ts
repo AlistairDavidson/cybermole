@@ -1,5 +1,5 @@
 // apps-proxy.ts — the /apps/* reverse proxy (task/app-web,
-// docs/apps-plan.md §4): same-origin `${BASE}/apps/<slug>/*` forwarded
+// docs/plans/apps-plan.md §4): same-origin `${BASE}/apps/<slug>/*` forwarded
 // VERBATIM (no prefix rewriting — the app's base path is baked in at
 // build) over the app host's unix socket (CYBERMOLE_APPS_SOCK,
 // server/app-host.ts), HTTP only (WS is plan §12). server/main.ts calls

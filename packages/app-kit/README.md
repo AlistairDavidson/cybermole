@@ -1,7 +1,7 @@
 # @cybermole/app-kit
 
 The shared half of cybermole — what apps (and the console) are built on
-(docs/apps-plan.md §5). Ships **source**, no build step: astro/vite
+(docs/plans/apps-plan.md §5). Ships **source**, no build step: astro/vite
 compiles it through the workspace symlink (`vite.ssr.noExternal` for SSR
 builds), and the console's server tsc compiles it in place — the emitted
 files land in `dist-server/packages/app-kit/`, with the runtime manifest
@@ -16,7 +16,7 @@ server-compiled code uses:
 - **`types/result`** — the Result family (`Result`, `ResultSuccess`,
   `ResultFailure`): `{ ok, resultType, data }` / `{ ok: false, resultType,
   errorCode, errorMessage?, issues? }`, one family per concern, closed
-  error codes (docs/CODE_STYLE.md §1).
+  error codes (docs/conventions/CODE_STYLE.md §1).
 - **`types/branded`** — branded-ID helpers (`JobName`, `AppSlug`, … and
   their `as*()` trust-boundary casts).
 - **`schemas/patterns` + `schemas/ids`** — the node-free zod schema layer:

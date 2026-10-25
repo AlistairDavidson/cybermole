@@ -1,4 +1,4 @@
-// internal-api.test.mjs — task/jobs-socket (docs/jobs-agent-plan.md §3–§4)
+// internal-api.test.mjs — task/jobs-socket (docs/plans/jobs-agent-plan.md §3–§4)
 // units: the internal jobs API — a real HTTP listener on a tmp-dir unix
 // socket, exercised over node:http socketPath for EVERY verb, plus the
 // socket lifecycle (stale file unlinked+rebound, a live listener refused,

@@ -6,7 +6,7 @@
 // also become HTML `pattern` attributes, which compile with the `v` flag,
 // where an unescaped `-` in a class is a syntax error and the browser
 // silently ignores the whole pattern.
-// Moved from src/schemas/patterns.ts by task/app-kit (docs/apps-plan.md
+// Moved from src/schemas/patterns.ts by task/app-kit (docs/plans/apps-plan.md
 // §5) — unchanged apart from the move.
 
 /** tmux session names on the app socket. 64, not 40: a job run's session

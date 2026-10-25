@@ -1,4 +1,4 @@
-// job-log-cap.test.mjs — task/job-log-caps (docs/jobs-agent-plan.md §8):
+// job-log-cap.test.mjs — task/job-log-caps (docs/plans/jobs-agent-plan.md §8):
 // the write-time cap on job run logs, exercised as REAL child processes.
 // The bundled appender (src/lib/job-log-appender.ts) is spawned as the
 // wrapper spawns it — `node <appender> <logPath> <maxBytes>` — for

@@ -2,7 +2,7 @@
 import Base from '../layouts/Base.astro';
 import JobsApp from '../components/JobsApp/JobsApp.astro';
 import { assertCybermoleLocals } from '../lib/web/locals';
-// Server-rendered (docs/CODE_STYLE.md §7): the job list arrives as HTML
+// Server-rendered (docs/conventions/CODE_STYLE.md §7): the job list arrives as HTML
 // from the scheduler server/main.ts passes in locals; <jobs-app> enhances
 // it (actions, dialogs, a 15 s refresh from /partials/jobs-list). A page
 // without the services is a broken invariant, not a state to render

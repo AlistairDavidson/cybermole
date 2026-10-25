@@ -1,4 +1,4 @@
-// apps-actions.spec.ts — task/app-actions (docs/apps-plan.md §1/§6/§10)
+// apps-actions.spec.ts — task/app-actions (docs/plans/apps-plan.md §1/§6/§10)
 // e2e: the action-vocabulary loop continued — the whole §1 build loop PLUS
 // the generator: scaffold a fresh app, add_action a 'note' action (POST
 // with a text field), check green (the gate — the grown unit tests AND the

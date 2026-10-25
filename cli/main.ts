@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// main.ts — the `cybermole-cli` bin (task/jobs-cli, docs/jobs-agent-plan.md §5):
+// main.ts — the `cybermole-cli` bin (task/jobs-cli, docs/plans/jobs-agent-plan.md §5):
 // the agent/human-facing surface over the server's internal jobs API.
 // A thin dispatcher — group → verb → the socket client layer — plus the
 // top-level help; the verb logic and its documentation live in jobs.ts.

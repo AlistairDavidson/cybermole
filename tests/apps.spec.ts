@@ -1,4 +1,4 @@
-// apps.spec.ts — task/app-web (docs/apps-plan.md §4/§10) e2e: the
+// apps.spec.ts — task/app-web (docs/plans/apps-plan.md §4/§10) e2e: the
 // /apps/* proxy, gate and serving flag against the REAL app host.
 //
 // The host is the shared webServer's own supervised child — the config

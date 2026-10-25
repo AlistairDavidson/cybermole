@@ -275,7 +275,7 @@ export function readObjectStoreConfig(): ObjectStoreConfig | null {
   };
 }
 
-/** Editor webapp upstream (src/lib/editor.ts, docs/editor-webapp.md), or
+/** Editor webapp upstream (src/lib/editor.ts, docs/guides/editor-webapp.md), or
  *  null when CYBERMOLE_EDITOR_UPSTREAM is unset/empty — the single switch: the
  *  server then answers 404 under /editor and the console hides its
  *  affordances. One var, no half-set states (the Zed triple's launcher-pair

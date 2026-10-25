@@ -1,10 +1,10 @@
-// apps.ts — the app domain (docs/workspaces-plan.md §1–§3): a named,
+// apps.ts — the app domain (docs/plans/workspaces-plan.md §1–§3): a named,
 // slug'd, ordered container for workspaces. Barebones on purpose — the
 // workspace/terminal structure lives in workspaces.ts; apps are the
 // grouping, the ordering and the URL identity (slug, stable once
 // created). Constructed once per process (services.ts, fed by
 // server/main.ts) and reached by routes through locals.cybermole — never
-// runtime-imported by Astro code (docs/CODE_STYLE.md §6).
+// runtime-imported by Astro code (docs/conventions/CODE_STYLE.md §6).
 //
 // Deletion is cascade-first: the FK chain (apps → workspaces → terminals,
 // ON DELETE CASCADE) does the structural delete in one statement (PRAGMA

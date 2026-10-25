@@ -1,6 +1,6 @@
 // logger.ts — winston-based operational logging for the server side
 // (server/main.ts and the src/lib boundary modules; NEVER the Astro side —
-// docs/CODE_STYLE.md §6 keeps winston out of the Vite bundle on purpose).
+// docs/conventions/CODE_STYLE.md §6 keeps winston out of the Vite bundle on purpose).
 //
 // Transports: a console transport ALWAYS (pretty, human-readable — the boot
 // log and the e2e webServer stderr are read by humans), and a winston-loki

@@ -1,4 +1,4 @@
-// jobs-runs.test.mjs — task/ws-jobs (docs/workspaces-plan.md §9) units:
+// jobs-runs.test.mjs — task/ws-jobs (docs/plans/workspaces-plan.md §9) units:
 // the tick's run-finish observation (exit files: success, failure,
 // missing → unknown — plus the boot-armed path that only knows the job),
 // RUN_HISTORY pruning that unlinks the doomed runs' files BEFORE the

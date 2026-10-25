@@ -1,4 +1,4 @@
-// app-host.ts — the app host (task/app-host, docs/apps-plan.md §3): a
+// app-host.ts — the app host (task/app-host, docs/plans/apps-plan.md §3): a
 // mini main.ts running on the WORKSPACE side of the privilege split,
 // listening on its own unix socket (CYBERMOLE_APPS_SOCK — the
 // CYBERMOLE_SOCK rules verbatim: unset = /run/cybermole/apps.sock when
@@ -42,7 +42,7 @@ const log = componentLogger('app-host');
 
 /** The @Astrojs/node middleware export every mounted app provides — the
  *  same shape server/main.ts loads from the console's dist/server/entry.mjs
- *  (docs/apps-plan.md §3: "the same static+middleware split main.ts
+ *  (docs/plans/apps-plan.md §3: "the same static+middleware split main.ts
  *  performs for the console"). Apps get NO locals: the console's
  *  { cybermole, session } never crosses into app code (plan §8). */
 type AppHandler = (

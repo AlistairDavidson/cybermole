@@ -1,4 +1,4 @@
-// apps-notes.spec.ts — task/app-notes (docs/apps-plan.md §1/§9/§10) e2e:
+// apps-notes.spec.ts — task/app-notes (docs/plans/apps-plan.md §1/§9/§10) e2e:
 // the reference app's USE loop, on the tree the run SHIPPED. The build
 // loop ran once, through the verbs, as the epic's acceptance run; this
 // spec keeps the shipped tree honest forever after: it seeds

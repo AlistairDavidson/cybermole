@@ -326,7 +326,7 @@ const shutdownScheduler = (): void => scheduler.stop();
 // A second HTTP listener, on a unix domain socket, serving the WORKSPACE
 // side (agents) the same jobs service functions the browser routes use —
 // same Result JSON, no cookie/CSRF/rate-limit layer (the socket's file
-// mode is the gate; docs/jobs-agent-plan.md §2–§4). CYBERMOLE_SOCK: unset =
+// mode is the gate; docs/plans/jobs-agent-plan.md §2–§4). CYBERMOLE_SOCK: unset =
 // the shape default (/run/cybermole/cybermole.sock when that shared dir exists,
 // else <state dir>/cybermole.sock); empty = off; a non-absolute value stops
 // the boot (env.ts, like the S3 vars). A stale socket file is removed and
@@ -689,7 +689,7 @@ function hardenResponse(res: http.ServerResponse): void {
   }) as typeof res.end;
 }
 
-// ---------- editor reverse proxy (task/ws-editor, docs/editor-webapp.md) ----------
+// ---------- editor reverse proxy (task/ws-editor, docs/guides/editor-webapp.md) ----------
 // Same-origin `${BASE}/editor/*` → CYBERMOLE_EDITOR_UPSTREAM (HTTP + WS),
 // behind the origin check and the session gate like every other
 // authenticated route — the console frames it in an iframe, so auth is

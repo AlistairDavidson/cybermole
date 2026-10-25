@@ -2,7 +2,7 @@
 // sources, type-stripped (the `test` script's flag; see src/lib/ping.ts
 // for why tested units keep their runtime imports node-local). This file
 // is the stub every new action grows next to: one test per error code,
-// not just the happy path (docs/CODE_STYLE.md §9).
+// not just the happy path (docs/conventions/CODE_STYLE.md §9).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { pingResult } from '../src/lib/ping.ts';

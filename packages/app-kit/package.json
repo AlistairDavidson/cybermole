@@ -1,7 +1,7 @@
 {
   "name": "@cybermole/app-kit",
   "version": "0.1.0",
-  "description": "The shared half of cybermole — what apps (and the console) are built on: the Result family + branded IDs, the node-free zod schema layer, the Result→HTTP mapping, the node:sqlite helper, the object-storage client, and the route-table binder (docs/apps-plan.md §5). Ships SOURCE, no build step: astro/vite compiles it through the workspace symlink, the console's server tsc compiles it in place.",
+  "description": "The shared half of cybermole — what apps (and the console) are built on: the Result family + branded IDs, the node-free zod schema layer, the Result→HTTP mapping, the node:sqlite helper, the object-storage client, and the route-table binder (docs/plans/apps-plan.md §5). Ships SOURCE, no build step: astro/vite compiles it through the workspace symlink, the console's server tsc compiles it in place.",
   "license": "MIT",
   "sideEffects": [
     "./src/wa-client.ts"

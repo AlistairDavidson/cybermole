@@ -169,7 +169,7 @@ Notes:
   bundle a second `StateDb`/domain copy). `services.ts` gains the
   members; `ServiceDeps` gains what they need (stateDb, tmux access,
   `cfg`, `sessionEnv`).
-- Result families with closed error codes, per `docs/CODE_STYLE.md` §1:
+- Result families with closed error codes, per `docs/conventions/CODE_STYLE.md` §1:
   - `save_app`: `invalid_name | duplicate_slug | database_error`
   - `delete_app`: `app_not_found | database_error` (+ tmux kill is
     best-effort, logged, never fails the delete)
@@ -509,7 +509,7 @@ Core list:
   (retargeted to `window.open` of the editor URL in the SAME branch),
   the e2e `/api/state` `zed === null` assertion (retargeted to the
   editor), and `docs/zed-webapp.md` (superseded by
-  `docs/editor-webapp.md`).
+  `docs/guides/editor-webapp.md`).
 
 The
 closure (everything else that dangles once the above go — sweep with

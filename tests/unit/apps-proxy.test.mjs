@@ -1,4 +1,4 @@
-// apps-proxy.test.mjs — task/app-web (docs/apps-plan.md §4) units: the
+// apps-proxy.test.mjs — task/app-web (docs/plans/apps-plan.md §4) units: the
 // /apps/* proxy's decision surface and transport, exercised over REAL
 // sockets without the console — a stub "app host" on a tmp-dir unix
 // socket, and a "web side" http server whose handler is exactly the

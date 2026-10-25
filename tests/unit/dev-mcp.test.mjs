@@ -1,4 +1,4 @@
-// dev-mcp.test.mjs — the dev test-MCP's own units (docs/dev-test-mcp-plan.md
+// dev-mcp.test.mjs — the dev test-MCP's own units (docs/plans/dev-test-mcp-plan.md
 // §7): the pure parsers against checked-in fixture blobs (a real captured
 // Playwright JSON report and an ESLint JSON report under fixtures/), the
 // envelope/trim edge cases, the anchor/tail fallbacks, and smoke runs of

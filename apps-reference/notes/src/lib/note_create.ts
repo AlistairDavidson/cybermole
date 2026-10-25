@@ -1,6 +1,6 @@
 // The note_create action's logic — the capture half of the notes family,
 // grown from the add_action stub into the real domain (one Result family
-// per concern, docs/CODE_STYLE.md §1). Runtime-kit-free (types only) and
+// per concern, docs/conventions/CODE_STYLE.md §1). Runtime-kit-free (types only) and
 // node-free: the unit tests import this with plain node, passing the
 // in-memory store; the sqlite implementation (notes-db.ts) is exercised
 // end-to-end through every face.

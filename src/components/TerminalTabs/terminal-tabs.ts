@@ -47,7 +47,7 @@ const EDITOR = 'editor';
 /** The editor pane's src: the same-origin /editor proxy with the
  *  workspace cwd as the ?folder= param (spike-pinned, URI-encoded). No
  *  theme param — VERIFIED against the vendored reh-web build (1.140.x,
- *  docs/editor-webapp.md): the workbench client parses only folder/
+ *  docs/guides/editor-webapp.md): the workbench client parses only folder/
  *  workspace/ew from the URL, so a theme param would be ignored. The
  *  workbench instead follows the BROWSER's scheme at boot (the proxy
  *  injects window.autoDetectColorScheme — src/lib/editor.ts), which is

@@ -1730,7 +1730,7 @@ test('jobs: app tag chip, persisted run logs, run history + log view (task/ws-jo
   expect((await api(page, 'DELETE', '/api/apps/e2e-jobs-app')).status).toBe(200);
 });
 
-// The jobs-agent-plan §4+§7 acceptance line (docs/jobs-agent-plan.md):
+// The jobs-agent-plan §4+§7 acceptance line (docs/plans/jobs-agent-plan.md):
 // a mutation over the INTERNAL SOCKET — the agent path — updates an
 // OPEN /jobs page without waiting for the 15 s poll. The chain is
 // service-layer events → /ws/events → the page's partial refresh; one

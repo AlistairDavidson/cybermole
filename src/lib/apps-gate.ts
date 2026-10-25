@@ -1,5 +1,5 @@
 // apps-gate.ts — the check/build half of the cybermole-apps MCP
-// (task/app-scaffold, docs/apps-plan.md §6): run an app tree's OWN
+// (task/app-scaffold, docs/plans/apps-plan.md §6): run an app tree's OWN
 // package.json scripts (the template bakes them; the tree owns the
 // commands) and answer ONE quiet envelope — the cybermole-dev tools'
 // contract ({passed, returncode, duration_s, quiet, timed_out, output,

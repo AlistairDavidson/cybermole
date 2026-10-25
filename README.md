@@ -48,7 +48,7 @@ containers and two uids (server vs tmux/terminals) — see
   Code in the browser with server-side files, served same-origin through
   cybermole's `/editor` proxy behind the session gate — every tab opens its
   workspace's cwd (`?folder=`), many folders at once
-  ([docs/editor-webapp.md](docs/editor-webapp.md)). Ships in the compose
+  ([docs/guides/editor-webapp.md](docs/guides/editor-webapp.md)). Ships in the compose
   stack (`CYBERMOLE_EDITOR_UPSTREAM` defaults on in compose; empty = off).
 - **Jobs** (`/jobs`) — scheduled commands ("cron") on the built-in
   scheduler: name + 5-field cron schedule + arbitrary shell command,
@@ -294,7 +294,7 @@ directly.
 | `CYBERMOLE_JOB_LOG_DIR` | `/workspace/.cybermole/job-logs` | root under which job runs persist their logs + exit files (`<dir>/<job>/<fired-at>.{log,exit}`) — a path that exists in both containers of the compose split (laid out by `workspace-init`); point it somewhere writable in other split shapes |
 | `CYBERMOLE_JOB_LOG_MAX` | `20971520` (20 MiB) | write-time cap on each job run's log — past it the run wrapper's appender stops writing (one `[truncated at N bytes]` marker line) but keeps draining the job's output, so a chatty or runaway job can neither fill the disk mid-run nor die of a broken pipe. A non-integer or negative value stops the server at boot |
 | `CYBERMOLE_SOCK` | `/run/cybermole/cybermole.sock` when `/run/cybermole` exists (the compose split), else `<state dir>/cybermole.sock` | the [internal jobs API](#scheduled-jobs-jobs--the-in-process-scheduler)'s unix socket: a second HTTP listener in the same server process serving the workspace side (agents) — see the jobs section. **Empty = the listener is off**; a set-but-non-absolute value stops the server at boot, like the S3 vars. The socket file is created `0660` — the file mode (the shared `cybermole` group in the split shape) is the only auth |
-| `CYBERMOLE_APPS_SOCK` | `/run/cybermole/apps.sock` when `/run/cybermole` exists, else `<state dir>/apps.sock` | the **app host**'s unix socket (`server/app-host.ts`, [docs/apps-plan.md](docs/apps-plan.md) §3): mounts registered apps' built Astro middlewares and serves them at `/apps/<slug>/*` through the console's proxy (behind the login, same session gate as everything else). The env var decides ownership too: **unset** = the single-user shape, where the web server spawns and supervises `dist-server/server/app-host.js` as a child (restarting it with backoff if it crashes); **set** = the split (compose) or an operator-owned process — the web server is only a client on the socket and never spawns; **empty** = the apps surface is off (`/apps/*` answers 404, every app row reports `serving: false` in `/api/state`). A set-but-non-absolute value stops the boot, like `CYBERMOLE_SOCK` |
+| `CYBERMOLE_APPS_SOCK` | `/run/cybermole/apps.sock` when `/run/cybermole` exists, else `<state dir>/apps.sock` | the **app host**'s unix socket (`server/app-host.ts`, [docs/plans/apps-plan.md](docs/plans/apps-plan.md) §3): mounts registered apps' built Astro middlewares and serves them at `/apps/<slug>/*` through the console's proxy (behind the login, same session gate as everything else). The env var decides ownership too: **unset** = the single-user shape, where the web server spawns and supervises `dist-server/server/app-host.js` as a child (restarting it with backoff if it crashes); **set** = the split (compose) or an operator-owned process — the web server is only a client on the socket and never spawns; **empty** = the apps surface is off (`/apps/*` answers 404, every app row reports `serving: false` in `/api/state`). A set-but-non-absolute value stops the boot, like `CYBERMOLE_SOCK` |
 | `CYBERMOLE_TMUX_SOCKET` | `cybermole` | the tmux socket the app uses. A relative *name* is the single-user shape: the app's own server, forked on the first session-creating call, under the per-uid default dir. An **absolute path** switches on the privilege split ([below](#the-privilege-split-two-containers)): tmux runs as another uid/container on that shared socket (`-S` instead of `-L` — a relative name resolves per-uid and cannot be shared), and terminal spawns, job runs and attaches refuse to fork a server, erroring with "workspace tmux server not running" instead. The server lifecycle is then the workspace side's job (`docker-workspace-entrypoint.sh`, or the host-install equivalent below) |
 | `CYBERMOLE_TMUX_CONF` | `<app root>/tmux.conf` | tmux server config, applied when the tmux server starts (escape-time, scrollback, truecolour — see the file) |
 | `CYBERMOLE_DB_FILE` | `<state dir>/cybermole.db` | sqlite state db (0600): login credential, login sessions (`auth_sessions`), the workspace tree (`apps`, `workspaces`, `terminals`), scheduled-job tables (`jobs`, `job_runs` — the in-process scheduler + run logs), `settings` kv (the pi auto-update toggle + outcomes). Fresh setup: `npm run set-password` creates it |
@@ -304,7 +304,7 @@ directly.
 | `CYBERMOLE_S3_ACCESS_KEY` / `CYBERMOLE_S3_SECRET_KEY` | *(unset)* | the store's credentials. In compose, generated once by `seaweedfs-init` and loaded by the entrypoint — not set in `compose.yaml` |
 | `CYBERMOLE_S3_BUCKET` | `cybermole` | bucket for uploads (created on first use when missing) |
 | `CYBERMOLE_S3_REGION` | `us-east-1` | SigV4 signing region — self-hosted servers accept any |
-| `CYBERMOLE_EDITOR_UPSTREAM` | *(unset: editor off)* | the [VSCodium reh-web editor](docs/editor-webapp.md)'s upstream — the single switch: unset, `/editor/*` answers 404 and the console hides its editor tab; a malformed value stops the server at boot, like the S3 vars. Compose wires it by default (`http://editor:3000` — the editor container ships in the plain stack; set it empty in `.env` to switch the editor off). Auth is the web session itself — no token, no launcher URL; folders are URL params |
+| `CYBERMOLE_EDITOR_UPSTREAM` | *(unset: editor off)* | the [VSCodium reh-web editor](docs/guides/editor-webapp.md)'s upstream — the single switch: unset, `/editor/*` answers 404 and the console hides its editor tab; a malformed value stops the server at boot, like the S3 vars. Compose wires it by default (`http://editor:3000` — the editor container ships in the plain stack; set it empty in `.env` to switch the editor off). Auth is the web session itself — no token, no launcher URL; folders are URL params |
 | `CYBERMOLE_DEV_API` | `http://127.0.0.1:3001` | dev only: where `astro dev` proxies `/api`, `/partials`, `/editor`, `/ws`, login/logout (the `npm run dev:server` process) |
 | `CYBERMOLE_LOKI_URL` | *(unset: console-only)* | push URL of a Grafana Loki for the server's operational logs (`http://loki:3100` when the compose `observability` profile runs). Unset — the default, and the dev profile and plain hosts — logging is console-only, identical to before observability existed. A set-but-malformed value stops the server at boot, like the S3 vars |
 | `CYBERMOLE_LOKI_JOB` | `cybermole` | the `job` label every pushed log line carries — identifies this deployment in Loki's stream selectors. Letters, digits, `_`, `-`, max 64 chars |
@@ -390,7 +390,7 @@ jobs work in every install shape, the container included.
   integration): the instance serves on with the listener off and a
   loud boot line telling you to stop the other server or point
   `CYBERMOLE_SOCK` elsewhere. Design:
-  [docs/jobs-agent-plan.md](docs/jobs-agent-plan.md)
+  [docs/plans/jobs-agent-plan.md](docs/plans/jobs-agent-plan.md)
   §3–§4.
 - **The `cybermole-cli` CLI (agents, and humans in a terminal)**: a third bin
   (`package.json`, shipped in both containers of the split — the
@@ -405,7 +405,7 @@ jobs work in every install shape, the container included.
   something invalid. The socket is discovered `$CYBERMOLE_SOCK` →
   `/run/cybermole/cybermole.sock` → `<state dir>/cybermole.sock`, a friendly error
   naming the knob when off. Design:
-  [docs/jobs-agent-plan.md](docs/jobs-agent-plan.md) §5.
+  [docs/plans/jobs-agent-plan.md](docs/plans/jobs-agent-plan.md) §5.
 - **MCP over the internal API (agents, in-session)**: `server/mcp.ts` is
   a stdio MCP server — also runnable as `cybermole-cli mcp`, the dev-shape
   convenience — whose tools are 1:1 with those verbs (plus `apps_list`)
@@ -414,7 +414,7 @@ jobs work in every install shape, the container included.
   path it spawns, and the dev-shape difference). Tool results carry the
   internal API's Result JSON verbatim — an agent reads the same answers
   the console and the CLI do. Design:
-  [docs/jobs-agent-plan.md](docs/jobs-agent-plan.md) §6.
+  [docs/plans/jobs-agent-plan.md](docs/plans/jobs-agent-plan.md) §6.
 - **Root-agent conventions (`AGENTS.md`)**: the workspace root's
   `AGENTS.md` — the root agent's standing instructions: scheduled work
   belongs in jobs, a fired run is *started, not finished* (poll the run
@@ -425,7 +425,7 @@ jobs work in every install shape, the container included.
   2000) there, by the server boot next to the pi-template seeding in
   single-user shapes. App agents in checkouts under the root read it by
   upward walk — accepted same-uid usage. Design:
-  [docs/jobs-agent-plan.md](docs/jobs-agent-plan.md) §9.
+  [docs/plans/jobs-agent-plan.md](docs/plans/jobs-agent-plan.md) §9.
 - The trade-off vs the old systemd timers: nothing fires while cybermole
   itself is down (hence the catch-up above). Job commands run as the
   cybermole user, on the app's socket, per the security model — the terminal
@@ -456,7 +456,7 @@ MCP (its tools 1:1 with the route table, registered by the tree's
 `.pi/mcp.json`; `cybermole-apps` is disabled there on purpose). Every
 face — the pages, the app's tools, the root agent's `describe`/`call` —
 answers the same Result JSON with the same closed error codes. Design:
-[docs/apps-plan.md](docs/apps-plan.md) (status: shipped).
+[docs/plans/apps-plan.md](docs/plans/apps-plan.md) (status: shipped).
 
 The image ships one finished tree as living documentation:
 **`apps-reference/notes`** — the notes/journal reference app, built
@@ -525,7 +525,7 @@ part of the plain stack and its proxy is wired on by default — set
 ### The privilege split (two containers)
 
 `docker compose up` boots three services from one image (prod shape of
-[DESIGN_REVIEW.md](DESIGN_REVIEW.md) §1.1):
+[DESIGN_REVIEW.md](docs/reports/DESIGN_REVIEW.md) §1.1):
 
 - **cybermole** (uid `node`, the image's user) — serves the HTTP/WS app from
   the image's copy at `/opt/cybermole`, which is **root-owned**: a prompt
@@ -588,7 +588,7 @@ place, unused, on existing hosts.
 
 The Zed/KasmVNC webapp is gone (streaming a desktop GUI was the poor fit:
 separate basic auth, one instance, no per-folder URLs, a launcher
-container — see [docs/editor-webapp.md](docs/editor-webapp.md) for the
+container — see [docs/guides/editor-webapp.md](docs/guides/editor-webapp.md) for the
 full story of what replaced it). The editor is VSCodium's **reh-web**
 build — self-hosted VS Code in the browser with server-side files —
 served through cybermole's own **same-origin `/editor` proxy** behind the
@@ -1081,7 +1081,7 @@ standalone-workspace install above (`CYBERMOLE_AGENT_COMMAND`).
   within 30 s. The login rate limiter stays in memory (a restart resets
   it).
 - **Serving and working are privilege-split by default in containers**
-  ([DESIGN_REVIEW.md](DESIGN_REVIEW.md) §1.1): pi reads untrusted input
+  ([DESIGN_REVIEW.md](docs/reports/DESIGN_REVIEW.md) §1.1): pi reads untrusted input
   (repos, web pages, tool output), so a prompt injection must not be able
   to rewrite the server or replace the login credential. In the compose
   shape the server runs as uid `node` off a root-owned `/opt/cybermole` and
@@ -1173,7 +1173,7 @@ standalone-workspace install above (`CYBERMOLE_AGENT_COMMAND`).
   refresh; same gate, never cached by the service worker
 - `src/schemas` — node-free zod schemas shared by server and browser
   (request bodies, WS frames, branded IDs); `src/types` — the `Result`
-  contract and branded ID types. Conventions: `docs/CODE_STYLE.md`
+  contract and branded ID types. Conventions: `docs/conventions/CODE_STYLE.md`
 - `server` — the Node server: origin + session gate, login/logout,
   assets, the Astro SSR handler (pages + API), WS → node-pty → tmux, the
   same-origin `/editor` reverse proxy (HTTP streaming + raw WS
@@ -1198,7 +1198,7 @@ standalone-workspace install above (`CYBERMOLE_AGENT_COMMAND`).
   tmux server config — together they're the shipped "environment config"
 - `editor/` — the VSCodium reh-web editor image (pinned tarball, uid 2000)
   for the compose `editor` profile — `Dockerfile` + entrypoint
-  ([docs/editor-webapp.md](docs/editor-webapp.md))
+  ([docs/guides/editor-webapp.md](docs/guides/editor-webapp.md))
 - `Dockerfile`, `docker-entrypoint.sh`, `docker-workspace-entrypoint.sh`,
   `compose.yaml` — one image, two prod roles (web: serves root-owned
   `/opt/cybermole`; workspace: uid 2000, owns tmux + the terminals) + the

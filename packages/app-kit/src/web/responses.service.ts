@@ -1,7 +1,7 @@
 // responses.service.ts — the generic half of the Result→HTTP mapping: the
-// ONLY place an error code becomes a status (docs/CODE_STYLE.md §3) for
+// ONLY place an error code becomes a status (docs/conventions/CODE_STYLE.md §3) for
 // code that has no domain mappers of its own. Moved from cybermole's
-// src/lib/web/responses.service.ts by task/app-kit (docs/apps-plan.md §5)
+// src/lib/web/responses.service.ts by task/app-kit (docs/plans/apps-plan.md §5)
 // — that file keeps the console's domain mappers (jobs, apps, workspaces,
 // …) and imports these; failure bodies here are byte-identical to what the
 // console's routes have always answered.

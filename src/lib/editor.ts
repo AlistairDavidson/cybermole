@@ -1,5 +1,5 @@
 // editor.ts — the same-origin editor proxy's policy surface
-// (docs/editor-webapp.md, docs/editor-spike.md). The proxy itself —
+// (docs/guides/editor-webapp.md, docs/plans/editor-spike.md). The proxy itself —
 // streaming HTTP + raw WS piping — lives in server/main.ts next to the
 // terminal's; everything that is a POLICY lives here so tests cover it
 // without booting the server: which paths belong to the editor, the
@@ -74,7 +74,7 @@ function basePath(base: string): string {
  * - `X-Frame-Options: SAMEORIGIN` overrides the global DENY — the console
  *   frames the editor in an iframe on the same origin.
  * - A CSP that fits the VS Code web workbench (pinned by the spike against
- *   a real browser; docs/editor-spike.md): blob/data workers and images,
+ *   a real browser; docs/plans/editor-spike.md): blob/data workers and images,
  *   same-origin frames (the web-worker extension host iframe), and inline
  *   script/style for the boot HTML. connect-src deliberately does NOT
  *   include the extension marketplace (open-vsx.org): across four full
@@ -109,7 +109,7 @@ export const EDITOR_HTML_REWRITE_MAX_BYTES = 262_144;
 /** The configuration defaults the proxy injects into the workbench boot
  *  document, making the editor follow the BROWSER's color scheme
  *  (task/theme-browser). Background, all verified against the vendored
- *  reh-web build (docs/editor-webapp.md pins it):
+ *  reh-web build (docs/guides/editor-webapp.md pins it):
  *
  *  - The workbench client parses only folder/workspace/ew URL params —
  *    a ?theme= param (vscode.dev's wrapper feature) does nothing here.

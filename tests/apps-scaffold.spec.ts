@@ -1,4 +1,4 @@
-// apps-scaffold.spec.ts — task/app-scaffold (docs/apps-plan.md §1/§6/§10)
+// apps-scaffold.spec.ts — task/app-scaffold (docs/plans/apps-plan.md §1/§6/§10)
 // e2e: the WHOLE build loop through the cybermole-apps verbs, against the
 // shared webServer's real sockets — scaffold a REAL app into the hermetic
 // apps root (the tree lands in WORKSPACE/apps), check it green (the gate,

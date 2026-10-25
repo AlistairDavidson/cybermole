@@ -1,5 +1,5 @@
 // output.ts — the CLI's console plumbing (task/jobs-cli,
-// docs/jobs-agent-plan.md §5): injected writers so the unit tests
+// docs/plans/jobs-agent-plan.md §5): injected writers so the unit tests
 // capture stdout/stderr in-process (no spawning for every verb), plus
 // the small presentation helpers — aligned tables, local timestamps,
 // truncation — every verb shares. Plain process.stdout/stderr writes on

@@ -1,5 +1,5 @@
 // jobs.ts — the `cybermole-cli jobs` verb group (task/jobs-cli,
-// docs/jobs-agent-plan.md §5): every user action on the /jobs page has
+// docs/plans/jobs-agent-plan.md §5): every user action on the /jobs page has
 // a verb here, and each verb is a THIN client over the internal API's
 // route of the same meaning (server/internal-api.ts, plan §4) — same
 // path, same body, same answer; no parallel logic to drift. Human

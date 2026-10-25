@@ -94,7 +94,7 @@ export const envSchema = {
   // Like CYBERMOLE_COMMAND, whitespace-split by the spawner.
   CYBERMOLE_AGENT_COMMAND: { type: 'string', context: 'server', access: 'secret', optional: true },
   CYBERMOLE_TMUX_CONF: { type: 'string', context: 'server', access: 'secret', optional: true },
-  // task/jobs-socket (docs/jobs-agent-plan.md §3): the internal jobs
+  // task/jobs-socket (docs/plans/jobs-agent-plan.md §3): the internal jobs
   // API's unix socket path. Unset = the shape default (env.ts
   // readInternalApiSocket: /run/cybermole/cybermole.sock when that shared dir
   // exists — the compose privilege-split shape — else <state
@@ -102,7 +102,7 @@ export const envSchema = {
   // then has no jobs socket). A set-but-non-absolute value stops the
   // server at boot, like the S3 vars.
   CYBERMOLE_SOCK: { type: 'string', context: 'server', access: 'secret', optional: true },
-  // task/app-host (docs/apps-plan.md §3): the app host's unix socket
+  // task/app-host (docs/plans/apps-plan.md §3): the app host's unix socket
   // path — the workspace-side mini-main that mounts registered apps'
   // built Astro middlewares under /apps/<slug>/. Unset = the shape default
   // (env.ts readAppsSocket: /run/cybermole/apps.sock when that shared dir
@@ -113,7 +113,7 @@ export const envSchema = {
   // boot, like the S3 vars — the CYBERMOLE_SOCK rules verbatim, one env
   // every client reads.
   CYBERMOLE_APPS_SOCK: { type: 'string', context: 'server', access: 'secret', optional: true },
-  // task/app-scaffold (docs/apps-plan.md §2/§6): the root under which the
+  // task/app-scaffold (docs/plans/apps-plan.md §2/§6): the root under which the
   // cybermole-apps MCP scaffolds app trees (<root>/<slug>). Unset = the shape
   // default (env.ts readAppsRoot): /workspace/apps when /workspace exists —
   // the COMPOSE WORKSPACE VOLUME owns the default: app trees are workspace-
@@ -154,7 +154,7 @@ export const envSchema = {
     access: 'secret',
     default: 'us-east-1',
   },
-  // task/ws-editor (docs/editor-webapp.md): the VSCodium reh-web editor's
+  // task/ws-editor (docs/guides/editor-webapp.md): the VSCodium reh-web editor's
   // upstream on the compose network (e.g. http://editor:3000). THE single
   // switch — unset/empty = the editor is off: /editor/* answers 404 and the
   // console hides its affordances. Validated at boot (env.ts

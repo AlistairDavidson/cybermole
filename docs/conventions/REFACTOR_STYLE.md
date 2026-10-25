@@ -1,6 +1,6 @@
 # REFACTOR_STYLE.md
 
-Supplement to `docs/CODE_STYLE.md`, for porting existing cybermole code into
+Supplement to `docs/conventions/CODE_STYLE.md`, for porting existing cybermole code into
 those conventions. Correctness only; formatting stays as the surrounding
 code has it.
 

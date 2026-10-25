@@ -1,5 +1,5 @@
 // sqlite.ts — the node:sqlite db helper pattern an app's own data/app.db
-// uses (docs/apps-plan.md §2/§5), extracted from cybermole's state db
+// uses (docs/plans/apps-plan.md §2/§5), extracted from cybermole's state db
 // (src/lib/db.ts) by task/app-kit: the console keeps its schema and
 // migrations there and extends the kit's class here.
 //
@@ -24,7 +24,7 @@
 //   own execute() is async — it would make every caller async for nothing.
 // - databaseRead()/databaseUpdate() are the db boundary for callers: a
 //   thrown sqlite error becomes a database_error failure Result instead of
-//   propagating (docs/CODE_STYLE.md §2).
+//   propagating (docs/conventions/CODE_STYLE.md §2).
 //
 // NB: node:sqlite still prints a one-line ExperimentalWarning when it first
 // loads. Expected.
@@ -256,7 +256,7 @@ export class SqliteDb {
 
   // The typed execution half of createQb(). These throw on a sqlite error,
   // like node:sqlite itself: callers wrap them in databaseRead()/
-  //  databaseUpdate() — the boundary (docs/CODE_STYLE.md §2).
+  //  databaseUpdate() — the boundary (docs/conventions/CODE_STYLE.md §2).
 
   /** Every row a select returns, typed by the query. */
   all<R>(query: Compilable<R>): R[] {

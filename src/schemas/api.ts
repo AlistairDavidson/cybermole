@@ -1,5 +1,5 @@
 // api.ts — zod schemas for the JSON request bodies the REST endpoints
-// accept. Node-free (docs/CODE_STYLE.md §5): the API routes
+// accept. Node-free (docs/conventions/CODE_STYLE.md §5): the API routes
 // (src/pages/api/**) parse with them via parseAndValidateAPIRequest, the
 // login route in server/main.ts with safeParse, and forms can validate
 // client-side against the same definitions. A failed parse is a 400 whose
@@ -45,7 +45,7 @@ export const autoUpdateBody = z.object({
 });
 
 // ---------- workspaces-plan §6: apps / workspaces / terminals bodies ----------
-// (docs/workspaces-plan.md, branch task/ws-schema.) The name checks are
+// (docs/plans/workspaces-plan.md, branch task/ws-schema.) The name checks are
 // split by family: save_app/save_workspace carry invalid_name as a DOMAIN
 // code (the domains trim and slugify — normalization is not validation),
 // so these schemas only type and cap the strings. The terminal families

@@ -34,7 +34,7 @@ the plan as agreed — the historical record, unchanged.
 - **Same stack, same standards as the console.** Astro SSR (middleware
   mode) + Web Awesome (astro-lit, declarative shadow DOM) + preact
   islands with signals for client state + zod + the Result family +
-  `node:sqlite`. Apps follow docs/CODE_STYLE.md; the scaffold bakes the
+  `node:sqlite`. Apps follow docs/conventions/CODE_STYLE.md; the scaffold bakes the
   conventions in so agents inherit them by construction.
 - **The appliance split stands** (jobs-agent-plan §0). The web container
   serves root-owned code and **never imports app code**. Apps run in the

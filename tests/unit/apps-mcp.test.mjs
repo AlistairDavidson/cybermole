@@ -1,4 +1,4 @@
-// apps-mcp.test.mjs — task/app-scaffold (docs/apps-plan.md §6/§10) units:
+// apps-mcp.test.mjs — task/app-scaffold (docs/plans/apps-plan.md §6/§10) units:
 // the cybermole-apps MCP's three halves.
 //   scaffold (src/lib/apps-scaffold.ts): REAL tree-writing against a tmp
 //     apps root — template copy with slug/base/name baking, the composed

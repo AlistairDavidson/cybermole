@@ -1,5 +1,5 @@
 // args.ts — the CLI's thin option parser (task/jobs-cli,
-// docs/jobs-agent-plan.md §5): long options (--flag, --flag=value,
+// docs/plans/jobs-agent-plan.md §5): long options (--flag, --flag=value,
 // --flag value), short aliases (-a value), and `--` to stop option
 // parsing. No clustering, no quoting tricks — usage errors (unknown
 // option, an option missing its value) come back as strings for the

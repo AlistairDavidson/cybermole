@@ -1,13 +1,13 @@
 // responses.service.ts — Results → HTTP Responses (the relevant half of
 // soothing-booking's responses service, plus cybermole's domain mappers).
-// The ONLY place an error code becomes a status (docs/CODE_STYLE.md §3):
+// The ONLY place an error code becomes a status (docs/conventions/CODE_STYLE.md §3):
 // every mapper is an exhaustive switch, so a new code is a type error
 // here until it gets a status. Failure bodies are
 // `{ error: <human message>, code, … }` — `error` stays the text the
 // browser shows (console toasts, /jobs, /settings read it).
 // Type-only imports from the domain modules: safe for the Astro bundle.
 //
-// task/app-kit (docs/apps-plan.md §5): the GENERIC half of this mapping
+// task/app-kit (docs/plans/apps-plan.md §5): the GENERIC half of this mapping
 // (jsonResponse, successResponse, firstIssueText, validationFailureResponse)
 // moved to @cybermole/app-kit's web/responses.service.ts; this file keeps
 // the console's domain mappers and imports the generic pieces from the kit.
@@ -177,7 +177,7 @@ export function runLogResponse(data: RunLogData): Response {
   });
 }
 
-// task/ws-schema (docs/workspaces-plan.md §6): the apps / workspaces /
+// task/ws-schema (docs/plans/workspaces-plan.md §6): the apps / workspaces /
 // terminals families → statuses. server_not_running and tmux_error on the
 // terminal family cannot fire until the spawn lands (task/ws-terminal)
 // but are mapped now — the union is closed.

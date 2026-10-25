@@ -1,5 +1,5 @@
 // frames.ts — the terminal WebSocket's client→server frames. Node-free
-// (docs/CODE_STYLE.md §5): server/main.ts validates every frame with
+// (docs/conventions/CODE_STYLE.md §5): server/main.ts validates every frame with
 // parseClientMsg, and the browser's agent-terminal.ts sends the ClientMsg
 // type z.infer'd from the same schemas — the protocol is described once.
 import { z } from 'zod';

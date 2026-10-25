@@ -5,16 +5,16 @@ README.md.
 
 ## Code conventions
 
-`docs/CODE_STYLE.md` covers the correctness rules: Result families with
+`docs/conventions/CODE_STYLE.md` covers the correctness rules: Result families with
 closed error codes, branded IDs, shared node-free schemas, thin Astro API
 routes behind the main.ts gate, HTML web components, and forms.
-`docs/REFACTOR_STYLE.md` covers porting older code into them. Formatting
+`docs/conventions/REFACTOR_STYLE.md` covers porting older code into them. Formatting
 and comment density aren't prescribed; match the surrounding code.
 
 ## Testing
 
 Validation runs through the `cybermole-dev` MCP tools (registered by
-`.pi/mcp.json`, implemented in `tools/dev-mcp/` — docs/dev-test-mcp-plan.md):
+`.pi/mcp.json`, implemented in `tools/dev-mcp/` — docs/plans/dev-test-mcp-plan.md):
 `run_check`, `run_lint`, `run_format_check`, `run_build`, `run_unit_tests`,
 `run_e2e` — one per npm script below. Every tool answers ONE quiet envelope
 (`{passed, returncode, duration_s, quiet, timed_out, output, counts?,
