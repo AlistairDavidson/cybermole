@@ -157,15 +157,17 @@ test('the builder page: app groups with lifecycle chips, + app and no console gr
   await expect(alpha.locator('.open-app-btn')).toHaveClass(/not-serving/);
   await expect(alpha.locator('[data-new-ws]')).toHaveCount(1);
   await expect(alpha.locator('li[data-ws]')).toHaveCount(1); // the fixture's proj
-  // No console group here, and + app lives at the bottom.
+  // No cybermole group here (that group is / only; the fixture cwds also
+  // contain "cybermole", so the check pins the headings, not the rows), and
+  // + app lives at the bottom.
   await expect(page.locator('workspace-sidebar #new-app')).toHaveCount(1);
-  await expect(groups.filter({ hasText: 'console' })).toHaveCount(0);
+  await expect(groups.locator('h2 .g-name').filter({ hasText: 'cybermole' })).toHaveCount(0);
 
   // The console page is orchestration only: no app groups, no + app.
   await page.goto('/');
   await page.waitForSelector('workspace-sidebar .nav');
   await expect(page.locator('workspace-sidebar .ws-group')).toHaveCount(1);
-  await expect(page.locator('workspace-sidebar .ws-group h2 .g-name')).toHaveText('console');
+  await expect(page.locator('workspace-sidebar .ws-group h2 .g-name')).toHaveText('cybermole');
   await expect(page.locator('workspace-sidebar #new-app')).toHaveCount(0);
 });
 

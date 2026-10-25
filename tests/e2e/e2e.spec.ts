@@ -269,12 +269,12 @@ test('login lands on the console with the fixture workspace tree in the sidebar'
     { timeout: 10_000 },
   );
 
-  // The console page teaches orchestration only: the Console group (app_id
-  // NULL), no app groups, no + app (that moved to /builder — the split).
+  // The console page teaches orchestration only: the cybermole group
+  // (app_id NULL), no app groups, no + app (that moved to /builder — the split).
   const nav = page.locator('workspace-sidebar .nav');
   const groups = nav.locator('.ws-group');
   await expect(groups).toHaveCount(1);
-  await expect(groups.first().locator('h2 .g-name')).toHaveText('console');
+  await expect(groups.first().locator('h2 .g-name')).toHaveText('cybermole');
   await expect(groups.first().locator('li[data-ws]')).toHaveCount(2);
   await expect(groups.first()).toContainText('scratch');
   await expect(groups.first()).toContainText('deploy checklist');
@@ -1575,7 +1575,7 @@ test('the workspace filter matches names, hides empty groups, and survives the p
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText('deploy checklist');
   await expect(groups).toHaveCount(1);
-  await expect(groups.first().locator('h2 .g-name')).toHaveText('console');
+  await expect(groups.first().locator('h2 .g-name')).toHaveText('cybermole');
 
   // Names only: a fragment of a fixture's cwd matches nothing.
   await search.fill('cybermole-itest');

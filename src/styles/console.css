@@ -85,6 +85,16 @@ html.wa-light {
 }
 
 * { box-sizing: border-box; }
+
+/* ---- cybermole motion + layout tokens (mode-independent) ---- */
+:root {
+  /* Page-entry fade for the console shell: 150–250ms reads as arrival
+     without lagging navigation. Reduced motion skips it entirely. */
+  --cybermole-page-fade: 200ms;
+  /* The desktop nav collapsed to a rail: exactly the expand control. */
+  --cybermole-nav-rail: var(--wa-space-2xl);
+}
+
 html, body { height: 100%; min-height: 100%; margin: 0; padding: 0; }
 body {
   background: var(--wa-color-surface-default);
@@ -122,7 +132,16 @@ app-header wa-button.app-nav-link[aria-current='page']::part(button) {
 }
 
 /* ---- console-app: <wa-page> app shell ---- */
-console-app { display: block; height: 100dvh; }
+/* A quiet arrival: both console pages fade their shell in (CSS-driven;
+   reduced motion below skips it). Opacity only, so the terminal's
+   ResizeObserver never sees an intermediate layout. */
+@keyframes cybermole-page-enter {
+  from { opacity: 0; }
+}
+console-app {
+  display: block; height: 100dvh;
+  animation: cybermole-page-enter var(--cybermole-page-fade) var(--wa-transition-easing);
+}
 console-app wa-page { height: 100%; --menu-width: 300px; }
 console-app wa-page[view='mobile'] { --menu-width: auto; }
 console-app wa-page::part(menu) {
@@ -142,16 +161,44 @@ console-app main {
   display: flex; flex-direction: column; min-width: 0; height: 100%;
   padding: 0; /* wa-page pads <main> by default; the terminal wants it all */
 }
+/* The nav header hosts the desktop collapse control. It is static SSR
+   markup in the navigation-header slot, outside workspace-sidebar's
+   innerHTML re-render, so the 15s poll never touches it (AGENTS.md). */
 .nav-header {
-  /* beats wa-page's ::slotted padding (var(--wa-space-m) all around) */
+  /* beats wa-page's ::slotted padding (var(--wa-space-m) all around) and
+     its column flex-direction */
+  display: flex; flex-direction: row; align-items: center; justify-content: flex-end;
   padding: var(--wa-space-2xs) var(--wa-space-s);
-  align-items: center;
+  min-height: var(--wa-space-2xl);
 }
-.nav-header h1 {
-  display: flex; align-items: center; gap: var(--wa-space-2xs);
-  font-size: var(--wa-font-size-m); margin: 0;
+.nav-collapse { color: var(--wa-color-text-quiet); flex: none; }
+.nav-collapse::part(base) { padding-inline: var(--wa-space-2xs); }
+.nav-collapse:hover, .nav-collapse:focus-visible { color: var(--wa-color-brand-on-quiet); }
+/* One chevron per state; the other is display-none'd away. */
+.nav-collapse wa-icon.when-collapsed { display: none; }
+console-app[data-nav-collapsed] .nav-collapse wa-icon.when-open { display: none; }
+console-app[data-nav-collapsed] .nav-collapse wa-icon.when-collapsed { display: block; }
+/* Collapsed on wide viewports: the menu shrinks to a rail holding only the
+   expand control; the sidebar is hidden, not torn down. Narrow viewports
+   keep wa-page's own drawer (view='mobile'), where neither applies. */
+console-app[data-nav-collapsed] wa-page:not([view='mobile']) {
+  --menu-width: var(--cybermole-nav-rail);
 }
-.nav-header h1 wa-icon { color: var(--wa-color-brand-on-quiet); }
+console-app[data-nav-collapsed] wa-page:not([view='mobile']) workspace-sidebar { display: none; }
+console-app[data-nav-collapsed] .nav-header {
+  justify-content: center;
+  padding-inline: var(--wa-space-2xs);
+}
+console-app wa-page[view='mobile'] .nav-header { display: none; }
+/* The menu column eases between widths (track lengths interpolate in
+   Chromium; elsewhere it snaps). */
+console-app wa-page::part(body) {
+  transition: grid-template-columns var(--wa-transition-normal) var(--wa-transition-easing);
+}
+@media (prefers-reduced-motion: reduce) {
+  console-app { animation: none; }
+  console-app wa-page::part(body) { transition: none; }
+}
 
 /* ---- workspace-sidebar ---- */
 workspace-sidebar {
