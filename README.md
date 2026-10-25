@@ -248,7 +248,7 @@ editor's `?folder=`, and the editor opens it in its own container), and
 a writable `$HOME`:
 
 ```sh
-docker build -t cybermole-editor:local editor/
+docker build -t cybermole-editor:local deploy/editor/
 mkdir -p /tmp/cybermole-editor-home && chmod 777 /tmp/cybermole-editor-home
 docker run -d --name cybermole-editor-dev -p 127.0.0.1:13000:3000 \
   -u 2000:2001 -e CYBERMOLE_BASE=/ \
@@ -597,7 +597,7 @@ stack: `up -d` starts it and wires the proxy on
 (`CYBERMOLE_EDITOR_UPSTREAM` defaults to `http://editor:3000`); set that
 variable empty in `.env` to run without it — `/editor/*` then answers
 404 and the console hides its editor tab. Two services from a thin
-in-repo image (`editor/`, the pinned reh-web tarball):
+in-repo image (`deploy/editor/`, the pinned reh-web tarball):
 
 - **editor** (uid 2000) — `codium-server` on the compose network (publishes
   nothing), `--server-base-path ${CYBERMOLE_BASE%/}/editor` so its asset URLs
@@ -663,7 +663,7 @@ body.
 
 Two limits besides the app's own, for big files:
 
-- **nginx** — `deploy/nginx-cybermole.conf` allows the 5 GiB body
+- **nginx** — `deploy/nginx/cybermole.conf` allows the 5 GiB body
   (`client_max_body_size`) and streams bodies through
   (`proxy_request_buffering off`) instead of spooling each to disk first.
   A proxy left at nginx's 1 MiB default refuses uploads with its own 413.
@@ -868,11 +868,11 @@ root-owned global prefix that fails with EACCES; update by
 
 Front it with TLS — [`deploy/`](deploy/) has:
 
-- `nginx-cybermole.conf` — TLS reverse proxy with the WebSocket upgrade map
+- `nginx/cybermole.conf` — TLS reverse proxy with the WebSocket upgrade map
   (upstream is the published loopback port). One proxy hop, so the server
   runs with `CYBERMOLE_TRUST_PROXY=1` (compose sets it; set it yourself for a
   host install behind nginx)
-- `fail2ban-filter-cybermole.conf` + `fail2ban-jail.conf` — fail2ban watching
+- `fail2ban/filter-cybermole.conf` + `fail2ban/jail.conf` — fail2ban watching
   the nginx access log for failed logins (401/429 on the login POST)
 
 State is split by owner, like everything else in the two-container shape:
@@ -951,11 +951,11 @@ a single definition point:
   shell env, or a `.env` next to the file). Compose interpolates that one
   variable into both the build arg and the runtime env, so the image and
   the server can't drift apart on their own.
-- **[`deploy/nginx-cybermole.conf`](deploy/nginx-cybermole.conf)** — the named
+- **[`deploy/nginx/cybermole.conf`](deploy/nginx/cybermole.conf)** — the named
   capture at the head of the location regex, the file's only occurrence
   (marked with a comment; `proxy_pass` forwards the client's path
   unchanged, so the one literal both selects and names the prefix).
-- **[`deploy/fail2ban-filter-cybermole.conf`](deploy/fail2ban-filter-cybermole.conf)**
+- **[`deploy/fail2ban/filter-cybermole.conf`](deploy/fail2ban/filter-cybermole.conf)**
   — the POST path inside `failregex` (the login POST), likewise the
   file's only occurrence; the NOTE above it points here and at the nginx
   capture.
@@ -1197,13 +1197,14 @@ standalone-workspace install above (`CYBERMOLE_AGENT_COMMAND`).
   the shipped "environment config"
 - `cli/` — the `cybermole-cli` bin: the jobs verbs + `cybermole-cli mcp`,
   a zero-runtime-dep client over the internal socket
-- `editor/` — the VSCodium reh-web editor image (pinned tarball, uid 2000)
-  for the compose `editor` profile — `Dockerfile` + entrypoint
-  ([docs/guides/editor-webapp.md](docs/guides/editor-webapp.md))
-- `Dockerfile`, `docker-entrypoint.sh`, `docker-workspace-entrypoint.sh`,
-  `compose.yaml` — one image, two prod roles (web: serves root-owned
-  `/opt/cybermole`; workspace: uid 2000, owns tmux + the terminals) + the
-  slim prod default and toolchain dev targets
+- `Dockerfile` + `compose.yaml` — one image, two prod roles (web: serves
+  root-owned `/opt/cybermole`; workspace: uid 2000, owns tmux + the
+  terminals) + the slim prod default and toolchain dev targets
+- `deploy/` — `docker/` (the image's `docker-entrypoint.sh` +
+  `docker-workspace-entrypoint.sh`), `editor/` (the VSCodium reh-web
+  editor image — pinned tarball, uid 2000 — `Dockerfile` + entrypoint,
+  [docs/guides/editor-webapp.md](docs/guides/editor-webapp.md)), and the
+  host-side config: `nginx/`, `fail2ban/`, `loki/`, `grafana/`
 - `.agents/skills/` — Web Awesome docs as pi skills: `webawesome` (component
   API reference) + `webawesome-design` (layout/theming/tokens), copied
   version-locked from the installed package by `tools/build_webawesome_skills.py`

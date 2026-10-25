@@ -195,7 +195,7 @@ switched off. Pick one:
 
 ### 3.2 Reverse proxy and fail2ban
 
-- `deploy/nginx-cybermole.conf` now documents `CYBERMOLE_TRUST_PROXY=1`, and
+- `deploy/nginx/cybermole.conf` now documents `CYBERMOLE_TRUST_PROXY=1`, and
   compose sets it. On a host install behind nginx, set it yourself;
   otherwise every login shares nginx's address and one attacker can lock
   the owner out for 15 minutes.

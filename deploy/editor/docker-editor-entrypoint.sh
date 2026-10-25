@@ -31,7 +31,7 @@ export HOME=/home/workspace
 mkdir -p "$HOME"
 
 # Bundled extensions (image-pinned .vsixs at /opt/editor-bundled-extensions,
-# editor/Dockerfile) install into the home volume's extensions dir before
+# deploy/editor/Dockerfile) install into the home volume's extensions dir before
 # the server starts. A marker keyed on the .vsix set's hashes makes it a
 # no-op on later boots and re-runs exactly when the image's pins move;
 # installs are offline (local files — the CLI never touches the gallery),

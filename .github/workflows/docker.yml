@@ -11,8 +11,7 @@ on:
     paths:
       - Dockerfile
       - .dockerignore
-      - docker-entrypoint.sh
-      - docker-workspace-entrypoint.sh
+      - deploy/docker/**
       - compose.yaml
       - package.json
       - package-lock.json
@@ -27,8 +26,7 @@ on:
     paths:
       - Dockerfile
       - .dockerignore
-      - docker-entrypoint.sh
-      - docker-workspace-entrypoint.sh
+      - deploy/docker/**
       - compose.yaml
       - package.json
       - package-lock.json

@@ -17,7 +17,7 @@ shipped.
       ┌──────────┴────────────────┐
       │ https://cybermole…/           │  /  (console)      /editor/?folder=…  (iframe)
       └──────────┬────────────────┘
-        nginx TLS│ (one vhost — deploy/nginx-cybermole.conf; ws upgrades already mapped)
+        nginx TLS│ (one vhost — deploy/nginx/cybermole.conf; ws upgrades already mapped)
       ┌──────────┴───────────────────────────┐
       │ cybermole (uid node)                     │ server/main.ts
       │  origin check + session gate         │
@@ -38,7 +38,7 @@ you. It sits behind the session gate like every other route — logout /
 "log out everywhere" cut its sockets with the terminals (below). It never
 touches the tmux socket or web state.
 
-## The image (`editor/`)
+## The image (`deploy/editor/`)
 
 A thin in-repo image (the `zed/` precedent): Debian bookworm-slim + the
 **pinned** `vscodium-reh-web-linux-{x64,arm64}-<version>.tar.gz`

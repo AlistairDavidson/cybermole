@@ -3,7 +3,7 @@
 // One process: serves the Astro SSR build (pages via the middleware handler,
 // hashed assets statically), the REST API, and the WS→node-pty→tmux
 // terminal. Loopback by default; put it behind a TLS reverse proxy
-// (deploy/nginx-cybermole.conf). Config: CYBERMOLE_* env (README table).
+// (deploy/nginx/cybermole.conf). Config: CYBERMOLE_* env (README table).
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';

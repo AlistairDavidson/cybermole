@@ -126,7 +126,7 @@ services:
     working_dir: /opt/cybermole # serve the image copy — no /app volume anymore
     environment:
       CYBERMOLE_BASE: ${CYBERMOLE_BASE:-/}
-      # One proxy hop (deploy/nginx-cybermole.conf): rate limits key on the IP
+      # One proxy hop (deploy/nginx/cybermole.conf): rate limits key on the IP
       # nginx appended to X-Forwarded-For. Safe with the loopback-only
       # publish below — only local processes can reach the port directly.
       CYBERMOLE_TRUST_PROXY: 1
@@ -401,8 +401,8 @@ services:
       workspace-init:
         condition: service_completed_successfully
     build:
-      context: ./editor
-      args: # same pins as editor/Dockerfile's defaults; here so they drift visibly
+      context: ./deploy/editor
+      args: # same pins as deploy/editor/Dockerfile's defaults; here so they drift visibly
         VSCODIUM_VERSION: ${VSCODIUM_VERSION:-1.140.06880}
     image: cybermole-editor:local
     user: "workspace"
@@ -423,7 +423,7 @@ services:
   # state). Runs on every `up`; a no-op chown once right.
   editor-init:
     build:
-      context: ./editor
+      context: ./deploy/editor
       # Same pins as the editor service above: both build the same tag, so
       # an operator override must reach both builds — a default-pins
       # editor-init image would otherwise sit under the overridden tag (or
@@ -494,7 +494,7 @@ services:
       dev-editor-init:
         condition: service_completed_successfully
     build:
-      context: ./editor
+      context: ./deploy/editor
       args: # same pins as editor/editor-init: one tag, one pin
         VSCODIUM_VERSION: ${VSCODIUM_VERSION:-1.140.06880}
     image: cybermole-editor:local
@@ -515,7 +515,7 @@ services:
   dev-editor-init:
     profiles: ["dev"]
     build:
-      context: ./editor
+      context: ./deploy/editor
       args: # same pins again — one tag, one pin (editor-init's note)
         VSCODIUM_VERSION: ${VSCODIUM_VERSION:-1.140.06880}
     image: cybermole-editor:local
