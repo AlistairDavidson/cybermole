@@ -50,6 +50,8 @@ playwright fuzzer/monkeys? fuzz based integration testing
 
 ## Console features
 
+Popout should only pop out that one tab's contents
+
 app preview?
 
 self-naming workspaces

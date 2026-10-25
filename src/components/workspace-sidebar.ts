@@ -181,6 +181,11 @@ export class WorkspaceSidebar extends HTMLElement {
         'console',
         'console',
         st.workspaces.filter(w => w.appId === null),
+        // The console group keeps its + workspace (a plain console
+        // workspace: appId null, no build framing) — only + app moved to
+        // the builder page.
+        `<wa-button class="new-ws-btn" data-new-ws="" size="xs" appearance="plain" ` +
+          `title="new workspace in the console"><wa-icon name="plus" label="new workspace"></wa-icon></wa-button>`,
       );
     // The builder page: the portfolio join is the group list (it carries the
     // unregistered trees, exactly where "continue building" is the point);

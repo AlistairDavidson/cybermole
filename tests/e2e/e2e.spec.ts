@@ -293,6 +293,33 @@ test('login lands on the console with the fixture workspace tree in the sidebar'
   await expect(tabs.locator('.tab-new')).toHaveCount(1);
 });
 
+test("the console group's + workspace creates a console workspace through the dialog", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await login(page);
+  const group = page.locator('workspace-sidebar .ws-group[data-group="console"]');
+  await group.locator('[data-new-ws]').click();
+  // No folder field in this dialog; the note says where it'll start — the
+  // server default, the same cwd every console workspace uses.
+  await expect(page.locator('#workspace-dialog wa-input[name="cwd"]')).toHaveCount(0);
+  await expect(page.locator('#workspace-start')).toHaveText(`starts at ${WORKSPACE}`);
+  await page.fill('wa-input#workspace-name input', 'console made ws');
+  await page.click('#workspace-save');
+  // The row is the console's, auto-selected, with its first tab spawning.
+  const row = page.locator('workspace-sidebar li[data-ws].active');
+  await expect(row).toContainText('console made ws');
+  await expect(row).toHaveAttribute('title', WORKSPACE);
+  await expect(page.locator('terminal-tabs .tabs-bar .tab')).toHaveCount(1);
+  // Keep the fixture world clean for the later specs: delete it again.
+  await row.locator('[data-del-ws]').click();
+  await page.click('#confirm-delete-ok');
+  await expect(
+    page.locator('workspace-sidebar li[data-ws]').filter({ hasText: 'console made ws' }),
+  ).toHaveCount(0);
+  await expect(page.locator('workspace-sidebar li[data-ws].active')).toContainText('scratch');
+});
+
 test('a new workspace auto-opens its first terminal running the AGENT command; other tabs run the shell', async ({
   page,
 }) => {
