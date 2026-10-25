@@ -4,12 +4,16 @@
 // transport failures (socket unreachable or disabled).
 //
 // stdout is the protocol channel, so nothing logs to it.
-import * as http from 'node:http';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { readInternalApiSocket } from '../src/lib/platform/env';
+import {
+  requestInternalApi,
+  type InternalApiAnswer,
+  type InternalApiCall,
+} from '../src/lib/platform/internal-api-client';
 import { AppSlugSchema, JobNameSchema } from '@cybermole/app-kit';
 import {
   FiredAtSchema,
@@ -17,54 +21,6 @@ import {
   JobSaveSchema,
   JobValidateSchema,
 } from '../src/schemas/jobs';
-
-// ---------- internal API socket client ----------
-
-export interface InternalApiCall {
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
-  path: string;
-  /** Always sent with Content-Length: the internal API answers 411 to chunked bodies. */
-  body?: string;
-}
-
-export interface InternalApiAnswer {
-  status: number;
-  body: string;
-  headers: http.IncomingHttpHeaders;
-}
-
-/** Rejects on transport failure. `agent: false` keeps nothing open between
- *  calls, so the process exits as soon as pi closes stdin. */
-export function requestInternalApi(
-  socketPath: string,
-  call: InternalApiCall,
-): Promise<InternalApiAnswer> {
-  return new Promise((resolve, reject) => {
-    const headers: Record<string, string> = {};
-    if (call.body !== undefined) {
-      headers['content-type'] = 'application/json';
-      headers['content-length'] = String(Buffer.byteLength(call.body, 'utf8'));
-    }
-    const req = http.request(
-      { socketPath, method: call.method, path: call.path, headers, agent: false },
-      res => {
-        const chunks: Buffer[] = [];
-        res.on('data', (c: Buffer) => chunks.push(c));
-        res.on('error', reject);
-        res.on('end', () =>
-          resolve({
-            status: res.statusCode ?? 0,
-            body: Buffer.concat(chunks).toString('utf8'),
-            headers: res.headers,
-          }),
-        );
-      },
-    );
-    req.on('error', reject);
-    if (call.body === undefined) req.end();
-    else req.end(call.body);
-  });
-}
 
 // ---------- the tools ----------
 

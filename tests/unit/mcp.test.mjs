@@ -22,7 +22,8 @@ process.env.FAKE_TMUX_DIR = dir;
 process.env.PATH = `${fakeBin}:${process.env.PATH}`;
 
 const { startInternalApi } = await import('../../dist-server/server/internal-api.js');
-const { requestInternalApi } = await import('../../dist-server/server/mcp.js');
+const { requestInternalApi } =
+  await import('../../dist-server/src/lib/platform/internal-api-client.js');
 const { Scheduler, runLogPaths } = await import('../../dist-server/src/lib/jobs/jobs.js');
 const { StateDb } = await import('../../dist-server/src/lib/platform/db.js');
 const { Apps } = await import('../../dist-server/src/lib/apps/apps.js');
