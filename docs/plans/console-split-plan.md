@@ -1,6 +1,6 @@
 # The console split plan — an orchestration console and a builder page
 
-Status: **proposed**
+Status: **shipped**
 
 The console answers "who builds an app?" badly today because one page
 teaches two semantics: the sidebar nests agents under apps (nested =

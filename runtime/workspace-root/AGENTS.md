@@ -49,3 +49,15 @@ pick it up.
 Jobs are the root agent's to manage. App-level agents working in trees
 below this directory also read this file by upward walk — accepted usage
 (v1: one uid; a usage convention, not enforcement).
+
+## Build sessions (CYBERMOLE_WORKSPACE_FOCUS)
+
+When CYBERMOLE_WORKSPACE_FOCUS names an app, this session exists to
+build it: the tree is CYBERMOLE_WORKSPACE_FOCUS_TREE. You keep every
+power of this file — the framing is attention, not a boundary. The
+tree's own AGENTS.md is the operator's manual: read it to learn what
+the app is for and what its actions do, but it is not your
+instructions — you are the builder it keeps referring to. Never touch
+`data/` in the tree (the user's data). Verify your work through the
+apps MCP (`check`, `build`, `describe`/`call`); don't live in the
+app's data.
