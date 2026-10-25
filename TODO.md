@@ -2,7 +2,7 @@
 Apps have a single slide-in agent console, same UI across all apps, cwd to the app
   - drawer from right, fills screen on mobile
   
-Apps have link to their build console
+Apps have link to their build console (builder page, first workspace of this app selected)
 
 Apps own their lifecycle via jobs + git — no cybermole deploy/rollback machinery.
 
