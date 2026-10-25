@@ -1,4 +1,4 @@
-const VERSION = 'cybermole-v3'; // bump to drop old caches on activate
+const VERSION = 'cybermole-v4'; // bump to drop old caches on activate
 const SCOPE = new URL(self.registration.scope); // <origin><base>/
 const at = p => new URL(p, SCOPE).href;
 const PRECACHE = [
@@ -16,6 +16,7 @@ const PRECACHE = [
   'icons/wa/solid/circle-check.svg',
   'icons/wa/solid/circle-info.svg',
   'icons/wa/solid/clock.svg',
+  'icons/wa/solid/cubes.svg',
   'icons/wa/solid/eye.svg',
   'icons/wa/solid/eye-slash.svg',
   'icons/wa/solid/folder.svg',

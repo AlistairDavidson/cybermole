@@ -32,6 +32,7 @@ import {
 import * as tmux from '../terminals/tmux';
 import type { AppsServing } from '../apps/apps-serving';
 import { joinServing } from '../apps/apps-serving';
+import { joinAppsStatus, type AppsStatusData } from '../apps/apps-status';
 import type { EditorUpstream } from '../terminals/editor';
 import type { CalendarCheck, ConsoleState, SettingsState } from './types';
 import type {
@@ -50,6 +51,13 @@ export type ConsoleStateFailure = ResultFailure<
   ConsoleStateErrorCode
 >;
 export type ConsoleStateResult = ConsoleStateSuccess | ConsoleStateFailure;
+
+/** GET /api/apps/status: the builder page's portfolio join. An unreachable
+ *  or off app host is data (every app reads unmounted), never an error. */
+export type AppsStatusErrorCode = 'database_error';
+export type AppsStatusSuccess = ResultSuccess<'apps_status', AppsStatusData>;
+export type AppsStatusFailure = ResultFailure<'apps_status', AppsStatusData, AppsStatusErrorCode>;
+export type AppsStatusResult = AppsStatusSuccess | AppsStatusFailure;
 
 /** database_error is shown as an error, never as "off" or "never checked". */
 export type SettingsStateErrorCode = 'database_error';
@@ -94,6 +102,13 @@ export interface CybermoleServices {
   workspaces: Workspaces;
   /** GET /api/state */
   consoleState(): Promise<ConsoleStateResult>;
+  /** GET /api/apps/status — the builder page's app list (rows × mounted ×
+   *  built/stale, plus unregistered trees), cached server-side so the
+   *  page's 15 s poll cannot turn into an fs storm. */
+  appsStatus(): Promise<AppsStatusResult>;
+  /** Drops the appsStatus cache: app-row routes call it so the user's own
+   *  create/delete is never hidden behind the TTL. */
+  invalidateAppsStatus(): void;
   /** GET /api/settings: paths and versions, never credentials. */
   settingsState(): SettingsStateResult;
   /** POST /api/settings: a string sets an override, null clears, absent keeps. */
@@ -130,6 +145,8 @@ export interface ServiceDeps {
   liveSessionNames: () => Promise<Set<TmuxSessionName>>;
   /** Off or dead app host degrades to serving:false. */
   appsServing: Pick<AppsServing, 'info'>;
+  /** Test seam for the appsStatus cache clock. */
+  now?: () => number;
 }
 
 export function createServices(deps: ServiceDeps): CybermoleServices {
@@ -139,6 +156,11 @@ export function createServices(deps: ServiceDeps): CybermoleServices {
     username: () => auth.username(),
     killSession: deps.killSession,
   });
+  // The status join walks every app tree (mtimes); ~10 s under the 15 s
+  // poll keeps one walk per window at most.
+  const APPS_STATUS_TTL_MS = 10_000;
+  let appsStatusCache: { data: AppsStatusData; at: number } | null = null;
+  const clock = (): number => deps.now?.() ?? Date.now();
   const workspaces = new Workspaces({
     db: stateDb,
     username: () => auth.username(),
@@ -188,6 +210,62 @@ export function createServices(deps: ServiceDeps): CybermoleServices {
           workspaces: tree.data.workspaces,
         },
       } satisfies ConsoleStateSuccess;
+    },
+
+    async appsStatus() {
+      const fail = (errorMessage: string) =>
+        ({
+          ok: false,
+          resultType: 'apps_status',
+          errorCode: 'database_error',
+          errorMessage,
+        }) satisfies AppsStatusFailure;
+      const at = clock();
+      if (appsStatusCache !== null && at - appsStatusCache.at < APPS_STATUS_TTL_MS)
+        return {
+          ok: true,
+          resultType: 'apps_status',
+          data: appsStatusCache.data,
+        } satisfies AppsStatusSuccess;
+      const listed = apps.listApps();
+      if (!listed.ok) return fail(listed.errorMessage ?? 'could not read apps');
+      // A dead or off app host degrades to unmounted rows, never a failed read.
+      const info = await deps.appsServing.info();
+      const host = info.reachable
+        ? info.status !== null
+          ? {
+              booted: info.status.booted,
+              mounted: [...info.status.mounted].map(slug => ({ slug })),
+              skipped: [...info.status.skipped.entries()].map(([slug, reason]) => ({
+                slug,
+                reason,
+              })),
+            }
+          : { booted: false, mounted: [], skipped: [] }
+        : {
+            booted: false,
+            mounted: [],
+            skipped: listed.data.apps.map(app => ({
+              slug: app.slug,
+              reason: info.failureReason ?? 'app host unreachable',
+            })),
+          };
+      const data = joinAppsStatus(
+        cfg.appsRoot,
+        listed.data.apps.map(app => ({
+          id: app.id,
+          name: app.name,
+          slug: app.slug,
+          cwd: app.cwd,
+        })),
+        host,
+      );
+      appsStatusCache = { data, at };
+      return { ok: true, resultType: 'apps_status', data } satisfies AppsStatusSuccess;
+    },
+
+    invalidateAppsStatus(): void {
+      appsStatusCache = null;
     },
 
     settingsState() {

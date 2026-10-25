@@ -26,7 +26,11 @@ import type {
   RenameTerminalFailure,
   SaveWorkspaceFailure,
 } from '../terminals/workspaces';
-import type { ConsoleStateFailure, SettingsStateFailure } from '../platform/services';
+import type {
+  AppsStatusFailure,
+  ConsoleStateFailure,
+  SettingsStateFailure,
+} from '../platform/services';
 import type { PiUpdateFailure, PiUpdateResult } from '../platform/settings';
 import type {
   SaveTerminalDefaultsFailure,
@@ -340,6 +344,11 @@ export function piUpdateResponse(r: PiUpdateResult): Response {
 
 export function consoleStateFailureResponse(f: ConsoleStateFailure): Response {
   // One-member union (here and below): a second code fails to compile.
+  const code: 'database_error' = f.errorCode;
+  return jsonResponse({ error: f.errorMessage ?? 'database error', code }, 500);
+}
+
+export function appsStatusFailureResponse(f: AppsStatusFailure): Response {
   const code: 'database_error' = f.errorCode;
   return jsonResponse({ error: f.errorMessage ?? 'database error', code }, 500);
 }

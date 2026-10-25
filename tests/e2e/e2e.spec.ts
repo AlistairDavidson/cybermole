@@ -269,17 +269,16 @@ test('login lands on the console with the fixture workspace tree in the sidebar'
     { timeout: 10_000 },
   );
 
-  // Console group first, then apps by sort_order.
+  // The console page teaches orchestration only: the Console group (app_id
+  // NULL), no app groups, no + app (that moved to /builder — the split).
   const nav = page.locator('workspace-sidebar .nav');
   const groups = nav.locator('.ws-group');
-  await expect(groups).toHaveCount(2);
+  await expect(groups).toHaveCount(1);
   await expect(groups.first().locator('h2 .g-name')).toHaveText('console');
-  await expect(groups.nth(1).locator('h2 .g-name')).toHaveText('alpha app');
   await expect(groups.first().locator('li[data-ws]')).toHaveCount(2);
   await expect(groups.first()).toContainText('scratch');
   await expect(groups.first()).toContainText('deploy checklist');
-  await expect(groups.nth(1).locator('li[data-ws]')).toHaveCount(1);
-  await expect(groups.nth(1)).toContainText('proj');
+  await expect(page.locator('workspace-sidebar #new-app')).toHaveCount(0);
   // One live-terminal badge per row (scratch's second tab is the dead fixture).
   await expect(groups.first().locator('li[data-ws] wa-badge')).toHaveCount(2);
   await expect(groups.first().locator('li[data-ws].active')).toHaveCount(1);
@@ -292,114 +291,6 @@ test('login lands on the console with the fixture workspace tree in the sidebar'
   await expect(tabs.locator('.tab').nth(1).locator('.tab-dot')).not.toHaveClass(/live/);
   await expect(tabs.locator('.editor-tab')).toHaveCount(0);
   await expect(tabs.locator('.tab-new')).toHaveCount(1);
-});
-
-test("console flow: create app (with a cwd) → workspace (starts at the app's cwd) → new terminal → live tab → input round-trips; close kills the session", async ({
-  page,
-}) => {
-  test.setTimeout(90_000);
-  await login(page);
-  await page.waitForFunction(() => customElements.get('validation-enhancer-zod') !== undefined);
-
-  // The empty-name attempts below must POST nothing.
-  const posts: string[] = [];
-  page.on('request', r => {
-    if (r.method() === 'POST') posts.push(new URL(r.url()).pathname);
-  });
-
-  // An empty name is blocked in the browser.
-  await page.click('workspace-sidebar #new-app');
-  await page.click('#app-save');
-  await expect(page.locator('#app-name-error')).toHaveText('name is required');
-  expect(posts).toEqual([]);
-  // This app's workspaces start at its cwd.
-  const appDir = `${WORKSPACE}/flow-app-dir`;
-  fs.mkdirSync(appDir, { recursive: true });
-  await page.fill('wa-input#app-name input', 'Flow App');
-  await page.fill('wa-input#app-cwd input', appDir);
-  await page.click('#app-save');
-  const group = page.locator('workspace-sidebar .ws-group[data-group="flow-app"]');
-  await expect(group.locator('h2 .g-name')).toHaveText('Flow App');
-
-  // No folder field in this dialog; the hint says where it'll start.
-  await group.locator('[data-new-ws]').click();
-  await expect(page.locator('#workspace-dialog wa-input[name="cwd"]')).toHaveCount(0);
-  await expect(page.locator('#workspace-start')).toHaveText(`starts at ${appDir}`);
-  await page.click('#workspace-save');
-  await expect(page.locator('#workspace-name-error')).toHaveText('name is required');
-  expect(posts.filter(p => p === '/api/workspaces')).toEqual([]);
-  await page.fill('wa-input#workspace-name input', 'flow ws');
-  await page.click('#workspace-save');
-  // The workspace auto-opened its agent tab (cmd.sh's agent banner), and its
-  // cwd is the app's, not the suite default.
-  const flowRow = page.locator('workspace-sidebar li[data-ws].active');
-  await expect(flowRow).toContainText('flow ws');
-  await expect(flowRow).toHaveAttribute('title', appDir);
-  await expect(page.locator('terminal-tabs .tabs-bar .tab')).toHaveCount(1);
-  const agentTab = await page.locator('terminal-tabs .tabs-bar .tab').getAttribute('data-term');
-  await expect(page.locator(`terminal-tabs .tab[data-term="${agentTab}"] .tab-dot`)).toHaveClass(
-    /live/,
-    { timeout: 10_000 },
-  );
-  await waitForTermText(page, AGENT_MARKER, 20_000);
-  await expect(paneStatus(page, '.ok')).toContainText(`attached: t-${agentTab}`);
-
-  // The + button opens a second tab running the shell command (default banner).
-  await page.click('terminal-tabs .tab-new');
-  await expect(page.locator('terminal-tabs .tabs-bar .tab')).toHaveCount(2);
-  const tabId = await page.locator('terminal-tabs .tabs-bar .tab.active').getAttribute('data-term');
-  expect(tabId).toMatch(/^[0-9a-f-]{36}$/);
-  expect(tabId).not.toBe(agentTab);
-  await expect(page.locator(`terminal-tabs .tab[data-term="${tabId}"] .tab-dot`)).toHaveClass(
-    /live/,
-    { timeout: 10_000 },
-  );
-  await waitForTermText(page, MARKER, 20_000);
-  await expect(paneStatus(page, '.ok')).toContainText(`attached: t-${tabId}`);
-
-  // $((41+1)) tells the shell's output (TYPIST_42) from the local echo.
-  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
-  await page.keyboard.type('echo TYPIST_$((41+1))\n');
-  await waitForTermText(page, 'TYPIST_42', 10_000);
-
-  // Check the cwd with a `pwd` round trip: tmux's #{pane_current_path}
-  // resolves empty under gVisor.
-  expect(tmuxStatus(['has-session', '-t', `t-${tabId}`])).toBe(0);
-  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
-  await page.keyboard.type('pwd\n');
-  await waitForTermText(page, appDir, 10_000);
-
-  await page.click(`terminal-tabs .tab[data-term="${tabId}"] .tab-close`);
-  // an untitled tab is named by its uuid prefix
-  await expect(page.locator('#confirm-delete-text')).toContainText('terminal');
-  await expect(page.locator('#confirm-delete-text')).toContainText(tabId!.slice(0, 8));
-  await page.click('#confirm-delete-ok');
-  // The agent tab and its session remain.
-  await expect(page.locator('terminal-tabs .tabs-bar .tab')).toHaveCount(1);
-  await expect
-    .poll(() => tmuxStatus(['has-session', '-t', `t-${tabId}`]), { timeout: 10_000 })
-    .not.toBe(0);
-  expect(tmuxStatus(['has-session', '-t', `t-${agentTab}`])).toBe(0);
-  // Closing the last tab shows the empty prompt.
-  await page.click(`terminal-tabs .tab[data-term="${agentTab}"] .tab-close`);
-  await page.click('#confirm-delete-ok');
-  await expect(page.locator('terminal-tabs .tabs-bar .tab')).toHaveCount(0);
-  await expect(page.locator('.tabs-empty-terminals')).toBeVisible();
-
-  // Deleting the workspace falls back to the first remaining one.
-  await page.locator('workspace-sidebar li[data-ws].active [data-del-ws]').click();
-  await page.click('#confirm-delete-ok');
-  await expect(
-    page.locator('workspace-sidebar li[data-ws]').filter({ hasText: 'flow ws' }),
-  ).toHaveCount(0);
-  await expect(page.locator('workspace-sidebar li[data-ws].active')).toContainText('scratch');
-
-  await page.locator('workspace-sidebar .ws-group[data-group="flow-app"] [data-del-app]').click();
-  await expect(page.locator('#confirm-delete-text')).toContainText('Flow App');
-  await page.click('#confirm-delete-ok');
-  await expect(page.locator('workspace-sidebar .ws-group[data-group="flow-app"]')).toHaveCount(0);
-  await expect(page.locator('workspace-sidebar .ws-group')).toHaveCount(2);
-  // (The zero-workspace empty state is covered by the restart spec.)
 });
 
 test('a new workspace auto-opens its first terminal running the AGENT command; other tabs run the shell', async ({
@@ -1671,9 +1562,13 @@ test('the workspace filter matches names, hides empty groups, and survives the p
   await expect(rows).toHaveCount(0);
   await expect(groups).toHaveCount(0);
 
-  // Escape clears. Earlier specs leave workspaces behind, so count what the db holds.
-  const total = (await api(page, 'GET', '/api/state')).json.workspaces.length;
-  expect(total).toBeGreaterThanOrEqual(3);
+  // Escape clears. Earlier specs leave workspaces behind, so count what the
+  // db holds for THIS page (console workspaces only — the split).
+  const state = await api(page, 'GET', '/api/state');
+  const total = (state.json.workspaces as Array<{ appId: string | null }>).filter(
+    w => w.appId === null,
+  ).length;
+  expect(total).toBeGreaterThanOrEqual(2);
   await search.press('Escape');
   await expect(rows).toHaveCount(total);
 
@@ -1712,66 +1607,6 @@ test('the workspace filter matches names, hides empty groups, and survives the p
   // The re-rendered box still handles Escape.
   await search.press('Escape');
   await expect(rows).toHaveCount(total);
-});
-
-test('nav groups collapse per app: rows hide, state survives poll re-render + reload, aria-expanded tracks it', async ({
-  page,
-}) => {
-  await login(page);
-  const groups = page.locator('workspace-sidebar .ws-group');
-  const app = page.locator('workspace-sidebar .ws-group[data-group="alpha-app"]');
-  const toggle = app.locator('h2 .g-collapse');
-  const rows = app.locator('.ws-group-rows');
-
-  await expect(groups.first().locator('h2 .g-collapse')).toHaveAttribute('aria-expanded', 'true');
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  await expect(rows).toBeVisible();
-  await expect(rows.locator('li[data-ws]')).toBeVisible();
-
-  // Collapsing hides the rows; the header (with + workspace) stays.
-  await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(rows).toBeHidden();
-  await expect(rows.locator('li[data-ws]')).toBeHidden();
-  await expect(app.locator('h2 .g-name')).toHaveText('alpha app');
-  await expect(groups.first().locator('.ws-group-rows')).toBeVisible();
-  // Flipped in place, so focus survives.
-  await expect(toggle).toBeFocused();
-
-  const stored = await page.evaluate(() => localStorage.getItem('cybermole:nav-collapsed'));
-  expect(JSON.parse(stored ?? '{}')).toEqual({ 'alpha-app': true });
-
-  // A poll re-render keeps it collapsed.
-  await refreshState(page);
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(rows).toBeHidden();
-
-  await app.locator('[data-new-ws]').click();
-  await expect(page.locator('wa-input#workspace-name input')).toBeVisible();
-  await page.locator('#workspace-dialog wa-button[data-dialog="close"]').click();
-
-  await page.reload();
-  await page.waitForSelector('workspace-sidebar .nav');
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(rows).toBeHidden();
-
-  // A filter forces groups open without touching stored state.
-  const search = page.locator('wa-input#workspace-search input');
-  await search.fill('proj');
-  await expect(app.locator('li[data-ws]')).toBeVisible();
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  await search.fill('');
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(rows).toBeHidden();
-
-  // Expand with the keyboard; it persists.
-  await toggle.focus();
-  await page.keyboard.press('Enter');
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  await expect(rows).toBeVisible();
-  const storedAfterExpand =
-    (await page.evaluate(() => localStorage.getItem('cybermole:nav-collapsed'))) ?? '{}';
-  expect(JSON.parse(storedAfterExpand)).toEqual({});
 });
 
 test('signed out, any page URL serves the login page and sign-in returns to it', async ({
@@ -2049,7 +1884,7 @@ test('security headers ride on page, asset and API responses', async ({ request 
   expectSecurityHeaders(api.headers());
 });
 
-test('console/jobs/settings load requests nothing off-origin and glyphs render from the app itself', async ({
+test('console/builder/jobs/settings load nothing off-origin and glyphs render from the app itself', async ({
   page,
 }) => {
   await login(page);
@@ -2083,7 +1918,7 @@ test('console/jobs/settings load requests nothing off-origin and glyphs render f
   await page.goto('/');
   await page.waitForSelector('workspace-sidebar .nav');
   expect(await glyphsRender()).toBe(true);
-  for (const p of ['/jobs', '/settings']) {
+  for (const p of ['/builder', '/jobs', '/settings']) {
     await page.goto(p);
     expect(await glyphsRender(), `${p} glyphs`).toBe(true);
   }

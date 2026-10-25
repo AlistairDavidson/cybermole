@@ -5,7 +5,7 @@
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
-type Section = 'console' | 'jobs' | 'logs' | 'settings';
+type Section = 'console' | 'builder' | 'jobs' | 'logs' | 'settings';
 interface Props {
   current: Section;
   /** Set only when CYBERMOLE_GRAFANA_URL is configured. */
@@ -21,6 +21,7 @@ const logsEntries: Array<{ section: Section; label: string; href: string; icon: 
 
 const links: Array<{ section: Section; label: string; href: string; icon: string }> = [
   { section: 'console', label: 'cybermole', href: `${base}/`, icon: 'terminal' },
+  { section: 'builder', label: 'builder', href: `${base}/builder`, icon: 'cubes' },
   { section: 'jobs', label: 'jobs', href: `${base}/jobs`, icon: 'clock' },
   ...logsEntries,
   { section: 'settings', label: 'settings', href: `${base}/settings`, icon: 'gear' },
