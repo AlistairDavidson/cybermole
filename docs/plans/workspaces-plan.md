@@ -161,8 +161,8 @@ Notes:
 - `src/schemas/api.ts`: ADD the bodies in §6 (branch 1). REPLACE
   `newSessionBody`/`hideBody`/`unhideBody` **in branch 4** with the
   routes that import them. Job save schema gains optional `appId`.
-- **Wiring (CODE_STYLE §6)**: the domains live in `src/lib/apps.ts` +
-  `src/lib/workspaces.ts` (terminals live there — they are meaningless
+- **Wiring (CODE_STYLE §6)**: the domains live in `src/lib/apps/apps.ts` +
+  `src/lib/terminals/workspaces.ts` (terminals live there — they are meaningless
   outside a workspace), are constructed ONCE in `server/main.ts`, exposed
   on `CybermoleServices`, and reached by routes only via
   `locals.cybermole` — never runtime-imported by Astro code (Vite would

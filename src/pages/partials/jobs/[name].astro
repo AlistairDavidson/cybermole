@@ -8,8 +8,8 @@
 import JobDetailBody from '../../../components/JobDetail/JobDetailBody.astro';
 import { assertCybermoleLocals } from '../../../lib/web/locals';
 import { JobNameSchema } from '@cybermole/app-kit';
-import type { JobRunView } from '../../../lib/jobs';
-import type { ScheduledJob } from '../../../lib/types';
+import type { JobRunView } from '../../../lib/jobs/jobs';
+import type { ScheduledJob } from '../../../lib/platform/types';
 
 export const partial = true;
 
@@ -20,7 +20,7 @@ let runs: JobRunView[] | null = null;
 if (parsed.success) {
   const listed = await cybermole.scheduler.listJobs();
   if (listed.ok) job = listed.data.jobs.find(j => j.name === parsed.data) ?? null;
-  // console.error on purpose, not src/lib/logger.ts: frontmatter is
+  // console.error on purpose, not src/lib/platform/logger.ts: frontmatter is
   // Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
   else console.error(`job detail partial: ${listed.errorMessage}`);
   if (job) {

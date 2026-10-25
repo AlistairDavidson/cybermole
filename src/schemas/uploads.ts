@@ -2,7 +2,7 @@
 // page can reuse it (an <input accept>, a size check before sending).
 
 /** Uploads stream to storage (src/lib/web/parsing.service.ts
- *  streamFileUpload → src/lib/storage.ts), so this is a policy choice, not
+ *  streamFileUpload → src/lib/platform/storage.ts), so this is a policy choice, not
  *  a memory one. Behind nginx, client_max_body_size must allow
  *  UPLOAD_MAX_BODY_BYTES (deploy/nginx/cybermole.conf). */
 export const UPLOAD_MAX_FILE_BYTES = 5 * 1024 * 1024 * 1024;

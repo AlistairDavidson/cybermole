@@ -7,7 +7,7 @@
 // (select-workspace / new-workspace / new-app / delete-* / new-terminal /
 // close-terminal). Page navigation (and sign-out) lives in the global
 // <app-header>.
-import type { ConsoleState, WorkspaceState } from '../../lib/types';
+import type { ConsoleState, WorkspaceState } from '../../lib/platform/types';
 import {
   asTerminalId,
   asTmuxSessionName,

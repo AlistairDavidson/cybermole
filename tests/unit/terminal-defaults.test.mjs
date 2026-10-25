@@ -1,5 +1,5 @@
 // terminal-defaults.test.mjs — the resolution chains (task/defaults-settings,
-// src/lib/terminal-defaults.ts): db override → env → built-in for both the
+// src/lib/terminals/terminal-defaults.ts): db override → env → built-in for both the
 // shell and the agent command, the whitespace split, and the save family's
 // every error code (database_error). The env side is pinned by importing
 // AFTER process.env is set (node:test runs each file in its own process —
@@ -17,7 +17,7 @@ const ENV_SHELL = '/from/env/shell -l';
 process.env.CYBERMOLE_AGENT_COMMAND = ENV_AGENT;
 process.env.CYBERMOLE_COMMAND = ENV_SHELL;
 
-const { StateDb } = await import('../../dist-server/src/lib/db.js');
+const { StateDb } = await import('../../dist-server/src/lib/platform/db.js');
 const {
   resolveCommand,
   splitCommandLine,
@@ -25,8 +25,8 @@ const {
   resolvedShellCommand,
   terminalDefaults,
   saveTerminalDefaults,
-} = await import('../../dist-server/src/lib/terminal-defaults.js');
-const { defaultAgentCommand, PI_BIN } = await import('../../dist-server/src/lib/env.js');
+} = await import('../../dist-server/src/lib/terminals/terminal-defaults.js');
+const { defaultAgentCommand, PI_BIN } = await import('../../dist-server/src/lib/platform/env.js');
 
 function freshDb() {
   return new StateDb(

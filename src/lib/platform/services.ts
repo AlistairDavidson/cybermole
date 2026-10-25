@@ -16,9 +16,9 @@ import type { AutoUpdater } from './auto-update';
 import { autoUpdateEnabled, lastCheck, lastUpdate } from './auto-update';
 import type { StateDb } from './db';
 import { APP_ROOT } from './env';
-import { checkCron, type Scheduler } from './jobs';
-import { Apps } from './apps';
-import { Workspaces } from './workspaces';
+import { checkCron, type Scheduler } from '../jobs/jobs';
+import { Apps } from '../apps/apps';
+import { Workspaces } from '../terminals/workspaces';
 import type { ObjectStore } from './storage';
 import {
   PI_PACKAGE,
@@ -35,11 +35,11 @@ import {
   saveTerminalDefaults,
   terminalDefaults,
   type SaveTerminalDefaultsResult,
-} from './terminal-defaults';
-import * as tmux from './tmux';
-import type { AppsServing } from './apps-serving';
-import { joinServing } from './apps-serving';
-import type { EditorUpstream } from './editor';
+} from '../terminals/terminal-defaults';
+import * as tmux from '../terminals/tmux';
+import type { AppsServing } from '../apps/apps-serving';
+import { joinServing } from '../apps/apps-serving';
+import type { EditorUpstream } from '../terminals/editor';
 import type { CalendarCheck, ConsoleState, SettingsState } from './types';
 import type {
   ResultFailure,
@@ -47,7 +47,7 @@ import type {
   SessionToken,
   TmuxSessionName,
 } from '@cybermole/app-kit';
-import type { TmuxSessionFailure, TmuxSessionSuccess } from './tmux';
+import type { TmuxSessionFailure, TmuxSessionSuccess } from '../terminals/tmux';
 
 /** database_error: a state read behind the console's poll (the apps /
  *  workspace tree or the credential row) could not be served. */
@@ -88,7 +88,7 @@ export interface ServerConfig {
   jobLogDir: string;
   /** The terminal commands are NOT here on purpose (task/defaults-settings):
    *  they resolve db override ?? env at SPAWN time
-   *  (src/lib/terminal-defaults.ts), never at boot — a /settings save
+   *  (src/lib/terminals/terminal-defaults.ts), never at boot — a /settings save
    *  applies without a restart, which a boot-time CFG string cannot. */
   trustProxy: number;
   /** The editor webapp's upstream (CYBERMOLE_EDITOR_UPSTREAM, docs/
@@ -97,7 +97,7 @@ export interface ServerConfig {
   editorUpstream: EditorUpstream | null;
   /** task/logs-page: the fully-built Grafana Explore URL the /logs page
    *  frames (grafanaExploreUrlFromEnv() over CYBERMOLE_GRAFANA_URL —
-   *  src/lib/grafana.ts), or null when not configured: the header link
+   *  src/lib/platform/grafana.ts), or null when not configured: the header link
    *  hides and /logs answers 404 (the editor-off pattern). Built at boot
    *  so the page only reads a string (src/lib stays out of the Vite
    *  bundle — CODE_STYLE §6). */
@@ -197,7 +197,7 @@ export function createServices(deps: ServiceDeps): CybermoleServices {
     spawnSession: deps.spawnSession,
     liveSessionNames: deps.liveSessionNames,
     // task/defaults-settings: the resolved terminal commands, read per
-    //  spawn (db override ?? env — src/lib/terminal-defaults.ts) so a
+    //  spawn (db override ?? env — src/lib/terminals/terminal-defaults.ts) so a
     //  /settings save applies to the next tab with no restart.
     shellCommand: () => resolvedShellCommand(stateDb),
     agentCommand: () => resolvedAgentCommand(stateDb),

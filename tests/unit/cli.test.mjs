@@ -31,9 +31,9 @@ const SOCKET = path.join(dir, 'cybermole.sock');
 process.env.CYBERMOLE_SOCK = SOCKET;
 
 const { startInternalApi } = await import('../../dist-server/server/internal-api.js');
-const { Scheduler, runLogPaths } = await import('../../dist-server/src/lib/jobs.js');
-const { StateDb } = await import('../../dist-server/src/lib/db.js');
-const { Apps } = await import('../../dist-server/src/lib/apps.js');
+const { Scheduler, runLogPaths } = await import('../../dist-server/src/lib/jobs/jobs.js');
+const { StateDb } = await import('../../dist-server/src/lib/platform/db.js');
+const { Apps } = await import('../../dist-server/src/lib/apps/apps.js');
 const { runCli } = await import('../../dist-server/cli/main.js');
 const { internalRequest } = await import('../../dist-server/cli/client.js');
 

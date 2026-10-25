@@ -4,7 +4,7 @@
 // the small presentation helpers — aligned tables, local timestamps,
 // truncation — every verb shares. Plain process.stdout/stderr writes on
 // purpose, set-password.ts's stance: a human/agent-facing CLI, not a
-// server component, so no src/lib/logger.ts (winston would timestamp
+// server component, so no src/lib/platform/logger.ts (winston would timestamp
 // output that scripts parse).
 import type { IncomingHttpHeaders } from 'node:http';
 
@@ -36,7 +36,7 @@ export interface ApiResponse {
 }
 
 /** Local-time "YYYY-MM-DD HH:mm" — the schedule fields are local time
- *  and the /jobs page formats them the same way (src/lib/jobs.ts
+ *  and the /jobs page formats them the same way (src/lib/jobs/jobs.ts
  *  formatFire). The list verb prints the server's pre-formatted strings;
  *  runs rows carry raw epoch ms, so the CLI renders those itself. */
 export function formatLocalMs(ms: number): string {

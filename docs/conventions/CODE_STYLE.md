@@ -113,7 +113,7 @@ is a type error.
 - JSON endpoints are Astro routes under `src/pages/api/`. A handler
   parses, calls one domain function, and maps the result. No `try/catch`
   in handlers.
-- **Services come from `Astro.locals.cybermole`** (`src/lib/services.ts`,
+- **Services come from `Astro.locals.cybermole`** (`src/lib/platform/services.ts`,
   narrowed with `assertCybermoleLocals`). Never construct or import a stateful
   singleton (`StateDb`, `Auth`, `Scheduler`) inside the Astro bundle. Vite
   would bundle a second copy with its own state: a second scheduler with its

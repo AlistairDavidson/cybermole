@@ -1,4 +1,4 @@
-// events-ws.test.mjs — /ws/events (src/lib/events-ws.ts, plan §7): the
+// events-ws.test.mjs — /ws/events (src/lib/platform/events-ws.ts, plan §7): the
 // cookie-gate decision (every refusal branch and the allow path), and
 // the relay end to end — boot, upgrade, receive a forwarded bus event,
 // exactly one frame per event, and the token-death sweep closing the
@@ -9,8 +9,9 @@ import assert from 'node:assert/strict';
 import * as http from 'node:http';
 import { WebSocket } from 'ws';
 
-const { checkEventsUpgrade, EventsRelay } = await import('../../dist-server/src/lib/events-ws.js');
-const { emitDomainEvent } = await import('../../dist-server/src/lib/events.js');
+const { checkEventsUpgrade, EventsRelay } =
+  await import('../../dist-server/src/lib/platform/events-ws.js');
+const { emitDomainEvent } = await import('../../dist-server/src/lib/platform/events.js');
 
 const TOKEN = 'tok-1';
 const noSession = {

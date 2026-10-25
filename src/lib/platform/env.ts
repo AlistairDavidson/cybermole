@@ -2,10 +2,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { envSchema, type EnvValue, type ServerEnvField } from './env-schema';
-import type { EditorUpstream } from './editor';
+import type { EditorUpstream } from '../terminals/editor';
 import type { ObjectStoreConfig } from './storage';
 
-/** Loki push config (src/lib/logger.ts) — or null when no URL is set: the
+/** Loki push config (src/lib/platform/logger.ts) — or null when no URL is set: the
  *  logger then runs console-only, exactly as before this existed. */
 export interface LokiConfig {
   /** base URL of the Loki push API, e.g. http://loki:3100 (no trailing slash) */
@@ -14,7 +14,7 @@ export interface LokiConfig {
   job: string;
 }
 
-export const APP_ROOT = path.join(__dirname, '..', '..', '..');
+export const APP_ROOT = path.join(__dirname, '..', '..', '..', '..');
 export const PI_BIN = path.join(APP_ROOT, 'node_modules', '.bin', 'pi');
 
 type SchemaEnv = { -readonly [K in keyof typeof envSchema]: EnvValue<(typeof envSchema)[K]> };
@@ -84,7 +84,7 @@ export const ENV = {
   // logs and their results stay 'unknown', never a failure).
   CYBERMOLE_JOB_LOG_DIR: RAW_ENV.CYBERMOLE_JOB_LOG_DIR ?? '/workspace/.cybermole/job-logs',
   // task/job-log-caps (plan §8): the write-time cap the run wrapper's
-  // appender enforces per run log (src/lib/job-log-appender.ts).
+  // appender enforces per run log (src/lib/jobs/job-log-appender.ts).
   CYBERMOLE_JOB_LOG_MAX: RAW_ENV.CYBERMOLE_JOB_LOG_MAX,
   // The command a new terminal tab runs (plan §10): a login shell by
   // default — $SHELL -l when the env carries one, /bin/sh -l otherwise.
@@ -93,7 +93,7 @@ export const ENV = {
   CYBERMOLE_COMMAND: RAW_ENV.CYBERMOLE_COMMAND ?? `${process.env.SHELL ?? '/bin/sh'} -l`,
   // task/defaults-settings: the command the auto-opened FIRST terminal of
   // a new workspace runs (the agent slot; db override ?? this ?? the
-  // built-in below — resolved at spawn time, src/lib/terminal-defaults.ts).
+  // built-in below — resolved at spawn time, src/lib/terminals/terminal-defaults.ts).
   // Whitespace-split like CYBERMOLE_COMMAND; the e2e suite points it at
   // its deterministic cmd.sh's agent mode.
   CYBERMOLE_AGENT_COMMAND:
@@ -209,7 +209,7 @@ export function readAppsRoot(): string {
   return raw;
 }
 
-/** Loki push config for the winston-loki transport (src/lib/logger.ts), or
+/** Loki push config for the winston-loki transport (src/lib/platform/logger.ts), or
  *  null when CYBERMOLE_LOKI_URL is unset — console-only logging, identical to
  *  before the observability work. Validated at boot like the S3 vars: a
  *  half-set or non-http(s) value throws and stops the server. Empty strings
@@ -237,7 +237,7 @@ export function readLokiConfig(): LokiConfig | null {
   return { url: url.replace(/\/+$/, ''), job: label };
 }
 
-/** Object storage (src/lib/storage.ts), or null when no endpoint is set —
+/** Object storage (src/lib/platform/storage.ts), or null when no endpoint is set —
  *  the store then answers storage_not_configured. A half-configured or
  *  malformed one throws, and server/main.ts calls this at boot, so it
  *  stops the server like a non-integer number: an operator mistake, not
@@ -275,7 +275,7 @@ export function readObjectStoreConfig(): ObjectStoreConfig | null {
   };
 }
 
-/** Editor webapp upstream (src/lib/editor.ts, docs/guides/editor-webapp.md), or
+/** Editor webapp upstream (src/lib/terminals/editor.ts, docs/guides/editor-webapp.md), or
  *  null when CYBERMOLE_EDITOR_UPSTREAM is unset/empty — the single switch: the
  *  server then answers 404 under /editor and the console hides its
  *  affordances. One var, no half-set states (the Zed triple's launcher-pair
@@ -299,7 +299,7 @@ export function readEditorUpstream(): EditorUpstream | null {
 }
 
 /** The browser-reachable Grafana base URL for the /logs page's iframe
- *  (src/lib/grafana.ts builds the Explore URL from it), or null when
+ *  (src/lib/platform/grafana.ts builds the Explore URL from it), or null when
  *  CYBERMOLE_GRAFANA_URL is unset/empty — the feature is then off: the
  *  header link hides and /logs answers 404, exactly like an unset editor
  *  upstream. Unlike the editor's, a PATH is fine: this is not a proxy —

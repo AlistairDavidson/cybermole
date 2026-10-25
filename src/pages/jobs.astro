@@ -18,7 +18,7 @@ const jobs = listed.ok ? listed.data.jobs : null;
 // partial refresh.
 const appsListed = cybermole.apps.listApps();
 const apps = appsListed.ok ? appsListed.data.apps : [];
-// console.error on purpose, not src/lib/logger.ts: frontmatter is
+// console.error on purpose, not src/lib/platform/logger.ts: frontmatter is
 // Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
 if (!listed.ok) console.error(`jobs page: ${listed.errorMessage}`);
 if (!appsListed.ok) console.error(`jobs page: ${appsListed.errorMessage}`);

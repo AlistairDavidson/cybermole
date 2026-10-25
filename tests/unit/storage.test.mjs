@@ -1,16 +1,16 @@
-// storage.test.mjs — src/lib/storage.ts against the in-memory fake S3
+// storage.test.mjs — src/lib/platform/storage.ts against the in-memory fake S3
 // (tests/support/fake-s3.mjs): one test per StoreUploadResult / FetchObjectResult
 // error code, the bucket check/create on first use, streamed and
 // multipart uploads (and the abort when a stream fails midway), and the
 // responses objectStoreFailureResponse / fileDownloadResponse build. Plus
-// the CYBERMOLE_S3_* boot checks in src/lib/env.ts, which read RAW_ENV at
+// the CYBERMOLE_S3_* boot checks in src/lib/platform/env.ts, which read RAW_ENV at
 // module load (child processes).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import * as net from 'node:net';
 import { Readable } from 'node:stream';
-import { ObjectStore } from '../../dist-server/src/lib/storage.js';
+import { ObjectStore } from '../../dist-server/src/lib/platform/storage.js';
 import {
   fileDownloadResponse,
   fileHeadResponse,
@@ -410,7 +410,7 @@ test('fileDownloadResponse: always an attachment, sandboxed, allowlisted type or
   assert.equal(head.headers.get('content-disposition'), "attachment; filename*=UTF-8''a.txt");
 });
 
-// ---------- CYBERMOLE_S3_* boot checks (src/lib/env.ts) ----------
+// ---------- CYBERMOLE_S3_* boot checks (src/lib/platform/env.ts) ----------
 
 /** readObjectStoreConfig() in a fresh process (RAW_ENV is read at module load), or its error. */
 function bootConfig(env) {
@@ -422,7 +422,7 @@ function bootConfig(env) {
       process.execPath,
       [
         '-e',
-        "process.stdout.write(JSON.stringify(require('./dist-server/src/lib/env.js').readObjectStoreConfig()))",
+        "process.stdout.write(JSON.stringify(require('./dist-server/src/lib/platform/env.js').readObjectStoreConfig()))",
       ],
       { env: { ...clean, ...env }, stdio: ['ignore', 'pipe', 'pipe'] },
     );

@@ -1,6 +1,6 @@
 // jobs-events.ts — the jobs pages' /ws/events subscription (plan §7,
 // "live consistency"). The service layer emits domain events at its
-// choke points whoever acted (src/lib/events.ts); the server forwards
+// choke points whoever acted (src/lib/platform/events.ts); the server forwards
 // them over this WebSocket; the page runs the SAME partial refresh its
 // 15 s poll already runs, debounced — one rendering path, no granular
 // DOM patching. The poll STAYS as the safety net (a dropped WS, a
@@ -18,7 +18,7 @@
 // and expects this subscription to refresh an open /jobs or /jobs/:name
 // page well inside the 15 s poll.
 import { BASE } from '../base';
-import { debounceTrailing } from '../lib/debounce';
+import { debounceTrailing } from '../lib/platform/debounce';
 
 const RECONNECT_MIN_MS = 1000;
 const RECONNECT_MAX_MS = 15_000;
@@ -26,7 +26,7 @@ const RECONNECT_MAX_MS = 15_000;
  *  once); one refresh per burst. */
 const REFRESH_DEBOUNCE_MS = 250;
 
-/** What the server sends (src/lib/events-ws.ts): a domain event, or one
+/** What the server sends (src/lib/platform/events-ws.ts): a domain event, or one
  *  of the two control frames. Anything else — or nothing parseable at
  *  all — still means "something changed": an empty or unknown payload
  *  triggers the refresh too, never an error. */

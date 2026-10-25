@@ -1,5 +1,5 @@
-// jobs-events.test.mjs — the domain-event bus (src/lib/events.ts) and
-// the service-layer emission choke points (src/lib/jobs.ts, plan §7):
+// jobs-events.test.mjs — the domain-event bus (src/lib/platform/events.ts) and
+// the service-layer emission choke points (src/lib/jobs/jobs.ts, plan §7):
 // every mutation path emits exactly the right event with the right
 // payload, and failure paths emit nothing. The db-only families
 // (created/updated/deleted) run in-process; the run lifecycle
@@ -18,10 +18,11 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-jobs-events-'));
 process.env.CYBERMOLE_TMUX_SOCKET = path.join(dir, 'tmux');
 const SOCKET = process.env.CYBERMOLE_TMUX_SOCKET;
 
-const { Scheduler } = await import('../../dist-server/src/lib/jobs.js');
-const { StateDb } = await import('../../dist-server/src/lib/db.js');
+const { Scheduler } = await import('../../dist-server/src/lib/jobs/jobs.js');
+const { StateDb } = await import('../../dist-server/src/lib/platform/db.js');
 const { JobSaveSchema } = await import('../../dist-server/src/schemas/jobs.js');
-const { onDomainEvent, emitDomainEvent } = await import('../../dist-server/src/lib/events.js');
+const { onDomainEvent, emitDomainEvent } =
+  await import('../../dist-server/src/lib/platform/events.js');
 
 const parsed = input => JobSaveSchema.parse(input);
 const GOOD = { name: 'nightly', schedule: '*/5 * * * *', command: 'true' };
@@ -119,7 +120,7 @@ test('deleteJob: job_deleted on success; not-found and db failures emit nothing'
 test('killRun: every error code; only a successful kill emits run_killed', async () => {
   // Stand-in tmux on PATH: `up` marks the server up, `sessions` lists
   // live sessions, `kill-fails` makes kill-session fail — everything
-  // killRun's checks issue (src/lib/tmux.ts has-session / kill-session).
+  // killRun's checks issue (src/lib/terminals/tmux.ts has-session / kill-session).
   const fakeDir = fs.mkdtempSync(path.join(dir, 'fake-tmux-'));
   fs.writeFileSync(
     path.join(fakeDir, 'tmux'),

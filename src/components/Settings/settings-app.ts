@@ -5,7 +5,7 @@
 // after an update, refreshes the data regions from /partials/settings
 // (swapping the [data-refresh] elements by id: plain HTML, no wa-*
 // inside, so nothing re-hydrates). Events are delegated to this element.
-import type { UpdateResult } from '../../lib/types';
+import type { UpdateResult } from '../../lib/platform/types';
 import { BASE } from '../../base';
 import { signedInFetch, type SignedInFetchFailure } from '../signed-in-fetch';
 // Registers <validation-enhancer-zod> (and the base <validation-enhancer>).

@@ -14,8 +14,8 @@
 // The join itself (joinServing) is pure: rows + one snapshot → the
 // augmented apps array /api/state serves (an ADDITIVE field — the
 // console's other consumers ignore it).
-import { requestInternalApi } from './internal-api-client';
-import type { AppState, AppServingState } from './types';
+import { requestInternalApi } from '../platform/internal-api-client';
+import type { AppState, AppServingState } from '../platform/types';
 
 /** The app host's /_admin/status, reduced to what the join needs. */
 export interface AppHostStatusView {

@@ -1,6 +1,6 @@
 // apps-actions.test.mjs — task/app-actions (docs/plans/apps-plan.md §6/§10)
 // units: the action vocabulary's generator half.
-//   src/lib/apps-actions.ts: the action-name rule (defined once), the
+//   src/lib/apps/apps-actions.ts: the action-name rule (defined once), the
 //     light route-table parse (the AGENTS.md regeneration's source of
 //     truth), and add_action's LOCKSTEP against real scaffolded trees —
 //     every artifact written in order, idempotence (a duplicate name is a
@@ -8,7 +8,7 @@
 //     refusal, the GET parameterization, the missing-marker robustness
 //     (fresh marked blocks, honestly noted), and the AGENTS.md block
 //     regeneration round-trip (idempotent, table-driven).
-//   src/lib/apps-route-table.ts: the emitted table's reader (tree /
+//   src/lib/apps/apps-route-table.ts: the emitted table's reader (tree /
 //     not_built / malformed), the lenient preflight (presence-only — the
 //     app is the authority), the request planning (path params, GET
 //     query vs POST body), and the typed shape conversion (the shim's
@@ -27,17 +27,17 @@ import { fileURLToPath } from 'node:url';
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-apps-actions-'));
 
-const { scaffoldApp } = await import('../../dist-server/src/lib/apps-scaffold.js');
-const { runChild } = await import('../../dist-server/src/lib/apps-child.js');
+const { scaffoldApp } = await import('../../dist-server/src/lib/apps/apps-scaffold.js');
+const { runChild } = await import('../../dist-server/src/lib/apps/apps-child.js');
 const {
   addAction,
   normalizeActionName,
   parseRouteTableSource,
   regenerateAgentsActions,
   ACTION_NAME_RE,
-} = await import('../../dist-server/src/lib/apps-actions.js');
+} = await import('../../dist-server/src/lib/apps/apps-actions.js');
 const { readRouteTable, findAction, planActionRequest, lenientPreflight, shapeFromJsonSchema } =
-  await import('../../dist-server/src/lib/apps-route-table.js');
+  await import('../../dist-server/src/lib/apps/apps-route-table.js');
 const { describeTool, callActionTool } = await import('../../dist-server/server/apps-mcp.js');
 
 const scaffoldDeps = root => ({

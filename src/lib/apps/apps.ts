@@ -8,15 +8,15 @@
 //
 // Deletion is cascade-first: the FK chain (apps → workspaces → terminals,
 // ON DELETE CASCADE) does the structural delete in one statement (PRAGMA
-// foreign_keys is set at open, src/lib/db.ts), and the deleted terminals'
+// foreign_keys is set at open, src/lib/platform/db.ts), and the deleted terminals'
 // tmux sessions are then killed best-effort — derived 't-<uuid>' names,
 // never stored — logged, never failing the delete. Jobs are untouched:
 // jobs.app_id is a TAG (ON DELETE SET NULL), not ownership.
 import { randomUUID } from 'node:crypto';
-import { qb, type StateDb } from './db';
-import { componentLogger } from './logger';
-import { terminalSessionName } from './tmux';
-import { checkedCwd } from './workspaces';
+import { qb, type StateDb } from '../platform/db';
+import { componentLogger } from '../platform/logger';
+import { terminalSessionName } from '../terminals/tmux';
+import { checkedCwd } from '../terminals/workspaces';
 import {
   asAppId,
   asAppSlug,
@@ -31,7 +31,7 @@ import {
   type ResultSuccess,
   type TmuxSessionName,
 } from '@cybermole/app-kit';
-import type { AppState } from './types';
+import type { AppState } from '../platform/types';
 
 const log = componentLogger('apps');
 
@@ -55,7 +55,7 @@ export type SaveAppResult = SaveAppSuccess | SaveAppFailure;
 
 export type DeleteAppData = { id: AppId };
 /** app_not_found: no app with that slug. The best-effort tmux kills are
- *  logged (src/lib/tmux.ts) and never turn a successful delete into a
+ *  logged (src/lib/terminals/tmux.ts) and never turn a successful delete into a
  *  failure. */
 export type DeleteAppErrorCode = 'app_not_found' | 'database_error';
 export type DeleteAppSuccess = ResultSuccess<'delete_app', DeleteAppData>;
@@ -65,7 +65,7 @@ export type DeleteAppResult = DeleteAppSuccess | DeleteAppFailure;
 /** The app list (task/ws-jobs plan §9 + task/ws-console plan §5): ONE
  *  read serves both the jobs dialog's tag picker (server-rendered
  *  options, no per-job fetches anywhere) and GET /api/state's apps
- *  half. AppState is the shared client+server shape (src/lib/types.ts). */
+ *  half. AppState is the shared client+server shape (src/lib/platform/types.ts). */
 export type ListAppsData = { apps: AppState[] };
 export type ListAppsErrorCode = 'database_error';
 export type ListAppsSuccess = ResultSuccess<'list_apps', ListAppsData>;

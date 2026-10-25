@@ -1,5 +1,5 @@
 // restart.spec.ts — login sessions persist (auth_sessions in the state db,
-// src/lib/auth.ts): a cookie issued by one server process is still valid
+// src/lib/platform/auth.ts): a cookie issued by one server process is still valid
 // after that process stops and a fresh one boots on the same state db,
 // and a password change (setCredential) revokes it. Non-page spec
 // (state-dir / split pattern): spawns its OWN server children on its own
@@ -10,8 +10,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { expect, test } from '@playwright/test';
-import { setCredential } from '../../src/lib/auth';
-import { StateDb } from '../../src/lib/db';
+import { setCredential } from '../../src/lib/platform/auth';
+import { StateDb } from '../../src/lib/platform/db';
 import { PASSWORD, USERNAME } from '../support/env';
 
 const ROOT = path.resolve(__dirname, '..', '..');

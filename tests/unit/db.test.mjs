@@ -1,4 +1,4 @@
-// db.test.mjs — the schema v6 upgrade (src/lib/db.ts, workspaces-plan §2):
+// db.test.mjs — the schema v6 upgrade (src/lib/platform/db.ts, workspaces-plan §2):
 // a fresh file (user_version 0) gets the new shape at CREATE; a v5-shaped
 // file opens as v6 with the ALTERs applied and its data intact — and its
 // pi-session `sessions` overlay DROPPED (task/ws-console, plan §11); a
@@ -11,7 +11,7 @@ import { DatabaseSync } from 'node:sqlite';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { StateDb, qb } from '../../dist-server/src/lib/db.js';
+import { StateDb, qb } from '../../dist-server/src/lib/platform/db.js';
 
 const MISSING = '99999999-9999-4999-8999-999999999999';
 

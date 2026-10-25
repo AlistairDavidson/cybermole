@@ -267,15 +267,15 @@ Everything is env-configured; defaults suit a single-user Linux box
 running terminals (and pi, by hand) as the same user as the server.
 The `CYBERMOLE_*` contract is declared
 once, typed, in a schema shared by Astro and the Node server:
-`astro.config.mjs`'s `env.schema` (imported from `src/lib/env-schema.ts`)
+`astro.config.mjs`'s `env.schema` (imported from `src/lib/platform/env-schema.ts`)
 declares every runtime variable — names, types, and the static defaults —
-and the compiled server reads the same schema through `src/lib/env.ts` (the
+and the compiled server reads the same schema through `src/lib/platform/env.ts` (the
 typed runtime equivalent of `astro:env/server` for a plain-tsc build; see
 the comments there for why the server can't import the Astro virtual module
 directly). Number variables that aren't integers stop the server at boot.
 Defaults that must be computed at boot (homedir, app-root paths, the
 login-shell command default, the vendored-pi path) live beside the reads in
-`src/lib/env.ts`. The one
+`src/lib/platform/env.ts`. The one
 exception is the dev-only `CYBERMOLE_DEV_API`, which `astro.config.mjs` reads
 directly.
 
@@ -619,7 +619,7 @@ touches the tmux socket or web state.
 ### Object storage (SeaweedFS)
 
 Uploads (`POST /api/files`) go to an S3 bucket through the AWS SDK
-(`src/lib/storage.ts`). Nothing in the app is specific to one server; the
+(`src/lib/platform/storage.ts`). Nothing in the app is specific to one server; the
 compose stack runs [SeaweedFS](https://github.com/seaweedfs/seaweedfs)
 (`weed mini`, pinned) — MinIO's community edition was archived in 2026
 and its images are gone. Two more services:
@@ -675,7 +675,7 @@ Two limits besides the app's own, for big files:
 ### Observability (logs → Loki, dashboards → Grafana)
 
 The server's operational logging goes through a winston logger
-(`src/lib/logger.ts`) with **two transports**: a console transport,
+(`src/lib/platform/logger.ts`) with **two transports**: a console transport,
 always — pretty, human-readable lines (`<iso-time> <level> [component]
 <message> {meta}`), because the boot log and `docker compose logs` are
 read by humans — and a `winston-loki` push transport **only** when
@@ -771,7 +771,7 @@ loads it directly) — the host's `http://127.0.0.1:3300` in the compose
 shape, not the container-network `http://grafana:3000`; a Grafana behind
 a reverse proxy under a subpath works too. Unset/empty: no header link,
 and `/logs` answers 404. The Explore URL is built server-side
-(`src/lib/grafana.ts`, pinned against the Grafana the compose file pins:
+(`src/lib/platform/grafana.ts`, pinned against the Grafana the compose file pins:
 the `panes`+`schemaVersion=1` format v13 parses, with the datasource
 uid preselected) and the page's CSP allows framing exactly that one
 origin. The compose grafana also sets `GF_SECURITY_ALLOW_EMBEDDING=true`
@@ -1043,7 +1043,7 @@ and it survives only until the next image deploy; use the image or
 standalone-workspace flows above to change what your terminals actually
 run.
 Sending the auto-update install to the workspace side is a marked junction
-in `src/lib/auto-update.ts` for a later pass. In the **docker dev
+in `src/lib/platform/auto-update.ts` for a later pass. In the **docker dev
 profile** `node_modules` is a shadow volume and `npm install` re-runs
 from the lockfile on every boot, so nothing auto-updated persists there.
 
@@ -1177,14 +1177,14 @@ standalone-workspace install above (`CYBERMOLE_AGENT_COMMAND`).
 - `server` — the Node server: origin + session gate, login/logout,
   assets, the Astro SSR handler (pages + API), WS → node-pty → tmux, the
   same-origin `/editor` reverse proxy (HTTP streaming + raw WS
-  tunnels, per-token tracking — `src/lib/editor.ts`), the internal jobs
+  tunnels, per-token tracking — `src/lib/terminals/editor.ts`), the internal jobs
   API on its unix socket (`internal-api.ts` — same Result JSON as the
   browser routes) and the stdio jobs MCP server (`mcp.ts`)
 - `src/pages/jobs.astro` + `src/components/JobsApp/` — the scheduled-jobs
   page (list/create/edit/run/delete, cron validation, app tag, run
   history + log viewer), plus the per-job detail page
   `src/pages/jobs/[name].astro` — live-updated over `/ws/events`
-  (`src/lib/events.ts` — the domain-event bus)
+  (`src/lib/platform/events.ts` — the domain-event bus)
 - `runtime/` — everything the installed server reads or seeds, shipped
   as one tree: `pi-agent-dir/` — the controlled pi agent-dir template
   (settings, MCPs, skills, extensions) seeded into the runtime dir;

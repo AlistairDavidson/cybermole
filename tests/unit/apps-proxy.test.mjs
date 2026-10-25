@@ -19,7 +19,7 @@ import * as path from 'node:path';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-apps-proxy-'));
 
 const { handleAppsRequest, isAppsHttpPath, appsSlugOf, APPS_BODY_MAX_BYTES } =
-  await import('../../dist-server/src/lib/apps-proxy.js');
+  await import('../../dist-server/src/lib/apps/apps-proxy.js');
 
 // ---------- the stub app host (what server/app-host.js stands in as) ----------
 

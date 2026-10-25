@@ -16,7 +16,7 @@
 #                            uid 2000 (same pattern as dev-init below),
 #                            and the job-run log dir laid out the same
 #                            way (plan §9; see the workspace-init service).
-#     seaweedfs  object storage (S3 API, src/lib/storage.ts) — on the
+#     seaweedfs  object storage (S3 API, src/lib/platform/storage.ts) — on the
 #                            internal `storage` network with cybermole ONLY:
 #                            workspace (pi sessions) can't reach it.
 #     seaweedfs-init (one-shot) — generates the S3 credentials both sides
@@ -136,7 +136,7 @@ services:
       # container (its tmux server spawns every session), so both
       # containers mount the shared volumes at the same mount points.
       # Absolute socket path ⇒ tmux -S + the never-fork guard
-      # (src/lib/tmux.ts); the workspace entrypoint owns the server.
+      # (src/lib/terminals/tmux.ts); the workspace entrypoint owns the server.
       CYBERMOLE_TMUX_SOCKET: /run/cybermole/tmux
       # HOME handed to spawned pi — /home/workspace is uid 2000's home
       # over there (writable; the node image's /home/node is not).
@@ -324,7 +324,7 @@ services:
   # volume (deploy/loki/config.yaml: retention 14d, hard caps on
   # entry/label sizes, no telemetry). No published port — cybermole pushes
   # over the compose network; a down/restarted loki degrades silently on
-  # the server side (batch drops + 60s retry backoff, src/lib/logger.ts).
+  # the server side (batch drops + 60s retry backoff, src/lib/platform/logger.ts).
   loki:
     profiles: ["observability"]
     image: grafana/loki:3.7.8

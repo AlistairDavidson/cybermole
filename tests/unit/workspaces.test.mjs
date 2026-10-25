@@ -1,5 +1,5 @@
 // workspaces.test.mjs — the workspace + terminal domain
-// (src/lib/workspaces.ts, workspaces-plan §3): every Result family at
+// (src/lib/terminals/workspaces.ts, workspaces-plan §3): every Result family at
 // every error code — save/update/delete workspace, new/close/rename
 // terminal, the attach lookup, the GET /api/state tree read + live diff
 // (plan §5) — including the cascade deletes and the best-effort tmux
@@ -9,10 +9,13 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { StateDb, qb } from '../../dist-server/src/lib/db.js';
-import { Workspaces } from '../../dist-server/src/lib/workspaces.js';
-import { Apps } from '../../dist-server/src/lib/apps.js';
-import { terminalSessionName, SERVER_NOT_RUNNING_MSG } from '../../dist-server/src/lib/tmux.js';
+import { StateDb, qb } from '../../dist-server/src/lib/platform/db.js';
+import { Workspaces } from '../../dist-server/src/lib/terminals/workspaces.js';
+import { Apps } from '../../dist-server/src/lib/apps/apps.js';
+import {
+  terminalSessionName,
+  SERVER_NOT_RUNNING_MSG,
+} from '../../dist-server/src/lib/terminals/tmux.js';
 import { UUID_RE } from '../../dist-server/packages/app-kit/src/schemas/patterns.js';
 import {
   WorkspaceIdSchema,

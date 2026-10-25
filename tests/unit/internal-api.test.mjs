@@ -3,9 +3,9 @@
 // socket, exercised over node:http socketPath for EVERY verb, plus the
 // socket lifecycle (stale file unlinked+rebound, a live listener refused,
 // the 0660 chmod, close() unlinking) and the CYBERMOLE_SOCK env rules
-// (src/lib/env.ts — child processes, the editor/storage test pattern).
+// (src/lib/platform/env.ts — child processes, the editor/storage test pattern).
 // Needs no real tmux: the jobs-runs stand-in on PATH answers the
-// commands src/lib/tmux.ts issues (plus kill-session, which the kill
+// commands src/lib/terminals/tmux.ts issues (plus kill-session, which the kill
 // verb adds); the socket path is set before the import so tmux.ts binds
 // it at module load.
 import test from 'node:test';
@@ -26,10 +26,10 @@ process.env.PATH = `${fakeBin}:${process.env.PATH}`;
 
 const { startInternalApi, probeSocketFile, InternalSocketOwnedError } =
   await import('../../dist-server/server/internal-api.js');
-const { Scheduler, runLogPaths } = await import('../../dist-server/src/lib/jobs.js');
-const { StateDb } = await import('../../dist-server/src/lib/db.js');
-const { Apps } = await import('../../dist-server/src/lib/apps.js');
-const { internalSocketDefault } = await import('../../dist-server/src/lib/env.js');
+const { Scheduler, runLogPaths } = await import('../../dist-server/src/lib/jobs/jobs.js');
+const { StateDb } = await import('../../dist-server/src/lib/platform/db.js');
+const { Apps } = await import('../../dist-server/src/lib/apps/apps.js');
+const { internalSocketDefault } = await import('../../dist-server/src/lib/platform/env.js');
 
 // The jobs-runs stand-in tmux, plus kill-session (the kill verb): $dir/up
 // marks the server up, $dir/sessions lists live session names.
@@ -795,7 +795,7 @@ test('probeSocketFile: a plain foreign server on the socket counts as live', asy
   }
 });
 
-// ---------- §3: CYBERMOLE_SOCK resolution (src/lib/env.ts) ----------
+// ---------- §3: CYBERMOLE_SOCK resolution (src/lib/platform/env.ts) ----------
 
 /** readInternalApiSocket() in a child process (env.ts reads CYBERMOLE_* at
  *  module load — the editor/storage test pattern). */
@@ -808,7 +808,7 @@ function readSock(env) {
       process.execPath,
       [
         '-e',
-        "process.stdout.write(JSON.stringify(require('./dist-server/src/lib/env.js').readInternalApiSocket()))",
+        "process.stdout.write(JSON.stringify(require('./dist-server/src/lib/platform/env.js').readInternalApiSocket()))",
       ],
       { env: { ...clean, ...env }, stdio: ['ignore', 'pipe', 'pipe'] },
     );

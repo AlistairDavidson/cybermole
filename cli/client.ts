@@ -12,7 +12,7 @@
 // leave chunked framing on by accident. tests/unit/cli.test.mjs asserts
 // the header at the wire level.
 import * as http from 'node:http';
-import { readInternalApiSocket } from '../src/lib/env';
+import { readInternalApiSocket } from '../src/lib/platform/env';
 import type { ApiResponse } from './output';
 
 export type { ApiResponse };

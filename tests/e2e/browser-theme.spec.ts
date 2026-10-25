@@ -315,7 +315,7 @@ test.describe('editor pane (private server, dead upstream)', () => {
     // theme parameter — VERIFIED against the vendored reh-web build: the
     // workbench parses only folder/workspace/ew from the URL, so a
     // ?theme= would be dead weight; the mode-following mechanism is the
-    // proxy's configurationDefaults injection (src/lib/editor.ts) plus
+    // proxy's configurationDefaults injection (src/lib/terminals/editor.ts) plus
     // this pane's reload-on-flip below.
     await expect
       .poll(async () =>

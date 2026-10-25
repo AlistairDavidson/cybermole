@@ -1,5 +1,5 @@
 // events-ws.ts — /ws/events: the browser's subscription to the domain
-// event bus (src/lib/events.ts). Two halves, both unit-tested
+// event bus (src/lib/platform/events.ts). Two halves, both unit-tested
 // (tests/unit/events-ws.test.mjs):
 //
 // - checkEventsUpgrade: the cookie gate. server/main.ts applies the SAME

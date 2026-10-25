@@ -3,7 +3,7 @@
 // HTML; this element wires the actions (run / edit / delete by delegated
 // clicks — the cards carry their data), the create/edit dialog, and a 15 s
 // refresh that swaps in /partials/jobs-list.
-import type { CalendarCheck } from '../../lib/types';
+import type { CalendarCheck } from '../../lib/platform/types';
 import { BASE } from '../../base';
 import { parseServerHTML } from '../html';
 import { signedInFetch, type SignedInFetchFailure } from '../signed-in-fetch';
@@ -21,7 +21,7 @@ import '@awesome.me/webawesome/dist/components/toast/toast.js';
 import 'validation-enhancer/zod';
 import type { ValidationEnhancerZod } from 'validation-enhancer/zod';
 import { JobSaveSchema } from '../../schemas/jobs';
-import type { JobRunView } from '../../lib/jobs';
+import type { JobRunView } from '../../lib/jobs/jobs';
 import { subscribeJobsEvents } from '../jobs-events';
 import { RunLogViewer } from './run-log';
 import { fmtDuration, fmtRunTime } from './run-format';

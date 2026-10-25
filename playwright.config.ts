@@ -29,7 +29,7 @@ export default defineConfig({
   globalSetup: './tests/support/global-setup.ts',
   webServer: [
     {
-      // In-memory S3 for POST /api/files (only what src/lib/storage.ts calls).
+      // In-memory S3 for POST /api/files (only what src/lib/platform/storage.ts calls).
       command: `node tests/support/fake-s3.mjs ${S3_PORT} ${S3_ACCESS_KEY}`,
       url: `http://127.0.0.1:${S3_PORT}/__fake/health`,
       reuseExistingServer: false,

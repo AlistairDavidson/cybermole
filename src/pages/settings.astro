@@ -12,7 +12,7 @@ import { assertCybermoleLocals } from '../lib/web/locals';
 // "off" / "never".
 const { cybermole } = assertCybermoleLocals(Astro.locals);
 const settings = cybermole.settingsState();
-// console.error on purpose, not src/lib/logger.ts: frontmatter is
+// console.error on purpose, not src/lib/platform/logger.ts: frontmatter is
 // Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
 if (!settings.ok) console.error(`settings page: ${settings.errorMessage}`);
 const state = settings.ok ? settings.data : null;

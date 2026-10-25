@@ -48,8 +48,8 @@ import {
   statusTool,
   unregisterTool,
 } from '../../dist-server/server/apps-mcp.js';
-import { checkApp } from '../../dist-server/src/lib/apps-gate.js';
-import { runChild } from '../../dist-server/src/lib/apps-child.js';
+import { checkApp } from '../../dist-server/src/lib/apps/apps-gate.js';
+import { runChild } from '../../dist-server/src/lib/apps/apps-child.js';
 
 const REPO = path.resolve(__dirname, '..', '..');
 const SLUG = 'notes';

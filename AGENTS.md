@@ -96,7 +96,7 @@ probes).
 
 ## node:sqlite
 
-The state db (`src/lib/db.ts`) uses the built-in `node:sqlite`, which
+The state db (`src/lib/platform/db.ts`) uses the built-in `node:sqlite`, which
 still prints a one-line `ExperimentalWarning: SQLite is an experimental
 feature…` the first time it loads in a process. **This warning is
 expected** — it appears in the server's boot log, `set-password` output

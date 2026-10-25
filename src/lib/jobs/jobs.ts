@@ -1,6 +1,6 @@
 // jobs.ts — scheduled jobs ("cron") run by an in-process scheduler.
 // A job = name + 5-field cron schedule + arbitrary shell command, stored
-// in the state db (jobs table, src/lib/db.ts). The Scheduler ticks every
+// in the state db (jobs table, src/lib/platform/db.ts). The Scheduler ticks every
 // ~30s and fires due jobs; every run — scheduler-fired or "run now" —
 // opens a tmux session `cybermole-<name>` on the app's own socket, so the
 // jobs page can show a run as live and link its console view (/?run=)
@@ -26,11 +26,17 @@
 import { CronExpressionParser } from 'cron-parser';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { qb, type JobRunOrigin, type StateDb } from './db';
-import { componentLogger } from './logger';
-import type { CalendarCheck, JobsState, ScheduledJob } from './types';
-import { hasSession, jobSessionName, killSession, liveSessionNames, newSession } from './tmux';
-import { emitDomainEvent } from './events';
+import { qb, type JobRunOrigin, type StateDb } from '../platform/db';
+import { componentLogger } from '../platform/logger';
+import type { CalendarCheck, JobsState, ScheduledJob } from '../platform/types';
+import {
+  hasSession,
+  jobSessionName,
+  killSession,
+  liveSessionNames,
+  newSession,
+} from '../terminals/tmux';
+import { emitDomainEvent } from '../platform/events';
 import {
   databaseRead,
   databaseUpdate,
@@ -41,7 +47,7 @@ import {
   type ResultSuccess,
   type TmuxSessionName,
 } from '@cybermole/app-kit';
-import { MAX_SCHEDULE, type SaveInput } from '../schemas/jobs';
+import { MAX_SCHEDULE, type SaveInput } from '../../schemas/jobs';
 
 // ---------- results (HTTP statuses are mapped in the HTTP layer) ----------
 
@@ -243,7 +249,7 @@ export function runLogPaths(
   };
 }
 
-/** The bundled log appender (src/lib/job-log-appender.ts), compiled next
+/** The bundled log appender (src/lib/jobs/job-log-appender.ts), compiled next
  *  to this module. Resolved from THIS module's own location at load — the
  *  CommonJS build's equivalent of import.meta.url — never from cwd: the
  *  server process's cwd is unrelated, and the script must sit at a stable
@@ -317,7 +323,7 @@ export interface JobContext {
 // functions, never a parallel path), the scheduler tick and run-now
 // (both go through fire), and kills. That placement is the whole
 // guarantee: the event fires identically whoever acted, and no HTTP
-// route can bypass it. /ws/events (src/lib/events-ws.ts) forwards the
+// route can bypass it. /ws/events (src/lib/platform/events-ws.ts) forwards the
 // events; the pages refresh on them.
 
 /** The shared fire-success emission: a run was recorded AND its session
@@ -373,7 +379,7 @@ export class Scheduler {
   ) {}
 
   /** Start the tick loop. No immediate first tick on purpose: the state db
-   *  opens lazily (src/lib/db.ts — the e2e webServer boots before
+   *  opens lazily (src/lib/platform/db.ts — the e2e webServer boots before
    *  global-setup resets its workspace), and an eager boot tick would
    *  latch a db file the reset then deletes. The first tick (≤ TICK_MS
    *  after boot) doubles as boot catch-up: isDue() treats any window

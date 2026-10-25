@@ -12,8 +12,8 @@ import Base from '../../layouts/Base.astro';
 import JobDetail from '../../components/JobDetail/JobDetail.astro';
 import { assertCybermoleLocals } from '../../lib/web/locals';
 import { JobNameSchema } from '@cybermole/app-kit';
-import type { JobRunView } from '../../lib/jobs';
-import type { ScheduledJob } from '../../lib/types';
+import type { JobRunView } from '../../lib/jobs/jobs';
+import type { ScheduledJob } from '../../lib/platform/types';
 
 const { cybermole } = assertCybermoleLocals(Astro.locals);
 const parsed = JobNameSchema.safeParse(Astro.params.name);
@@ -25,7 +25,7 @@ if (parsed.success) {
   // uses, so the two surfaces can never disagree.
   const listed = await cybermole.scheduler.listJobs();
   if (listed.ok) job = listed.data.jobs.find(j => j.name === parsed.data) ?? null;
-  // console.error on purpose, not src/lib/logger.ts: frontmatter is
+  // console.error on purpose, not src/lib/platform/logger.ts: frontmatter is
   // Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
   else console.error(`job page: ${listed.errorMessage}`);
   if (job) {

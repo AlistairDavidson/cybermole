@@ -1,5 +1,5 @@
 // app-kit-db.test.mjs — the kit's generic node:sqlite helper
-// (packages/app-kit/src/db/sqlite.ts, extracted from src/lib/db.ts by
+// (packages/app-kit/src/db/sqlite.ts, extracted from src/lib/platform/db.ts by
 // task/app-kit): a fresh file gets schema+version at open, migrate runs
 // every open (idempotently), a newer file refuses with the caller's label,
 // freshMode lands on the file, FKs are on, and the createQb/SqliteDb pair

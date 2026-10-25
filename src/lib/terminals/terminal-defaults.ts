@@ -18,10 +18,10 @@
 // and surfaced on /settings through settingsState().terminalDefaults (the
 // effective values — what a new tab would actually run — plus which
 // fields carry an override, for the reset affordance).
-import { qb, type StateDb } from './db';
+import { qb, type StateDb } from '../platform/db';
 import { databaseRead, databaseUpdate, type DatabaseReadResult } from '@cybermole/app-kit';
-import { ENV } from './env';
-import type { TerminalDefaults } from './types';
+import { ENV } from '../platform/env';
+import type { TerminalDefaults } from '../platform/types';
 import type { ResultFailure, ResultSuccess } from '@cybermole/app-kit';
 
 const KEY_AGENT = 'terminalDefaults.agentCommand';

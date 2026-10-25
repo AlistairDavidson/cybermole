@@ -41,7 +41,7 @@ export type ClientMsg = z.infer<typeof clientMsgSchema>;
 // The one SERVER frame the browser validates: 'backfill' bulk-writes a
 // large blob into the terminal buffer, so a malformed frame must be
 // dropped (below), not garble the terminal. Every other ServerMsg
-// (src/lib/types.ts) stays trusted-and-unparsed — the server wrote it,
+// (src/lib/platform/types.ts) stays trusted-and-unparsed — the server wrote it,
 // a parse would be ceremony.
 const backfillMsgSchema = z.object({ type: z.literal('backfill'), data: z.string() });
 export type BackfillMsg = z.infer<typeof backfillMsgSchema>;

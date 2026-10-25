@@ -1,4 +1,4 @@
-// auto-update.test.mjs — the pi auto-update setting (src/lib/auto-update.ts):
+// auto-update.test.mjs — the pi auto-update setting (src/lib/platform/auto-update.ts):
 // the pure decision logic (range-spec construction, semver comparison,
 // npm-view output parsing, the install decision), the check flow against a
 // FAKE npm on PATH (never the real one — no network here), and the
@@ -9,8 +9,8 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { StateDb } from '../../dist-server/src/lib/db.js';
-import { logger } from '../../dist-server/src/lib/logger.js';
+import { StateDb } from '../../dist-server/src/lib/platform/db.js';
+import { logger } from '../../dist-server/src/lib/platform/logger.js';
 import {
   AutoUpdater,
   autoUpdateSpec,
@@ -23,7 +23,7 @@ import {
   performAutoUpdateCheck,
   shouldAutoUpdate,
   setAutoUpdateEnabled,
-} from '../../dist-server/src/lib/auto-update.js';
+} from '../../dist-server/src/lib/platform/auto-update.js';
 
 /** The probe-failure log now goes through the winston logger (its console
  *  transport writes to process.stdout/stderr directly, so a console.error

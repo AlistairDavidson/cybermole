@@ -159,7 +159,7 @@ test('CYBERMOLE_GRAFANA_URL set: header link + /logs iframe on Grafana Explore',
     await expect(iframe).toHaveAttribute('title', 'Grafana Explore — cybermole logs');
     await expect(iframe).toHaveAttribute('allow', 'fullscreen');
     // The server-built Explore URL: v1 panes payload, Loki preselected
-    // (src/lib/grafana.ts; shape pinned against grafana 13.2.3).
+    // (src/lib/platform/grafana.ts; shape pinned against grafana 13.2.3).
     const src = await iframe.getAttribute('src');
     expect(src).toBeTruthy();
     const u = new URL(src!);

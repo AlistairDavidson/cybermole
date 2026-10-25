@@ -16,8 +16,8 @@ import { DatabaseSync } from 'node:sqlite';
 import * as nodeWs from 'ws';
 import { expect, test, type Cookie, type Locator, type Page } from '@playwright/test';
 import { WebSocket as NodeWebSocket } from 'ws';
-import { setCredential } from '../../src/lib/auth';
-import { StateDb } from '../../src/lib/db';
+import { setCredential } from '../../src/lib/platform/auth';
+import { StateDb } from '../../src/lib/platform/db';
 import {
   AGENT_MARKER,
   MARKER,
@@ -2582,7 +2582,7 @@ test('auto-update setting: default OFF, toggle persists across reload, status li
   // Runs after the SIGTERM test and before the rate-limit test (last).
   // The e2e server must never actually run npm through the scheduler: the
   // first check is 1 min after the setting turns ON (FIRST_CHECK_DELAY_MS,
-  // src/lib/auto-update.ts), and this test ends by toggling the setting
+  // src/lib/platform/auto-update.ts), and this test ends by toggling the setting
   // back OFF — which cancels even that — so the shared webServer finishes
   // with nothing armed.
   await login(page);

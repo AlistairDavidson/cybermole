@@ -2,13 +2,13 @@
 //
 // Everything the app itself writes lives in ENV.CYBERMOLE_DB_FILE (default
 // <state dir>/cybermole.db): the login credential (single row), the login
-// sessions (`auth_sessions` — token hashes only, src/lib/auth.ts), the
+// sessions (`auth_sessions` — token hashes only, src/lib/platform/auth.ts), the
 // apps/workspaces/terminals tables (docs/plans/workspaces-plan.md §2 —
-// src/lib/apps.ts, src/lib/workspaces.ts; the pi-session `sessions`
+// src/lib/apps/apps.ts, src/lib/terminals/workspaces.ts; the pi-session `sessions`
 // overlay died with the scan that read it, plan §11),
 // the scheduled-jobs tables (`jobs` definitions,
-// `job_runs` bookkeeping — src/lib/jobs.ts) and a small `settings` kv
-// (src/lib/auto-update.ts). pi's own store (sessions/,
+// `job_runs` bookkeeping — src/lib/jobs/jobs.ts) and a small `settings` kv
+// (src/lib/platform/auto-update.ts). pi's own store (sessions/,
 // provider creds under CYBERMOLE_AGENT_DIR) is not cybermole state and stays
 // untouched.
 //
@@ -96,7 +96,7 @@ const SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS terminals_by_workspace ON terminals (workspace_id, sort_order);
   -- Scheduled-job definitions for the in-process scheduler
-  -- (src/lib/jobs.ts). command is an arbitrary shell string BY DESIGN
+  -- (src/lib/jobs/jobs.ts). command is an arbitrary shell string BY DESIGN
   -- (typed by the authenticated user) — it only ever reaches tmux as
   -- tmux's own command string, never a server-side shell.
   CREATE TABLE IF NOT EXISTS jobs (
@@ -119,12 +119,12 @@ const SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS job_runs_job ON job_runs (job, fired_at);
   -- Small app-settings kv (one row per key, JSON-encoded values). Keys
-  -- are owned by their module (today: pi auto-update, src/lib/auto-update.ts).
+  -- are owned by their module (today: pi auto-update, src/lib/platform/auto-update.ts).
   CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
-  -- Login sessions (src/lib/auth.ts), so a restart doesn't sign everyone
+  -- Login sessions (src/lib/platform/auth.ts), so a restart doesn't sign everyone
   -- out. Keyed by sha256(token): the raw token never touches disk, so a
   -- copied db (or backup) holds nothing a browser could present.
   CREATE TABLE IF NOT EXISTS auth_sessions (

@@ -3,7 +3,7 @@
 // it belongs to the console (app_id NULL — the console is NOT an app row)
 // or to exactly one app. Terminals live here: a terminal tab is
 // meaningless outside its workspace. One terminal tab = one tmux session
-// named 't-<uuid>' (derived, never stored — src/lib/tmux.ts); the state db
+// named 't-<uuid>' (derived, never stored — src/lib/terminals/tmux.ts); the state db
 // owns the identity, and the row exists even when the tmux spawn fails
 // (plan §4: a dead tab — the first attach retries the spawn).
 //
@@ -13,9 +13,9 @@
 // killed best-effort, logged, never failing the delete.
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
-import { qb, type StateDb } from './db';
+import { qb, type StateDb } from '../platform/db';
 import { databaseRead, databaseUpdate, type DatabaseReadResult } from '@cybermole/app-kit';
-import { componentLogger } from './logger';
+import { componentLogger } from '../platform/logger';
 import { terminalSessionName } from './tmux';
 import { splitCommandLine } from './terminal-defaults';
 import {
@@ -28,7 +28,7 @@ import {
   type TmuxSessionName,
   type WorkspaceId,
 } from '@cybermole/app-kit';
-import type { WorkspaceState } from './types';
+import type { WorkspaceState } from '../platform/types';
 import type { TmuxSessionFailure, TmuxSessionSuccess } from './tmux';
 
 const log = componentLogger('workspaces');
@@ -189,7 +189,7 @@ export interface WorkspacesDeps {
   shellCommand: () => DatabaseReadResult<string>;
   /** The resolved AGENT command line — what the auto-opened first tab of
    *  a NEW workspace runs (db ?? CYBERMOLE_AGENT_COMMAND ?? the vendored
-   *  pi — src/lib/terminal-defaults.ts). */
+   *  pi — src/lib/terminals/terminal-defaults.ts). */
   agentCommand: () => DatabaseReadResult<string>;
   /** CYBERMOLE_NEW_SESSION_CWD — the default when the create carries no cwd
    *  of its own AND the parent app has none (plan §6, task/app-cwd). */

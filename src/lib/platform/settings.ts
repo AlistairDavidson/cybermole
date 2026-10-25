@@ -150,7 +150,7 @@ export async function runPiUpdate(
   updateBusy = true;
   // FLEET JUNCTION (task/privilege-split): the two-container shape moves
   // this npm install (node_modules with it) to the workspace side; the
-  // delegate site is marked in src/lib/auto-update.ts, next to the
+  // delegate site is marked in src/lib/platform/auto-update.ts, next to the
   // auto-update call into this function.
   log.info(`pi update: running \`${command}\` in ${appRoot}`);
   const installed = await new Promise<{

@@ -4,7 +4,7 @@
 // Parses compose.yaml, deploy/loki/config.yaml and the grafana datasource
 // provisioning with the `yaml` package (transitively lockfile-pinned via
 // astro — no new dependency) and asserts the invariants the logger
-// (src/lib/logger.ts) and README document.
+// (src/lib/platform/logger.ts) and README document.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -130,7 +130,7 @@ test('resource limits are set and modest on the observability services', () => {
 });
 
 // The code-side env contract the compose wiring meets.
-const { envSchema } = await import('../../dist-server/src/lib/env-schema.js');
+const { envSchema } = await import('../../dist-server/src/lib/platform/env-schema.js');
 
 /** readLokiConfig() in a fresh process (RAW_ENV is read at module load —
  *  same pattern as the CYBERMOLE_S3_* boot checks in storage.test.mjs), or
@@ -144,7 +144,7 @@ function bootConfig(env) {
       process.execPath,
       [
         '-e',
-        "process.stdout.write(JSON.stringify(require('./dist-server/src/lib/env.js').readLokiConfig()))",
+        "process.stdout.write(JSON.stringify(require('./dist-server/src/lib/platform/env.js').readLokiConfig()))",
       ],
       { env: { ...clean, ...env }, stdio: ['ignore', 'pipe', 'pipe'] },
     );

@@ -34,7 +34,7 @@ import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { readInternalApiSocket } from '../src/lib/env';
+import { readInternalApiSocket } from '../src/lib/platform/env';
 import { AppSlugSchema, JobNameSchema } from '@cybermole/app-kit';
 import {
   FiredAtSchema,
@@ -168,7 +168,7 @@ const firedAtSchema = z
 const nameSchema = JobNameSchema.describe('the job name, as jobs_list reported it');
 
 /** Build the stdio MCP server. socketPath is the resolved internal API
- *  socket (src/lib/env.ts readInternalApiSocket — imported, not
+ *  socket (src/lib/platform/env.ts readInternalApiSocket — imported, not
  *  duplicated: the $CYBERMOLE_SOCK → /run/cybermole/cybermole.sock → <state
  *  dir>/cybermole.sock discovery is §5's rule and the server's, one logic)
  *  — or null when the listener is off, in which case every tool call

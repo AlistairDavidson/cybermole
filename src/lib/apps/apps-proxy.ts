@@ -23,7 +23,7 @@
 import * as http from 'node:http';
 import { AppSlugSchema, type AppSlug } from '@cybermole/app-kit';
 
-/** The hop-by-hop set the editor proxy scrubs (src/lib/editor.ts) —
+/** The hop-by-hop set the editor proxy scrubs (src/lib/terminals/editor.ts) —
  *  connection-negotiating headers die at this hop by definition. */
 export const APPS_HOP_BY_HOP_HEADERS = [
   'connection',

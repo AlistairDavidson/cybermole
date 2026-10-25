@@ -1,16 +1,16 @@
 // apps-mcp.test.mjs — task/app-scaffold (docs/plans/apps-plan.md §6/§10) units:
 // the cybermole-apps MCP's three halves.
-//   scaffold (src/lib/apps-scaffold.ts): REAL tree-writing against a tmp
+//   scaffold (src/lib/apps/apps-scaffold.ts): REAL tree-writing against a tmp
 //     apps root — template copy with slug/base/name baking, the composed
 //     app.json, the .pi/mcp.json role boundary (cybermole-apps disabled +
 //     the inert shim entry), the per-package node_modules links (the
 //     template's own script, run for real), git init + the first commit,
 //     and every error code of the family.
-//   the gate (src/lib/apps-gate.ts): the quiet-envelope mapping over an
+//   the gate (src/lib/apps/apps-gate.ts): the quiet-envelope mapping over an
 //     INJECTED runner — all-green, a failing stage (output tail + counts),
 //     a timeout, the links precheck (a bad install dies first, with the
 //     fix named), tree_not_found, run_failed — plus the TAP count parser.
-//   status (src/lib/apps-status.ts): the join — rows × host answer ×
+//   status (src/lib/apps/apps-status.ts): the join — rows × host answer ×
 //     synthetic trees (fresh/stale/unbuilt/absent), the host's skip
 //     reasons, the booting case, unregistered trees, non-tree dirs
 //     ignored.
@@ -32,14 +32,14 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-apps-mcp-'));
 
-const { scaffoldApp } = await import('../../dist-server/src/lib/apps-scaffold.js');
-const { CommandNotFoundError } = await import('../../dist-server/src/lib/apps-child.js');
-const { checkApp, buildApp } = await import('../../dist-server/src/lib/apps-gate.js');
+const { scaffoldApp } = await import('../../dist-server/src/lib/apps/apps-scaffold.js');
+const { CommandNotFoundError } = await import('../../dist-server/src/lib/apps/apps-child.js');
+const { checkApp, buildApp } = await import('../../dist-server/src/lib/apps/apps-gate.js');
 const { joinAppsStatus, inspectTree, collectTrees } =
-  await import('../../dist-server/src/lib/apps-status.js');
+  await import('../../dist-server/src/lib/apps/apps-status.js');
 const { registerPrecheck } = await import('../../dist-server/server/apps-mcp.js');
-const { appsRootDefault } = await import('../../dist-server/src/lib/env.js');
-const { runChild } = await import('../../dist-server/src/lib/apps-child.js');
+const { appsRootDefault } = await import('../../dist-server/src/lib/platform/env.js');
+const { runChild } = await import('../../dist-server/src/lib/apps/apps-child.js');
 
 const scaffoldDeps = root => ({
   appsRoot: root,

@@ -16,7 +16,7 @@ import {
   validationFailureResponse,
   type DatabaseUpdateFailure,
 } from '@cybermole/app-kit';
-import type { DeleteAppFailure, ListAppsFailure, SaveAppFailure } from '../apps';
+import type { DeleteAppFailure, ListAppsFailure, SaveAppFailure } from '../apps/apps';
 import type {
   DeleteJobFailure,
   GetJobFailure,
@@ -27,25 +27,28 @@ import type {
   RunLogData,
   RunLogFailure,
   SaveJobFailure,
-} from '../jobs';
+} from '../jobs/jobs';
 import type {
   CloseTerminalFailure,
   DeleteWorkspaceFailure,
   NewTerminalFailure,
   RenameTerminalFailure,
   SaveWorkspaceFailure,
-} from '../workspaces';
-import type { ConsoleStateFailure, SettingsStateFailure } from '../services';
-import type { PiUpdateFailure, PiUpdateResult } from '../settings';
-import type { SaveTerminalDefaultsFailure, TerminalDefaultsFailure } from '../terminal-defaults';
+} from '../terminals/workspaces';
+import type { ConsoleStateFailure, SettingsStateFailure } from '../platform/services';
+import type { PiUpdateFailure, PiUpdateResult } from '../platform/settings';
+import type {
+  SaveTerminalDefaultsFailure,
+  TerminalDefaultsFailure,
+} from '../terminals/terminal-defaults';
 import type {
   FetchedObject,
   FetchObjectFailure,
   ObjectInfo,
   StatObjectFailure,
   StoreUploadFailure,
-} from '../storage';
-import type { UpdateResult } from '../types';
+} from '../platform/storage';
+import type { UpdateResult } from '../platform/types';
 import { UPLOAD_ALLOWED_MIME_TYPES } from '../../schemas/uploads';
 import type { FileUploadFailure, ParseFailure, ValidationFailure } from './parsing.service';
 

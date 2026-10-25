@@ -1,6 +1,6 @@
 // job-log-cap.test.mjs — task/job-log-caps (docs/plans/jobs-agent-plan.md §8):
 // the write-time cap on job run logs, exercised as REAL child processes.
-// The bundled appender (src/lib/job-log-appender.ts) is spawned as the
+// The bundled appender (src/lib/jobs/job-log-appender.ts) is spawned as the
 // wrapper spawns it — `node <appender> <logPath> <maxBytes>` — for
 // under-cap passthrough, the cap hit (the file stops at the cap with one
 // marker line while stdin KEEPS BEING DRAINED, so the writer never takes
@@ -23,9 +23,9 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-log-cap-'));
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 const APPENDER = fileURLToPath(
-  new URL('../../dist-server/src/lib/job-log-appender.js', import.meta.url),
+  new URL('../../dist-server/src/lib/jobs/job-log-appender.js', import.meta.url),
 );
-const { runCommandArgv } = await import('../../dist-server/src/lib/jobs.js');
+const { runCommandArgv } = await import('../../dist-server/src/lib/jobs/jobs.js');
 
 /** Run the appender exactly as the wrapper does, feeding `input` and
  *  waiting for a clean exit. Small inputs only: this buffers the whole
@@ -205,7 +205,7 @@ test('wrapper: a short failing run passes through whole and records its exit cod
 
 // ---------- the env knob: schema, default, fail-closed validation ----------
 
-const { envSchema } = await import('../../dist-server/src/lib/env-schema.js');
+const { envSchema } = await import('../../dist-server/src/lib/platform/env-schema.js');
 
 /** env.js in a fresh process (RAW_ENV is read at module load — the same
  *  pattern as the CYBERMOLE_LOKI_* boot checks in observability.test.mjs):
@@ -219,7 +219,7 @@ function bootEnv(value) {
       process.execPath,
       [
         '-e',
-        "process.stdout.write(String(require('./dist-server/src/lib/env.js').ENV.CYBERMOLE_JOB_LOG_MAX))",
+        "process.stdout.write(String(require('./dist-server/src/lib/platform/env.js').ENV.CYBERMOLE_JOB_LOG_MAX))",
       ],
       { env: value === undefined ? clean : { ...clean, CYBERMOLE_JOB_LOG_MAX: value } },
     );

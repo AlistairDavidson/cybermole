@@ -36,9 +36,9 @@ import {
   statusTool,
   unregisterTool,
 } from '../../dist-server/server/apps-mcp.js';
-import { runChild } from '../../dist-server/src/lib/apps-child.js';
-import { scaffoldApp } from '../../dist-server/src/lib/apps-scaffold.js';
-import { checkApp } from '../../dist-server/src/lib/apps-gate.js';
+import { runChild } from '../../dist-server/src/lib/apps/apps-child.js';
+import { scaffoldApp } from '../../dist-server/src/lib/apps/apps-scaffold.js';
+import { checkApp } from '../../dist-server/src/lib/apps/apps-gate.js';
 
 const REPO = path.resolve(__dirname, '..', '..');
 const SLUG = 'loop-probe';

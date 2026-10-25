@@ -18,7 +18,7 @@ import { parseArgs, type ArgSpec, type ParsedArgs } from './args';
 
 // ---------- the wire (the internal API's bodies, typed for the CLI) ----------
 
-/** One ScheduledJob as GET /jobs answers it (src/lib/jobs.ts listJobs). */
+/** One ScheduledJob as GET /jobs answers it (src/lib/jobs/jobs.ts listJobs). */
 interface JobView {
   name: string;
   schedule: string;

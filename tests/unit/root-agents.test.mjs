@@ -1,5 +1,5 @@
 // root-agents.test.mjs — the workspace-root AGENTS.md seeding
-// (src/lib/root-agents.ts, docs/plans/jobs-agent-plan.md §9): the
+// (src/lib/platform/root-agents.ts, docs/plans/jobs-agent-plan.md §9): the
 // only-where-absent policy in one function, so the server boot (single
 // user — server/main.ts, next to seedAgentDir) and the split's
 // workspace entrypoint (docker-workspace-entrypoint.sh, uid 2000 — a
@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-root-agents-'));
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-const { seedRootAgentsFile } = await import('../../dist-server/src/lib/root-agents.js');
+const { seedRootAgentsFile } = await import('../../dist-server/src/lib/platform/root-agents.js');
 
 /** A stand-in template file with known content. */
 const template = path.join(dir, 'template.md');

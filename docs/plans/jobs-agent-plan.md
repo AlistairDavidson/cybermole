@@ -113,7 +113,7 @@ POST   /jobs/:name/runs/:firedAt/kill
 GET    /jobs/:name/runs/:firedAt/log   (tail, same 1 MiB cap)
 ```
 
-Thin routes calling the `src/lib/jobs` service functions directly — no
+Thin routes calling the `src/lib/jobs/jobs` service functions directly — no
 cookie middleware, no CSRF, no rate limit (the socket *is* the gate).
 The Astro `/api/jobs` routes remain the browser surface, unchanged.
 

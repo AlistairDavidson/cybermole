@@ -106,13 +106,13 @@ cybermole boots clean, `/editor/*` answers 404, the console hides its
 affordances — the idle editor container is cheap to leave running.
 Nothing publishes a port: the compose network is the only door.
 
-## The proxy (server/main.ts + src/lib/editor.ts)
+## The proxy (server/main.ts + src/lib/terminals/editor.ts)
 
 `CYBERMOLE_EDITOR_UPSTREAM` (e.g. `http://editor:3000`; origin only, validated
 at boot by `readEditorUpstream`) is the single switch, replacing the Zed
 triple. Everything under `${BASE}/editor` — HTTP and WS — proxies to it,
 behind the origin check and the session gate, after the auth branch and
-before Astro. The policy surface lives in `src/lib/editor.ts`
+before Astro. The policy surface lives in `src/lib/terminals/editor.ts`
 (path routing, header set, body cap, tunnel tracking) so units cover it
 without booting the server; the transport lives in `server/main.ts`:
 
@@ -134,7 +134,7 @@ without booting the server; the transport lives in `server/main.ts`:
   `vscode-workbench-web-configuration` meta gets
   `configurationDefaults` injected (`window.autoDetectColorScheme` + the
   preferred dark/light themes — `injectWorkbenchThemeDefaults` in
-  src/lib/editor.ts), so the workbench opens in the BROWSER's color
+  src/lib/terminals/editor.ts), so the workbench opens in the BROWSER's color
   scheme. Verified against the vendored build: it parses only
   folder/workspace/ew URL params (no `?theme=`), and window-scope theme
   settings live browser-side, so neither a URL param nor home-volume

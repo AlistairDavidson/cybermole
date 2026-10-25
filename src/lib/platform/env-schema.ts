@@ -1,5 +1,5 @@
 // Astro env-schema format on purpose, NOT zod: astro.config.mjs consumes
-// these field descriptors (context/access/type) directly and src/lib/env.ts
+// these field descriptors (context/access/type) directly and src/lib/platform/env.ts
 // reads the same table for the plain-tsc server build — a zod conversion
 // would break both. The CYBERMOLE_* contract stays as-is.
 export type EnvFieldType = 'string' | 'number' | 'boolean';
@@ -31,7 +31,7 @@ export const envSchema = {
   // `-S <path>` instead of `-L <name>` (a relative name resolves per-uid
   // as $TMUX_TMPDIR/tmux-<uid>/<name>, unusable across uids), and every
   // session-creating call (terminal spawns, job runs, the WS attach)
-  // refuses to fork a server (see src/lib/tmux.ts).
+  // refuses to fork a server (see src/lib/terminals/tmux.ts).
   CYBERMOLE_TMUX_SOCKET: {
     type: 'string',
     context: 'server',
@@ -77,7 +77,7 @@ export const envSchema = {
   CYBERMOLE_JOB_LOG_DIR: { type: 'string', context: 'server', access: 'secret', optional: true },
   // task/job-log-caps (jobs-agent-plan §8): the write-time cap on a job
   // run's log — the run wrapper pipes through a small bundled node
-  // appender (src/lib/job-log-appender.ts) that stops writing past this
+  // appender (src/lib/jobs/job-log-appender.ts) that stops writing past this
   // many bytes (one "[truncated at N bytes]" marker) while still draining
   // the job's output, so a chatty or runaway job cannot fill the disk
   // mid-run. Non-integer and negative values stop the server at boot
@@ -135,7 +135,7 @@ export const envSchema = {
   // (identifies this deployment in Loki's stream selectors). Default in
   // env.ts: 'cybermole'.
   CYBERMOLE_LOKI_JOB: { type: 'string', context: 'server', access: 'secret', optional: true },
-  // Object storage (src/lib/storage.ts) — any S3-compatible server; the
+  // Object storage (src/lib/platform/storage.ts) — any S3-compatible server; the
   // compose stack runs SeaweedFS. No endpoint = not configured (uploads
   // answer 503); an endpoint needs both keys — env.ts checks at boot.
   CYBERMOLE_S3_ENDPOINT: { type: 'string', context: 'server', access: 'secret', optional: true },

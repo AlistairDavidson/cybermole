@@ -9,7 +9,7 @@ import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { Busboy, type BusboyFileStream, type BusboyInstance } from '@fastify/busboy';
 import type { z, ZodType } from 'zod';
-import type { ObjectRange } from '../storage';
+import type { ObjectRange } from '../platform/storage';
 import type { ResultFailure, ResultSuccess } from '@cybermole/app-kit';
 
 export type ParseSuccess<DataType extends object> = ResultSuccess<'parse_request', DataType>;

@@ -11,7 +11,7 @@ verbs as the acceptance run, plus the docs flip that flipped this
 header). Integration amendments, told where they changed the agreed
 plan: main.ts's static+middleware factoring stayed a stretch and was
 not taken — the app host carries its own small serve helper (§3); the
-socket-client unification landed as src/lib/internal-api-client.ts in
+socket-client unification landed as src/lib/platform/internal-api-client.ts in
 branch 1, and mcp.ts still has its local one (the jobs MCP was left
 untouched by the apps epic); branch 4 added CYBERMOLE_APPS_ROOT (the
 apps root env the verbs and the host share); the reference app's run
@@ -189,7 +189,7 @@ Three small additions, nothing else changes in the web container:
   Unregistered slug → 404; host down → 502.
 - **Internal API verbs** — `app_save` / `app_delete` mirroring the
   console routes (`POST/PATCH /api/apps`, closed error codes from
-  `src/lib/apps.ts` verbatim; no second vocabulary — the jobs MCP's
+  `src/lib/apps/apps.ts` verbatim; no second vocabulary — the jobs MCP's
   rule). This is §0's recorded amendment to jobs-agent-plan §2, and the
   `apps_list` route comment that states the old boundary is rewritten
   with them.
@@ -213,7 +213,7 @@ Contents (extraction, not invention — each piece already exists in
 - the Result family + branded-ID helpers (`src/types/`)
 - the node-free zod schema pattern (`src/schemas/`) and
   responses.service's Result→HTTP mapping
-- the `node:sqlite` db helper pattern (`src/lib/db.ts`'s shape)
+- the `node:sqlite` db helper pattern (`src/lib/platform/db.ts`'s shape)
 - the **route table binder**: a table entry (name, method, path, zod
   in, handler → Result) bound to (a) an Astro catch-all API route,
   (b) MCP tool shapes for the shim, (c) a typed client for sibling
@@ -223,7 +223,7 @@ Contents (extraction, not invention — each piece already exists in
   the **preact-signal island conventions** — apps adopt signals first;
   the console adopts whatever proves out (the TODO's preact item
   lands here)
-- the storage client (`src/lib/storage.ts`) and a jobs-facing helper
+- the storage client (`src/lib/platform/storage.ts`) and a jobs-facing helper
   (the internal API socket client, shared with `server/mcp.ts`)
 
 Core dependencies (astro, webawesome, astro-lit, preact, zod) resolve

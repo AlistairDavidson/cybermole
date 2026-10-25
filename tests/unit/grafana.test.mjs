@@ -1,6 +1,6 @@
 // grafana.test.mjs — task/logs-page: the CYBERMOLE_GRAFANA_URL env
-// contract (readGrafanaUrl, src/lib/env.ts) and the Explore deep link it
-// feeds (grafanaExploreUrl, src/lib/grafana.ts), plus the compose wiring
+// contract (readGrafanaUrl, src/lib/platform/env.ts) and the Explore deep link it
+// feeds (grafanaExploreUrl, src/lib/platform/grafana.ts), plus the compose wiring
 // that delivers the var. readGrafanaUrl runs in a FRESH process (RAW_ENV
 // is read at module load — same pattern as the CYBERMOLE_LOKI_* boot
 // checks in observability.test.mjs); grafanaExploreUrl is pure, imported
@@ -28,7 +28,7 @@ function bootRead(env) {
       process.execPath,
       [
         '-e',
-        "process.stdout.write(JSON.stringify(require('./dist-server/src/lib/env.js').readGrafanaUrl()))",
+        "process.stdout.write(JSON.stringify(require('./dist-server/src/lib/platform/env.js').readGrafanaUrl()))",
       ],
       { env: { ...clean, ...env }, stdio: ['ignore', 'pipe', 'pipe'] },
     );
@@ -39,7 +39,7 @@ function bootRead(env) {
 }
 
 test('the CYBERMOLE_GRAFANA_URL env contract is declared in the shared schema', async () => {
-  const { envSchema } = await import('../../dist-server/src/lib/env-schema.js');
+  const { envSchema } = await import('../../dist-server/src/lib/platform/env-schema.js');
   assert.deepEqual(envSchema.CYBERMOLE_GRAFANA_URL, {
     type: 'string',
     context: 'server',
@@ -89,7 +89,7 @@ test('readGrafanaUrl: malformed values stop the boot', () => {
 
 test('grafanaExploreUrl: v1 panes payload preselecting the provisioned Loki datasource', async () => {
   const { grafanaExploreUrl, LOKI_DATASOURCE_UID } =
-    await import('../../dist-server/src/lib/grafana.js');
+    await import('../../dist-server/src/lib/platform/grafana.js');
   const url = new URL(grafanaExploreUrl('http://127.0.0.1:3300'));
   assert.equal(url.pathname, '/explore');
   assert.equal(url.searchParams.get('schemaVersion'), '1');
@@ -109,7 +109,7 @@ test('grafanaExploreUrl: v1 panes payload preselecting the provisioned Loki data
 });
 
 test('grafanaExploreUrl: a subpath base keeps its prefix (appended, not resolved)', async () => {
-  const { grafanaExploreUrl } = await import('../../dist-server/src/lib/grafana.js');
+  const { grafanaExploreUrl } = await import('../../dist-server/src/lib/platform/grafana.js');
   const url = new URL(grafanaExploreUrl('https://host/grafana'));
   assert.equal(url.pathname, '/grafana/explore');
   // A root base must not double-slash.

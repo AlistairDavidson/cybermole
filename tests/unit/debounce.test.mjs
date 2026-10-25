@@ -1,10 +1,10 @@
-// debounce.test.mjs — debounceTrailing (src/lib/debounce.ts): the jobs
+// debounce.test.mjs — debounceTrailing (src/lib/platform/debounce.ts): the jobs
 // pages' /ws/events refresh coalescing (plan §7) — several bus events in
 // quick succession become ONE partial refresh with the last arguments.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const { debounceTrailing } = await import('../../dist-server/src/lib/debounce.js');
+const { debounceTrailing } = await import('../../dist-server/src/lib/platform/debounce.js');
 
 const tick = ms => new Promise(resolve => setTimeout(resolve, ms));
 

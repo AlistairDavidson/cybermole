@@ -11,9 +11,9 @@ import { execFile } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
 import * as pty from 'node-pty';
-import { Auth, RateLimiter, type Auth as AuthType } from '../src/lib/auth';
-import { StateDb } from '../src/lib/db';
-import * as tmux from '../src/lib/tmux';
+import { Auth, RateLimiter, type Auth as AuthType } from '../src/lib/platform/auth';
+import { StateDb } from '../src/lib/platform/db';
+import * as tmux from '../src/lib/terminals/tmux';
 import {
   ENV,
   RAW_ENV,
@@ -25,12 +25,12 @@ import {
   readInternalApiSocket,
   readObjectStoreConfig,
   readEditorUpstream,
-} from '../src/lib/env';
-import { componentLogger, closeLogger } from '../src/lib/logger';
-import * as jobs from '../src/lib/jobs';
-import { seedRootAgentsFile } from '../src/lib/root-agents';
-import { EventsRelay, checkEventsUpgrade } from '../src/lib/events-ws';
-import { AutoUpdater } from '../src/lib/auto-update';
+} from '../src/lib/platform/env';
+import { componentLogger, closeLogger } from '../src/lib/platform/logger';
+import * as jobs from '../src/lib/jobs/jobs';
+import { seedRootAgentsFile } from '../src/lib/platform/root-agents';
+import { EventsRelay, checkEventsUpgrade } from '../src/lib/platform/events-ws';
+import { AutoUpdater } from '../src/lib/platform/auto-update';
 import {
   EDITOR_HOP_BY_HOP_HEADERS,
   EDITOR_HTML_REWRITE_MAX_BYTES,
@@ -42,23 +42,27 @@ import {
   isEditorHttpPath,
   isEditorUpgradePath,
   type EditorUpstream,
-} from '../src/lib/editor';
-import { createServices, type ServerConfig, type CybermoleLocals } from '../src/lib/services';
-import { handleAppsRequest, isAppsHttpPath } from '../src/lib/apps-proxy';
-import { AppsServing } from '../src/lib/apps-serving';
+} from '../src/lib/terminals/editor';
+import {
+  createServices,
+  type ServerConfig,
+  type CybermoleLocals,
+} from '../src/lib/platform/services';
+import { handleAppsRequest, isAppsHttpPath } from '../src/lib/apps/apps-proxy';
+import { AppsServing } from '../src/lib/apps/apps-serving';
 import {
   startAppHostSupervisor,
   type AppHostSupervisorHandle,
-} from '../src/lib/app-host-supervisor';
-import { grafanaExploreUrlFromEnv } from '../src/lib/grafana';
+} from '../src/lib/apps/app-host-supervisor';
+import { grafanaExploreUrlFromEnv } from '../src/lib/platform/grafana';
 import {
   resolvedAgentCommand,
   resolvedShellCommand,
   splitCommandLine,
-} from '../src/lib/terminal-defaults';
+} from '../src/lib/terminals/terminal-defaults';
 import { startInternalApi, InternalSocketOwnedError, type InternalApiHandle } from './internal-api';
-import { ObjectStore } from '../src/lib/storage';
-import type { ClientMsg, ServerMsg } from '../src/lib/types';
+import { ObjectStore } from '../src/lib/platform/storage';
+import type { ClientMsg, ServerMsg } from '../src/lib/platform/types';
 import { loginBody } from '../src/schemas/api';
 import { parseClientMsg } from '../src/schemas/frames';
 import {
@@ -69,7 +73,7 @@ import {
 } from '@cybermole/app-kit';
 import { UPLOAD_MAX_BODY_BYTES } from '../src/schemas/uploads';
 
-// Operational logging (src/lib/logger.ts): console always; a winston-loki
+// Operational logging (src/lib/platform/logger.ts): console always; a winston-loki
 // push transport when CYBERMOLE_LOKI_URL is set. Component children give every
 // line its [component] console prefix / loki label. set-password.ts keeps
 // plain console.* — CLI output for a human at a terminal, no server.
@@ -123,7 +127,7 @@ const CFG: ServerConfig = {
   newSessionCwd: ENV.CYBERMOLE_NEW_SESSION_CWD,
   jobLogDir: ENV.CYBERMOLE_JOB_LOG_DIR,
   // task/defaults-settings: the terminal commands resolve per spawn (db
-  //  override ?? env ?? built-in — src/lib/terminal-defaults.ts), not
+  //  override ?? env ?? built-in — src/lib/terminals/terminal-defaults.ts), not
   //  here: a /settings save must apply without a restart.
   trustProxy: Math.max(0, ENV.CYBERMOLE_TRUST_PROXY),
   editorUpstream: readEditorUpstream(),
@@ -207,10 +211,10 @@ const route = (p: string): string => (CFG.base === '/' ? p : CFG.base + p);
 
 // cybermole's own persisted state: one sqlite db (login credential, login
 // sessions, the apps/workspaces/terminals tree, jobs) at CFG.dbFile,
-// opened lazily on first use (src/lib/db.ts).
+// opened lazily on first use (src/lib/platform/db.ts).
 const stateDb = new StateDb(CFG.dbFile);
 const auth: AuthType = new Auth(stateDb);
-// In-process job scheduler (src/lib/jobs.ts): definitions + run
+// In-process job scheduler (src/lib/jobs/jobs.ts): definitions + run
 // bookkeeping live in the state db; fires open tmux sessions on the app's
 // socket under the same job-session conventions as interactive sessions.
 const scheduler = new jobs.Scheduler(stateDb, {
@@ -221,7 +225,7 @@ const scheduler = new jobs.Scheduler(stateDb, {
   logMaxBytes: ENV.CYBERMOLE_JOB_LOG_MAX,
 });
 scheduler.start();
-// pi auto-update (src/lib/auto-update.ts): when the persisted setting is
+// pi auto-update (src/lib/platform/auto-update.ts): when the persisted setting is
 // ON, one check shortly after boot and then daily — always within the
 // declared range, never a restart. start() only arms the deferred boot
 // probe: it reads the setting lazily (the state db opens lazily — see
@@ -229,7 +233,7 @@ scheduler.start();
 // OFF nothing npm-shaped is ever scheduled).
 const autoUpdater = new AutoUpdater({ db: stateDb, appRoot: APP_ROOT });
 autoUpdater.start();
-// Object storage (src/lib/storage.ts): any S3-compatible server, or none —
+// Object storage (src/lib/platform/storage.ts): any S3-compatible server, or none —
 // uploads then answer 503. Nothing connects until the first upload.
 const objectStore = new ObjectStore(readObjectStoreConfig());
 bootLog.info(
@@ -280,7 +284,7 @@ if (APPS_SOCK === null) {
   );
 }
 // task/app-web (apps-plan §4): /api/state's serving ping over the
-// resolved apps socket (bounded + cached — src/lib/apps-serving.ts);
+// resolved apps socket (bounded + cached — src/lib/apps/apps-serving.ts);
 // null socketPath = the off surface, answered serving:false forever.
 const appsServing = new AppsServing({ socketPath: APPS_SOCK });
 // task/ws-terminal (plan §4): a terminal tab's spawn/respawn — one
@@ -296,7 +300,7 @@ const spawnTerminalSession = (name: TmuxSessionName, cwd: string, command: strin
 // Everything stateful the Astro side (API routes, pages) may use, built
 // once here and passed to the Astro handler in locals — never imported
 // there (a Vite-bundled second copy would carry its own state; see
-// src/lib/services.ts).
+// src/lib/platform/services.ts).
 const services = createServices({
   cfg: CFG,
   stateDb,
@@ -305,7 +309,7 @@ const services = createServices({
   autoUpdater,
   objectStore,
   // task/ws-schema: the apps/workspaces domains' best-effort terminal
-  // session kill (deletes/closes — src/lib/tmux.ts killSession).
+  // session kill (deletes/closes — src/lib/terminals/tmux.ts killSession).
   killSession: tmux.killSession,
   // task/ws-terminal (plan §4): the terminal spawn dep (see
   // spawnTerminalSession above).
@@ -695,7 +699,7 @@ function hardenResponse(res: http.ServerResponse): void {
 // authenticated route — the console frames it in an iframe, so auth is
 // the existing session cookie and no cross-origin anything applies.
 // The decision surface (path matching, header set, body cap, tunnel
-// tracking, the upgrade header pair) lives in src/lib/editor.ts; this is
+// tracking, the upgrade header pair) lives in src/lib/terminals/editor.ts; this is
 // the transport.
 
 function proxyEditorRequest(
@@ -1122,7 +1126,7 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
   // (an unauthenticated page GET rendered the login page in place; a
   // non-GET answered 401), and the origin check ran before routing.
   // HTTP only — WS rides a later branch of the epic (§12). Decision
-  // rules + transport: src/lib/apps-proxy.ts (off → 404 namespace,
+  // rules + transport: src/lib/apps/apps-proxy.ts (off → 404 namespace,
   // unknown slug → 404 before the host, host down → 502 fast).
   if (isAppsHttpPath(CFG.base, url)) {
     handleAppsRequest(
@@ -1190,10 +1194,10 @@ const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 
 // task/jobs-page (plan §7): /ws/events — the jobs pages' live
 // subscription to the domain-event bus. The scheduler's service layer
-// (src/lib/jobs.ts) emits at its choke points (whoever acted — the
+// (src/lib/jobs/jobs.ts) emits at its choke points (whoever acted — the
 // browser routes, the internal socket API of plan §4, the tick,
 // run-now); this relay forwards each event to every authenticated
-// browser socket. The gate is checkEventsUpgrade (src/lib/events-ws.ts),
+// browser socket. The gate is checkEventsUpgrade (src/lib/platform/events-ws.ts),
 // the same checks the terminal's branch below applies inline.
 const eventsRelay = new EventsRelay({ alive: token => auth.alive(token), log: wsLog });
 eventsRelay.start();
@@ -1399,7 +1403,7 @@ function wsSend(ws: WebSocket, msg: ServerMsg): void {
 }
 
 // parseClientMsg (the client-frame gate) lives in src/schemas/frames.ts;
-// ClientMsg (the union it yields) is re-exported by src/lib/types.ts.
+// ClientMsg (the union it yields) is re-exported by src/lib/platform/types.ts.
 
 // Keepalive: a ping per connection this often. Idle-timeout proxies (ALB
 // defaults to 60s; nginx's proxy_read_timeout) count it as traffic, so a

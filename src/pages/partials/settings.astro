@@ -13,7 +13,7 @@ const { cybermole } = assertCybermoleLocals(Astro.locals);
 const settings = cybermole.settingsState();
 Astro.response.headers.set('Cache-Control', 'no-store');
 if (!settings.ok) {
-  // console.error on purpose, not src/lib/logger.ts: frontmatter is
+  // console.error on purpose, not src/lib/platform/logger.ts: frontmatter is
   // Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
   console.error(`settings partial: ${settings.errorMessage}`);
   Astro.response.status = 500;

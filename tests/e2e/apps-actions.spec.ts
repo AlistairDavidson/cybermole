@@ -40,9 +40,9 @@ import {
   statusTool,
   unregisterTool,
 } from '../../dist-server/server/apps-mcp.js';
-import { addAction } from '../../dist-server/src/lib/apps-actions.js';
-import { checkApp } from '../../dist-server/src/lib/apps-gate.js';
-import { runChild } from '../../dist-server/src/lib/apps-child.js';
+import { addAction } from '../../dist-server/src/lib/apps/apps-actions.js';
+import { checkApp } from '../../dist-server/src/lib/apps/apps-gate.js';
+import { runChild } from '../../dist-server/src/lib/apps/apps-child.js';
 
 const REPO = path.resolve(__dirname, '..', '..');
 const SLUG = 'actions-probe';
@@ -159,7 +159,7 @@ test('the extended loop: scaffold → add_action → check green → register + 
   test.setTimeout(300_000);
 
   // scaffold — the real template, baked, linked, committed.
-  const { scaffoldApp } = await import('../../dist-server/src/lib/apps-scaffold.js');
+  const { scaffoldApp } = await import('../../dist-server/src/lib/apps/apps-scaffold.js');
   const scaffolded: Json = await scaffoldApp(
     {
       appsRoot: APPS_ROOT,

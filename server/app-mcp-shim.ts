@@ -27,18 +27,18 @@ import * as path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { readAppsRoot, readAppsSocket } from '../src/lib/env';
+import { readAppsRoot, readAppsSocket } from '../src/lib/platform/env';
 import {
   requestInternalApi,
   type InternalApiAnswer,
   type InternalApiCall,
-} from '../src/lib/internal-api-client';
+} from '../src/lib/platform/internal-api-client';
 import {
   planActionRequest,
   readRouteTable,
   shapeFromJsonSchema,
   type SerializedAction,
-} from '../src/lib/apps-route-table';
+} from '../src/lib/apps/apps-route-table';
 
 const json = (body: unknown): CallToolResult => ({
   content: [

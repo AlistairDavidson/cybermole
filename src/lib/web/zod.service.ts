@@ -56,7 +56,7 @@ function attrsFromNode(node: JsonSchemaNode, required: boolean, field: string): 
   // not meant as an HTML pattern.
   if (n.pattern !== undefined && attrs.type === undefined) {
     if (compilesAsHtmlPattern(n.pattern)) attrs.pattern = n.pattern;
-    // console.warn on purpose, not src/lib/logger.ts: this module is
+    // console.warn on purpose, not src/lib/platform/logger.ts: this module is
     // Astro-bundled (frontmatter imports it) and the winston logger must
     // stay out of the Vite bundle (docs/conventions/CODE_STYLE.md §6).
     else

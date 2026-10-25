@@ -140,7 +140,7 @@ Each item below was observed, not inferred:
   **PIN: `connect-src` stays closed to open-vsx.org.** If host verification
   shows the viewlet attempting browser-side gallery fetches (CSP violation
   naming open-vsx.org in the iframe console), add it to `connect-src` in
-  ONE place: `editorSecurityHeaders()` in `src/lib/editor.ts`.
+  ONE place: `editorSecurityHeaders()` in `src/lib/terminals/editor.ts`.
 - **The WS handshake bytes.** The shipped proxy copies the upstream's 101
   response headers verbatim rather than re-deriving them — nothing to pin.
 
@@ -152,9 +152,9 @@ Each item below was observed, not inferred:
 | Pin + sha256 | `editor/Dockerfile` `ARG`s (both arches) |
 | Original-Host forwarding | `proxyEditorRequest` / `upgradeEditorSocket` (server/main.ts) |
 | `?folder=` URI-encoded | `console-app.ts` open-editor listener |
-| Editor header set | `editorSecurityHeaders()` (src/lib/editor.ts) + applied to HTML in `proxyEditorRequest` |
+| Editor header set | `editorSecurityHeaders()` (src/lib/terminals/editor.ts) + applied to HTML in `proxyEditorRequest` |
 | Marketplaces denied in browser CSP | `editorSecurityHeaders()` — the single constant to flip |
-| WS handshake headers (`Connection: Upgrade` re-added after the hop-by-hop strip — without them no upstream answers 101) | `editorUpgradeHeaders()` (src/lib/editor.ts) |
+| WS handshake headers (`Connection: Upgrade` re-added after the hop-by-hop strip — without them no upstream answers 101) | `editorUpgradeHeaders()` (src/lib/terminals/editor.ts) |
 | SW bypass | `public/sw.js` fetch handler (`editor/` beside `api/`, `partials/`) |
 
 ### Review finding (round 1) — the WS handshake headers

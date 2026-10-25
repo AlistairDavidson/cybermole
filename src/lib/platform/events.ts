@@ -1,5 +1,5 @@
 // events.ts — the in-process domain-event bus (plan §7, "live
-// consistency"). The service layer (src/lib/jobs.ts) emits at its
+// consistency"). The service layer (src/lib/jobs/jobs.ts) emits at its
 // mutation/observation choke points; the /ws/events relay (src/lib/
 // events-ws.ts) forwards every event to subscribed pages, which run the
 // same partial refresh the 15 s poll already runs. That is the "human and
@@ -51,7 +51,7 @@ export function onDomainEvent(listener: (event: DomainEvent) => void): () => voi
 }
 
 /** Emit a domain event. Called ONLY from the service layer's choke
- *  points (src/lib/jobs.ts) — never from an HTTP route, which would
+ *  points (src/lib/jobs/jobs.ts) — never from an HTTP route, which would
  *  break the "whoever acted, the event fires" guarantee. Synchronous,
  *  like every EventEmitter listener list in this codebase. */
 export function emitDomainEvent(event: DomainEvent): void {

@@ -1,5 +1,5 @@
 // auth.ts — single-user login: username + password,
-// salted scrypt hash in the state db (src/lib/db.ts), session tokens
+// salted scrypt hash in the state db (src/lib/platform/db.ts), session tokens
 // persisted there too — as sha256 hashes only (auth_sessions), so a
 // restart doesn't sign everyone out and a copied db holds no usable
 // token. Expiry is two clocks: a sliding idle window renewed on every
@@ -46,7 +46,7 @@ export interface SessionTtls {
   renewWriteMs?: number;
 }
 
-/** One auth_sessions row (src/lib/db.ts). */
+/** One auth_sessions row (src/lib/platform/db.ts). */
 interface SessionRow {
   /** login time (ms epoch) — the absolute clock's origin */
   created_at: number;

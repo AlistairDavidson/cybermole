@@ -15,7 +15,7 @@
 // (localStorage, one key per app slug), is applied during render so a
 // poll never flickers rows open, and the toggle is a real <button>
 // flipping the DOM in place to what the next render would produce.
-import type { AppServingState, ConsoleState, WorkspaceState } from '../lib/types';
+import type { AppServingState, ConsoleState, WorkspaceState } from '../lib/platform/types';
 import type { WorkspaceId } from '@cybermole/app-kit';
 import { BASE } from '../base';
 import '@awesome.me/webawesome/dist/components/input/input.js';

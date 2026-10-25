@@ -1,5 +1,5 @@
 // fake-s3.mjs — a tiny in-memory S3 for the tests: only the calls
-// src/lib/storage.ts makes (path-style HeadBucket, CreateBucket,
+// src/lib/platform/storage.ts makes (path-style HeadBucket, CreateBucket,
 // PutObject, the multipart upload calls, GetObject with one byte range,
 // HeadObject), plus a test-side read-back under /__fake/ (underscores
 // can't start a bucket name, so it never collides). Not an S3

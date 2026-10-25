@@ -4,12 +4,12 @@
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { setCredential } from '../../src/lib/auth';
-import { StateDb, qb } from '../../src/lib/db';
+import { setCredential } from '../../src/lib/platform/auth';
+import { StateDb, qb } from '../../src/lib/platform/db';
 import type { DatabaseReadResult } from '@cybermole/app-kit';
-import { Apps } from '../../src/lib/apps';
-import { Workspaces } from '../../src/lib/workspaces';
-import { terminalSessionName } from '../../src/lib/tmux';
+import { Apps } from '../../src/lib/apps/apps';
+import { Workspaces } from '../../src/lib/terminals/workspaces';
+import { terminalSessionName } from '../../src/lib/terminals/tmux';
 import { asAppId, asTerminalId } from '@cybermole/app-kit';
 import {
   AGENT_MARKER,

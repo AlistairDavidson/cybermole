@@ -2,10 +2,10 @@ import { defineConfig } from 'astro/config';
 import node from '@astrojs/node';
 import lit from '@awesome.me/astro-lit';
 // Typed env-var contract for every CYBERMOLE_* variable the server reads —
-// the single source of truth, shared with src/lib/env.ts (the compiled
+// the single source of truth, shared with src/lib/platform/env.ts (the compiled
 // server's typed reads; see that file for why the server cannot import
 // 'astro:env/server' directly). Plain data in envField() output shape.
-import { envSchema } from './src/lib/env-schema';
+import { envSchema } from './src/lib/platform/env-schema';
 import { UPLOAD_MAX_BODY_BYTES } from './src/schemas/uploads';
 
 // SSR build: Astro renders pages AND the JSON API (src/pages/api) on

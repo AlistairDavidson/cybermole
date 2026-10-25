@@ -8,7 +8,7 @@
 // the integrated terminal makes the editor another shell as uid 2000).
 
 import type { SessionToken } from '@cybermole/app-kit';
-import { UPLOAD_MAX_BODY_BYTES } from '../schemas/uploads';
+import { UPLOAD_MAX_BODY_BYTES } from '../../schemas/uploads';
 
 /** Response/request headers that must not be copied verbatim across a
  *  proxy hop: Node (re)generates them for the leg it owns. */

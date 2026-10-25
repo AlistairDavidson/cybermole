@@ -11,13 +11,13 @@
 //   mode: the guard exists to catch a human's typo at a prompt, while the
 //   seeder's input is a reviewed literal in compose.yaml — and login
 //   itself (auth.ts verify) enforces no length at all.
-// Logging: plain console.* on purpose (no src/lib/logger.ts) — this is a
+// Logging: plain console.* on purpose (no src/lib/platform/logger.ts) — this is a
 // one-shot CLI for a human at a terminal; wiring it to the winston logger
 // would timestamp/format an interactive prompt's own output.
 import * as readline from 'node:readline';
-import { Auth, setCredential } from '../src/lib/auth';
-import { StateDb } from '../src/lib/db';
-import { ENV } from '../src/lib/env';
+import { Auth, setCredential } from '../src/lib/platform/auth';
+import { StateDb } from '../src/lib/platform/db';
+import { ENV } from '../src/lib/platform/env';
 
 const stateDb = new StateDb(ENV.CYBERMOLE_DB_FILE);
 

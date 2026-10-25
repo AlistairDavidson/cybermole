@@ -17,13 +17,13 @@
 // Pattern note: a LONG-LIVED externally-supervised session should get
 // its OWN socket + supervisor — never share this one, or a crashing
 // supervised session would look "alive". Scheduled-job runs are the
-// sanctioned exception (src/lib/jobs.ts): the run is the session, it
+// sanctioned exception (src/lib/jobs/jobs.ts): the run is the session, it
 // dies with the command, and sharing this socket keeps runs addressable
 // like any interactive session.
 import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
-import { ENV, RAW_ENV } from './env';
-import { componentLogger } from './logger';
+import { ENV, RAW_ENV } from '../platform/env';
+import { componentLogger } from '../platform/logger';
 import {
   asTmuxSessionName,
   type JobName,
@@ -45,7 +45,7 @@ if (RAW_ENV.CYBERMOLE_TMUX_CONF && !fs.existsSync(CONF)) {
   log.warn(`CYBERMOLE_TMUX_CONF=${CONF} does not exist — using tmux defaults`);
 }
 
-/** Session name a scheduled job's run opens on this socket (src/lib/jobs.ts
+/** Session name a scheduled job's run opens on this socket (src/lib/jobs/jobs.ts
  *  fires runs under it; the jobs page's running badge and ?run= view link
  *  address it). Always a valid session name: JOB_NAME_RE caps names at 40,
  *  'cybermole-' + 40 = 46 fits TMUX_SESSION_NAME_RE's 64 (unit-tested). */

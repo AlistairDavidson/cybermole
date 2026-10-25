@@ -38,14 +38,26 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { AppSlugSchema } from '@cybermole/app-kit';
-import { APP_ROOT, readAppsRoot, readAppsSocket, readInternalApiSocket } from '../src/lib/env';
-import { runChild } from '../src/lib/apps-child';
-import { scaffoldApp } from '../src/lib/apps-scaffold';
-import { buildApp, checkApp } from '../src/lib/apps-gate';
-import { ActionNameSchema, addAction } from '../src/lib/apps-actions';
-import { findAction, planActionRequest, readRouteTable } from '../src/lib/apps-route-table';
-import { joinAppsStatus, type StatusAppRow, type StatusHostAnswer } from '../src/lib/apps-status';
-import { requestInternalApi, type InternalApiAnswer } from '../src/lib/internal-api-client';
+import {
+  APP_ROOT,
+  readAppsRoot,
+  readAppsSocket,
+  readInternalApiSocket,
+} from '../src/lib/platform/env';
+import { runChild } from '../src/lib/apps/apps-child';
+import { scaffoldApp } from '../src/lib/apps/apps-scaffold';
+import { buildApp, checkApp } from '../src/lib/apps/apps-gate';
+import { ActionNameSchema, addAction } from '../src/lib/apps/apps-actions';
+import { findAction, planActionRequest, readRouteTable } from '../src/lib/apps/apps-route-table';
+import {
+  joinAppsStatus,
+  type StatusAppRow,
+  type StatusHostAnswer,
+} from '../src/lib/apps/apps-status';
+import {
+  requestInternalApi,
+  type InternalApiAnswer,
+} from '../src/lib/platform/internal-api-client';
 
 // ---------- shared plumbing ----------
 

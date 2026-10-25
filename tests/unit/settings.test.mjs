@@ -1,4 +1,4 @@
-// settings.test.mjs — runPiUpdate's PiUpdateResult (src/lib/settings.ts):
+// settings.test.mjs — runPiUpdate's PiUpdateResult (src/lib/platform/settings.ts):
 // one case per error code (npm_missing, npm_check_failed, busy, npm_failed)
 // plus success, and the wire body /api/update-pi answers with
 // (updateResultBody). npm is a fake on PATH — never the real one.
@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { runPiUpdate, PI_PACKAGE } from '../../dist-server/src/lib/settings.js';
+import { runPiUpdate, PI_PACKAGE } from '../../dist-server/src/lib/platform/settings.js';
 import { updateResultBody } from '../../dist-server/src/lib/web/responses.service.js';
 
 /** An app tree with pi installed at `installed`. */

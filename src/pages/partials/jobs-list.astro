@@ -15,7 +15,7 @@ const listed = await cybermole.scheduler.listJobs();
 const appsListed = cybermole.apps.listApps();
 Astro.response.headers.set('Cache-Control', 'no-store');
 if (!listed.ok || !appsListed.ok) {
-  // console.error on purpose, not src/lib/logger.ts: frontmatter is
+  // console.error on purpose, not src/lib/platform/logger.ts: frontmatter is
   // Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
   if (!listed.ok) console.error(`jobs list partial: ${listed.errorMessage}`);
   if (!appsListed.ok) console.error(`jobs list partial: ${appsListed.errorMessage}`);

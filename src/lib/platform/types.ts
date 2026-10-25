@@ -76,7 +76,7 @@ export interface ConsoleState {
   workspaces: WorkspaceState[];
 }
 
-// ---- scheduled jobs (in-process scheduler — see src/lib/jobs.ts) ----
+// ---- scheduled jobs (in-process scheduler — see src/lib/jobs/jobs.ts) ----
 
 export interface ScheduledJob {
   /** job name (run sessions: cybermole-<name> on the app's tmux socket) */
@@ -127,7 +127,7 @@ export interface CalendarCheck {
 
 // ---- settings dashboard (/settings ← /api/settings; /api/update-pi) ----
 /** Outcome of the most recent pi auto-update CHECK (persisted in the state
- *  db; src/lib/auto-update.ts). The check runs daily while the setting is
+ *  db; src/lib/platform/auto-update.ts). The check runs daily while the setting is
  *  ON — see SettingsState.piAutoUpdate. */
 export interface AutoUpdateCheck {
   /** epoch ms of the check */
@@ -224,7 +224,7 @@ export interface UpdateResult {
 // in src/schemas/frames.ts (node-free, described exactly once). ServerMsg
 // (below) stays a hand-written union: it is server→client only and never
 // parsed.
-export type { ClientMsg } from '../schemas/frames';
+export type { ClientMsg } from '../../schemas/frames';
 
 export type ServerMsg =
   | { type: 'attached'; target: TmuxSessionName; socket: string }

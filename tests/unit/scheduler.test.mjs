@@ -1,4 +1,4 @@
-// scheduler.test.mjs — the Scheduler's Result families (src/lib/jobs.ts):
+// scheduler.test.mjs — the Scheduler's Result families (src/lib/jobs/jobs.ts):
 // one case per error code of saveJob / deleteJob / runJob / listJobs (the
 // form-shape rules saveJob used to check are JobSaveSchema's now —
 // api.test.mjs), and
@@ -6,7 +6,7 @@
 // tmux's 40-char session-name cap), and the tick's run-lifecycle logging
 // (fires, skips a live run, logs its finish) against a fake tmux — the
 // last needs no real tmux: a stand-in script on the child's PATH answers
-// the three commands src/lib/tmux.ts issues. tmux runs against a private
+// the three commands src/lib/terminals/tmux.ts issues. tmux runs against a private
 // ABSOLUTE-path socket set before the import (tmux.ts binds SOCKET at module
 // load), so nothing here can touch a real cybermole socket — and with no
 // server behind it, opening a run fails with the never-fork guard.
@@ -21,8 +21,8 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-sched-test-'));
 process.env.CYBERMOLE_TMUX_SOCKET = path.join(dir, 'tmux');
 const SOCKET = process.env.CYBERMOLE_TMUX_SOCKET;
 
-const { Scheduler } = await import('../../dist-server/src/lib/jobs.js');
-const { StateDb } = await import('../../dist-server/src/lib/db.js');
+const { Scheduler } = await import('../../dist-server/src/lib/jobs/jobs.js');
+const { StateDb } = await import('../../dist-server/src/lib/platform/db.js');
 const { JobSaveSchema } = await import('../../dist-server/src/schemas/jobs.js');
 
 /** saveJob takes what POST /api/jobs parsed with JobSaveSchema. */
@@ -196,7 +196,7 @@ test(
 
 const FAKE_TMUX = `#!/bin/sh
 # Stand-in tmux (written by scheduler.test.mjs): up/sessions files in
-# $FAKE_TMUX_DIR steer it; speaks the commands src/lib/tmux.ts issues.
+# $FAKE_TMUX_DIR steer it; speaks the commands src/lib/terminals/tmux.ts issues.
 # list-sessions answers the pipe-field -F format tmux.ts actually sends
 # (task/ws-jobs made that matter: the live set drives the finish
 # observation) — the human default format would parse as NO sessions.
@@ -238,8 +238,8 @@ const RUNS_CHILD = `
 const fs = require('fs'); const path = require('path');
 const dir = process.env.FAKE_TMUX_DIR;
 const sessions = path.join(dir, 'sessions');
-const { Scheduler } = require(process.cwd() + '/dist-server/src/lib/jobs.js');
-const { StateDb } = require(process.cwd() + '/dist-server/src/lib/db.js');
+const { Scheduler } = require(process.cwd() + '/dist-server/src/lib/jobs/jobs.js');
+const { StateDb } = require(process.cwd() + '/dist-server/src/lib/platform/db.js');
 const { JobSaveSchema } = require(process.cwd() + '/dist-server/src/schemas/jobs.js');
 const db = new StateDb(path.join(dir, 'cybermole.db'));
 const s = new Scheduler(db, {
