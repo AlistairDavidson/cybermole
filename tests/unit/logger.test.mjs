@@ -82,7 +82,10 @@ test(
   { timeout: 15_000 },
   async () => {
     const { stdout, stderr } = await new Promise((resolve, reject) => {
-      const script = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-logger-')), 'vis.js');
+      const script = path.join(
+        fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-logger-')),
+        'vis.js',
+      );
       fs.writeFileSync(script, VISIBILITY_CHILD);
       execFile(process.execPath, [script], { env: { ...process.env } }, (err, stdout, stderr) =>
         err ? reject(err) : resolve({ stdout, stderr }),
@@ -128,7 +131,10 @@ test(
   'a configured-but-down loki degrades silently: alive, no crash, one throttled warn',
   { timeout: 20_000 },
   async () => {
-    const script = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-logger-')), 'down.js');
+    const script = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-logger-')),
+      'down.js',
+    );
     fs.writeFileSync(script, DOWN_CHILD);
     const { stdout, stderr } = await new Promise((resolve, reject) => {
       execFile(
@@ -182,7 +188,10 @@ test(
     await new Promise(r => server.listen(0, '127.0.0.1', r));
     const port = server.address().port;
     try {
-      const script = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-logger-')), 'push.js');
+      const script = path.join(
+        fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-logger-')),
+        'push.js',
+      );
       fs.writeFileSync(script, PUSH_CHILD);
       const { stdout, stderr } = await new Promise((resolve, reject) => {
         execFile(

@@ -90,8 +90,8 @@ test('terminalDefaults / resolved*: unset db → the env values, no overrides fl
 
 test('resolved*: a db override wins over the env value (the whole point)', async () => {
   const db = freshDb();
-  assert.equal((saveTerminalDefaults(db, { agentCommand: '/db/agent -x' })).ok, true);
-  assert.equal((saveTerminalDefaults(db, { shellCommand: '/db/shell -y' })).ok, true);
+  assert.equal(saveTerminalDefaults(db, { agentCommand: '/db/agent -x' }).ok, true);
+  assert.equal(saveTerminalDefaults(db, { shellCommand: '/db/shell -y' }).ok, true);
   assert.equal(resolvedAgentCommand(db).data.value, '/db/agent -x');
   assert.equal(resolvedShellCommand(db).data.value, '/db/shell -y');
   const d = terminalDefaults(db).data;
@@ -122,7 +122,7 @@ test('saveTerminalDefaults: null clears back to the env chain, absent keeps, the
     shellOverridden: false,
   });
   // clearing an unset override is a no-op that still succeeds
-  assert.equal((saveTerminalDefaults(db, { shellCommand: null })).ok, true);
+  assert.equal(saveTerminalDefaults(db, { shellCommand: null }).ok, true);
 });
 
 test('a corrupt settings row reads as unset (data we wrote, never a db failure)', async () => {

@@ -171,21 +171,18 @@ test('initialize handshake + tools/list: the full tool set, schemas from the sha
       version: '0.1.0',
     });
     const { tools } = await w.client.listTools();
-    assert.deepEqual(
-      tools.map(t => t.name).sort(),
-      [
-        'apps_list',
-        'jobs_create',
-        'jobs_delete',
-        'jobs_kill',
-        'jobs_list',
-        'jobs_log',
-        'jobs_run_now',
-        'jobs_runs',
-        'jobs_set',
-        'jobs_validate',
-      ],
-    );
+    assert.deepEqual(tools.map(t => t.name).sort(), [
+      'apps_list',
+      'jobs_create',
+      'jobs_delete',
+      'jobs_kill',
+      'jobs_list',
+      'jobs_log',
+      'jobs_run_now',
+      'jobs_runs',
+      'jobs_set',
+      'jobs_validate',
+    ]);
     // Every tool documents itself — the descriptions are the agent-facing
     // docs (there is no --help round-trip here; §6: the tool IS the doc).
     for (const t of tools) {
@@ -312,7 +309,10 @@ test('jobs_set: absent keeps, provided sets; job_not_found on a ghost', async ()
     await callJson(w.client, 'jobs_create', GOOD);
     const app = await w.apps.saveApp('Deploy Tools');
 
-    const patched = await callJson(w.client, 'jobs_set', { name: 'nightly', schedule: '30 5 * * *' });
+    const patched = await callJson(w.client, 'jobs_set', {
+      name: 'nightly',
+      schedule: '30 5 * * *',
+    });
     assert.deepEqual(patched.json, { name: 'nightly', session: null });
 
     const listed = await callJson(w.client, 'jobs_list', {});
@@ -396,7 +396,10 @@ test('jobs_runs / jobs_log / jobs_kill: the run lifecycle over the tools', async
     assert.equal(noRun.json.code, 'run_not_found');
 
     // the firedAt as the digit STRING the routes take — same run
-    const logString = await call(w.client, 'jobs_log', { name: 'nightly', firedAt: String(firedAt) });
+    const logString = await call(w.client, 'jobs_log', {
+      name: 'nightly',
+      firedAt: String(firedAt),
+    });
     assert.equal(logString.text, 'line one\nline two\n');
 
     const killed = await callJson(w.client, 'jobs_kill', { name: 'nightly', firedAt });
@@ -418,7 +421,10 @@ test('jobs_runs / jobs_log / jobs_kill: the run lifecycle over the tools', async
 test('jobs_validate: invalid values are answers; nothing sent is the API 400', async () => {
   const w = await boot();
   try {
-    const ok = await callJson(w.client, 'jobs_validate', { schedule: '*/5 * * * *', command: 'true' });
+    const ok = await callJson(w.client, 'jobs_validate', {
+      schedule: '*/5 * * * *',
+      command: 'true',
+    });
     assert.equal(ok.json.schedule.valid, true);
     assert.match(ok.json.schedule.next, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
     assert.deepEqual(ok.json.command, { valid: true, error: null });
@@ -434,10 +440,7 @@ test('jobs_validate: invalid values are answers; nothing sent is the API 400', a
     // is the schema's ROOT-level rule — its issue rides under '')
     const nothing = await callJson(w.client, 'jobs_validate', {});
     assert.equal(nothing.json.code, 'validation_failure');
-    assert.equal(
-      nothing.json.issues[''],
-      'nothing to validate — send schedule and/or command',
-    );
+    assert.equal(nothing.json.issues[''], 'nothing to validate — send schedule and/or command');
 
     // a candidate OVER the 10 KiB body cap reaches the API too (the
     // validate inputs are raw by design — invalid values are for the
@@ -547,7 +550,7 @@ test('a bad CYBERMOLE_SOCK stops the MCP server at boot, like the web server', a
 
 // ---------- the input contract ----------
 
-test("the input contract: a value the shared schema rejects never leaves the client", async () => {
+test('the input contract: a value the shared schema rejects never leaves the client', async () => {
   const w = await boot();
   try {
     // 'cybermole-…' is reserved for run sessions (JobNameSchema/JobSaveSchema's

@@ -238,7 +238,10 @@ test('an unreadable db is database_error everywhere — never read as "no sessio
   // A state db that can never open: everything fails closed, but says
   // why — so callers answer 503 instead of 401 / signed-out — and a login
   // reports the failure instead of minting a token it can't keep.
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-auth-unit-')), 'not-a-dir');
+  const file = path.join(
+    fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-auth-unit-')),
+    'not-a-dir',
+  );
   fs.writeFileSync(file, '');
   const state = new StateDb(path.join(file, 'cybermole.db'));
   const broken = new Auth(state);

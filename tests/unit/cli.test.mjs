@@ -213,7 +213,11 @@ test('every verb answers --help (and -h) without needing a server', async () => 
     for (const helpFlag of ['--help', '-h']) {
       const io = capture();
       assert.equal(await run([verb, helpFlag], io), 0);
-      assert.match(io.stdout(), new RegExp(`cybermole-cli jobs ${verb}`), `${verb} --help synopsis`);
+      assert.match(
+        io.stdout(),
+        new RegExp(`cybermole-cli jobs ${verb}`),
+        `${verb} --help synopsis`,
+      );
       assert.equal(io.stderr(), '');
     }
   }
@@ -441,7 +445,16 @@ test('create failure paths: invalid schedule and invalid name (issues printed)',
     const json = capture();
     assert.equal(
       await run(
-        ['create', '--name', 'cybermole-x', '--schedule', '0 4 * * *', '--command', 'true', '--json'],
+        [
+          'create',
+          '--name',
+          'cybermole-x',
+          '--schedule',
+          '0 4 * * *',
+          '--command',
+          'true',
+          '--json',
+        ],
         json,
       ),
       1,

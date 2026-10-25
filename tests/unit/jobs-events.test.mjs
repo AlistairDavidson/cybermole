@@ -256,9 +256,7 @@ test(
         `every payload names the job: ${JSON.stringify(events)}`,
       );
       assert.ok(
-        events
-          .filter(e => e.type !== 'job_created')
-          .every(e => e.firedAt === firedAt),
+        events.filter(e => e.type !== 'job_created').every(e => e.firedAt === firedAt),
         `every run event names the run: ${JSON.stringify(events)}`,
       );
     } finally {

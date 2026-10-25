@@ -45,7 +45,10 @@ test('loki publishes no port and is reached over the compose network', () => {
   assert.equal(compose.services.loki.ports, undefined);
   // cybermole gets the push URL through compose interpolation — empty default
   // means console-only logging on a plain up.
-  assert.equal(compose.services.cybermole.environment.CYBERMOLE_LOKI_URL, '${CYBERMOLE_LOKI_URL:-}');
+  assert.equal(
+    compose.services.cybermole.environment.CYBERMOLE_LOKI_URL,
+    '${CYBERMOLE_LOKI_URL:-}',
+  );
 });
 
 test('loki image is a pinned 3.x and the config is mounted read-only', () => {

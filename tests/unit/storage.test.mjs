@@ -461,7 +461,8 @@ test('env: endpoint + both keys configure the store, with bucket/region defaults
 test('env: a half-configured, non-http or misnamed store stops the boot', () => {
   const keys = { CYBERMOLE_S3_ACCESS_KEY: 'a', CYBERMOLE_S3_SECRET_KEY: 's' };
   assert.match(
-    bootConfig({ CYBERMOLE_S3_ENDPOINT: 'http://seaweedfs:8333', CYBERMOLE_S3_ACCESS_KEY: 'a' }).error,
+    bootConfig({ CYBERMOLE_S3_ENDPOINT: 'http://seaweedfs:8333', CYBERMOLE_S3_ACCESS_KEY: 'a' })
+      .error,
     /must be set together/,
   );
   assert.match(bootConfig(keys).error, /must be set together/);
@@ -474,8 +475,11 @@ test('env: a half-configured, non-http or misnamed store stops the boot', () => 
     /is not an http\(s\) URL/,
   );
   assert.match(
-    bootConfig({ ...keys, CYBERMOLE_S3_ENDPOINT: 'http://seaweedfs:8333', CYBERMOLE_S3_BUCKET: 'Cybermole' })
-      .error,
+    bootConfig({
+      ...keys,
+      CYBERMOLE_S3_ENDPOINT: 'http://seaweedfs:8333',
+      CYBERMOLE_S3_BUCKET: 'Cybermole',
+    }).error,
     /is not a valid bucket name/,
   );
 });
