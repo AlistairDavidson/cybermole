@@ -1,5 +1,5 @@
 // storage.test.mjs — src/lib/storage.ts against the in-memory fake S3
-// (tests/fake-s3.mjs): one test per StoreUploadResult / FetchObjectResult
+// (tests/support/fake-s3.mjs): one test per StoreUploadResult / FetchObjectResult
 // error code, the bucket check/create on first use, streamed and
 // multipart uploads (and the abort when a stream fails midway), and the
 // responses objectStoreFailureResponse / fileDownloadResponse build. Plus
@@ -16,7 +16,7 @@ import {
   fileHeadResponse,
   objectStoreFailureResponse,
 } from '../../dist-server/src/lib/web/responses.service.js';
-import { startFakeS3 } from '../fake-s3.mjs';
+import { startFakeS3 } from '../support/fake-s3.mjs';
 
 const ACCESS_KEY = 'unit-access';
 const config = (endpoint, overrides = {}) => ({

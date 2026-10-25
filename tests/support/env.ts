@@ -64,7 +64,7 @@ export const MARKER = 'ITEST_MARKER_READY';
 // with a distinct marker argument, so a test can tell the agent tab's
 // output from a plain tab's (which keeps MARKER via CYBERMOLE_COMMAND).
 export const AGENT_MARKER = 'ITEST_AGENT_MARKER';
-// Object storage for the run: tests/fake-s3.mjs, started by the
+// Object storage for the run: tests/support/fake-s3.mjs, started by the
 // playwright.config webServer list ahead of the app.
 export const S3_PORT = 3490; // clear of the specs' own server ports (3470–3484)
 export const S3_BUCKET = 'cybermole-itest';

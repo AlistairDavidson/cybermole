@@ -201,7 +201,7 @@ enforced socially as today. Sandboxes are unaffected (per-container /tmp).
   "timed_out": false, "output": "…bounded text (§1.5: 64 KB head+tail trim)…" }
 // plus, where parsed
 { "counts": { "pass": 51, "fail": 0, "skipped": 1 },
-  "failures": [ { "name": "…", "file": "tests/e2e.spec.ts:120",
+  "failures": [ { "name": "…", "file": "tests/e2e/e2e.spec.ts:120",
                   "error": "…trimmed…" } ] }
 ```
 
@@ -226,7 +226,7 @@ everything unparseable — barbarus's split, kept.
 ## 7. Testing the tooling itself
 
 - `tests/unit/dev-mcp.test.mjs` against `parsers.mjs`: fixture eslint-json
-  and playwright-json blobs (checked in under `tests/unit/fixtures/`),
+  and playwright-json blobs (checked in under `tests/fixtures/dev-mcp/`),
   envelope/trim edge cases, anchor/tail fallbacks.
 - One smoke test spawning `node --test` on a tiny fixture file with
   `quiet-reporter.mjs`, asserting the quiet shape (passing case; one

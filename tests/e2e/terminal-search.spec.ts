@@ -24,7 +24,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { expect, test, type Cookie, type Page } from '@playwright/test';
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = path.resolve(__dirname, '..', '..');
 const PORT = 3486; // clear of the shared :3470, the specs' 3471–3485, S3's 3490
 const BASE = `http://127.0.0.1:${PORT}`;
 const USERNAME = 'tester';

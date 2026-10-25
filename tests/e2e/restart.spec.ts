@@ -10,11 +10,11 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { expect, test } from '@playwright/test';
-import { setCredential } from '../src/lib/auth';
-import { StateDb } from '../src/lib/db';
-import { PASSWORD, USERNAME } from './env';
+import { setCredential } from '../../src/lib/auth';
+import { StateDb } from '../../src/lib/db';
+import { PASSWORD, USERNAME } from '../support/env';
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = path.resolve(__dirname, '..', '..');
 const PORT = 3483;
 const BASE = `http://127.0.0.1:${PORT}`;
 

@@ -26,9 +26,9 @@ import {
   USERNAME,
   readSharedSessionCookie,
   writeSharedSessionCookie,
-} from './env';
+} from '../support/env';
 
-const FIXTURE_TREE = path.resolve(__dirname, 'fixtures', 'app-fixture');
+const FIXTURE_TREE = path.resolve(__dirname, '..', 'fixtures', 'app-fixture');
 
 /** One HTTP request over a unix socket (the units' call() shape). */
 function callSocket(

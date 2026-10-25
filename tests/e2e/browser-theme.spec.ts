@@ -22,7 +22,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { expect, test, type Cookie, type Page } from '@playwright/test';
-import { PASSWORD, USERNAME } from './env';
+import { PASSWORD, USERNAME } from '../support/env';
 
 // ---------- shared server (the suite webServer, :3470) ----------
 
@@ -172,7 +172,7 @@ test.describe('live scheme flip', () => {
 
 // ---------- private server: the editor pane follows the mode ----------
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = path.resolve(__dirname, '..', '..');
 const PORT = 3487; // clear of the shared :3470 and the specs' 3471–3486
 const BASE = `http://127.0.0.1:${PORT}`;
 

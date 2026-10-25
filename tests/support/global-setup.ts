@@ -4,12 +4,12 @@
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { setCredential } from '../src/lib/auth';
-import { StateDb, qb } from '../src/lib/db';
+import { setCredential } from '../../src/lib/auth';
+import { StateDb, qb } from '../../src/lib/db';
 import type { DatabaseReadResult } from '@cybermole/app-kit';
-import { Apps } from '../src/lib/apps';
-import { Workspaces } from '../src/lib/workspaces';
-import { terminalSessionName } from '../src/lib/tmux';
+import { Apps } from '../../src/lib/apps';
+import { Workspaces } from '../../src/lib/workspaces';
+import { terminalSessionName } from '../../src/lib/tmux';
 import { asAppId, asTerminalId } from '@cybermole/app-kit';
 import {
   AGENT_MARKER,
@@ -26,7 +26,7 @@ import {
  *  per-package links are absent too); the §5 self-containment gate runs
  *  on every real build so a broken one can never reach the host. */
 function buildFixtureApp(): void {
-  const fixture = path.resolve(__dirname, 'fixtures', 'app-fixture');
+  const fixture = path.resolve(__dirname, '..', 'fixtures', 'app-fixture');
   const entry = path.join(fixture, 'dist', 'server', 'entry.mjs');
   const newestUnder = (dir: string): number =>
     fs
@@ -53,7 +53,7 @@ function buildFixtureApp(): void {
   });
   execFileSync(
     'node',
-    [path.resolve(__dirname, '..', 'tools', 'check-app-selfcontained.mjs'), entry],
+    [path.resolve(__dirname, '..', '..', 'tools', 'check-app-selfcontained.mjs'), entry],
     {
       stdio: 'inherit',
     },
@@ -203,7 +203,7 @@ export default async function globalSetup(): Promise<void> {
     execFileSync('tmux', [
       '-L',
       TMUX_SOCKET,
-      ...(first ? ['-f', path.resolve(__dirname, '..', 'runtime', 'tmux.conf')] : []),
+      ...(first ? ['-f', path.resolve(__dirname, '..', '..', 'runtime', 'tmux.conf')] : []),
       'new-session',
       '-d',
       '-s',

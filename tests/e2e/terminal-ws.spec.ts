@@ -13,7 +13,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { expect, test } from '@playwright/test';
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = path.resolve(__dirname, '..', '..');
 const PORT = 3485; // clear of the shared :3470 and the specs' own 3471–3484
 const BASE = `http://127.0.0.1:${PORT}`;
 const USERNAME = 'tester';

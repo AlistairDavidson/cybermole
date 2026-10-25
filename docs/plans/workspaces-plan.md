@@ -516,7 +516,7 @@ closure (everything else that dangles once the above go — sweep with
 `grep -r 'sessionsDir\|hiddenSessions\|PiSessionId\|resumeSession\|SESSION_ID_RE'`
 and `grep -ri zed` for the editor swap):
 
-- `tests/split.spec.ts` — drives `POST /api/new` (the never-fork 503
+- `tests/e2e/split.spec.ts` — drives `POST /api/new` (the never-fork 503
   spec) and WS `resume`; **retarget** at `POST
   /api/workspaces/:id/terminals` + the `terminal` WS mode (it is the
   only e2e covering the never-fork guard on the spawn path).
@@ -532,10 +532,10 @@ and `grep -ri zed` for the editor swap):
 - `src/lib/web/responses.service.ts`: `tmuxSessionFailureResponse` (sole
   caller was `/api/new`) — or retarget it at the new terminal family.
 - `db.ts`: `SessionsTable` + the StateSchema entry.
-- e2e fixtures that manufacture pi sessions (`tests/env.ts`
-  `UUIDV7_SIBLINGS`, `tests/global-setup.ts` fixture sessions) — replaced
+- e2e fixtures that manufacture pi sessions (`tests/support/env.ts`
+  `UUIDV7_SIBLINGS`, `tests/support/global-setup.ts` fixture sessions) — replaced
   by workspace/terminal fixtures.
-- `tests/sessions-cache.spec.ts` and the e2e session-sidebar/hide/
+- `tests/e2e/sessions-cache.spec.ts` and the e2e session-sidebar/hide/
   resume/live specs (§12 replaces them).
 
 ## 12. Tests

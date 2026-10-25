@@ -8,7 +8,7 @@
 //
 // Imported by the unit tests (startFakeS3), and run as a process by the
 // e2e suite's webServer list (playwright.config.ts):
-//   node tests/fake-s3.mjs <port> <accessKey>
+//   node tests/support/fake-s3.mjs <port> <accessKey>
 import * as http from 'node:http';
 import { pathToFileURL } from 'node:url';
 
@@ -270,7 +270,8 @@ export function startFakeS3({ port = 0, accessKey }) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [port, accessKey] = process.argv.slice(2);
-  if (!port || !accessKey) throw new Error('usage: node tests/fake-s3.mjs <port> <accessKey>');
+  if (!port || !accessKey)
+    throw new Error('usage: node tests/support/fake-s3.mjs <port> <accessKey>');
   const fake = await startFakeS3({ port: Number(port), accessKey });
   console.log(`fake S3 on ${fake.url}`);
 }

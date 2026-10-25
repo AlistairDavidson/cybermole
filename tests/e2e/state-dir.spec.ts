@@ -12,7 +12,7 @@ import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { expect, test } from '@playwright/test';
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = path.resolve(__dirname, '..', '..');
 const INPUT = 'tester\ncorrect-horse-9\ncorrect-horse-9\n';
 /** compose's dev seed input: user/pass/pass piped to --if-unset (the dev
  *  service's printf — test/test, under the ≥8 minimum the interactive and

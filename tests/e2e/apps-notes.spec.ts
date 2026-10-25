@@ -39,7 +39,7 @@ import {
   USERNAME,
   readSharedSessionCookie,
   writeSharedSessionCookie,
-} from './env';
+} from '../support/env';
 import {
   callActionTool,
   describeTool,
@@ -47,11 +47,11 @@ import {
   reloadTool,
   statusTool,
   unregisterTool,
-} from '../dist-server/server/apps-mcp.js';
-import { checkApp } from '../dist-server/src/lib/apps-gate.js';
-import { runChild } from '../dist-server/src/lib/apps-child.js';
+} from '../../dist-server/server/apps-mcp.js';
+import { checkApp } from '../../dist-server/src/lib/apps-gate.js';
+import { runChild } from '../../dist-server/src/lib/apps-child.js';
 
-const REPO = path.resolve(__dirname, '..');
+const REPO = path.resolve(__dirname, '..', '..');
 const SLUG = 'notes';
 /** The entry sweep's once-per-run latch (see beforeAll): inside
  *  APPS_ROOT, so the hermetic WORKSPACE's per-run rm -rf makes it

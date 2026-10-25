@@ -1,6 +1,6 @@
 // e2e.spec.ts — integration tests against the real built app:
 // Astro SSR pages, wa-* components upgraded client-side, auth, the
-// workspace/terminal fixture tree (tests/global-setup.ts), and the full
+// workspace/terminal fixture tree (tests/support/global-setup.ts), and the full
 // terminal round trip (xterm → WS → node-pty → tmux → back).
 // Runs serially (workers: 1) — see playwright.config.ts.
 import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process';
@@ -16,8 +16,8 @@ import { DatabaseSync } from 'node:sqlite';
 import * as nodeWs from 'ws';
 import { expect, test, type Cookie, type Locator, type Page } from '@playwright/test';
 import { WebSocket as NodeWebSocket } from 'ws';
-import { setCredential } from '../src/lib/auth';
-import { StateDb } from '../src/lib/db';
+import { setCredential } from '../../src/lib/auth';
+import { StateDb } from '../../src/lib/db';
 import {
   AGENT_MARKER,
   MARKER,
@@ -27,8 +27,8 @@ import {
   TMUX_SOCKET,
   USERNAME,
   WORKSPACE,
-} from './env';
-import { UPLOAD_MAX_BODY_BYTES } from '../src/schemas/uploads';
+} from '../support/env';
+import { UPLOAD_MAX_BODY_BYTES } from '../../src/schemas/uploads';
 
 /** Terminal sizing invariants, evaluated in the page:
  *  - the app shell is viewport-locked: the terminal never makes the page
@@ -774,7 +774,7 @@ test('files: upload streams into object storage; downloads come back as resumabl
     contentType: 'text/plain',
   });
   expect(ok.body.key).toMatch(/^uploads\/[0-9a-f-]{36}$/);
-  // It reached the S3 server (tests/fake-s3.mjs), body and headers intact...
+  // It reached the S3 server (tests/support/fake-s3.mjs), body and headers intact...
   const stored = (await (
     await fetch(`http://127.0.0.1:${S3_PORT}/__fake/objects/${S3_BUCKET}/${ok.body.key}`)
   ).json()) as { body: string; contentType: string; contentDisposition: string };

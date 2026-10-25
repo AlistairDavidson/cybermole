@@ -11,9 +11,9 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { PASSWORD, USERNAME } from './env';
+import { PASSWORD, USERNAME } from '../support/env';
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = path.resolve(__dirname, '..', '..');
 const PORT = 3491; // clear of the shared :3470 webServer and the other specs' children
 const BASE = `http://127.0.0.1:${PORT}`;
 // Grafana-shaped and unreachable: only the URL string is under test.
