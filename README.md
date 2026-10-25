@@ -48,7 +48,7 @@ containers and two uids (server vs tmux/terminals) — see
   Code in the browser with server-side files, served same-origin through
   cybermole's `/editor` proxy behind the session gate — every tab opens its
   workspace's cwd (`?folder=`), many folders at once
-  ([docs/editor-webapp.md](docs/editor-webapp.md)). Ships in the compose
+  ([docs/guides/editor-webapp.md](docs/guides/editor-webapp.md)). Ships in the compose
   stack (`CYBERMOLE_EDITOR_UPSTREAM` defaults on in compose; empty = off).
 - **Jobs** (`/jobs`) — scheduled commands ("cron") on the built-in
   scheduler: name + 5-field cron schedule + arbitrary shell command,
@@ -248,7 +248,7 @@ editor's `?folder=`, and the editor opens it in its own container), and
 a writable `$HOME`:
 
 ```sh
-docker build -t cybermole-editor:local editor/
+docker build -t cybermole-editor:local deploy/editor/
 mkdir -p /tmp/cybermole-editor-home && chmod 777 /tmp/cybermole-editor-home
 docker run -d --name cybermole-editor-dev -p 127.0.0.1:13000:3000 \
   -u 2000:2001 -e CYBERMOLE_BASE=/ \
@@ -267,15 +267,15 @@ Everything is env-configured; defaults suit a single-user Linux box
 running terminals (and pi, by hand) as the same user as the server.
 The `CYBERMOLE_*` contract is declared
 once, typed, in a schema shared by Astro and the Node server:
-`astro.config.mjs`'s `env.schema` (imported from `src/lib/env-schema.ts`)
+`astro.config.mjs`'s `env.schema` (imported from `src/lib/platform/env-schema.ts`)
 declares every runtime variable — names, types, and the static defaults —
-and the compiled server reads the same schema through `src/lib/env.ts` (the
+and the compiled server reads the same schema through `src/lib/platform/env.ts` (the
 typed runtime equivalent of `astro:env/server` for a plain-tsc build; see
 the comments there for why the server can't import the Astro virtual module
 directly). Number variables that aren't integers stop the server at boot.
 Defaults that must be computed at boot (homedir, app-root paths, the
 login-shell command default, the vendored-pi path) live beside the reads in
-`src/lib/env.ts`. The one
+`src/lib/platform/env.ts`. The one
 exception is the dev-only `CYBERMOLE_DEV_API`, which `astro.config.mjs` reads
 directly.
 
@@ -287,16 +287,16 @@ directly.
 | `CYBERMOLE_BASE` | `/` | URL base path for path-mounting on a dedicated vhost (the app wants its own hostname — [Security model](#security-model)); the files that must agree are listed in [The base path](#the-base-path). **Baked into the pages at build time** — set it before `npm run build` *and* at runtime |
 | `CYBERMOLE_HOME` | `os.homedir()` | `HOME` for spawned processes (tmux, the terminals' shells) |
 | `CYBERMOLE_STATE_DIR` | `$CYBERMOLE_HOME/.local/state/cybermole` | one directory for all cybermole state: the sqlite db (`cybermole.db`) and the runtime `pi-agent/` (pi credentials + its own sessions). Per-path overrides (`CYBERMOLE_DB_FILE`, `CYBERMOLE_AGENT_DIR`) still win. In the container compose points it at `/state` on a dedicated volume |
-| `CYBERMOLE_AGENT_DIR` | `<state dir>/pi-agent` | runtime pi agent dir (config, credentials, pi's own session store) — seeded from the repo's `pi/` template where absent (a stray `PI_CODING_AGENT_DIR` in the server's env is ignored with an error logged). Every spawned terminal carries it as `PI_CODING_AGENT_DIR`, so a pi you run by hand stays on it |
-| `CYBERMOLE_NEW_SESSION_CWD` | `$CYBERMOLE_HOME` | default cwd for new workspaces — the fallback when the parent app has no `cwd` of its own (shown as the start-path hint in the new-workspace dialog). The workspace root's `AGENTS.md` (the root agent's standing jobs instructions) is seeded into it where absent — [jobs](#scheduled-jobs-jobs--the-in-process-scheduler), [`root-agents/`](root-agents/) |
+| `CYBERMOLE_AGENT_DIR` | `<state dir>/pi-agent` | runtime pi agent dir (config, credentials, pi's own session store) — seeded from the repo's `runtime/pi-agent-dir/` template where absent (a stray `PI_CODING_AGENT_DIR` in the server's env is ignored with an error logged). Every spawned terminal carries it as `PI_CODING_AGENT_DIR`, so a pi you run by hand stays on it |
+| `CYBERMOLE_NEW_SESSION_CWD` | `$CYBERMOLE_HOME` | default cwd for new workspaces — the fallback when the parent app has no `cwd` of its own (shown as the start-path hint in the new-workspace dialog). The workspace root's `AGENTS.md` (the root agent's standing jobs instructions) is seeded into it where absent — [jobs](#scheduled-jobs-jobs--the-in-process-scheduler), [`runtime/workspace-root/`](runtime/workspace-root/) |
 | `CYBERMOLE_COMMAND` | `$SHELL -l` (fallback `/bin/sh -l`); `zsh -l` in the shipped compose | the shell command every new terminal tab EXCEPT a new workspace's first runs (whitespace-split). Resolution is **db override → this env → built-in**: the writable *terminal defaults* card on `/settings` saves a per-install db value that wins over this (reset there clears it back) |
 | `CYBERMOLE_AGENT_COMMAND` | the vendored `<app root>/node_modules/.bin/pi` when the install has one, else `pi` on PATH | the command the **auto-opened first terminal of every new workspace** runs (whitespace-split) — the agent slot. Same db-override-on-`/settings` chain as `CYBERMOLE_COMMAND`. Point it at a different agent (compose wiring) or a deterministic test double |
 | `CYBERMOLE_JOB_LOG_DIR` | `/workspace/.cybermole/job-logs` | root under which job runs persist their logs + exit files (`<dir>/<job>/<fired-at>.{log,exit}`) — a path that exists in both containers of the compose split (laid out by `workspace-init`); point it somewhere writable in other split shapes |
 | `CYBERMOLE_JOB_LOG_MAX` | `20971520` (20 MiB) | write-time cap on each job run's log — past it the run wrapper's appender stops writing (one `[truncated at N bytes]` marker line) but keeps draining the job's output, so a chatty or runaway job can neither fill the disk mid-run nor die of a broken pipe. A non-integer or negative value stops the server at boot |
 | `CYBERMOLE_SOCK` | `/run/cybermole/cybermole.sock` when `/run/cybermole` exists (the compose split), else `<state dir>/cybermole.sock` | the [internal jobs API](#scheduled-jobs-jobs--the-in-process-scheduler)'s unix socket: a second HTTP listener in the same server process serving the workspace side (agents) — see the jobs section. **Empty = the listener is off**; a set-but-non-absolute value stops the server at boot, like the S3 vars. The socket file is created `0660` — the file mode (the shared `cybermole` group in the split shape) is the only auth |
-| `CYBERMOLE_APPS_SOCK` | `/run/cybermole/apps.sock` when `/run/cybermole` exists, else `<state dir>/apps.sock` | the **app host**'s unix socket (`server/app-host.ts`, [docs/apps-plan.md](docs/apps-plan.md) §3): mounts registered apps' built Astro middlewares and serves them at `/apps/<slug>/*` through the console's proxy (behind the login, same session gate as everything else). The env var decides ownership too: **unset** = the single-user shape, where the web server spawns and supervises `dist-server/server/app-host.js` as a child (restarting it with backoff if it crashes); **set** = the split (compose) or an operator-owned process — the web server is only a client on the socket and never spawns; **empty** = the apps surface is off (`/apps/*` answers 404, every app row reports `serving: false` in `/api/state`). A set-but-non-absolute value stops the boot, like `CYBERMOLE_SOCK` |
+| `CYBERMOLE_APPS_SOCK` | `/run/cybermole/apps.sock` when `/run/cybermole` exists, else `<state dir>/apps.sock` | the **app host**'s unix socket (`server/app-host.ts`, [docs/plans/apps-plan.md](docs/plans/apps-plan.md) §3): mounts registered apps' built Astro middlewares and serves them at `/apps/<slug>/*` through the console's proxy (behind the login, same session gate as everything else). The env var decides ownership too: **unset** = the single-user shape, where the web server spawns and supervises `dist-server/server/app-host.js` as a child (restarting it with backoff if it crashes); **set** = the split (compose) or an operator-owned process — the web server is only a client on the socket and never spawns; **empty** = the apps surface is off (`/apps/*` answers 404, every app row reports `serving: false` in `/api/state`). A set-but-non-absolute value stops the boot, like `CYBERMOLE_SOCK` |
 | `CYBERMOLE_TMUX_SOCKET` | `cybermole` | the tmux socket the app uses. A relative *name* is the single-user shape: the app's own server, forked on the first session-creating call, under the per-uid default dir. An **absolute path** switches on the privilege split ([below](#the-privilege-split-two-containers)): tmux runs as another uid/container on that shared socket (`-S` instead of `-L` — a relative name resolves per-uid and cannot be shared), and terminal spawns, job runs and attaches refuse to fork a server, erroring with "workspace tmux server not running" instead. The server lifecycle is then the workspace side's job (`docker-workspace-entrypoint.sh`, or the host-install equivalent below) |
-| `CYBERMOLE_TMUX_CONF` | `<app root>/tmux.conf` | tmux server config, applied when the tmux server starts (escape-time, scrollback, truecolour — see the file) |
+| `CYBERMOLE_TMUX_CONF` | `<app root>/runtime/tmux.conf` | tmux server config, applied when the tmux server starts (escape-time, scrollback, truecolour — see the file) |
 | `CYBERMOLE_DB_FILE` | `<state dir>/cybermole.db` | sqlite state db (0600): login credential, login sessions (`auth_sessions`), the workspace tree (`apps`, `workspaces`, `terminals`), scheduled-job tables (`jobs`, `job_runs` — the in-process scheduler + run logs), `settings` kv (the pi auto-update toggle + outcomes). Fresh setup: `npm run set-password` creates it |
 | `CYBERMOLE_CLIENT_DIR` | `<app root>/dist/client` | Astro hashed assets |
 | `CYBERMOLE_ASTRO_ENTRY` | `<app root>/dist/server/entry.mjs` | Astro SSR handler |
@@ -304,7 +304,7 @@ directly.
 | `CYBERMOLE_S3_ACCESS_KEY` / `CYBERMOLE_S3_SECRET_KEY` | *(unset)* | the store's credentials. In compose, generated once by `seaweedfs-init` and loaded by the entrypoint — not set in `compose.yaml` |
 | `CYBERMOLE_S3_BUCKET` | `cybermole` | bucket for uploads (created on first use when missing) |
 | `CYBERMOLE_S3_REGION` | `us-east-1` | SigV4 signing region — self-hosted servers accept any |
-| `CYBERMOLE_EDITOR_UPSTREAM` | *(unset: editor off)* | the [VSCodium reh-web editor](docs/editor-webapp.md)'s upstream — the single switch: unset, `/editor/*` answers 404 and the console hides its editor tab; a malformed value stops the server at boot, like the S3 vars. Compose wires it by default (`http://editor:3000` — the editor container ships in the plain stack; set it empty in `.env` to switch the editor off). Auth is the web session itself — no token, no launcher URL; folders are URL params |
+| `CYBERMOLE_EDITOR_UPSTREAM` | *(unset: editor off)* | the [VSCodium reh-web editor](docs/guides/editor-webapp.md)'s upstream — the single switch: unset, `/editor/*` answers 404 and the console hides its editor tab; a malformed value stops the server at boot, like the S3 vars. Compose wires it by default (`http://editor:3000` — the editor container ships in the plain stack; set it empty in `.env` to switch the editor off). Auth is the web session itself — no token, no launcher URL; folders are URL params |
 | `CYBERMOLE_DEV_API` | `http://127.0.0.1:3001` | dev only: where `astro dev` proxies `/api`, `/partials`, `/editor`, `/ws`, login/logout (the `npm run dev:server` process) |
 | `CYBERMOLE_LOKI_URL` | *(unset: console-only)* | push URL of a Grafana Loki for the server's operational logs (`http://loki:3100` when the compose `observability` profile runs). Unset — the default, and the dev profile and plain hosts — logging is console-only, identical to before observability existed. A set-but-malformed value stops the server at boot, like the S3 vars |
 | `CYBERMOLE_LOKI_JOB` | `cybermole` | the `job` label every pushed log line carries — identifies this deployment in Loki's stream selectors. Letters, digits, `_`, `-`, max 64 chars |
@@ -390,7 +390,7 @@ jobs work in every install shape, the container included.
   integration): the instance serves on with the listener off and a
   loud boot line telling you to stop the other server or point
   `CYBERMOLE_SOCK` elsewhere. Design:
-  [docs/jobs-agent-plan.md](docs/jobs-agent-plan.md)
+  [docs/plans/jobs-agent-plan.md](docs/plans/jobs-agent-plan.md)
   §3–§4.
 - **The `cybermole-cli` CLI (agents, and humans in a terminal)**: a third bin
   (`package.json`, shipped in both containers of the split — the
@@ -405,27 +405,27 @@ jobs work in every install shape, the container included.
   something invalid. The socket is discovered `$CYBERMOLE_SOCK` →
   `/run/cybermole/cybermole.sock` → `<state dir>/cybermole.sock`, a friendly error
   naming the knob when off. Design:
-  [docs/jobs-agent-plan.md](docs/jobs-agent-plan.md) §5.
+  [docs/plans/jobs-agent-plan.md](docs/plans/jobs-agent-plan.md) §5.
 - **MCP over the internal API (agents, in-session)**: `server/mcp.ts` is
   a stdio MCP server — also runnable as `cybermole-cli mcp`, the dev-shape
   convenience — whose tools are 1:1 with those verbs (plus `apps_list`)
-  — registered for every pi session by the [`pi/`](pi/) template's
+  — registered for every pi session by the [`runtime/pi-agent-dir/`](runtime/pi-agent-dir/) template's
   `mcp.json` (see its README for the exposure, the absolute `/opt/cybermole`
   path it spawns, and the dev-shape difference). Tool results carry the
   internal API's Result JSON verbatim — an agent reads the same answers
   the console and the CLI do. Design:
-  [docs/jobs-agent-plan.md](docs/jobs-agent-plan.md) §6.
+  [docs/plans/jobs-agent-plan.md](docs/plans/jobs-agent-plan.md) §6.
 - **Root-agent conventions (`AGENTS.md`)**: the workspace root's
   `AGENTS.md` — the root agent's standing instructions: scheduled work
   belongs in jobs, a fired run is *started, not finished* (poll the run
   history and check exit codes), and the tool surface above — is
   seeded only-where-absent (the pi-template policy) from the repo's
-  [`root-agents/`](root-agents/) template into the default workspace
+  [`runtime/workspace-root/`](runtime/workspace-root/) template into the default workspace
   cwd (`/workspace` in the split): by the workspace entrypoint (uid
   2000) there, by the server boot next to the pi-template seeding in
   single-user shapes. App agents in checkouts under the root read it by
   upward walk — accepted same-uid usage. Design:
-  [docs/jobs-agent-plan.md](docs/jobs-agent-plan.md) §9.
+  [docs/plans/jobs-agent-plan.md](docs/plans/jobs-agent-plan.md) §9.
 - The trade-off vs the old systemd timers: nothing fires while cybermole
   itself is down (hence the catch-up above). Job commands run as the
   cybermole user, on the app's socket, per the security model — the terminal
@@ -445,7 +445,7 @@ links what serves, with a dimmed reason when it doesn't).
 
 The build loop belongs to the **root agent**, through the
 `cybermole-apps` MCP every root-agent session gets: `scaffold` (the
-image's `app-starter/` template, baked and linked), `check` (the gate —
+image's `runtime/app-starter/` template, baked and linked), `check` (the gate —
 the tree's own typecheck + unit tests + build + the self-containment
 check, one quiet envelope), `register` (the db row — the privileged
 act), `reload` (the host's sync point), then `add_action` to extend it:
@@ -456,10 +456,10 @@ MCP (its tools 1:1 with the route table, registered by the tree's
 `.pi/mcp.json`; `cybermole-apps` is disabled there on purpose). Every
 face — the pages, the app's tools, the root agent's `describe`/`call` —
 answers the same Result JSON with the same closed error codes. Design:
-[docs/apps-plan.md](docs/apps-plan.md) (status: shipped).
+[docs/plans/apps-plan.md](docs/plans/apps-plan.md) (status: shipped).
 
 The image ships one finished tree as living documentation:
-**`apps-reference/notes`** — the notes/journal reference app, built
+**`runtime/reference-apps/notes`** — the notes/journal reference app, built
 through the verbs as the epic's acceptance run (capture, search + tag
 filter, edit, archive — a flag, never a delete). It seeds into the
 install's apps root only-where-absent, nothing auto-registers; one
@@ -473,7 +473,7 @@ pi is a versioned dependency (`@earendil-works/pi-coding-agent` in
 is the configured command), not something installed on the box. Its
 config is project-controlled too:
 
-- [`pi/`](pi/) in the repo is the **template** — settings, `mcp.json`,
+- [`runtime/pi-agent-dir/`](runtime/pi-agent-dir/) in the repo is the **template** — settings, `mcp.json`,
   skills, extensions; whatever the install should ship to every terminal.
 - The **runtime agent dir** (default `<state dir>/pi-agent`) is
   seeded from it **only where absent**: existing files always
@@ -482,7 +482,7 @@ config is project-controlled too:
   (`auth.json`, `sessions/`) is never in the template. The seeder is
   whoever owns the dir: the server at boot in single-user shapes, the
   workspace entrypoint in the split (so every file lands uid-2000-owned).
-- A sibling one-file template, [`root-agents/AGENTS.md`](root-agents/),
+- A sibling one-file template, [`runtime/workspace-root/AGENTS.md`](runtime/workspace-root/),
   seeds the **workspace root's** `AGENTS.md` — the root agent's standing
   jobs instructions — with the same only-where-absent policy and the
   same seeder halves, but into the default workspace cwd
@@ -525,7 +525,7 @@ part of the plain stack and its proxy is wired on by default — set
 ### The privilege split (two containers)
 
 `docker compose up` boots three services from one image (prod shape of
-[DESIGN_REVIEW.md](DESIGN_REVIEW.md) §1.1):
+[DESIGN_REVIEW.md](docs/reports/DESIGN_REVIEW.md) §1.1):
 
 - **cybermole** (uid `node`, the image's user) — serves the HTTP/WS app from
   the image's copy at `/opt/cybermole`, which is **root-owned**: a prompt
@@ -541,8 +541,8 @@ part of the plain stack and its proxy is wired on by default — set
   sessions — web's never-fork guard depends on it), `chmod 0660` +
   `chgrp cybermole` on the socket (tmux creates it 0600 regardless of umask),
   admits the web user with `tmux server-access -a node`, seeds the runtime
-  pi-agent from the image's `pi/` template and the workspace root's
-  `AGENTS.md` from its `root-agents/` one (only where absent — same
+  pi-agent from the image's `runtime/pi-agent-dir/` template and the workspace root's
+  `AGENTS.md` from its `runtime/workspace-root/` one (only where absent — same
   policy as the single-user server boot), and supervises the server.
   Workspaces' files live on the `cybermole-workspace` volume at `/workspace`
   (the default workspace cwd — `CYBERMOLE_NEW_SESSION_CWD` prefills the
@@ -588,7 +588,7 @@ place, unused, on existing hosts.
 
 The Zed/KasmVNC webapp is gone (streaming a desktop GUI was the poor fit:
 separate basic auth, one instance, no per-folder URLs, a launcher
-container — see [docs/editor-webapp.md](docs/editor-webapp.md) for the
+container — see [docs/guides/editor-webapp.md](docs/guides/editor-webapp.md) for the
 full story of what replaced it). The editor is VSCodium's **reh-web**
 build — self-hosted VS Code in the browser with server-side files —
 served through cybermole's own **same-origin `/editor` proxy** behind the
@@ -597,7 +597,7 @@ stack: `up -d` starts it and wires the proxy on
 (`CYBERMOLE_EDITOR_UPSTREAM` defaults to `http://editor:3000`); set that
 variable empty in `.env` to run without it — `/editor/*` then answers
 404 and the console hides its editor tab. Two services from a thin
-in-repo image (`editor/`, the pinned reh-web tarball):
+in-repo image (`deploy/editor/`, the pinned reh-web tarball):
 
 - **editor** (uid 2000) — `codium-server` on the compose network (publishes
   nothing), `--server-base-path ${CYBERMOLE_BASE%/}/editor` so its asset URLs
@@ -619,7 +619,7 @@ touches the tmux socket or web state.
 ### Object storage (SeaweedFS)
 
 Uploads (`POST /api/files`) go to an S3 bucket through the AWS SDK
-(`src/lib/storage.ts`). Nothing in the app is specific to one server; the
+(`src/lib/platform/storage.ts`). Nothing in the app is specific to one server; the
 compose stack runs [SeaweedFS](https://github.com/seaweedfs/seaweedfs)
 (`weed mini`, pinned) — MinIO's community edition was archived in 2026
 and its images are gone. Two more services:
@@ -663,7 +663,7 @@ body.
 
 Two limits besides the app's own, for big files:
 
-- **nginx** — `deploy/nginx-cybermole.conf` allows the 5 GiB body
+- **nginx** — `deploy/nginx/cybermole.conf` allows the 5 GiB body
   (`client_max_body_size`) and streams bodies through
   (`proxy_request_buffering off`) instead of spooling each to disk first.
   A proxy left at nginx's 1 MiB default refuses uploads with its own 413.
@@ -675,7 +675,7 @@ Two limits besides the app's own, for big files:
 ### Observability (logs → Loki, dashboards → Grafana)
 
 The server's operational logging goes through a winston logger
-(`src/lib/logger.ts`) with **two transports**: a console transport,
+(`src/lib/platform/logger.ts`) with **two transports**: a console transport,
 always — pretty, human-readable lines (`<iso-time> <level> [component]
 <message> {meta}`), because the boot log and `docker compose logs` are
 read by humans — and a `winston-loki` push transport **only** when
@@ -771,7 +771,7 @@ loads it directly) — the host's `http://127.0.0.1:3300` in the compose
 shape, not the container-network `http://grafana:3000`; a Grafana behind
 a reverse proxy under a subpath works too. Unset/empty: no header link,
 and `/logs` answers 404. The Explore URL is built server-side
-(`src/lib/grafana.ts`, pinned against the Grafana the compose file pins:
+(`src/lib/platform/grafana.ts`, pinned against the Grafana the compose file pins:
 the `panes`+`schemaVersion=1` format v13 parses, with the datasource
 uid preselected) and the page's CSP allows framing exactly that one
 origin. The compose grafana also sets `GF_SECURITY_ALLOW_EMBEDDING=true`
@@ -819,8 +819,8 @@ sudo -u cybermole-work sh -c 'umask 0007; \
 scripts, or put the socket on persistent storage. Nothing seeds the
 pi-agent template — or the workspace root's `AGENTS.md` — in this shape:
 the single-user server-boot seeding is off with an absolute socket, so
-copy the repo's `pi/` into the runtime agent dir and its `root-agents/
-AGENTS.md` to the workspace cwd yourself, as `cybermole-work`, if you want
+copy the repo's `runtime/pi-agent-dir/` into the runtime agent dir and its
+`runtime/workspace-root/AGENTS.md` to the workspace cwd yourself, as `cybermole-work`, if you want
 the shipped defaults.)
 And run the server itself, as your user, with the split env —
 `CYBERMOLE_TMUX_SOCKET=/run/cybermole/tmux`, a workspace cwd
@@ -868,11 +868,11 @@ root-owned global prefix that fails with EACCES; update by
 
 Front it with TLS — [`deploy/`](deploy/) has:
 
-- `nginx-cybermole.conf` — TLS reverse proxy with the WebSocket upgrade map
+- `nginx/cybermole.conf` — TLS reverse proxy with the WebSocket upgrade map
   (upstream is the published loopback port). One proxy hop, so the server
   runs with `CYBERMOLE_TRUST_PROXY=1` (compose sets it; set it yourself for a
   host install behind nginx)
-- `fail2ban-filter-cybermole.conf` + `fail2ban-jail.conf` — fail2ban watching
+- `fail2ban/filter-cybermole.conf` + `fail2ban/jail.conf` — fail2ban watching
   the nginx access log for failed logins (401/429 on the login POST)
 
 State is split by owner, like everything else in the two-container shape:
@@ -951,11 +951,11 @@ a single definition point:
   shell env, or a `.env` next to the file). Compose interpolates that one
   variable into both the build arg and the runtime env, so the image and
   the server can't drift apart on their own.
-- **[`deploy/nginx-cybermole.conf`](deploy/nginx-cybermole.conf)** — the named
+- **[`deploy/nginx/cybermole.conf`](deploy/nginx/cybermole.conf)** — the named
   capture at the head of the location regex, the file's only occurrence
   (marked with a comment; `proxy_pass` forwards the client's path
   unchanged, so the one literal both selects and names the prefix).
-- **[`deploy/fail2ban-filter-cybermole.conf`](deploy/fail2ban-filter-cybermole.conf)**
+- **[`deploy/fail2ban/filter-cybermole.conf`](deploy/fail2ban/filter-cybermole.conf)**
   — the POST path inside `failregex` (the login POST), likewise the
   file's only occurrence; the NOTE above it points here and at the nginx
   capture.
@@ -1043,7 +1043,7 @@ and it survives only until the next image deploy; use the image or
 standalone-workspace flows above to change what your terminals actually
 run.
 Sending the auto-update install to the workspace side is a marked junction
-in `src/lib/auto-update.ts` for a later pass. In the **docker dev
+in `src/lib/platform/auto-update.ts` for a later pass. In the **docker dev
 profile** `node_modules` is a shadow volume and `npm install` re-runs
 from the lockfile on every boot, so nothing auto-updated persists there.
 
@@ -1081,7 +1081,7 @@ standalone-workspace install above (`CYBERMOLE_AGENT_COMMAND`).
   within 30 s. The login rate limiter stays in memory (a restart resets
   it).
 - **Serving and working are privilege-split by default in containers**
-  ([DESIGN_REVIEW.md](DESIGN_REVIEW.md) §1.1): pi reads untrusted input
+  ([DESIGN_REVIEW.md](docs/reports/DESIGN_REVIEW.md) §1.1): pi reads untrusted input
   (repos, web pages, tool output), so a prompt injection must not be able
   to rewrite the server or replace the login credential. In the compose
   shape the server runs as uid `node` off a root-owned `/opt/cybermole` and
@@ -1173,36 +1173,38 @@ standalone-workspace install above (`CYBERMOLE_AGENT_COMMAND`).
   refresh; same gate, never cached by the service worker
 - `src/schemas` — node-free zod schemas shared by server and browser
   (request bodies, WS frames, branded IDs); `src/types` — the `Result`
-  contract and branded ID types. Conventions: `docs/CODE_STYLE.md`
+  contract and branded ID types. Conventions: `docs/conventions/CODE_STYLE.md`
 - `server` — the Node server: origin + session gate, login/logout,
   assets, the Astro SSR handler (pages + API), WS → node-pty → tmux, the
   same-origin `/editor` reverse proxy (HTTP streaming + raw WS
-  tunnels, per-token tracking — `src/lib/editor.ts`), the internal jobs
+  tunnels, per-token tracking — `src/lib/terminals/editor.ts`), the internal jobs
   API on its unix socket (`internal-api.ts` — same Result JSON as the
   browser routes) and the stdio jobs MCP server (`mcp.ts`)
 - `src/pages/jobs.astro` + `src/components/JobsApp/` — the scheduled-jobs
   page (list/create/edit/run/delete, cron validation, app tag, run
   history + log viewer), plus the per-job detail page
   `src/pages/jobs/[name].astro` — live-updated over `/ws/events`
-  (`src/lib/events.ts` — the domain-event bus)
-- `pi/` — the controlled pi agent-dir template (settings, MCPs, skills,
-  extensions) seeded into the runtime dir; `root-agents/` — the one-file
-  workspace-root `AGENTS.md` template (the root agent's jobs
-  conventions), seeded by the same boot halves; `apps-reference/notes/`
-  — the shipped reference app tree (apps-plan §9: seeded
-  only-where-absent per install, registered by hand); `app-starter/` +
-  `apps-agent-template/` — the scaffold's templates every new app grows
-  from; `cli/` — the `cybermole-cli`
-  bin: the jobs verbs + `cybermole-cli mcp`, a zero-runtime-dep client over the
-  internal socket; `tmux.conf` at the root is the
-  tmux server config — together they're the shipped "environment config"
-- `editor/` — the VSCodium reh-web editor image (pinned tarball, uid 2000)
-  for the compose `editor` profile — `Dockerfile` + entrypoint
-  ([docs/editor-webapp.md](docs/editor-webapp.md))
-- `Dockerfile`, `docker-entrypoint.sh`, `docker-workspace-entrypoint.sh`,
-  `compose.yaml` — one image, two prod roles (web: serves root-owned
-  `/opt/cybermole`; workspace: uid 2000, owns tmux + the terminals) + the
-  slim prod default and toolchain dev targets
+  (`src/lib/platform/events.ts` — the domain-event bus)
+- `runtime/` — everything the installed server reads or seeds, shipped
+  as one tree: `pi-agent-dir/` — the controlled pi agent-dir template
+  (settings, MCPs, skills, extensions) seeded into the runtime dir;
+  `workspace-root/` — the one-file workspace-root `AGENTS.md` template
+  (the root agent's jobs conventions), seeded by the same boot halves;
+  `reference-apps/notes/` — the shipped reference app tree (apps-plan §9:
+  seeded only-where-absent per install, registered by hand);
+  `app-starter/` + `app-agents/` — the scaffold's templates every new app
+  grows from; `tmux.conf` — the tmux server config — together they're
+  the shipped "environment config"
+- `cli/` — the `cybermole-cli` bin: the jobs verbs + `cybermole-cli mcp`,
+  a zero-runtime-dep client over the internal socket
+- `Dockerfile` + `compose.yaml` — one image, two prod roles (web: serves
+  root-owned `/opt/cybermole`; workspace: uid 2000, owns tmux + the
+  terminals) + the slim prod default and toolchain dev targets
+- `deploy/` — `docker/` (the image's `docker-entrypoint.sh` +
+  `docker-workspace-entrypoint.sh`), `editor/` (the VSCodium reh-web
+  editor image — pinned tarball, uid 2000 — `Dockerfile` + entrypoint,
+  [docs/guides/editor-webapp.md](docs/guides/editor-webapp.md)), and the
+  host-side config: `nginx/`, `fail2ban/`, `loki/`, `grafana/`
 - `.agents/skills/` — Web Awesome docs as pi skills: `webawesome` (component
   API reference) + `webawesome-design` (layout/theming/tokens), copied
   version-locked from the installed package by `tools/build_webawesome_skills.py`

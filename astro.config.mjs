@@ -2,10 +2,10 @@ import { defineConfig } from 'astro/config';
 import node from '@astrojs/node';
 import lit from '@awesome.me/astro-lit';
 // Typed env-var contract for every CYBERMOLE_* variable the server reads —
-// the single source of truth, shared with src/lib/env.ts (the compiled
+// the single source of truth, shared with src/lib/platform/env.ts (the compiled
 // server's typed reads; see that file for why the server cannot import
 // 'astro:env/server' directly). Plain data in envField() output shape.
-import { envSchema } from './src/lib/env-schema';
+import { envSchema } from './src/lib/platform/env-schema';
 import { UPLOAD_MAX_BODY_BYTES } from './src/schemas/uploads';
 
 // SSR build: Astro renders pages AND the JSON API (src/pages/api) on
@@ -59,7 +59,7 @@ export default defineConfig({
   // expected origin from the request URL, which behind a TLS-terminating
   // proxy is http:// — it would 403 same-origin form posts and every
   // bodyless POST/DELETE (run job, delete job). One authoritative check;
-  // tests/e2e.spec.ts covers it. (docs/CODE_STYLE.md §6)
+  // tests/e2e/e2e.spec.ts covers it. (docs/conventions/CODE_STYLE.md §6)
   security: { checkOrigin: false },
   integrations: [lit()], // Web Awesome SSR (declarative shadow DOM)
   base,
@@ -77,7 +77,7 @@ export default defineConfig({
   // resolve the source symlink's .ts exports — no such thing at runtime).
   // noExternal bundles it into dist/server/entry.mjs instead, compiled from
   // source — the same self-contained-entry property apps' builds get
-  // (docs/apps-plan.md §5).
+  // (docs/plans/apps-plan.md §5).
   vite: {
     ssr: { noExternal: ['@cybermole/app-kit'] },
     server: { proxy: devProxy },

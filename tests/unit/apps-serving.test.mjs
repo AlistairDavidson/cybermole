@@ -18,7 +18,7 @@ import * as path from 'node:path';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-apps-serving-'));
 
-const { AppsServing, joinServing } = await import('../../dist-server/src/lib/apps-serving.js');
+const { AppsServing, joinServing } = await import('../../dist-server/src/lib/apps/apps-serving.js');
 
 /** A stub app host serving GET /_admin/status with the given payload,
  *  counting requests. */

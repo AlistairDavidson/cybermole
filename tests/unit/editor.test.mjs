@@ -1,6 +1,6 @@
-// editor.test.mjs — src/lib/editor.ts (the same-origin editor proxy's
-// policy surface, docs/editor-webapp.md) + the CYBERMOLE_EDITOR_UPSTREAM boot
-// checks (src/lib/env.ts). One test per behavior the proxy relies on: path
+// editor.test.mjs — src/lib/terminals/editor.ts (the same-origin editor proxy's
+// policy surface, docs/guides/editor-webapp.md) + the CYBERMOLE_EDITOR_UPSTREAM boot
+// checks (src/lib/platform/env.ts). One test per behavior the proxy relies on: path
 // routing (HTTP + WS), the header set that overrides the global DENY, the
 // body-cap/chunked policy, the upstream WS handshake headers (the
 // regression guard: a stripped-header request never gets a 101 — verified
@@ -21,7 +21,7 @@ import {
   injectWorkbenchThemeDefaults,
   isEditorHttpPath,
   isEditorUpgradePath,
-} from '../../dist-server/src/lib/editor.js';
+} from '../../dist-server/src/lib/terminals/editor.js';
 
 // ---------- path routing ----------
 
@@ -70,7 +70,7 @@ test('editorSecurityHeaders: framable + the VS Code web CSP the spike pinned', (
   const csp = h['Content-Security-Policy'];
   assert.match(csp, /frame-ancestors 'self'/);
   // blob workers (the web-worker extension host) and data/blob images —
-  // verified against a real browser (docs/editor-spike.md).
+  // verified against a real browser (docs/plans/editor-spike.md).
   assert.match(csp, /worker-src 'self' blob:/);
   assert.match(csp, /img-src 'self' data: blob:/);
   // same-origin frames: the webWorkerExtensionHostIframe
@@ -289,7 +289,7 @@ test('EditorTunnelTracker: logout cuts only that token; closeAll cuts everything
   assert.deepEqual(closed, ['a1', 'a2', 'b1']);
 });
 
-// ---------- CYBERMOLE_EDITOR_UPSTREAM boot checks (src/lib/env.ts) ----------
+// ---------- CYBERMOLE_EDITOR_UPSTREAM boot checks (src/lib/platform/env.ts) ----------
 
 /** readEditorUpstream() in a fresh process (RAW_ENV is read at module load). */
 function bootUpstream(env) {
@@ -301,7 +301,7 @@ function bootUpstream(env) {
       process.execPath,
       [
         '-e',
-        "process.stdout.write(JSON.stringify(require('./dist-server/src/lib/env.js').readEditorUpstream()))",
+        "process.stdout.write(JSON.stringify(require('./dist-server/src/lib/platform/env.js').readEditorUpstream()))",
       ],
       { env: { ...clean, ...env }, stdio: ['ignore', 'pipe', 'pipe'] },
     );

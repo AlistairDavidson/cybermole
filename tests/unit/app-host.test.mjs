@@ -1,4 +1,4 @@
-// app-host.test.mjs — task/app-host (docs/apps-plan.md §3) units: the
+// app-host.test.mjs — task/app-host (docs/plans/apps-plan.md §3) units: the
 // host booted on a tmp-dir socket against a REAL internal-api fixture
 // (internal-api.test.mjs's pattern), discovering SYNTHETIC app trees —
 // tmp dirs with app.json + a stub dist (a hand-written entry.mjs
@@ -22,10 +22,10 @@ process.env.CYBERMOLE_TMUX_SOCKET = path.join(dir, 'tmux');
 
 const { startInternalApi } = await import('../../dist-server/server/internal-api.js');
 const { startAppHost, AppsSocketOwnedError } = await import('../../dist-server/server/app-host.js');
-const { Scheduler } = await import('../../dist-server/src/lib/jobs.js');
-const { StateDb } = await import('../../dist-server/src/lib/db.js');
-const { Apps } = await import('../../dist-server/src/lib/apps.js');
-const { appsSocketDefault } = await import('../../dist-server/src/lib/env.js');
+const { Scheduler } = await import('../../dist-server/src/lib/jobs/jobs.js');
+const { StateDb } = await import('../../dist-server/src/lib/platform/db.js');
+const { Apps } = await import('../../dist-server/src/lib/apps/apps.js');
+const { appsSocketDefault } = await import('../../dist-server/src/lib/platform/env.js');
 
 /** One test's world: the internal API (rows) + the app host pointed at
  *  it. internalApi: false boots the host FIRST (the boot-race case) —
@@ -692,7 +692,7 @@ test('a live listener owns the socket: the typed error the supervisor reports', 
   }
 });
 
-// ---------- CYBERMOLE_APPS_SOCK resolution (src/lib/env.ts) ----------
+// ---------- CYBERMOLE_APPS_SOCK resolution (src/lib/platform/env.ts) ----------
 
 test('appsSocketDefault: /run/cybermole when the shared dir exists, else the state dir', () => {
   assert.equal(appsSocketDefault('/state', true), '/run/cybermole/apps.sock');
@@ -710,7 +710,7 @@ test('readAppsSocket: empty = off (null), unset = the shape default, absolute wi
         process.execPath,
         [
           '-e',
-          "process.stdout.write(JSON.stringify(require('./dist-server/src/lib/env.js').readAppsSocket()))",
+          "process.stdout.write(JSON.stringify(require('./dist-server/src/lib/platform/env.js').readAppsSocket()))",
         ],
         { env: { ...clean, ...env }, stdio: ['ignore', 'pipe', 'pipe'] },
       );

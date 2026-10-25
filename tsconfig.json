@@ -1,5 +1,5 @@
 {
   "extends": "astro/tsconfigs/strict",
   "include": [".astro/types.d.ts", "src/**/*", "tests/**/*", "playwright.config.ts"],
-  "exclude": ["src/lib/**/*", "tests/fixtures/app-fixture", "app-starter"]
+  "exclude": ["src/lib/**/*", "tests/fixtures/app-fixture", "runtime/app-starter"]
 }

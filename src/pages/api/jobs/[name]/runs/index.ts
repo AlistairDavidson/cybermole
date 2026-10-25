@@ -1,5 +1,5 @@
 // GET /api/jobs/:name/runs — the job's run history, newest first
-// (docs/workspaces-plan.md §6/§9): one row per recorded fire with its
+// (docs/plans/workspaces-plan.md §6/§9): one row per recorded fire with its
 // observed exit/finish and whether a log file exists. Capped at the
 // scheduler's RUN_HISTORY, like the pruning that enforces it.
 import type { APIRoute } from 'astro';

@@ -1,4 +1,4 @@
-// apps.test.mjs — the app domain (src/lib/apps.ts, workspaces-plan §3):
+// apps.test.mjs — the app domain (src/lib/apps/apps.ts, workspaces-plan §3):
 // every Result family at every error code, plus the slug rules it hangs
 // on (src/schemas/patterns.ts: normalizeSlug, APP_SLUG_RE). Runs against
 // the compiled dist-server (npm run test:unit).
@@ -7,10 +7,10 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { StateDb, qb } from '../../dist-server/src/lib/db.js';
-import { Apps } from '../../dist-server/src/lib/apps.js';
-import { Workspaces } from '../../dist-server/src/lib/workspaces.js';
-import { terminalSessionName } from '../../dist-server/src/lib/tmux.js';
+import { StateDb, qb } from '../../dist-server/src/lib/platform/db.js';
+import { Apps } from '../../dist-server/src/lib/apps/apps.js';
+import { Workspaces } from '../../dist-server/src/lib/terminals/workspaces.js';
+import { terminalSessionName } from '../../dist-server/src/lib/terminals/tmux.js';
 import {
   APP_SLUG_RE,
   UUID_RE,

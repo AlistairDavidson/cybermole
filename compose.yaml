@@ -16,7 +16,7 @@
 #                            uid 2000 (same pattern as dev-init below),
 #                            and the job-run log dir laid out the same
 #                            way (plan §9; see the workspace-init service).
-#     seaweedfs  object storage (S3 API, src/lib/storage.ts) — on the
+#     seaweedfs  object storage (S3 API, src/lib/platform/storage.ts) — on the
 #                            internal `storage` network with cybermole ONLY:
 #                            workspace (pi sessions) can't reach it.
 #     seaweedfs-init (one-shot) — generates the S3 credentials both sides
@@ -126,7 +126,7 @@ services:
     working_dir: /opt/cybermole # serve the image copy — no /app volume anymore
     environment:
       CYBERMOLE_BASE: ${CYBERMOLE_BASE:-/}
-      # One proxy hop (deploy/nginx-cybermole.conf): rate limits key on the IP
+      # One proxy hop (deploy/nginx/cybermole.conf): rate limits key on the IP
       # nginx appended to X-Forwarded-For. Safe with the loopback-only
       # publish below — only local processes can reach the port directly.
       CYBERMOLE_TRUST_PROXY: 1
@@ -136,7 +136,7 @@ services:
       # container (its tmux server spawns every session), so both
       # containers mount the shared volumes at the same mount points.
       # Absolute socket path ⇒ tmux -S + the never-fork guard
-      # (src/lib/tmux.ts); the workspace entrypoint owns the server.
+      # (src/lib/terminals/tmux.ts); the workspace entrypoint owns the server.
       CYBERMOLE_TMUX_SOCKET: /run/cybermole/tmux
       # HOME handed to spawned pi — /home/workspace is uid 2000's home
       # over there (writable; the node image's /home/node is not).
@@ -176,14 +176,14 @@ services:
       # (the internal http://grafana:3000 is not routable from outside).
       # Unset/empty: no logs link, /logs answers 404.
       CYBERMOLE_GRAFANA_URL: ${CYBERMOLE_GRAFANA_URL:-}
-      # task/ws-editor (docs/editor-webapp.md): the editor webapp's
+      # task/ws-editor (docs/guides/editor-webapp.md): the editor webapp's
       # upstream on the compose network — THE single switch. The stack
       # ships the editor container (header note), so the default wires the
       # proxy on; set it EMPTY in .env to switch the editor off (the
       # console hides its affordances, /editor answers 404). No token or
       # launch URL: auth is the web session, folders are URL params.
       CYBERMOLE_EDITOR_UPSTREAM: ${CYBERMOLE_EDITOR_UPSTREAM-http://editor:3000}
-      # task/app-host (docs/apps-plan.md §3): the app host's socket, in
+      # task/app-host (docs/plans/apps-plan.md §3): the app host's socket, in
       # the shared setgid dir. The web container is CLIENT-ONLY on it for
       # now — branch 2 (task/app-web) adds the /apps/* proxy behind the
       # session gate that forwards here. The web side NEVER spawns the
@@ -238,7 +238,7 @@ services:
       # jobs-agent-plan §9: the workspace root's AGENTS.md target — the
       # same path the web side's CYBERMOLE_NEW_SESSION_CWD names (path
       # agreement, like the socket and the agent dir): the entrypoint
-      # seeds <this>/AGENTS.md from the image's root-agents/ template.
+      # seeds <this>/AGENTS.md from the image's runtime/workspace-root/ template.
       CYBERMOLE_NEW_SESSION_CWD: /workspace
       CYBERMOLE_TMUX_WEB_USER: node # admitted as a tmux client by NAME
       CYBERMOLE_TMUX_GROUP: cybermole # socket group after chgrp (gid 2001 in-image)
@@ -324,7 +324,7 @@ services:
   # volume (deploy/loki/config.yaml: retention 14d, hard caps on
   # entry/label sizes, no telemetry). No published port — cybermole pushes
   # over the compose network; a down/restarted loki degrades silently on
-  # the server side (batch drops + 60s retry backoff, src/lib/logger.ts).
+  # the server side (batch drops + 60s retry backoff, src/lib/platform/logger.ts).
   loki:
     profiles: ["observability"]
     image: grafana/loki:3.7.8
@@ -388,7 +388,7 @@ services:
         limits: { memory: 512m, cpus: "0.5" }
     restart: unless-stopped
   # task/ws-editor: the VSCodium reh-web editor — part of the plain
-  # stack (docs/editor-webapp.md; the header's opt-out note). The image
+  # stack (docs/guides/editor-webapp.md; the header's opt-out note). The image
   # (editor/) vendors the PINNED reh-web tarball and runs its server
   # component as the workspace uid (2000) so it edits the shared
   # checkouts; it never touches the tmux socket or web state, and it
@@ -401,8 +401,8 @@ services:
       workspace-init:
         condition: service_completed_successfully
     build:
-      context: ./editor
-      args: # same pins as editor/Dockerfile's defaults; here so they drift visibly
+      context: ./deploy/editor
+      args: # same pins as deploy/editor/Dockerfile's defaults; here so they drift visibly
         VSCODIUM_VERSION: ${VSCODIUM_VERSION:-1.140.06880}
     image: cybermole-editor:local
     user: "workspace"
@@ -423,7 +423,7 @@ services:
   # state). Runs on every `up`; a no-op chown once right.
   editor-init:
     build:
-      context: ./editor
+      context: ./deploy/editor
       # Same pins as the editor service above: both build the same tag, so
       # an operator override must reach both builds — a default-pins
       # editor-init image would otherwise sit under the overridden tag (or
@@ -494,7 +494,7 @@ services:
       dev-editor-init:
         condition: service_completed_successfully
     build:
-      context: ./editor
+      context: ./deploy/editor
       args: # same pins as editor/editor-init: one tag, one pin
         VSCODIUM_VERSION: ${VSCODIUM_VERSION:-1.140.06880}
     image: cybermole-editor:local
@@ -515,7 +515,7 @@ services:
   dev-editor-init:
     profiles: ["dev"]
     build:
-      context: ./editor
+      context: ./deploy/editor
       args: # same pins again — one tag, one pin (editor-init's note)
         VSCODIUM_VERSION: ${VSCODIUM_VERSION:-1.140.06880}
     image: cybermole-editor:local

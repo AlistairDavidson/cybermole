@@ -12,7 +12,7 @@
 // require('@cybermole/app-kit') from dist-server/src/**.js walks up into
 // dist-server/node_modules, where this script places a manifest whose main
 // points back at the compiled files. Serve-time never resolves through the
-// source symlink (docs/apps-plan.md §5: the build bundles it; serve-time
+// source symlink (docs/plans/apps-plan.md §5: the build bundles it; serve-time
 // only ever imports dist/) — this keeps dist-server self-contained, so a
 // Node without type stripping (the image ships node 22) runs it unchanged.
 //

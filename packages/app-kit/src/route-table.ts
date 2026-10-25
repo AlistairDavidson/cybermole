@@ -1,4 +1,4 @@
-// route-table.ts — the route-table binder (docs/apps-plan.md §5): an app
+// route-table.ts — the route-table binder (docs/plans/apps-plan.md §5): an app
 // declares ONE table (src/routes.ts — name, method, path, zod in, handler
 // → Result) and the kit binds it to every face the plan promised:
 //

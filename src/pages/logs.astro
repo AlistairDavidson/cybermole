@@ -2,7 +2,7 @@
 // logs.astro — task/logs-page: Grafana's Explore in an iframe. The
 // `observability` compose profile ships Grafana with the Loki datasource
 // provisioned and nothing else, so Explore (its query UI) IS the log
-// surface; src/lib/grafana.ts builds the URL that preselects Loki.
+// surface; src/lib/platform/grafana.ts builds the URL that preselects Loki.
 // Server-rendered like every data page: the URL arrives from the services
 // gate (assertCybermoleLocals — a page without them is a broken invariant,
 // in dev browse the `npm run dev:server` process), and nothing on the page

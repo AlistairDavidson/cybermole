@@ -1,5 +1,5 @@
 // internal-api-client.test.mjs — task/app-host units for the shared
-// HTTP-over-unix-socket client (src/lib/internal-api-client.ts): real
+// HTTP-over-unix-socket client (src/lib/platform/internal-api-client.ts): real
 // verbs against a bootInternalApi fixture (internal-api.test.mjs's
 // pattern), plus the transport-failure and timeout contracts every
 // consumer (the app host's discovery, later mcp.ts) relies on.
@@ -15,10 +15,11 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-internal-api-client
 process.env.CYBERMOLE_TMUX_SOCKET = path.join(dir, 'tmux');
 
 const { startInternalApi } = await import('../../dist-server/server/internal-api.js');
-const { Scheduler } = await import('../../dist-server/src/lib/jobs.js');
-const { StateDb } = await import('../../dist-server/src/lib/db.js');
-const { Apps } = await import('../../dist-server/src/lib/apps.js');
-const { requestInternalApi } = await import('../../dist-server/src/lib/internal-api-client.js');
+const { Scheduler } = await import('../../dist-server/src/lib/jobs/jobs.js');
+const { StateDb } = await import('../../dist-server/src/lib/platform/db.js');
+const { Apps } = await import('../../dist-server/src/lib/apps/apps.js');
+const { requestInternalApi } =
+  await import('../../dist-server/src/lib/platform/internal-api-client.js');
 
 /** The lightest internal-API fixture the verbs need: a db, a scheduler
  *  (jobs verbs) and the apps domain over it. */

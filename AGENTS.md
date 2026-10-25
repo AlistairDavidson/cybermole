@@ -5,16 +5,16 @@ README.md.
 
 ## Code conventions
 
-`docs/CODE_STYLE.md` covers the correctness rules: Result families with
+`docs/conventions/CODE_STYLE.md` covers the correctness rules: Result families with
 closed error codes, branded IDs, shared node-free schemas, thin Astro API
 routes behind the main.ts gate, HTML web components, and forms.
-`docs/REFACTOR_STYLE.md` covers porting older code into them. Formatting
+`docs/conventions/REFACTOR_STYLE.md` covers porting older code into them. Formatting
 and comment density aren't prescribed; match the surrounding code.
 
 ## Testing
 
 Validation runs through the `cybermole-dev` MCP tools (registered by
-`.pi/mcp.json`, implemented in `tools/dev-mcp/` — docs/dev-test-mcp-plan.md):
+`.pi/mcp.json`, implemented in `tools/dev-mcp/` — docs/plans/dev-test-mcp-plan.md):
 `run_check`, `run_lint`, `run_format_check`, `run_build`, `run_unit_tests`,
 `run_e2e` — one per npm script below. Every tool answers ONE quiet envelope
 (`{passed, returncode, duration_s, quiet, timed_out, output, counts?,
@@ -61,9 +61,9 @@ For authenticated API calls use in-page `fetch` (`page.evaluate`), not
 cookie over the suite's plain-http origin. Build first (`npm run build`)
 or let global-setup do it when dist/ is missing.
 
-The `tests/apps-*.spec.ts` files add the apps-e2e discipline (their
+The `tests/e2e/apps-*.spec.ts` files add the apps-e2e discipline (their
 header comments are the pattern): the whole suite's login budget is
-shared through the cookie file in `tests/env.ts` (readSharedSessionCookie
+shared through the cookie file in `tests/support/env.ts` (readSharedSessionCookie
 — the first apps spec to need a browser signs in, the rest reuse the
 cookie; never a fresh form sign-in per file), each spec sweeps its OWN
 slug's world at entry (marker-gated once per run inside the hermetic
@@ -73,8 +73,8 @@ rows die with the per-run db, trees with the per-run workspace rm), and
 per-test preconditions are re-established idempotently
 (`ensureRegisteredAndMounted`), because the scheduler may split a file
 across replacement workers. New app-touching specs follow the same
-shape — and `tests/apps-notes.spec.ts` is the worked example: it seeds
-the shipped `apps-reference/notes` tree into the hermetic apps root,
+shape — and `tests/e2e/apps-notes.spec.ts` is the worked example: it seeds
+the shipped `runtime/reference-apps/notes` tree into the hermetic apps root,
 gates it green through the check verb, and walks the use loop through
 the console origin on every face.
 
@@ -96,7 +96,7 @@ probes).
 
 ## node:sqlite
 
-The state db (`src/lib/db.ts`) uses the built-in `node:sqlite`, which
+The state db (`src/lib/platform/db.ts`) uses the built-in `node:sqlite`, which
 still prints a one-line `ExperimentalWarning: SQLite is an experimental
 feature…` the first time it loads in a process. **This warning is
 expected** — it appears in the server's boot log, `set-password` output

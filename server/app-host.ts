@@ -1,4 +1,4 @@
-// app-host.ts — the app host (task/app-host, docs/apps-plan.md §3): a
+// app-host.ts — the app host (task/app-host, docs/plans/apps-plan.md §3): a
 // mini main.ts running on the WORKSPACE side of the privilege split,
 // listening on its own unix socket (CYBERMOLE_APPS_SOCK — the
 // CYBERMOLE_SOCK rules verbatim: unset = /run/cybermole/apps.sock when
@@ -24,15 +24,15 @@
 //
 // Importable without side effects — unit tests boot this module alone on
 // a tmp-dir socket against a real internal-api fixture. The env rules
-// live in src/lib/env.ts (readAppsSocket); this module takes resolved
+// live in src/lib/platform/env.ts (readAppsSocket); this module takes resolved
 // absolute paths.
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { componentLogger } from '../src/lib/logger';
-import { readAppsSocket, readInternalApiSocket } from '../src/lib/env';
-import { requestInternalApi } from '../src/lib/internal-api-client';
+import { componentLogger } from '../src/lib/platform/logger';
+import { readAppsSocket, readInternalApiSocket } from '../src/lib/platform/env';
+import { requestInternalApi } from '../src/lib/platform/internal-api-client';
 import { AppSlugSchema } from '@cybermole/app-kit';
 import { probeSocketFile } from './internal-api';
 
@@ -42,7 +42,7 @@ const log = componentLogger('app-host');
 
 /** The @Astrojs/node middleware export every mounted app provides — the
  *  same shape server/main.ts loads from the console's dist/server/entry.mjs
- *  (docs/apps-plan.md §3: "the same static+middleware split main.ts
+ *  (docs/plans/apps-plan.md §3: "the same static+middleware split main.ts
  *  performs for the console"). Apps get NO locals: the console's
  *  { cybermole, session } never crosses into app code (plan §8). */
 type AppHandler = (
@@ -81,7 +81,7 @@ interface SkippedApp {
 }
 
 /** One app row as the internal API's GET /apps answers it (AppState,
- *  src/lib/types.ts). */
+ *  src/lib/platform/types.ts). */
 interface AppRow {
   id: string;
   name: string;

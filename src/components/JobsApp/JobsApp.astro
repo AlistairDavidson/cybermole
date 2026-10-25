@@ -13,8 +13,8 @@ import JobsList from "./JobsList.astro";
 import WaField from "../form/WaField.astro";
 import { zodSchemaToHTMLAttributes } from "../../lib/web/zod.service";
 import { JobSaveSchema } from "../../schemas/jobs";
-import type { AppState } from "../../lib/types";
-import type { ScheduledJob } from "../../lib/types";
+import type { AppState } from "../../lib/platform/types";
+import type { ScheduledJob } from "../../lib/platform/types";
 
 interface Props {
   /** The listing, server-rendered; null when the read failed (the poll retries). */

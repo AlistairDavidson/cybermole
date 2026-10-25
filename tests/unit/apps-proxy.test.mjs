@@ -1,4 +1,4 @@
-// apps-proxy.test.mjs — task/app-web (docs/apps-plan.md §4) units: the
+// apps-proxy.test.mjs — task/app-web (docs/plans/apps-plan.md §4) units: the
 // /apps/* proxy's decision surface and transport, exercised over REAL
 // sockets without the console — a stub "app host" on a tmp-dir unix
 // socket, and a "web side" http server whose handler is exactly the
@@ -19,7 +19,7 @@ import * as path from 'node:path';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-apps-proxy-'));
 
 const { handleAppsRequest, isAppsHttpPath, appsSlugOf, APPS_BODY_MAX_BYTES } =
-  await import('../../dist-server/src/lib/apps-proxy.js');
+  await import('../../dist-server/src/lib/apps/apps-proxy.js');
 
 // ---------- the stub app host (what server/app-host.js stands in as) ----------
 

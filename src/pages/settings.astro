@@ -2,7 +2,7 @@
 import Base from '../layouts/Base.astro';
 import SettingsView from '../components/Settings/SettingsView.astro';
 import { assertCybermoleLocals } from '../lib/web/locals';
-// Settings dashboard, server-rendered (docs/CODE_STYLE.md §7): the
+// Settings dashboard, server-rendered (docs/conventions/CODE_STYLE.md §7): the
 // effective config and pi status arrive as HTML from the services
 // server/main.ts passes in locals; <settings-app> (settings-app.ts) only
 // wires the actions. A page without the services is a broken invariant,
@@ -12,7 +12,7 @@ import { assertCybermoleLocals } from '../lib/web/locals';
 // "off" / "never".
 const { cybermole } = assertCybermoleLocals(Astro.locals);
 const settings = cybermole.settingsState();
-// console.error on purpose, not src/lib/logger.ts: frontmatter is
+// console.error on purpose, not src/lib/platform/logger.ts: frontmatter is
 // Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
 if (!settings.ok) console.error(`settings page: ${settings.errorMessage}`);
 const state = settings.ok ? settings.data : null;

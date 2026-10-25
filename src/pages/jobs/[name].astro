@@ -2,7 +2,7 @@
 // GET /jobs/:name — the job detail page (plan §7): the definition
 // (schedule/command/app tag, with the edit entry), the run history with
 // exit codes + durations, the log-tail viewer and the live-run link —
-// server-rendered (docs/CODE_STYLE.md §7); <job-detail> enhances it
+// server-rendered (docs/conventions/CODE_STYLE.md §7); <job-detail> enhances it
 // (log buttons, a 15 s refresh from /partials/jobs/<name>, the
 // /ws/events subscription). A page without the services is a broken
 // invariant — assertCybermoleLocals throws. The name is validated the way
@@ -12,8 +12,8 @@ import Base from '../../layouts/Base.astro';
 import JobDetail from '../../components/JobDetail/JobDetail.astro';
 import { assertCybermoleLocals } from '../../lib/web/locals';
 import { JobNameSchema } from '@cybermole/app-kit';
-import type { JobRunView } from '../../lib/jobs';
-import type { ScheduledJob } from '../../lib/types';
+import type { JobRunView } from '../../lib/jobs/jobs';
+import type { ScheduledJob } from '../../lib/platform/types';
 
 const { cybermole } = assertCybermoleLocals(Astro.locals);
 const parsed = JobNameSchema.safeParse(Astro.params.name);
@@ -25,7 +25,7 @@ if (parsed.success) {
   // uses, so the two surfaces can never disagree.
   const listed = await cybermole.scheduler.listJobs();
   if (listed.ok) job = listed.data.jobs.find(j => j.name === parsed.data) ?? null;
-  // console.error on purpose, not src/lib/logger.ts: frontmatter is
+  // console.error on purpose, not src/lib/platform/logger.ts: frontmatter is
   // Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
   else console.error(`job page: ${listed.errorMessage}`);
   if (job) {

@@ -5,7 +5,7 @@
 // locals only on that authenticated path. Without them — `astro dev`
 // serving a route itself, or the Astro handler run on its own — these
 // routes answer 503 instead of running unauthenticated
-// (docs/CODE_STYLE.md §6). Pages carry no data of their own without
+// (docs/conventions/CODE_STYLE.md §6). Pages carry no data of their own without
 // locals, so they render normally.
 import { defineMiddleware } from 'astro:middleware';
 import { jsonResponse } from '@cybermole/app-kit';

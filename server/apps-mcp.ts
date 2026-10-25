@@ -1,5 +1,5 @@
 // apps-mcp.ts — the apps MCP server `cybermole-apps` (task/app-scaffold,
-// docs/apps-plan.md §6): the ROOT agent's build-loop surface — scaffold,
+// docs/plans/apps-plan.md §6): the ROOT agent's build-loop surface — scaffold,
 // check, build, reload, register, unregister, status — plus the action
 // vocabulary (task/app-actions): add_action (the generator — one table
 // entry becomes route + MCP tool + UI stub + test stub + the AGENTS.md
@@ -38,14 +38,26 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { AppSlugSchema } from '@cybermole/app-kit';
-import { APP_ROOT, readAppsRoot, readAppsSocket, readInternalApiSocket } from '../src/lib/env';
-import { runChild } from '../src/lib/apps-child';
-import { scaffoldApp } from '../src/lib/apps-scaffold';
-import { buildApp, checkApp } from '../src/lib/apps-gate';
-import { ActionNameSchema, addAction } from '../src/lib/apps-actions';
-import { findAction, planActionRequest, readRouteTable } from '../src/lib/apps-route-table';
-import { joinAppsStatus, type StatusAppRow, type StatusHostAnswer } from '../src/lib/apps-status';
-import { requestInternalApi, type InternalApiAnswer } from '../src/lib/internal-api-client';
+import {
+  APP_ROOT,
+  readAppsRoot,
+  readAppsSocket,
+  readInternalApiSocket,
+} from '../src/lib/platform/env';
+import { runChild } from '../src/lib/apps/apps-child';
+import { scaffoldApp } from '../src/lib/apps/apps-scaffold';
+import { buildApp, checkApp } from '../src/lib/apps/apps-gate';
+import { ActionNameSchema, addAction } from '../src/lib/apps/apps-actions';
+import { findAction, planActionRequest, readRouteTable } from '../src/lib/apps/apps-route-table';
+import {
+  joinAppsStatus,
+  type StatusAppRow,
+  type StatusHostAnswer,
+} from '../src/lib/apps/apps-status';
+import {
+  requestInternalApi,
+  type InternalApiAnswer,
+} from '../src/lib/platform/internal-api-client';
 
 // ---------- shared plumbing ----------
 
@@ -407,9 +419,9 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
   const gateDeps = { appsRoot: deps.appsRoot, run: deps.run ?? runChild };
   const scaffoldDeps = {
     appsRoot: deps.appsRoot,
-    templateDir: deps.templateDir ?? path.join(deps.installRoot, 'app-starter'),
+    templateDir: deps.templateDir ?? path.join(deps.installRoot, 'runtime', 'app-starter'),
     agentTemplateFile:
-      deps.agentTemplateFile ?? path.join(deps.installRoot, 'apps-agent-template', 'AGENTS.md'),
+      deps.agentTemplateFile ?? path.join(deps.installRoot, 'runtime', 'app-agents', 'AGENTS.md'),
     installRoot: deps.installRoot,
     run: deps.run ?? runChild,
   };

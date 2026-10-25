@@ -19,8 +19,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-const { Auth, setCredential } = await import('../../dist-server/src/lib/auth.js');
-const { StateDb } = await import('../../dist-server/src/lib/db.js');
+const { Auth, setCredential } = await import('../../dist-server/src/lib/platform/auth.js');
+const { StateDb } = await import('../../dist-server/src/lib/platform/db.js');
 
 const BIN = path.join('dist-server', 'server', 'set-password.js');
 /** compose's literal seed input (the dev service's printf). */

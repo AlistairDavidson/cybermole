@@ -1,4 +1,4 @@
-// tmux.test.mjs — the privilege split's socket plumbing (src/lib/tmux.ts):
+// tmux.test.mjs — the privilege split's socket plumbing (src/lib/terminals/tmux.ts):
 // -S-vs-L selection for CYBERMOLE_TMUX_SOCKET, the never-fork guard's
 // decision table, and (where tmux exists — a stated requirement) the
 // guarded new-session behaviour against a real server on an absolute-path
@@ -32,7 +32,7 @@ const {
   capturePaneHistoryArgs,
   BACKFILL_LINES,
   paneHistorySize,
-} = await import('../../dist-server/src/lib/tmux.js');
+} = await import('../../dist-server/src/lib/terminals/tmux.js');
 const { TmuxSessionNameSchema } =
   await import('../../dist-server/packages/app-kit/src/schemas/ids.js');
 

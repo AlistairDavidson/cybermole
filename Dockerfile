@@ -63,8 +63,8 @@ RUN mkdir /state && chown node:node /state
 # volume instead. The entrypoints stay root-owned — exec needs only the
 # mode bit — and the chmod guards contexts that drop mode bits.
 COPY --from=build /repo /opt/cybermole
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-COPY docker-workspace-entrypoint.sh /usr/local/bin/docker-workspace-entrypoint.sh
+COPY deploy/docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY deploy/docker/docker-workspace-entrypoint.sh /usr/local/bin/docker-workspace-entrypoint.sh
 RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh /usr/local/bin/docker-workspace-entrypoint.sh
 
 USER node

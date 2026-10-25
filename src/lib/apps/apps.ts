@@ -1,0 +1,316 @@
+// apps.ts — the app domain (docs/plans/workspaces-plan.md §1–§3): a named,
+// slug'd, ordered container for workspaces. Barebones on purpose — the
+// workspace/terminal structure lives in workspaces.ts; apps are the
+// grouping, the ordering and the URL identity (slug, stable once
+// created). Constructed once per process (services.ts, fed by
+// server/main.ts) and reached by routes through locals.cybermole — never
+// runtime-imported by Astro code (docs/conventions/CODE_STYLE.md §6).
+//
+// Deletion is cascade-first: the FK chain (apps → workspaces → terminals,
+// ON DELETE CASCADE) does the structural delete in one statement (PRAGMA
+// foreign_keys is set at open, src/lib/platform/db.ts), and the deleted terminals'
+// tmux sessions are then killed best-effort — derived 't-<uuid>' names,
+// never stored — logged, never failing the delete. Jobs are untouched:
+// jobs.app_id is a TAG (ON DELETE SET NULL), not ownership.
+import { randomUUID } from 'node:crypto';
+import { qb, type StateDb } from '../platform/db';
+import { componentLogger } from '../platform/logger';
+import { terminalSessionName } from '../terminals/tmux';
+import { checkedCwd } from '../terminals/workspaces';
+import {
+  asAppId,
+  asAppSlug,
+  APP_SLUG_RE,
+  databaseRead,
+  databaseUpdate,
+  normalizeSlug,
+  type AppId,
+  type AppSlug,
+  type DatabaseReadResult,
+  type ResultFailure,
+  type ResultSuccess,
+  type TmuxSessionName,
+} from '@cybermole/app-kit';
+import type { AppState } from '../platform/types';
+
+const log = componentLogger('apps');
+
+// ---------- results (HTTP statuses are mapped in responses.service.ts) ----------
+
+export type SaveAppData = { id: AppId; name: string; slug: AppSlug; cwd: string | null };
+/** invalid_name: the display name is empty, or slugs to nothing usable.
+ *  invalid_cwd: the optional cwd (task/app-cwd — where workspaces under
+ *  the app start) is not an absolute existing directory (workspaces.ts's
+ *  checkedCwd, the same rule a workspace cwd passes). duplicate_slug: the
+ *  derived slug is taken (pre-checked, not message-sniffed — plan §2).
+ *  app_not_found: rename of a slug that no longer resolves (the plan's §3
+ *  list predates the PATCH route; the code is added so a missing app is a
+ *  404, not a 500). database_error: the state db failed (also the residual
+ *  pre-check/insert race's answer). */
+export type SaveAppErrorCode =
+  'invalid_name' | 'invalid_cwd' | 'duplicate_slug' | 'app_not_found' | 'database_error';
+export type SaveAppSuccess = ResultSuccess<'save_app', SaveAppData>;
+export type SaveAppFailure = ResultFailure<'save_app', SaveAppData, SaveAppErrorCode>;
+export type SaveAppResult = SaveAppSuccess | SaveAppFailure;
+
+export type DeleteAppData = { id: AppId };
+/** app_not_found: no app with that slug. The best-effort tmux kills are
+ *  logged (src/lib/terminals/tmux.ts) and never turn a successful delete into a
+ *  failure. */
+export type DeleteAppErrorCode = 'app_not_found' | 'database_error';
+export type DeleteAppSuccess = ResultSuccess<'delete_app', DeleteAppData>;
+export type DeleteAppFailure = ResultFailure<'delete_app', DeleteAppData, DeleteAppErrorCode>;
+export type DeleteAppResult = DeleteAppSuccess | DeleteAppFailure;
+
+/** The app list (task/ws-jobs plan §9 + task/ws-console plan §5): ONE
+ *  read serves both the jobs dialog's tag picker (server-rendered
+ *  options, no per-job fetches anywhere) and GET /api/state's apps
+ *  half. AppState is the shared client+server shape (src/lib/platform/types.ts). */
+export type ListAppsData = { apps: AppState[] };
+export type ListAppsErrorCode = 'database_error';
+export type ListAppsSuccess = ResultSuccess<'list_apps', ListAppsData>;
+export type ListAppsFailure = ResultFailure<'list_apps', ListAppsData, ListAppsErrorCode>;
+export type ListAppsResult = ListAppsSuccess | ListAppsFailure;
+
+// ---------- the domain ----------
+
+export interface AppsDeps {
+  db: StateDb;
+  /** The single credential row's username — created_by/updated_by
+   *  (plan §2), read through services (Auth.username). */
+  username: () => DatabaseReadResult<string | null>;
+  /** Best-effort tmux kill for a deleted terminal's session. */
+  killSession: (name: TmuxSessionName) => Promise<boolean>;
+}
+
+export class Apps {
+  constructor(private deps: AppsDeps) {}
+
+  /** Who writes rows: the credential username. A missing credential
+   *  cannot happen on an authenticated route (login requires it) —
+   *  'unknown' keeps the write honest if it ever does. */
+  private actor(): { ok: true; username: string } | { ok: false; errorMessage: string } {
+    const who = this.deps.username();
+    return who.ok
+      ? { ok: true, username: who.data.value ?? 'unknown' }
+      : { ok: false, errorMessage: who.errorMessage ?? 'could not read the credential' };
+  }
+
+  /** max(sort_order) + 10 — order allocation in steps of 10 (plan §2). */
+  private nextOrder() {
+    return databaseRead(
+      'could not read app order',
+      () =>
+        (this.deps.db.get(
+          qb.selectFrom('apps').select(eb => eb.fn.max<number | null>('sort_order').as('max')),
+        )?.max ?? 0) + 10,
+    );
+  }
+
+  private bySlug(slug: AppSlug) {
+    return databaseRead(
+      'could not read app',
+      () =>
+        this.deps.db.get(
+          qb.selectFrom('apps').select(['id', 'name', 'cwd']).where('slug', '=', slug),
+        ) ?? null,
+    );
+  }
+
+  /** Create an app: the slug is DERIVED (normalizeSlug) and checked
+   *  against the table before the insert — constraint violations are
+   *  closed error codes, never message-sniffed (plan §2); the residual
+   *  check-then-insert race degrades to database_error. The optional cwd
+   *  (task/app-cwd) is empty/absent = unset (workspaces under the app
+   *  start at the server default); a non-empty one passes workspaces.ts's
+   *  checkedCwd — the same rule a workspace cwd passes. */
+  async saveApp(name: string, cwd?: string): Promise<SaveAppResult> {
+    const fail = (errorCode: SaveAppErrorCode, errorMessage: string) =>
+      ({ ok: false, resultType: 'save_app', errorCode, errorMessage }) satisfies SaveAppFailure;
+    const trimmed = name.trim();
+    if (!trimmed) return fail('invalid_name', 'name is required');
+    const slug = normalizeSlug(trimmed);
+    if (!slug || !APP_SLUG_RE.test(slug))
+      return fail('invalid_name', 'name must contain letters or digits');
+    const wanted = cwd === undefined ? '' : cwd.trim();
+    let dir: string | null = null;
+    if (wanted !== '') {
+      const checked = checkedCwd(wanted);
+      if (!checked.ok) return fail('invalid_cwd', checked.reason);
+      dir = checked.cwd;
+    }
+    const actor = this.actor();
+    if (!actor.ok) return fail('database_error', actor.errorMessage);
+    const taken = this.bySlug(asAppSlug(slug));
+    if (!taken.ok) return fail('database_error', taken.errorMessage);
+    if (taken.data.value)
+      return fail('duplicate_slug', `an app with the slug "${slug}" already exists`);
+    const order = this.nextOrder();
+    if (!order.ok) return fail('database_error', order.errorMessage);
+    const id = asAppId(randomUUID());
+    const now = Date.now();
+    const inserted = databaseUpdate('could not save the app', () =>
+      this.deps.db.run(
+        qb.insertInto('apps').values({
+          id,
+          name: trimmed,
+          slug: asAppSlug(slug),
+          cwd: dir,
+          sort_order: order.data.value,
+          created_at: now,
+          updated_at: now,
+          created_by: actor.username,
+          updated_by: actor.username,
+        }),
+      ),
+    );
+    if (!inserted.ok) return fail('database_error', inserted.errorMessage);
+    log.info(`app "${trimmed}" (${slug}) created${dir === null ? '' : `, cwd ${dir}`}`);
+    return {
+      ok: true,
+      resultType: 'save_app',
+      data: { id, name: trimmed, slug: asAppSlug(slug), cwd: dir },
+    } satisfies SaveAppSuccess;
+  }
+
+  /** Patch an app: name and/or cwd, absent fields keep (the {title?}
+   *  convention of the workspace patches); the slug is stable once
+   *  created (v1 — plan §6); an absent everything is a no-op that returns
+   *  the row as it stands. cwd null CLEARS it back to unset — the app's
+   *  workspaces then start at the server default (terminalPatchBody's
+   *  title convention); a string passes workspaces.ts's checkedCwd. */
+  async renameApp(
+    slug: AppSlug,
+    name: string | undefined,
+    cwd: string | null | undefined,
+  ): Promise<SaveAppResult> {
+    const fail = (errorCode: SaveAppErrorCode, errorMessage: string) =>
+      ({ ok: false, resultType: 'save_app', errorCode, errorMessage }) satisfies SaveAppFailure;
+    const found = this.bySlug(slug);
+    if (!found.ok) return fail('database_error', found.errorMessage);
+    const row = found.data.value;
+    if (!row) return fail('app_not_found', 'no such app');
+    if (name === undefined && cwd === undefined) {
+      return {
+        ok: true,
+        resultType: 'save_app',
+        data: { id: row.id, name: row.name, slug, cwd: row.cwd },
+      } satisfies SaveAppSuccess;
+    }
+    const trimmed = name === undefined ? undefined : name.trim();
+    if (trimmed === '') return fail('invalid_name', 'name is required');
+    let dir: string | null | undefined;
+    if (cwd === null)
+      dir = null; // null CLEARS it; an empty string is a 400, not a clear
+    else if (cwd !== undefined) {
+      const checked = checkedCwd(cwd.trim());
+      if (!checked.ok) return fail('invalid_cwd', checked.reason);
+      dir = checked.cwd;
+    }
+    const actor = this.actor();
+    if (!actor.ok) return fail('database_error', actor.errorMessage);
+    const updated = databaseUpdate('could not save the app', () =>
+      this.deps.db.run(
+        qb
+          .updateTable('apps')
+          .set({
+            ...(trimmed === undefined ? {} : { name: trimmed }),
+            ...(dir === undefined ? {} : { cwd: dir }),
+            updated_at: Date.now(),
+            updated_by: actor.username,
+          })
+          .where('id', '=', row.id),
+      ),
+    );
+    if (!updated.ok) return fail('database_error', updated.errorMessage);
+    return {
+      ok: true,
+      resultType: 'save_app',
+      data: { id: row.id, name: trimmed ?? row.name, slug, cwd: dir === undefined ? row.cwd : dir },
+    } satisfies SaveAppSuccess;
+  }
+
+  /** Delete an app: the FK cascades its workspaces and their terminals,
+   *  and un-tags its jobs (SET NULL); the deleted terminals' tmux
+   *  sessions are killed best-effort afterwards — a kill can never fail
+   *  the delete. */
+  async deleteApp(slug: AppSlug): Promise<DeleteAppResult> {
+    const fail = (errorCode: DeleteAppErrorCode, errorMessage: string) =>
+      ({ ok: false, resultType: 'delete_app', errorCode, errorMessage }) satisfies DeleteAppFailure;
+    const found = this.bySlug(slug);
+    if (!found.ok) return fail('database_error', found.errorMessage);
+    const row = found.data.value;
+    if (!row) return fail('app_not_found', 'no such app');
+    // Collected before the cascade removes them: the ids name the tmux
+    // sessions to kill (terminalSessionName derives them — never stored).
+    const terminals = databaseRead('could not read terminals', () =>
+      this.deps.db.all(
+        qb
+          .selectFrom('terminals')
+          .select(['terminals.id'])
+          .innerJoin('workspaces', 'workspaces.id', 'terminals.workspace_id')
+          .where('workspaces.app_id', '=', row.id),
+      ),
+    );
+    if (!terminals.ok) return fail('database_error', terminals.errorMessage);
+    const deleted = databaseUpdate('could not delete the app', () =>
+      this.deps.db.run(qb.deleteFrom('apps').where('id', '=', row.id)),
+    );
+    if (!deleted.ok) return fail('database_error', deleted.errorMessage);
+    // These kills are best-effort and logged either way (plan §4): a
+    // terminal whose spawn failed (dead tab) or whose workspace side is
+    // down simply has no session to kill — the kill is then a no-op.
+    for (const t of terminals.data.value) await this.deps.killSession(terminalSessionName(t.id));
+    log.info(
+      `app ${slug} deleted (${terminals.data.value.length} terminal sessions killed best-effort)`,
+    );
+    return { ok: true, resultType: 'delete_app', data: { id: row.id } } satisfies DeleteAppSuccess;
+  }
+
+  /** Every app, sort_order asc (+ created_at tiebreak — order allocation
+   *  is in steps of 10, plan §2, but nothing rewrites gaps in v1). One
+   *  read: the sidebar's grouping order (plan §5), the jobs dialog's
+   *  tag picker (plan §9) and the new-workspace dialog's start-path hint
+   *  (task/app-cwd: the app cwd vs the server default). */
+  listApps(): ListAppsResult {
+    const read = databaseRead(
+      'could not read apps',
+      (): Array<{
+        id: AppId;
+        name: string;
+        slug: AppSlug;
+        cwd: string | null;
+        sort_order: number;
+        created_at: number;
+      }> =>
+        this.deps.db.all(
+          qb
+            .selectFrom('apps')
+            .select(['id', 'name', 'slug', 'cwd', 'sort_order', 'created_at'])
+            .orderBy('sort_order', 'asc')
+            .orderBy('created_at', 'asc'),
+        ),
+    );
+    if (!read.ok) {
+      return {
+        ok: false,
+        resultType: 'list_apps',
+        errorCode: 'database_error',
+        errorMessage: read.errorMessage,
+      } satisfies ListAppsFailure;
+    }
+    return {
+      ok: true,
+      resultType: 'list_apps',
+      data: {
+        apps: read.data.value.map(a => ({
+          id: a.id,
+          name: a.name,
+          slug: a.slug,
+          cwd: a.cwd,
+          order: a.sort_order,
+        })),
+      },
+    } satisfies ListAppsSuccess;
+  }
+}

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// server.mjs — the cybermole-dev MCP server (docs/dev-test-mcp-plan.md):
+// server.mjs — the cybermole-dev MCP server (docs/plans/dev-test-mcp-plan.md):
 // the repo's validation ladder (AGENTS.md, Testing) as six stdio MCP tools
 // that answer in ONE structured envelope, so an agent's context fills with
 // failure detail only, not per-test reporting. The npm scripts stay the
@@ -355,14 +355,14 @@ function unitFiles(file) {
 }
 
 /** Spec paths for an e2e `file` arg: stem (terminal-ws →
- *  tests/terminal-ws.spec.ts) or a repo-relative path; null when nothing
+ *  tests/e2e/terminal-ws.spec.ts) or a repo-relative path; null when nothing
  *  matches. */
 function e2eFile(file) {
   const candidates = [
     file,
     `${file}.spec.ts`,
-    path.join('tests', file),
-    path.join('tests', `${file}.spec.ts`),
+    path.join('tests', 'e2e', file),
+    path.join('tests', 'e2e', `${file}.spec.ts`),
   ];
   for (const c of candidates) if (existsSync(path.join(REPO_ROOT, c))) return [c];
   return null;
@@ -694,11 +694,11 @@ server.registerTool(
   'run_e2e',
   {
     description:
-      'The Playwright integration suite (npm run test:e2e) — chromium, hermetic workspace at /tmp/cybermole-itest, boots its own server from dist-server (run_build first on a cold checkout, or the suite global-setup builds when dist/ is missing). Host runs are serial — one /tmp/cybermole-itest at a time; fleet sandboxes are unaffected (per-container /tmp). grep is Playwright --grep over titles; file takes a spec stem or path (terminal-ws → tests/terminal-ws.spec.ts) — targeted before full. counts {pass, fail, flaky, skipped, interrupted, didNotRun} + failures[] with title, file:line and the trimmed error; on infra collapse (server never boots) there are no counts — passed: false with the web-server stderr tail. ' +
+      'The Playwright integration suite (npm run test:e2e) — chromium, hermetic workspace at /tmp/cybermole-itest, boots its own server from dist-server (run_build first on a cold checkout, or the suite global-setup builds when dist/ is missing). Host runs are serial — one /tmp/cybermole-itest at a time; fleet sandboxes are unaffected (per-container /tmp). grep is Playwright --grep over titles; file takes a spec stem or path (terminal-ws → tests/e2e/terminal-ws.spec.ts) — targeted before full. counts {pass, fail, flaky, skipped, interrupted, didNotRun} + failures[] with title, file:line and the trimmed error; on infra collapse (server never boots) there are no counts — passed: false with the web-server stderr tail. ' +
       LADDER_DOC,
     inputSchema: {
       grep: z.string().optional().describe("Playwright's --grep pattern over test titles"),
-      file: z.string().optional().describe('one spec: stem (e2e) or path (tests/e2e.spec.ts)'),
+      file: z.string().optional().describe('one spec: stem (e2e) or path (tests/e2e/e2e.spec.ts)'),
       quiet: quietParam,
       timeout: timeoutParam(3600),
     },
@@ -710,7 +710,7 @@ server.registerTool(
       const f = e2eFile(file);
       if (f === null) {
         return badRequest(
-          `no spec matches ${JSON.stringify(file)} — pass a stem like "terminal-ws" or a path like tests/terminal-ws.spec.ts`,
+          `no spec matches ${JSON.stringify(file)} — pass a stem like "terminal-ws" or a path like tests/e2e/terminal-ws.spec.ts`,
         );
       }
       specArgs.push(...f.map(p => path.join(REPO_ROOT, p)));

@@ -1,4 +1,4 @@
-// dev-mcp.test.mjs — the dev test-MCP's own units (docs/dev-test-mcp-plan.md
+// dev-mcp.test.mjs — the dev test-MCP's own units (docs/plans/dev-test-mcp-plan.md
 // §7): the pure parsers against checked-in fixture blobs (a real captured
 // Playwright JSON report and an ESLint JSON report under fixtures/), the
 // envelope/trim edge cases, the anchor/tail fallbacks, and smoke runs of
@@ -27,7 +27,7 @@ import {
 } from '../../tools/dev-mcp/parsers.mjs';
 
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
-const fixture = name => fs.readFileSync(path.join(REPO, 'tests/unit/fixtures', name), 'utf8');
+const fixture = name => fs.readFileSync(path.join(REPO, 'tests/fixtures/dev-mcp', name), 'utf8');
 const REPORTER = path.join(REPO, 'tools/dev-mcp/quiet-reporter.mjs');
 
 // ---------- trimOutput / tailLines (the bounded-output contract, §1.5) ----------
@@ -257,7 +257,7 @@ function runReporter(args) {
 }
 
 const summaryOf = stdout => extractUnitSummary(stdout);
-const fx = name => path.join(REPO, 'tests/unit/fixtures', name);
+const fx = name => path.join(REPO, 'tests/fixtures/dev-mcp', name);
 
 test('quiet-reporter: a passing file is a handful of lines with counts, exit 0', async () => {
   const r = await runReporter([fx('quiet-pass.test.mjs')]);

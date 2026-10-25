@@ -1,11 +1,11 @@
 // jobs.test.mjs — pure scheduling math for the in-process scheduler
-// (src/lib/jobs.ts): next-fire, due-ness, missed-window/catch-up, and
+// (src/lib/jobs/jobs.ts): next-fire, due-ness, missed-window/catch-up, and
 // cron validation. Everything here takes an injected "now" — no wall
 // clock, no db, no tmux. Run against the compiled output:
 // `npm run test:unit` (node --test).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkCron, isDue, nextFireMs } from '../../dist-server/src/lib/jobs.js';
+import { checkCron, isDue, nextFireMs } from '../../dist-server/src/lib/jobs/jobs.js';
 
 /** Local-time epoch ms (cron fields are interpreted in local time). */
 const L = (y, mo, d, h, mi) => new Date(y, mo - 1, d, h, mi, 0, 0).getTime();
@@ -95,13 +95,13 @@ test('checkCron: 5-field cron accepted, other syntax rejected with an error', ()
 import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const { runCommandArgv, runLogPaths } = await import('../../dist-server/src/lib/jobs.js');
+const { runCommandArgv, runLogPaths } = await import('../../dist-server/src/lib/jobs/jobs.js');
 
 /** Where jobs.ts's LOG_APPENDER points: the appender, compiled next to it
  *  (module-relative at load — never cwd; the wrapper executes it inside
  *  the workspace container, which ships the same image). */
 const APPENDER = fileURLToPath(
-  new URL('../../dist-server/src/lib/job-log-appender.js', import.meta.url),
+  new URL('../../dist-server/src/lib/jobs/job-log-appender.js', import.meta.url),
 );
 
 test('runCommandArgv: the exact wrapper argv — command as $1, never string-embedded', () => {

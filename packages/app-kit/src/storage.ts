@@ -2,7 +2,7 @@
 // through the AWS SDK. The compose stack runs SeaweedFS (compose.yaml);
 // nothing here is SeaweedFS-specific, so S3/R2/Garage/… work unchanged.
 //
-// The boundary for S3 (docs/CODE_STYLE.md §2): every SDK call is caught
+// The boundary for S3 (docs/conventions/CODE_STYLE.md §2): every SDK call is caught
 // here and becomes a failure result. Uploads stream: a body is sent as it
 // is read (lib-storage — one PUT if it fits a part, a multipart upload
 // otherwise, aborted if the body fails midway), so memory stays at a few
@@ -11,7 +11,7 @@
 // if missing — before the first upload, so a fresh server needs no setup
 // step.
 //
-// Moved from src/lib/storage.ts by task/app-kit (docs/apps-plan.md §5).
+// Moved from src/lib/storage.ts by task/app-kit (docs/plans/apps-plan.md §5).
 // The one console-specific piece stayed behind: logging. The kit cannot
 // import the console's winston logger, so its lines go through the
 // StorageLogger seam below — the console's src/lib/storage.ts is now the

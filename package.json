@@ -33,15 +33,8 @@
   "files": [
     "dist/",
     "dist-server/",
-    "pi/",
-    "root-agents/",
-    "app-starter/",
-    "app-starter/.gitignore",
-    "apps-agent-template/",
-    "apps-reference/",
-    "apps-reference/notes/.gitignore",
-    "apps-reference/notes/.pi/mcp.json",
-    "tmux.conf"
+    "runtime/",
+    "runtime/reference-apps/notes/.pi/mcp.json"
   ],
   "dependencies": {
     "@astrojs/node": "^11.1.6",

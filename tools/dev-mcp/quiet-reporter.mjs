@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// quiet-reporter.mjs — run_unit_tests' quiet half (docs/dev-test-mcp-plan.md
+// quiet-reporter.mjs — run_unit_tests' quiet half (docs/plans/dev-test-mcp-plan.md
 // §4 "node:test — suppress at the source"). A thin runner over node:test's
 // programmatic `run()` that reports ONLY diagnostics, failures (name, error,
 // duration) and a final counts line: on a passing run the whole output is a

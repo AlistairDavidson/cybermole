@@ -14,7 +14,7 @@ version.json
 .dist-watch/
 
 # pi harness session artifacts — never tracked, with one exception:
-# .pi/mcp.json is the dev test-MCP's registration (docs/dev-test-mcp-plan.md
+# .pi/mcp.json is the dev test-MCP's registration (docs/plans/dev-test-mcp-plan.md
 # §2 — tracked so every checkout, fleet worktree included, gets the tools)
 .pi/*
 !.pi/mcp.json

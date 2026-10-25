@@ -6,7 +6,7 @@ vendored fixture code: built by its own toolchain, excluded from the
 repo's astro check / eslint / prettier (see the one-line "fixture app"
 entries in `tsconfig.json`, `eslint.config.mjs`, `.prettierignore`).
 
-Layout: the app's future shape per docs/apps-plan.md §2 — `app.json`
+Layout: the app's future shape per docs/plans/apps-plan.md §2 — `app.json`
 (manifest), `astro.config.mjs` (base `/apps/app-fixture` BAKED, node
 adapter middleware mode), `src/pages` (one SSR page proving the DSD
 pipeline), `src/pages/api` (one hand-rolled Result-JSON route — the

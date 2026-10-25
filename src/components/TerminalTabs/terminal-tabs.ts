@@ -33,7 +33,7 @@
 // pop-blocked {id} (a pop-out the browser refused — the pane never
 // moved; <console-app> explains). All bubble to <console-app>, which
 // owns the dialogs and the API calls.
-import type { TerminalState, WorkspaceState } from '../../lib/types';
+import type { TerminalState, WorkspaceState } from '../../lib/platform/types';
 import type { TerminalId, TmuxSessionName, WorkspaceId } from '@cybermole/app-kit';
 import { BASE } from '../../base';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
@@ -47,10 +47,10 @@ const EDITOR = 'editor';
 /** The editor pane's src: the same-origin /editor proxy with the
  *  workspace cwd as the ?folder= param (spike-pinned, URI-encoded). No
  *  theme param — VERIFIED against the vendored reh-web build (1.140.x,
- *  docs/editor-webapp.md): the workbench client parses only folder/
+ *  docs/guides/editor-webapp.md): the workbench client parses only folder/
  *  workspace/ew from the URL, so a theme param would be ignored. The
  *  workbench instead follows the BROWSER's scheme at boot (the proxy
- *  injects window.autoDetectColorScheme — src/lib/editor.ts), which is
+ *  injects window.autoDetectColorScheme — src/lib/terminals/editor.ts), which is
  *  why a mode flip RELOADS the iframe (see the observer below): a reload
  *  re-reads the scheme at boot and lands the pane in the new mode. */
 const editorSrc = (cwd: string): string => `${BASE}/editor/?folder=${encodeURIComponent(cwd)}`;
@@ -60,7 +60,7 @@ const editorSrc = (cwd: string): string => `${BASE}/editor/?folder=${encodeURICo
 // existing editor pane re-navigates. Re-assigning src (even the same
 // value) is a reload per the iframe spec — the workbench re-boots in the
 // now-current mode. The injected autoDetectColorScheme default
-// (src/lib/editor.ts) sometimes re-themes a booted workbench live too,
+// (src/lib/terminals/editor.ts) sometimes re-themes a booted workbench live too,
 // but not reliably (it rides a theme-file fetch); the reload is the
 // deterministic path and is task-sanctioned — the two converge on the
 // same theme either way. Workspace state is server-side; nothing is

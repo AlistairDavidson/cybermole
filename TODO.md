@@ -1,14 +1,14 @@
 ## Apps
-Apps feature shipped — docs/apps-plan.md (header: the six branches +
+Apps feature shipped — docs/plans/apps-plan.md (header: the six branches +
 integration amendments). The /apps surface: agent-built Astro webapps on
 the app host behind the session gate, built through the cybermole-apps
 MCP verbs (scaffold → check → register → reload), one action vocabulary
 per app (UI + shim tools + describe/call, same Result JSON). The
-reference app ships in the image — apps-reference/notes (seeded
+reference app ships in the image — runtime/reference-apps/notes (seeded
 only-where-absent per install, nothing auto-registers; one register +
 reload makes it live). Same epic line as before it was planned: apps own
 their lifecycle via jobs + git, no cybermole deploy/rollback machinery
-(docs/jobs-agent-plan.md §0)
+(docs/plans/jobs-agent-plan.md §0)
 
 ## Human UX tasks
 Skills and other methods to enforce my coding patterns
@@ -42,7 +42,7 @@ hideable nav on desktop
 
 Rename "Console" -> "Cybermole"
 
-## Workspaces follow-ups (deferred with the plan — docs/workspaces-plan.md §14)
+## Workspaces follow-ups (deferred with the plan — docs/plans/workspaces-plan.md §14)
 
 terminal tab drag-reorder + workspace/app reorder UI (the sort_order columns exist)
 

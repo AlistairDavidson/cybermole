@@ -1,6 +1,6 @@
 // app-kit-route-table.test.mjs — the kit's route-table binder
 // (packages/app-kit/src/route-table.ts + route-table-emit.ts,
-// docs/apps-plan.md §5/§10): one small table bound to every face —
+// docs/plans/apps-plan.md §5/§10): one small table bound to every face —
 // (a) the HTTP glue (match, zod parse, handler, Result→status; unknown
 //     route 404, wrong method 405, binder-own input failures, a thrown
 //     handler, basePath stripping),

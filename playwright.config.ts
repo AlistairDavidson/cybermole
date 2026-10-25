@@ -1,10 +1,17 @@
 import { defineConfig, devices } from '@playwright/test';
-import { S3_ACCESS_KEY, S3_BUCKET, S3_PORT, TMUX_SOCKET, WORKSPACE, STATE_DIR } from './tests/env';
+import {
+  S3_ACCESS_KEY,
+  S3_BUCKET,
+  S3_PORT,
+  TMUX_SOCKET,
+  WORKSPACE,
+  STATE_DIR,
+} from './tests/support/env';
 
 const PORT = 3470;
 
 export default defineConfig({
-  testDir: './tests',
+  testDir: './tests/e2e',
   // Only the Playwright specs (e2e / state-dir / restart …): the
   // node:test units under tests/unit/ are `npm run test:unit` territory,
   // and Playwright's default pattern (*.@(spec|test).(c|m)…js) would import
@@ -19,11 +26,11 @@ export default defineConfig({
   reporter: 'list',
   use: { baseURL: `http://127.0.0.1:${PORT}` },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-  globalSetup: './tests/global-setup.ts',
+  globalSetup: './tests/support/global-setup.ts',
   webServer: [
     {
-      // In-memory S3 for POST /api/files (only what src/lib/storage.ts calls).
-      command: `node tests/fake-s3.mjs ${S3_PORT} ${S3_ACCESS_KEY}`,
+      // In-memory S3 for POST /api/files (only what src/lib/platform/storage.ts calls).
+      command: `node tests/support/fake-s3.mjs ${S3_PORT} ${S3_ACCESS_KEY}`,
       url: `http://127.0.0.1:${S3_PORT}/__fake/health`,
       reuseExistingServer: false,
       stdout: 'ignore',
@@ -50,7 +57,7 @@ export default defineConfig({
         // agent dir are explicitly pointed into WORKSPACE, so pinning the
         // state dir moves nothing else. The host discovers apps over the
         // internal socket below and retries until it answers (the boot
-        // race the host is built for); tests/apps.spec.ts is its consumer.
+        // race the host is built for); tests/e2e/apps.spec.ts is its consumer.
         CYBERMOLE_STATE_DIR: STATE_DIR,
         // The suite is serial from one IP and legitimately upgrades far more
         // than a human (every terminal test attaches/pops/reconnects) — the

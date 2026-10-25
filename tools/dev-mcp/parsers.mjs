@@ -1,9 +1,9 @@
 // parsers.mjs — the pure output-shaping half of the dev test-MCP
-// (docs/dev-test-mcp-plan.md §4–§5): bounded-output helpers and the
+// (docs/plans/dev-test-mcp-plan.md §4–§5): bounded-output helpers and the
 // machine-format parsers for ESLint's and Playwright's JSON reports, plus
 // the anchor-quiet shaping for the error-only text runners (astro
 // check/tsc/astro build). No node imports, no side effects — everything
-// here is unit-tested against checked-in fixtures (tests/unit/fixtures/,
+// here is unit-tested against checked-in fixtures (tests/fixtures/dev-mcp/,
 // tests/unit/dev-mcp.test.mjs).
 //
 // Every parser answers null on anything unexpected instead of throwing:

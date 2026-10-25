@@ -1,5 +1,5 @@
 // internal-api.ts — the internal jobs API (task/jobs-socket,
-// docs/jobs-agent-plan.md §3–§4): a second HTTP listener on a unix
+// docs/plans/jobs-agent-plan.md §3–§4): a second HTTP listener on a unix
 // domain socket, served by the same Node process as the console, serving
 // the WORKSPACE side (agents) the jobs surface. JSON only; nginx / the
 // TLS proxy never see this listener (it is not a TCP port).
@@ -10,7 +10,7 @@
 // listen (0660, the shared setgid group in the compose split) is the
 // only auth.
 //
-// Routes are THIN: every verb calls the same src/lib/jobs service
+// Routes are THIN: every verb calls the same src/lib/jobs/jobs service
 // functions the cookie-gated /api/jobs routes use, and answers with the
 // SAME Result JSON — the mappers in src/lib/web/responses.service.ts
 // are reused verbatim, so a body produced here is byte-identical to the
@@ -19,15 +19,15 @@
 //
 // Importable without server/main.ts — unit tests boot this module alone
 // on a tmp-dir socket. CYBERMOLE_SOCK's resolution rules live in
-// src/lib/env.ts (readInternalApiSocket); this module takes a resolved
+// src/lib/platform/env.ts (readInternalApiSocket); this module takes a resolved
 // absolute path.
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as path from 'node:path';
-import { componentLogger } from '../src/lib/logger';
-import { checkCron, type ListJobsFailure, type Scheduler } from '../src/lib/jobs';
-import type { Apps } from '../src/lib/apps';
+import { componentLogger } from '../src/lib/platform/logger';
+import { checkCron, type ListJobsFailure, type Scheduler } from '../src/lib/jobs/jobs';
+import type { Apps } from '../src/lib/apps/apps';
 import {
   appFailureResponse,
   appFilterNotFoundResponse,

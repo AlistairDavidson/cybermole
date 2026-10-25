@@ -8,7 +8,7 @@
 // fine). The worked example is the console's src/pages/login.astro: the
 // SAME wa-* modules imported in frontmatter for SSR are re-imported by
 // its client script — with this module first (see AGENTS.md,
-// "SSR imports ≠ client imports", and docs/CODE_STYLE.md §7).
+// "SSR imports ≠ client imports", and docs/conventions/CODE_STYLE.md §7).
 //
 // Pure side effects (package.json's sideEffects list carves this module
 // out so bundlers never drop it); import it as a statement:

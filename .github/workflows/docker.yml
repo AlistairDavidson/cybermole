@@ -11,35 +11,31 @@ on:
     paths:
       - Dockerfile
       - .dockerignore
-      - docker-entrypoint.sh
-      - docker-workspace-entrypoint.sh
+      - deploy/docker/**
       - compose.yaml
       - package.json
       - package-lock.json
       - astro.config.mjs
       - tsconfig.json
       - tsconfig.server.json
-      - tmux.conf
       - src/**
       - server/**
-      - pi/**
+      - runtime/**
       - .github/workflows/docker.yml
   pull_request:
     paths:
       - Dockerfile
       - .dockerignore
-      - docker-entrypoint.sh
-      - docker-workspace-entrypoint.sh
+      - deploy/docker/**
       - compose.yaml
       - package.json
       - package-lock.json
       - astro.config.mjs
       - tsconfig.json
       - tsconfig.server.json
-      - tmux.conf
       - src/**
       - server/**
-      - pi/**
+      - runtime/**
       - .github/workflows/docker.yml
   workflow_dispatch:
 

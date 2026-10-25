@@ -1,5 +1,5 @@
 // app-mcp-shim.ts — the app's own MCP (task/app-actions,
-// docs/apps-plan.md §6): stdio to pi, HTTP to the host socket. One stdio
+// docs/plans/apps-plan.md §6): stdio to pi, HTTP to the host socket. One stdio
 // server per app tree, registered under the app's slug by the tree's
 // .pi/mcp.json (the scaffold bakes the entry: `node
 // <install>/dist-server/server/app-mcp-shim.js <slug>` — this file is
@@ -27,18 +27,18 @@ import * as path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { readAppsRoot, readAppsSocket } from '../src/lib/env';
+import { readAppsRoot, readAppsSocket } from '../src/lib/platform/env';
 import {
   requestInternalApi,
   type InternalApiAnswer,
   type InternalApiCall,
-} from '../src/lib/internal-api-client';
+} from '../src/lib/platform/internal-api-client';
 import {
   planActionRequest,
   readRouteTable,
   shapeFromJsonSchema,
   type SerializedAction,
-} from '../src/lib/apps-route-table';
+} from '../src/lib/apps/apps-route-table';
 
 const json = (body: unknown): CallToolResult => ({
   content: [

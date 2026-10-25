@@ -1,4 +1,4 @@
-// mcp.ts — the jobs MCP server (docs/jobs-agent-plan.md §6): a stdio MCP
+// mcp.ts — the jobs MCP server (docs/plans/jobs-agent-plan.md §6): a stdio MCP
 // server whose tools are 1:1 with the internal jobs API's verbs
 // (server/internal-api.ts, plan §3–§4) plus apps_list, exposing the jobs
 // surface to pi sessions as tools instead of CLI round-trips. The CLI
@@ -26,7 +26,7 @@
 //
 // Importable standalone (tests, a future in-process wiring) and runnable
 // as an entry: `node dist-server/server/mcp.js` — the pi template's
-// mcp.json registers exactly that (pi/mcp.json), and the `cybermole-cli mcp`
+// mcp.json registers exactly that (runtime/pi-agent-dir/mcp.json), and the `cybermole-cli mcp`
 // subcommand (task/jobs-cli, merged by the orchestrator) execs the same
 // main().
 import * as http from 'node:http';
@@ -34,7 +34,7 @@ import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { readInternalApiSocket } from '../src/lib/env';
+import { readInternalApiSocket } from '../src/lib/platform/env';
 import { AppSlugSchema, JobNameSchema } from '@cybermole/app-kit';
 import {
   FiredAtSchema,
@@ -168,7 +168,7 @@ const firedAtSchema = z
 const nameSchema = JobNameSchema.describe('the job name, as jobs_list reported it');
 
 /** Build the stdio MCP server. socketPath is the resolved internal API
- *  socket (src/lib/env.ts readInternalApiSocket — imported, not
+ *  socket (src/lib/platform/env.ts readInternalApiSocket — imported, not
  *  duplicated: the $CYBERMOLE_SOCK → /run/cybermole/cybermole.sock → <state
  *  dir>/cybermole.sock discovery is §5's rule and the server's, one logic)
  *  — or null when the listener is off, in which case every tool call

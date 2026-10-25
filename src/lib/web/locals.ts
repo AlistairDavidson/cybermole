@@ -5,7 +5,7 @@
 // from their frontmatter — so a miss here is a broken invariant (a bug),
 // not a state to render around: it throws. Type-only imports: safe for
 // the Astro bundle (see services.ts).
-import type { CybermoleLocals, CybermoleServices } from '../services';
+import type { CybermoleLocals, CybermoleServices } from '../platform/services';
 import type { SessionToken } from '@cybermole/app-kit';
 
 export function assertCybermoleLocals(locals: CybermoleLocals): {

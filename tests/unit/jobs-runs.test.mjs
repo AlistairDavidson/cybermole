@@ -1,10 +1,10 @@
-// jobs-runs.test.mjs — task/ws-jobs (docs/workspaces-plan.md §9) units:
+// jobs-runs.test.mjs — task/ws-jobs (docs/plans/workspaces-plan.md §9) units:
 // the tick's run-finish observation (exit files: success, failure,
 // missing → unknown — plus the boot-armed path that only knows the job),
 // RUN_HISTORY pruning that unlinks the doomed runs' files BEFORE the
 // rows go, listRuns/readRunLog (shape, tail cap, every error code), and
 // the app tag's save/list LEFT JOIN. Needs no real tmux: a stand-in
-// FIRST on PATH answers the commands src/lib/tmux.ts issues (execFile
+// FIRST on PATH answers the commands src/lib/terminals/tmux.ts issues (execFile
 // resolves it per call; only the socket path binds at import, and that
 // is pointed into this test's temp dir before the import). A run's
 // wrapper never executes under the fake — the TEST writes the exit/log
@@ -23,14 +23,14 @@ process.env.CYBERMOLE_TMUX_SOCKET = path.join(dir, 'socket');
 process.env.FAKE_TMUX_DIR = dir; // the stand-in's state lives beside it
 process.env.PATH = `${fakeBin}:${process.env.PATH}`;
 
-const { Scheduler, runLogPaths } = await import('../../dist-server/src/lib/jobs.js');
-const { StateDb } = await import('../../dist-server/src/lib/db.js');
+const { Scheduler, runLogPaths } = await import('../../dist-server/src/lib/jobs/jobs.js');
+const { StateDb } = await import('../../dist-server/src/lib/platform/db.js');
 const { JobSaveSchema } = await import('../../dist-server/src/schemas/jobs.js');
 
 // The stand-in tmux (scheduler.test.mjs's, plus the -F format):
 // $FAKE_TMUX/up marks the server up, $FAKE_TMUX/sessions lists live session
 // names (new-session appends). list-sessions answers the -F formats
-// src/lib/tmux.ts actually sends — '#{session_name}' (liveSessionNames,
+// src/lib/terminals/tmux.ts actually sends — '#{session_name}' (liveSessionNames,
 // one bare name per line) and the older pipe-field shape anything
 // fancier would parse as.
 const FAKE_TMUX = `#!/bin/sh

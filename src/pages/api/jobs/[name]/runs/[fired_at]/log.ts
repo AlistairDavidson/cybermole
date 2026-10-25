@@ -1,5 +1,5 @@
 // GET /api/jobs/:name/runs/:fired_at/log — one run's persisted log TAIL
-// (≤ 1 MiB, the newest bytes) as text/plain (docs/workspaces-plan.md
+// (≤ 1 MiB, the newest bytes) as text/plain (docs/plans/workspaces-plan.md
 // §6/§9). :fired_at is an integer epoch-ms value, schema-validated like
 // every other path param; the file path is built server-side from the
 // run's row — the client only ever names the run, never a path.

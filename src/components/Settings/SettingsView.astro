@@ -1,6 +1,6 @@
 ---
 // SettingsView.astro — the /settings dashboard, rendered from the server's
-// SettingsState (docs/CODE_STYLE.md §7: server-rendered first). Rendered by
+// SettingsState (docs/conventions/CODE_STYLE.md §7: server-rendered first). Rendered by
 // the page (src/pages/settings.astro) and by the partial <settings-app>
 // refreshes from (src/pages/partials/settings.astro). Regions marked
 // data-refresh hold plain HTML only — no wa-* elements — so the element
@@ -18,7 +18,7 @@ import '@awesome.me/webawesome/dist/components/switch/switch.js';
 import WaField from '../form/WaField.astro';
 import { zodSchemaToHTMLAttributes } from '../../lib/web/zod.service';
 import { terminalDefaultsBody } from '../../schemas/api';
-import type { SettingsState } from '../../lib/types';
+import type { SettingsState } from '../../lib/platform/types';
 
 interface Props {
   state: SettingsState | null;

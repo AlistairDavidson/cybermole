@@ -1,5 +1,5 @@
 // root-agents.test.mjs — the workspace-root AGENTS.md seeding
-// (src/lib/root-agents.ts, docs/jobs-agent-plan.md §9): the
+// (src/lib/platform/root-agents.ts, docs/plans/jobs-agent-plan.md §9): the
 // only-where-absent policy in one function, so the server boot (single
 // user — server/main.ts, next to seedAgentDir) and the split's
 // workspace entrypoint (docker-workspace-entrypoint.sh, uid 2000 — a
@@ -7,7 +7,7 @@
 // family member gets a case: seeded, already-present wins (even without
 // the template — the policy is satisfied), template_missing, and
 // seed_failed (an unwritable target). The real template ships beside
-// this test's cases: the repo's root-agents/AGENTS.md is seeded
+// this test's cases: the repo's runtime/workspace-root/AGENTS.md is seeded
 // byte-identical, so template edits that break the seeding's shape
 // surface here too.
 import test from 'node:test';
@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-root-agents-'));
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-const { seedRootAgentsFile } = await import('../../dist-server/src/lib/root-agents.js');
+const { seedRootAgentsFile } = await import('../../dist-server/src/lib/platform/root-agents.js');
 
 /** A stand-in template file with known content. */
 const template = path.join(dir, 'template.md');
@@ -92,9 +92,11 @@ test('seed_failed on an unwritable target, with the path and cause', () => {
   assert.ok(r.errorMessage?.includes('AGENTS.md'));
 });
 
-test("the repo's own template seeds (root-agents/AGENTS.md ships the file)", () => {
+test("the repo's own template seeds (runtime/workspace-root/AGENTS.md ships the file)", () => {
   const root = path.join(dir, 'root-e');
-  const repoTemplate = fileURLToPath(new URL('../../root-agents/AGENTS.md', import.meta.url));
+  const repoTemplate = fileURLToPath(
+    new URL('../../runtime/workspace-root/AGENTS.md', import.meta.url),
+  );
   const r = seedRootAgentsFile(root, repoTemplate);
   assert.equal(r.ok, true, r.errorMessage);
   assert.equal(r.data.seeded, true);

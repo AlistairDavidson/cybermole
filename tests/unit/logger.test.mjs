@@ -1,4 +1,4 @@
-// logger.test.mjs — the winston logging module (src/lib/logger.ts):
+// logger.test.mjs — the winston logging module (src/lib/platform/logger.ts):
 // transport selection with and without CYBERMOLE_LOKI_URL, the loki
 // transport's labels/levels, console visibility of the levels, and — in a
 // child process against a dead URL — the hard requirement that a down
@@ -20,7 +20,7 @@ delete process.env.CYBERMOLE_LOKI_URL;
 delete process.env.CYBERMOLE_LOKI_JOB;
 
 const { createLogger, logger, CONSOLE_LEVEL, LOKI_LEVEL, closeLogger } =
-  await import('../../dist-server/src/lib/logger.js');
+  await import('../../dist-server/src/lib/platform/logger.js');
 
 const transportOf = (log, i) => log.transports[i];
 const names = log => log.transports.map(t => t.constructor?.name);
@@ -68,7 +68,7 @@ test('the module-level logger is the console-only shape on a plain host', () => 
 // silently vanish from the run — verified with a minimal repro). The
 // child's own captured output is the honest place to look.
 const VISIBILITY_CHILD = `
-const { createLogger, closeLogger } = require(process.cwd() + '/dist-server/src/lib/logger.js');
+const { createLogger, closeLogger } = require(process.cwd() + '/dist-server/src/lib/platform/logger.js');
 const log = createLogger(null);
 const http = log.child({ labels: { component: 'http' } });
 http.http('GET /api/jobs 200 in 12ms', { ms: 12 });
@@ -116,7 +116,7 @@ test(
 // instantly, nothing listens there.
 
 const DOWN_CHILD = `
-const { componentLogger } = require(process.cwd() + '/dist-server/src/lib/logger.js');
+const { componentLogger } = require(process.cwd() + '/dist-server/src/lib/platform/logger.js');
 process.on('unhandledRejection', (e) => { console.error('CHILD-FAIL-UNHANDLED', e); process.exit(2); });
 process.on('uncaughtException', (e) => { console.error('CHILD-FAIL-UNCAUGHT', e); process.exit(3); });
 const log = componentLogger('boot');
@@ -162,7 +162,7 @@ test(
 // flushes the last batch.
 
 const PUSH_CHILD = `
-const { componentLogger, closeLogger } = require(process.cwd() + '/dist-server/src/lib/logger.js');
+const { componentLogger, closeLogger } = require(process.cwd() + '/dist-server/src/lib/platform/logger.js');
 const http = componentLogger('http');
 http.info('hello from cybermole', { status: 200, ms: 7 });
 const boot = componentLogger('boot');

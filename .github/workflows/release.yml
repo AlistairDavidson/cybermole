@@ -23,8 +23,7 @@ on:
       - public/**
       - server/**
       - src/**
-      - pi/**
-      - tmux.conf
+      - runtime/**
       - tools/prepack.mjs
       - .github/workflows/release.yml
   workflow_dispatch:

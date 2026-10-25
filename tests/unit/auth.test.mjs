@@ -1,4 +1,4 @@
-// auth.test.mjs — unit tests for the session model in src/lib/auth.ts:
+// auth.test.mjs — unit tests for the session model in src/lib/platform/auth.ts:
 // two expiry clocks (sliding idle + absolute cap from login), the
 // cookie-refresh decision, and persistence — tokens live in the state db
 // as sha256 hashes (auth_sessions), survive a restart (a new Auth on the
@@ -16,8 +16,8 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { Auth, setCredential } from '../../dist-server/src/lib/auth.js';
-import { StateDb } from '../../dist-server/src/lib/db.js';
+import { Auth, setCredential } from '../../dist-server/src/lib/platform/auth.js';
+import { StateDb } from '../../dist-server/src/lib/platform/db.js';
 
 function freshDb() {
   return new StateDb(

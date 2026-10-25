@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// main.ts — the `cybermole-cli` bin (task/jobs-cli, docs/jobs-agent-plan.md §5):
+// main.ts — the `cybermole-cli` bin (task/jobs-cli, docs/plans/jobs-agent-plan.md §5):
 // the agent/human-facing surface over the server's internal jobs API.
 // A thin dispatcher — group → verb → the socket client layer — plus the
 // top-level help; the verb logic and its documentation live in jobs.ts.
@@ -11,7 +11,7 @@ import { consoleOutput, type Output } from './output';
 import { jobsGroupHelp, runJobsCommand } from './jobs';
 // plan §6: `cybermole-cli mcp` runs the stdio jobs MCP server (server/mcp.ts).
 // Imported, never re-executed: mcp.ts's self-guard runs only when IT is
-// argv[1] — the pi/ template registers the same server via the absolute
+// argv[1] — the runtime/pi-agent-dir/ template registers the same server via the absolute
 // `node /opt/cybermole/dist-server/server/mcp.js` form (PATH-independent);
 // this subcommand is the dev-shape convenience.
 import { main as runMcpServer } from '../server/mcp';

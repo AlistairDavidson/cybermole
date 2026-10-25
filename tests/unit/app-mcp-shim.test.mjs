@@ -1,4 +1,4 @@
-// app-mcp-shim.test.mjs — task/app-actions (docs/apps-plan.md §6/§10)
+// app-mcp-shim.test.mjs — task/app-actions (docs/plans/apps-plan.md §6/§10)
 // units: the app's own MCP (server/app-mcp-shim.ts), as a REAL child over
 // stdio (the mcp.test/apps-mcp.test shape) against a stub apps socket:
 // the table→tool translation (a fixture dist/route-table.json → the MCP

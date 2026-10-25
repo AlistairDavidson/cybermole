@@ -2,7 +2,7 @@
 dist/
 dist-server/
 node_modules/
-pi/
+runtime/pi-agent-dir/
 .astro/
 .fleet/
 .pi/
@@ -26,5 +26,5 @@ public/icons/
 # fixture app + the starter template + the shipped reference tree, built
 # by their own toolchains
 tests/fixtures/app-fixture/
-app-starter/
-apps-reference/
+runtime/app-starter/
+runtime/reference-apps/
