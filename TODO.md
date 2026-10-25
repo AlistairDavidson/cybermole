@@ -1,11 +1,7 @@
-## Agents
-Two types of "app" agent (builder / operator) — resolved by the console split: two pages, build sessions framed by env, operator agents move to app pages later. Plan: docs/plans/console-split-plan.md
-
 ## Apps
-Apps list in topbar
-
 Apps have a single slide-in agent console, same UI across all apps, cwd to the app
-
+  - drawer from right, fills screen on mobile
+  
 Apps have link to their build console
 
 Apps own their lifecycle via jobs + git — no cybermole deploy/rollback machinery.
@@ -24,33 +20,12 @@ server/mcp.ts still has its own socket client — move it onto src/lib/platform/
 
 main.ts static+middleware factoring (the app host carries its own small serve helper instead)
 
-## Human UX tasks
-Skills and other methods to enforce my coding patterns
-Write a refined agent workflow
-HIG skill
-keyboard shortcuts
-  ctrl-t ctrl-shift-t
-
-## Agentic shit
-Code style skill - typescript branded types etc
-Component skills
-Development / testing process
-commits
-How to scaffold an app eg write its AGENTS.md, always make an mcp with tools that match every user action
-
-## Infrastructure
-preact signals - make this available for any frontend state needs apps might have in future
-lit?
-
-## Design
-Mole icon
-
-## Quality
-playwright fuzzer/monkeys? fuzz based integration testing
+add a slight fade-in when switching to console pages
 
 ## Console features
 
 Popout should only pop out that one tab's contents
+toolbar / popout for editor
 
 auto-suggest app directory from name
 
@@ -90,8 +65,31 @@ retire the workspace sidebar's 15s poll in favour of the /ws/events bus (topic f
 ability to make a workspace a worktree
 ability to merge
 
+
+## Human UX tasks
+Skills and other methods to enforce my coding patterns
+Write a refined agent workflow
+HIG skill
+keyboard shortcuts
+  ctrl-t ctrl-shift-t
+
+## Agentic shit
+Code style skill - typescript branded types etc
+Component skills
+Development / testing process
+commits
+How to scaffold an app eg write its AGENTS.md, always make an mcp with tools that match every user action
+
+## Infrastructure
+preact signals - make this available for any frontend state needs apps might have in future
+lit?
+
+## Quality
+playwright fuzzer/monkeys? fuzz based integration testing
+
 ## Distribution
 installation instructions / script for agents / actual scripts
+zsh init / offer to copy local settings
 
 ## Packaging
 Pull my typescript and astro and zod stuff out to packages

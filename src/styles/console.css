@@ -115,7 +115,7 @@ app-header {
 /* Foreground accents use the *-on-quiet text tokens throughout: the fill-*
    family is background fills, near-black in wa-dark. */
 app-header wa-button.app-brand::part(button) { font-weight: var(--wa-font-weight-bold); }
-app-header wa-button.app-brand wa-icon { color: var(--wa-color-brand-on-quiet); }
+app-header .app-brand-icon { display: block; }
 app-header wa-button.app-nav-link[aria-current='page']::part(button) {
   color: var(--wa-color-brand-on-quiet);
   font-weight: var(--wa-font-weight-bold);
