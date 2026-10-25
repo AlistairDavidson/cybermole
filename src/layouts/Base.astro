@@ -30,7 +30,15 @@ const THEME_COLOR_LIGHT = "#e1e2e7";
          Without JS, Web Awesome's default light tokens apply. -->
     <script is:inline src={`${BASE}/theme-boot.js`}></script>
     <title>{title}</title>
-    <link rel="icon" href={`${BASE}/icons/icon.svg`} type="image/svg+xml" />
+    <!-- The mole icon, as drawn, for light chrome; its inversion for dark
+         (the black art would vanish on a dark toolbar). -->
+    <link rel="icon" href={`${BASE}/cybermole.svg`} type="image/svg+xml" />
+    <link
+      rel="icon"
+      media="(prefers-color-scheme: dark)"
+      href={`${BASE}/icons/icon-dark.svg`}
+      type="image/svg+xml"
+    />
     <link
       rel="icon"
       href={`${BASE}/icons/icon-192.png`}

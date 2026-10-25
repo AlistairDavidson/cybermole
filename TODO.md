@@ -52,6 +52,8 @@ playwright fuzzer/monkeys? fuzz based integration testing
 
 Popout should only pop out that one tab's contents
 
+auto-suggest app directory from name
+
 app preview?
 
 self-naming workspaces
@@ -61,6 +63,8 @@ hideable nav on desktop
 Rename "Console" -> "Cybermole"
 
 ## Workspaces follow-ups
+
+Buttons for new agent and new empty terminal
 
 terminal tab drag-reorder + workspace/app reorder UI (the sort_order columns exist)
 

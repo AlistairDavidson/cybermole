@@ -1,10 +1,11 @@
-const VERSION = 'cybermole-v4'; // bump to drop old caches on activate
+const VERSION = 'cybermole-v5'; // bump to drop old caches on activate
 const SCOPE = new URL(self.registration.scope); // <origin><base>/
 const at = p => new URL(p, SCOPE).href;
 const PRECACHE = [
   'offline',
   'manifest.webmanifest',
-  'icons/icon.svg',
+  'cybermole.svg',
+  'icons/icon-dark.svg',
   // The offline shell must render in the browser's mode with no network.
   'theme-boot.js',
   'icons/icon-192.png',

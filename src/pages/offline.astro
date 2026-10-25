@@ -8,23 +8,43 @@ import "@awesome.me/webawesome/dist/components/button/button.js";
   <main class="offline-main wa-stack">
     <wa-card class="offline-card">
       <h1>
-        <!-- the icon.svg glyph, inline so the shell needs no fetches -->
+        <!-- the cybermole glyph (public/cybermole.svg), inline so the shell
+             needs no fetches. currentColor + the surface token keep it readable
+             in both modes: the mole inverts like the icon's dark variant. -->
         <svg class="offline-glyph" viewBox="0 0 512 512" aria-hidden="true">
-          <path
-            d="M168 172 L252 256 L168 340"
+          <ellipse cx="256.4" cy="557.9" rx="192" ry="448" fill="currentColor"></ellipse>
+          <rect
+            x="162.6"
+            y="217.2"
+            width="188.2"
+            height="3.8"
             fill="none"
+            stroke="var(--wa-color-surface-default, #ffffff)"
+            stroke-width="28"></rect>
+          <circle
+            cx="256.4"
+            cy="327.1"
+            r="64"
+            fill="var(--wa-color-surface-default, #ffffff)"
             stroke="currentColor"
-            stroke-width="56"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          ></path>
-          <path
-            d="M292 340 L376 340"
-            fill="none"
+            stroke-width="20"></circle>
+          <circle cx="256.4" cy="357.8" r="20" fill="currentColor"></circle>
+          <ellipse
+            cx="73.4"
+            cy="515.7"
+            rx="64"
+            ry="92"
+            fill="var(--wa-color-surface-default, #ffffff)"
             stroke="currentColor"
-            stroke-width="56"
-            stroke-linecap="round"
-          ></path>
+            stroke-width="20"></ellipse>
+          <ellipse
+            cx="439.4"
+            cy="515.7"
+            rx="64"
+            ry="92"
+            fill="var(--wa-color-surface-default, #ffffff)"
+            stroke="currentColor"
+            stroke-width="20"></ellipse>
         </svg>
         offline
       </h1>

@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><g
+     id="layer1">
+    <ellipse
+       style="fill:#ffffff;fill-opacity:1;stroke:#ffffff;stroke-width:21.6486;stroke-linejoin:bevel;stroke-dasharray:none"
+       id="path1"
+       cx="256.40402"
+       cy="557.94293"
+       rx="192"
+       ry="448" />
+    <ellipse
+       style="fill:#000000;stroke:#ffffff;stroke-width:16;stroke-linejoin:bevel;stroke-dasharray:none"
+       id="ellipse2"
+       cx="439.42755"
+       cy="515.68903"
+       rx="64"
+       ry="92" />
+    <ellipse
+       style="fill:#000000;stroke:#ffffff;stroke-width:16;stroke-linejoin:bevel;stroke-dasharray:none"
+       id="ellipse7"
+       cx="73.427551"
+       cy="515.68903"
+       rx="64"
+       ry="92" />
+    <rect
+       style="fill:#000000;stroke:#ffffff;stroke-width:24.0861;stroke-linejoin:bevel;stroke-dasharray:none"
+       id="rect2"
+       width="543.13458"
+       height="527.12933"
+       x="-6.8405085"
+       y="523.89343" />
+    <rect
+       style="fill:#000000;stroke:#ffffff;stroke-width:16;stroke-linejoin:bevel;stroke-dasharray:none"
+       id="rect6"
+       width="1"
+       height="32"
+       x="418.17505"
+       y="480.76392" />
+    <rect
+       style="fill:#000000;stroke:#ffffff;stroke-width:16;stroke-linejoin:bevel;stroke-dasharray:none"
+       id="rect7"
+       width="1"
+       height="32"
+       x="459.68002"
+       y="480.95312" />
+    <rect
+       style="fill:#000000;stroke:#ffffff;stroke-width:16;stroke-linejoin:bevel;stroke-dasharray:none"
+       id="rect8"
+       width="1"
+       height="32"
+       x="52.175049"
+       y="480.76392" />
+    <rect
+       style="fill:#000000;stroke:#ffffff;stroke-width:16;stroke-linejoin:bevel;stroke-dasharray:none"
+       id="rect9"
+       width="1"
+       height="32"
+       x="93.680023"
+       y="480.95312" />
+    <circle
+       style="fill:#000000;stroke:#ffffff;stroke-width:16;stroke-linejoin:bevel;stroke-dasharray:none"
+       id="path14"
+       cx="256.40402"
+       cy="327.09637"
+       r="64" />
+    <circle
+       style="fill:none;fill-opacity:1;stroke:#ffffff;stroke-width:16;stroke-linejoin:bevel;stroke-dasharray:none"
+       id="path12"
+       cx="256.40402"
+       cy="357.81253"
+       r="16" />
+    <rect
+       style="fill:none;fill-opacity:1;stroke:#000000;stroke-width:16;stroke-linejoin:bevel;stroke-dasharray:none;stroke-opacity:1"
+       id="rect17"
+       width="188.22169"
+       height="3.841259"
+       x="162.6133"
+       y="217.18463" />
+  </g></svg>
