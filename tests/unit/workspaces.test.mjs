@@ -44,14 +44,14 @@ function recorder() {
   return { killed, killSession: async name => (killed.push(name), true) };
 }
 
-/** Records (name, cwd, command); the commands tell the auto-opened agent
- *  tab from + tabs. */
+/** Records (name, cwd, command, env); the commands tell the auto-opened
+ *  agent tab from + tabs. */
 function spawner() {
   const spawned = [];
   return {
     spawned,
-    spawnSession: async (name, cwd, command) => {
-      spawned.push({ name, cwd, command });
+    spawnSession: async (name, cwd, command, env) => {
+      spawned.push({ name, cwd, command, env });
       return { ok: true, resultType: 'tmux_session', data: { name } };
     },
   };
@@ -94,12 +94,14 @@ function domain(
   live = liveNames(),
   shellCommand = () => cmdOk(SHELL_CMD),
   agentCommand = () => cmdOk(AGENT_CMD),
+  appsRoot = path.join(os.tmpdir(), 'cybermole-ws-apps-root'),
 ) {
   return new Workspaces({
     db,
     username: () => username,
     killSession,
     defaultCwd,
+    appsRoot,
     spawnSession,
     liveSessionNames: live.liveSessionNames,
     shellCommand,
@@ -111,7 +113,7 @@ const wsRow = (db, id) =>
   db.get(
     qb
       .selectFrom('workspaces')
-      .select(['id', 'app_id', 'name', 'cwd', 'sort_order'])
+      .select(['id', 'app_id', 'name', 'cwd', 'kind', 'sort_order'])
       .where('id', '=', id),
   );
 const termRows = (db, workspaceId) =>
@@ -233,6 +235,104 @@ test('save_workspace: app_not_found for a missing parent app', async () => {
   assert.equal(r.errorCode, 'app_not_found');
 });
 
+// ---------- build workspaces (kind "build") ----------
+
+test("save_workspace kind 'build': the default cwd (the parent app's cwd is skipped), kind stored, the framing env on the auto-opened tab", async () => {
+  const db = freshDb();
+  const defaultDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-ws-default-'));
+  const appsRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-ws-appsroot-'));
+  const { spawned, spawnSession } = spawner();
+  const w = domain(
+    db,
+    USERNAME,
+    async () => true,
+    defaultDir,
+    spawnSession,
+    liveNames(),
+    () => cmdOk(SHELL_CMD),
+    () => cmdOk(AGENT_CMD),
+    appsRoot,
+  );
+  const a = new Apps({ db, username: () => USERNAME, killSession: async () => true });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-app-cwd-'));
+  const placed = (await a.saveApp('placed', dir)).data;
+  const bare = (await a.saveApp('bare')).data;
+
+  // the parent app's cwd is SKIPPED for build kind: the console default
+  const build = await w.saveWorkspace({ appId: placed.id, name: 'build placed', kind: 'build' });
+  assert.equal(build.ok, true, build.errorMessage);
+  assert.equal(build.data.cwd, defaultDir);
+  assert.equal(build.data.kind, 'build');
+  assert.equal(wsRow(db, build.data.id).kind, 'build');
+  // the auto-opened agent tab carries the framing env, tree = the app's cwd
+  assert.equal(spawned[spawned.length - 1].command.join(' '), AGENT_CMD);
+  assert.deepEqual(spawned[spawned.length - 1].env, {
+    CYBERMOLE_WORKSPACE_FOCUS: 'placed',
+    CYBERMOLE_WORKSPACE_FOCUS_TREE: dir,
+  });
+  assert.equal(spawned.length, 1);
+
+  // an app without a cwd frames at <appsRoot>/<slug>
+  const buildBare = await w.saveWorkspace({ appId: bare.id, name: 'build bare', kind: 'build' });
+  assert.equal(buildBare.ok, true, buildBare.errorMessage);
+  assert.equal(buildBare.data.cwd, defaultDir);
+  assert.deepEqual(spawned[spawned.length - 1].env, {
+    CYBERMOLE_WORKSPACE_FOCUS: 'bare',
+    CYBERMOLE_WORKSPACE_FOCUS_TREE: path.join(appsRoot, 'bare'),
+  });
+
+  // a plain workspace under the same app: cwd still derives from the app, no env
+  const plain = await w.saveWorkspace({ appId: placed.id, name: 'plain under placed' });
+  assert.equal(plain.data.cwd, dir);
+  assert.equal(plain.data.kind, null);
+  assert.equal(wsRow(db, plain.data.id).kind, null);
+  assert.equal(spawned[spawned.length - 1].env, undefined);
+});
+
+test("kind 'build' without an appId is invalid_kind; a patch never touches kind (it stays at birth)", async () => {
+  const refused = await domain(freshDb()).saveWorkspace({ name: 'x', kind: 'build' });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.errorCode, 'invalid_kind');
+  // a rename (the patch surface) never carries kind
+  const db = freshDb();
+  const a = new Apps({ db, username: () => USERNAME, killSession: async () => true });
+  const app = (await a.saveApp('parent')).data;
+  const w = domain(db);
+  const made = (await w.saveWorkspace({ appId: app.id, name: 'build me', kind: 'build' })).data;
+  const renamed = await w.updateWorkspace(made.id, { name: 'renamed' });
+  assert.equal(renamed.ok, true, renamed.errorMessage);
+  assert.equal(renamed.data.kind, 'build');
+  const row = wsRow(db, made.id);
+  assert.equal(row.name, 'renamed');
+  assert.equal(row.kind, 'build');
+});
+
+test("a build workspace's + tab carries the framing env (spawn path two); terminalForAttach hands it to the respawn (path three)", async () => {
+  const db = freshDb();
+  const { spawned, spawnSession } = spawner();
+  const w = domain(db, USERNAME, async () => true, os.tmpdir(), spawnSession);
+  const a = new Apps({ db, username: () => USERNAME, killSession: async () => true });
+  const app = (await a.saveApp('parent')).data;
+  const made = (await w.saveWorkspace({ appId: app.id, name: 'build me', kind: 'build' })).data;
+  const focus = {
+    CYBERMOLE_WORKSPACE_FOCUS: 'parent',
+    CYBERMOLE_WORKSPACE_FOCUS_TREE: path.join(os.tmpdir(), 'cybermole-ws-apps-root', 'parent'),
+  };
+  const plus = (await w.newTerminal(made.id, 'shell')).data; // a + tab
+  const entry = spawned.find(s => s.name === terminalSessionName(plus.id));
+  assert.equal(entry.command.join(' '), SHELL_CMD);
+  assert.deepEqual(entry.env, focus);
+  // the WS respawn reads the same env from terminalForAttach, agent tab or not
+  const agentAttach = await w.terminalForAttach(termRows(db, made.id)[0].id);
+  assert.equal(agentAttach.data.agent, true);
+  assert.deepEqual(agentAttach.data.env, focus);
+  const plusAttach = await w.terminalForAttach(plus.id);
+  assert.deepEqual(plusAttach.data.env, focus);
+  // and the tree rides kind for the client
+  const tree = (await w.workspaceTree()).data.workspaces.find(x => x.id === made.id);
+  assert.equal(tree.kind, 'build');
+});
+
 test('save_workspace: database_error — unwritable db, failed username read', async () => {
   const broken = await domain(brokenDb()).saveWorkspace({ name: 'x', cwd: '/' });
   assert.equal(broken.ok, false);
@@ -256,7 +356,13 @@ test('update_workspace: name and cwd independently; absent fields keep; a no-op 
   assert.equal(moved.data.cwd, '/');
   assert.equal(moved.data.name, 'renamed'); // kept
   const noop = await w.updateWorkspace(created.id, {});
-  assert.deepEqual(noop.data, { id: created.id, appId: null, name: 'renamed', cwd: '/' });
+  assert.deepEqual(noop.data, {
+    id: created.id,
+    appId: null,
+    name: 'renamed',
+    cwd: '/',
+    kind: null,
+  });
   assert.equal(wsRow(db, created.id).name, 'renamed');
 });
 
@@ -335,7 +441,14 @@ test('new_terminal: inserts the row (title optional, order max+10), spawns t-<uu
   const auto = termRows(db, ws.id)[0];
   assert.deepEqual(
     spawned,
-    [{ name: terminalSessionName(auto.id), cwd: os.tmpdir(), command: AGENT_CMD.split(' ') }],
+    [
+      {
+        name: terminalSessionName(auto.id),
+        cwd: os.tmpdir(),
+        command: AGENT_CMD.split(' '),
+        env: undefined,
+      },
+    ],
     'the auto-open spawned the AGENT command at the workspace cwd',
   );
   const first = await w.newTerminal(ws.id, 'main');
@@ -347,7 +460,12 @@ test('new_terminal: inserts the row (title optional, order max+10), spawns t-<uu
   assert.match(first.data.id, UUID_RE);
   assert.deepEqual(
     spawned[1],
-    { name: terminalSessionName(first.data.id), cwd: os.tmpdir(), command: SHELL_CMD.split(' ') },
+    {
+      name: terminalSessionName(first.data.id),
+      cwd: os.tmpdir(),
+      command: SHELL_CMD.split(' '),
+      env: undefined,
+    },
     'a + button tab spawns the SHELL command, split on whitespace',
   );
   const second = await w.newTerminal(ws.id, undefined);
@@ -375,7 +493,12 @@ test('save_workspace auto-opens the first terminal with the AGENT command — an
   assert.equal(rows[0].title, null); // untitled — the UI labels it "term 1"
   assert.equal(rows[0].sort_order, 10);
   assert.deepEqual(spawned, [
-    { name: terminalSessionName(rows[0].id), cwd: os.tmpdir(), command: AGENT_CMD.split(' ') },
+    {
+      name: terminalSessionName(rows[0].id),
+      cwd: os.tmpdir(),
+      command: AGENT_CMD.split(' '),
+      env: undefined,
+    },
   ]);
 
   // The guard refusing at create time: the row still lands (a dead tab)
@@ -525,6 +648,7 @@ test("terminalForAttach: the row + its workspace's cwd + the agent-slot flag; te
     title: 'main',
     cwd: os.tmpdir(),
     agent: false, // a + button tab: the respawn re-runs the SHELL command
+    env: null, // a plain workspace carries no framing env
   });
   // the auto-opened tab respawns the agent command
   const autoFound = await w.terminalForAttach(auto);

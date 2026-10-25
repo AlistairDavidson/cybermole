@@ -73,6 +73,9 @@ export interface ServerConfig {
   astroEntry: string;
   newSessionCwd: string;
   jobLogDir: string;
+  /** CYBERMOLE_APPS_ROOT: a build workspace's focus tree when the app row
+   *  carries no cwd. */
+  appsRoot: string;
   // Terminal commands aren't here: they resolve per spawn so /settings applies without a restart.
   trustProxy: number;
   /** null hides the console's editor affordances. */
@@ -141,6 +144,7 @@ export function createServices(deps: ServiceDeps): CybermoleServices {
     username: () => auth.username(),
     killSession: deps.killSession,
     defaultCwd: cfg.newSessionCwd,
+    appsRoot: cfg.appsRoot,
     spawnSession: deps.spawnSession,
     liveSessionNames: deps.liveSessionNames,
     // Read per spawn so /settings applies to the next tab.

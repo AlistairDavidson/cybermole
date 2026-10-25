@@ -43,6 +43,7 @@ const SCHEMA = `
     app_id     TEXT REFERENCES apps(id) ON DELETE CASCADE,  -- NULL = console
     name       TEXT NOT NULL,        -- free text, sidebar label
     cwd        TEXT NOT NULL,        -- terminal spawn dir + editor folder
+    kind       TEXT,                 -- 'build' = a build session (root cwd, framed at one app); NULL = console/legacy in-tree
     sort_order INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
@@ -123,6 +124,8 @@ export interface WorkspacesTable {
   app_id: AppId | null;
   name: string;
   cwd: string;
+  /** 'build' = a build session; NULL = console or legacy in-tree. Set at birth. */
+  kind: string | null;
   sort_order: number;
   created_at: number;
   updated_at: number;
@@ -198,6 +201,7 @@ function migrateToV6(db: DatabaseSync): void {
   addColumnIfMissing(db, 'job_runs', 'exit_code', 'INTEGER');
   addColumnIfMissing(db, 'job_runs', 'finished_at', 'INTEGER');
   addColumnIfMissing(db, 'apps', 'cwd', 'TEXT');
+  addColumnIfMissing(db, 'workspaces', 'kind', 'TEXT');
 }
 
 export class StateDb extends SqliteDb {

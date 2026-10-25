@@ -75,6 +75,7 @@ test('a fresh file (user_version 0) gets the v6 shape at CREATE — no ALTER eve
     assert.ok(columns(db, t).length > 0, t);
   }
   assert.ok(columns(db, 'apps').includes('cwd')); // at CREATE
+  assert.ok(columns(db, 'workspaces').includes('kind')); // at CREATE
   assert.ok(columns(db, 'jobs').includes('app_id'));
   for (const c of ['log', 'exit_code', 'finished_at']) {
     assert.ok(columns(db, 'job_runs').includes(c), c);
@@ -225,6 +226,65 @@ test('a v6 file whose apps table predates apps.cwd gains the column at open, dat
   const reopened = new StateDb(file);
   reopened.db();
   assert.ok(columns(reopened, 'apps').includes('cwd'));
+  assert.equal(userVersion(file), 6);
+});
+
+test('a v6 file whose workspaces table predates workspaces.kind gains the column at open, data intact, version unmoved', () => {
+  const file = freshFile('cybermole-db-v6-no-ws-kind-');
+  // A v6 db from before workspaces.kind: the table must exist without it.
+  const raw = new DatabaseSync(file);
+  raw.exec(`
+    CREATE TABLE IF NOT EXISTS apps (
+      id         TEXT PRIMARY KEY,
+      name       TEXT NOT NULL,
+      slug       TEXT NOT NULL UNIQUE,
+      sort_order INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      created_by TEXT NOT NULL,
+      updated_by TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS workspaces (
+      id         TEXT PRIMARY KEY,
+      app_id     TEXT REFERENCES apps(id) ON DELETE CASCADE,
+      name       TEXT NOT NULL,
+      cwd        TEXT NOT NULL,
+      sort_order INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      created_by TEXT NOT NULL,
+      updated_by TEXT NOT NULL
+    );
+  `);
+  raw.exec('PRAGMA user_version = 6');
+  raw
+    .prepare(
+      'INSERT INTO workspaces (id, app_id, name, cwd, sort_order, created_at, updated_at, created_by, updated_by) ' +
+        "VALUES ('123e4567-e89b-42d3-a456-426614174001', NULL, 'legacy', '/tmp', 10, 1, 1, 't', 't')",
+    )
+    .run();
+  raw.close();
+
+  const db = new StateDb(file);
+  db.db(); // open + migrate: addColumnIfMissing applies the kind ALTER
+  assert.ok(columns(db, 'workspaces').includes('kind'));
+  // the existing row survived; the new column reads NULL (legacy = console/in-tree)
+  assert.deepEqual(
+    {
+      ...db.get(
+        qb
+          .selectFrom('workspaces')
+          .select(['name', 'kind'])
+          .where('id', '=', '123e4567-e89b-42d3-a456-426614174001'),
+      ),
+    },
+    { name: 'legacy', kind: null },
+  );
+  assert.equal(userVersion(file), 6); // no version bump — the column check, not the number
+  // reopening skips the ALTER
+  const reopened = new StateDb(file);
+  reopened.db();
+  assert.ok(columns(reopened, 'workspaces').includes('kind'));
   assert.equal(userVersion(file), 6);
 });
 

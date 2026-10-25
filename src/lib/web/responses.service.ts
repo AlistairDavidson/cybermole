@@ -193,6 +193,8 @@ export function workspaceFailureResponse(f: WorkspaceFailure): Response {
       return jsonResponse({ error: f.errorMessage ?? 'invalid name', code: f.errorCode }, 400);
     case 'invalid_cwd':
       return jsonResponse({ error: f.errorMessage ?? 'invalid cwd', code: f.errorCode }, 400);
+    case 'invalid_kind':
+      return jsonResponse({ error: f.errorMessage ?? 'invalid kind', code: f.errorCode }, 400);
     case 'app_not_found':
     case 'workspace_not_found':
       return jsonResponse({ error: f.errorMessage ?? 'no such workspace', code: f.errorCode }, 404);

@@ -18,6 +18,7 @@ import {
   PI_AGENT_DIR,
   PI_SESSION_DIR,
   readAppsSocket,
+  readAppsRoot,
   readInternalApiSocket,
   readObjectStoreConfig,
   readEditorUpstream,
@@ -109,6 +110,7 @@ const CFG: ServerConfig = {
   astroEntry: ENV.CYBERMOLE_ASTRO_ENTRY,
   newSessionCwd: ENV.CYBERMOLE_NEW_SESSION_CWD,
   jobLogDir: ENV.CYBERMOLE_JOB_LOG_DIR,
+  appsRoot: readAppsRoot(),
   // Terminal commands resolve per spawn (terminal-defaults.ts) so /settings applies without a restart.
   trustProxy: Math.max(0, ENV.CYBERMOLE_TRUST_PROXY),
   editorUpstream: readEditorUpstream(),
@@ -229,8 +231,15 @@ if (APPS_SOCK === null) {
   );
 }
 const appsServing = new AppsServing({ socketPath: APPS_SOCK });
-const spawnTerminalSession = (name: TmuxSessionName, cwd: string, command: string[]) =>
-  tmux.newSession(name, cwd, command, sessionEnv);
+// A build session's framing env (CYBERMOLE_WORKSPACE_FOCUS[_TREE]) rides
+// per-session, merged over the session env so it never dilutes it.
+const spawnTerminalSession = (
+  name: TmuxSessionName,
+  cwd: string,
+  command: string[],
+  env?: Record<string, string>,
+) =>
+  tmux.newSession(name, cwd, command, env === undefined ? sessionEnv : { ...sessionEnv, ...env });
 
 // Built once here and handed to Astro via locals, never imported there: a
 // Vite-bundled second copy would carry its own state.
@@ -1288,6 +1297,7 @@ function attach(ws: WebSocket, token: SessionToken): void {
             name,
             found.data.cwd,
             splitCommandLine(command.data.value),
+            found.data.env ?? undefined,
           );
           if (!spawned.ok) {
             switch (spawned.errorCode) {
