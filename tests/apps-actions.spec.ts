@@ -163,8 +163,8 @@ test('the extended loop: scaffold → add_action → check green → register + 
   const scaffolded: Json = await scaffoldApp(
     {
       appsRoot: APPS_ROOT,
-      templateDir: path.join(REPO, 'app-starter'),
-      agentTemplateFile: path.join(REPO, 'apps-agent-template', 'AGENTS.md'),
+      templateDir: path.join(REPO, 'runtime', 'app-starter'),
+      agentTemplateFile: path.join(REPO, 'runtime', 'app-agents', 'AGENTS.md'),
       installRoot: REPO,
       run: runChild,
     },

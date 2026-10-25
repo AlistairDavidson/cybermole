@@ -26,7 +26,7 @@
 //
 // Importable standalone (tests, a future in-process wiring) and runnable
 // as an entry: `node dist-server/server/mcp.js` — the pi template's
-// mcp.json registers exactly that (pi/mcp.json), and the `cybermole-cli mcp`
+// mcp.json registers exactly that (runtime/pi-agent-dir/mcp.json), and the `cybermole-cli mcp`
 // subcommand (task/jobs-cli, merged by the orchestrator) execs the same
 // main().
 import * as http from 'node:http';

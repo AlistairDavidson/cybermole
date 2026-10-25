@@ -1,4 +1,4 @@
-# pi/ — the controlled pi agent-dir template
+# runtime/pi-agent-dir/ — the controlled pi agent-dir template
 
 Everything in this directory is seeded into the **runtime agent dir**
 (default `<app root>/.pi-agent`, or `CYBERMOLE_AGENT_DIR`) at server boot,
@@ -62,7 +62,7 @@ and an open session only via `/reload`.
 ## The workspace-root AGENTS.md — a sibling one-file template
 
 The root agent's standing instructions are NOT part of this dir: they
-live in the repo's [`root-agents/AGENTS.md`](../root-agents/AGENTS.md),
+live in the repo's [`runtime/workspace-root/AGENTS.md`](../workspace-root/AGENTS.md),
 seeded only-where-absent into the **default workspace cwd**
 (`CYBERMOLE_NEW_SESSION_CWD` — `/workspace` in the compose split), so
 app checkouts under the workspace root read them by upward walk

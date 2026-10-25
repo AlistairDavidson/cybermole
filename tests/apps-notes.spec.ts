@@ -2,7 +2,7 @@
 // the reference app's USE loop, on the tree the run SHIPPED. The build
 // loop ran once, through the verbs, as the epic's acceptance run; this
 // spec keeps the shipped tree honest forever after: it seeds
-// apps-reference/notes into the hermetic apps root (the same
+// runtime/reference-apps/notes into the hermetic apps root (the same
 // only-where-absent seeding the image's workspace entrypoint performs),
 // re-bakes this checkout's install root over the image's baked values,
 // links the core stack, runs the check gate, registers + reloads — then
@@ -168,7 +168,7 @@ test.beforeAll(async () => {
 function seedReferenceTree(): string {
   const tree = path.join(APPS_ROOT, SLUG);
   fs.rmSync(tree, { recursive: true, force: true });
-  fs.cpSync(path.join(REPO, 'apps-reference', 'notes'), tree, { recursive: true });
+  fs.cpSync(path.join(REPO, 'runtime', 'reference-apps', 'notes'), tree, { recursive: true });
   const bake = (rel: string, from: string, to: string): void => {
     const file = path.join(tree, rel);
     fs.writeFileSync(file, fs.readFileSync(file, 'utf8').split(from).join(to));

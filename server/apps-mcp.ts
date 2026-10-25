@@ -407,9 +407,9 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
   const gateDeps = { appsRoot: deps.appsRoot, run: deps.run ?? runChild };
   const scaffoldDeps = {
     appsRoot: deps.appsRoot,
-    templateDir: deps.templateDir ?? path.join(deps.installRoot, 'app-starter'),
+    templateDir: deps.templateDir ?? path.join(deps.installRoot, 'runtime', 'app-starter'),
     agentTemplateFile:
-      deps.agentTemplateFile ?? path.join(deps.installRoot, 'apps-agent-template', 'AGENTS.md'),
+      deps.agentTemplateFile ?? path.join(deps.installRoot, 'runtime', 'app-agents', 'AGENTS.md'),
     installRoot: deps.installRoot,
     run: deps.run ?? runChild,
   };

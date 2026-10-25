@@ -238,7 +238,7 @@ services:
       # jobs-agent-plan §9: the workspace root's AGENTS.md target — the
       # same path the web side's CYBERMOLE_NEW_SESSION_CWD names (path
       # agreement, like the socket and the agent dir): the entrypoint
-      # seeds <this>/AGENTS.md from the image's root-agents/ template.
+      # seeds <this>/AGENTS.md from the image's runtime/workspace-root/ template.
       CYBERMOLE_NEW_SESSION_CWD: /workspace
       CYBERMOLE_TMUX_WEB_USER: node # admitted as a tmux client by NAME
       CYBERMOLE_TMUX_GROUP: cybermole # socket group after chgrp (gid 2001 in-image)

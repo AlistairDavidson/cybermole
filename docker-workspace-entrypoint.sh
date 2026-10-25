@@ -22,10 +22,10 @@ set -e
 SOCKET=${CYBERMOLE_TMUX_SOCKET:-/run/cybermole/tmux}
 WEB_USER=${CYBERMOLE_TMUX_WEB_USER:-node}
 SHARED_GROUP=${CYBERMOLE_TMUX_GROUP:-cybermole}
-CONF=${CYBERMOLE_TMUX_CONF:-/opt/cybermole/tmux.conf}
+CONF=${CYBERMOLE_TMUX_CONF:-/opt/cybermole/runtime/tmux.conf}
 AGENT_DIR=${CYBERMOLE_AGENT_DIR:-/workspace/pi-agent}
-TEMPLATE=/opt/cybermole/pi
-ROOT_TEMPLATE=/opt/cybermole/root-agents/AGENTS.md
+TEMPLATE=/opt/cybermole/runtime/pi-agent-dir
+ROOT_TEMPLATE=/opt/cybermole/runtime/workspace-root/AGENTS.md
 
 umask 0007
 
@@ -50,7 +50,7 @@ if [ -S "$SOCKET" ] && ! tmux -S "$SOCKET" show-options -g >/dev/null 2>&1; then
   rm -f "$SOCKET"
 fi
 
-# Seed the runtime pi-agent from the repo's versioned template (pi/) —
+# Seed the runtime pi-agent from the repo's versioned template (runtime/pi-agent-dir/) —
 # the same only-where-absent policy the web server applies in single-user
 # shapes (server/main.ts seedAgentDir): existing files always win, state
 # only pi writes (auth.json, sessions/) is never in the template. Seeding
@@ -79,7 +79,7 @@ if [ -f "$ROOT_TEMPLATE" ] && [ ! -e "$ROOT_AGENTS" ]; then
 fi
 
 # task/app-notes (docs/plans/apps-plan.md §9): the reference app — the notes
-# tree ships in the image at /opt/cybermole/apps-reference/notes as
+# tree ships in the image at /opt/cybermole/runtime/reference-apps/notes as
 # living documentation of a FINISHED app tree, and seeds into the
 # install's apps root ONLY-WHERE-ABSENT (the same policy the lines
 # above apply to the pi template): an existing tree always wins (the
@@ -91,7 +91,7 @@ fi
 # repo or links still serves once checked; the root agent's check tool
 # names the fix) — a seeding failure must never stop the boot.
 APPS_ROOT_DIR="${CYBERMOLE_APPS_ROOT:-/workspace/apps}"
-REFERENCE_TREE=/opt/cybermole/apps-reference/notes
+REFERENCE_TREE=/opt/cybermole/runtime/reference-apps/notes
 if [ -d "$REFERENCE_TREE" ] && [ ! -d "$APPS_ROOT_DIR/notes" ]; then
   mkdir -p "$APPS_ROOT_DIR"
   if cp -a "$REFERENCE_TREE" "$APPS_ROOT_DIR/notes" 2>/dev/null; then

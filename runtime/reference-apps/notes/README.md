@@ -26,7 +26,7 @@ behind the console's login once it is registered and built.
 ## The seeding contract (docs/plans/apps-plan.md §9)
 
 This tree ships in the image and seeds into the install's apps root
-only-where-absent (the `root-agents/` precedent: an existing tree at
+only-where-absent (the `runtime/workspace-root/` precedent: an existing tree at
 the apps root always wins, and nothing here ever overwrites `data/` —
 the user's notes). **Nothing auto-registers — registration is the
 privileged act** (§8): the seeded tree stands unregistered, `status`

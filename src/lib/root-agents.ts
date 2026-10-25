@@ -1,5 +1,5 @@
 // root-agents.ts — the workspace-root AGENTS.md seeding (jobs-agent-plan
-// §9). root-agents/AGENTS.md in the repo is the versioned template for
+// §9). runtime/workspace-root/AGENTS.md in the repo is the versioned template for
 // the root agent's standing instructions — scheduled work belongs in
 // jobs, a fired run is started-not-finished, check exit codes, the CLI +
 // MCP surface — seeded into the DEFAULT WORKSPACE CWD (the workspace

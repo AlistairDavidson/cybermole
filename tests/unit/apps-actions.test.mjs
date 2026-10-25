@@ -42,8 +42,8 @@ const { describeTool, callActionTool } = await import('../../dist-server/server/
 
 const scaffoldDeps = root => ({
   appsRoot: root,
-  templateDir: path.join(REPO, 'app-starter'),
-  agentTemplateFile: path.join(REPO, 'apps-agent-template', 'AGENTS.md'),
+  templateDir: path.join(REPO, 'runtime', 'app-starter'),
+  agentTemplateFile: path.join(REPO, 'runtime', 'app-agents', 'AGENTS.md'),
   installRoot: REPO,
   run: runChild,
 });
@@ -79,7 +79,10 @@ test('the action-name rule: normalizeSlug rules with underscores kept, capped, d
 // ---------- the light parse ----------
 
 test('parseRouteTableSource: the starter template parses — ping, its query field, multiline zod chains', () => {
-  const source = fs.readFileSync(path.join(REPO, 'app-starter', 'src', 'routes.ts'), 'utf8');
+  const source = fs.readFileSync(
+    path.join(REPO, 'runtime', 'app-starter', 'src', 'routes.ts'),
+    'utf8',
+  );
   const actions = parseRouteTableSource(source);
   assert.deepEqual(actions, [
     {

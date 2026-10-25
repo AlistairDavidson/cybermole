@@ -74,7 +74,7 @@ per-test preconditions are re-established idempotently
 (`ensureRegisteredAndMounted`), because the scheduler may split a file
 across replacement workers. New app-touching specs follow the same
 shape — and `tests/apps-notes.spec.ts` is the worked example: it seeds
-the shipped `apps-reference/notes` tree into the hermetic apps root,
+the shipped `runtime/reference-apps/notes` tree into the hermetic apps root,
 gates it green through the check verb, and walks the use loop through
 the console origin on every face.
 

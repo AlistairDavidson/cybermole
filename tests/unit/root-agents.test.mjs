@@ -7,7 +7,7 @@
 // family member gets a case: seeded, already-present wins (even without
 // the template — the policy is satisfied), template_missing, and
 // seed_failed (an unwritable target). The real template ships beside
-// this test's cases: the repo's root-agents/AGENTS.md is seeded
+// this test's cases: the repo's runtime/workspace-root/AGENTS.md is seeded
 // byte-identical, so template edits that break the seeding's shape
 // surface here too.
 import test from 'node:test';
@@ -92,9 +92,11 @@ test('seed_failed on an unwritable target, with the path and cause', () => {
   assert.ok(r.errorMessage?.includes('AGENTS.md'));
 });
 
-test("the repo's own template seeds (root-agents/AGENTS.md ships the file)", () => {
+test("the repo's own template seeds (runtime/workspace-root/AGENTS.md ships the file)", () => {
   const root = path.join(dir, 'root-e');
-  const repoTemplate = fileURLToPath(new URL('../../root-agents/AGENTS.md', import.meta.url));
+  const repoTemplate = fileURLToPath(
+    new URL('../../runtime/workspace-root/AGENTS.md', import.meta.url),
+  );
   const r = seedRootAgentsFile(root, repoTemplate);
   assert.equal(r.ok, true, r.errorMessage);
   assert.equal(r.data.seeded, true);

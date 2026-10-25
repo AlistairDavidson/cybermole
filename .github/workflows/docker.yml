@@ -19,10 +19,9 @@ on:
       - astro.config.mjs
       - tsconfig.json
       - tsconfig.server.json
-      - tmux.conf
       - src/**
       - server/**
-      - pi/**
+      - runtime/**
       - .github/workflows/docker.yml
   pull_request:
     paths:
@@ -36,10 +35,9 @@ on:
       - astro.config.mjs
       - tsconfig.json
       - tsconfig.server.json
-      - tmux.conf
       - src/**
       - server/**
-      - pi/**
+      - runtime/**
       - .github/workflows/docker.yml
   workflow_dispatch:
 

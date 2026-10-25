@@ -24,15 +24,15 @@ export default [
       'dist/',
       'dist-server/',
       'node_modules/',
-      'pi/',
+      'runtime/pi-agent-dir/',
       '.astro/',
       'test-results/',
       'playwright-report/',
       // fixture app + the starter template + the shipped reference tree,
       // built by their own toolchains
       'tests/fixtures/app-fixture/',
-      'app-starter/',
-      'apps-reference/',
+      'runtime/app-starter/',
+      'runtime/reference-apps/',
     ],
   },
 

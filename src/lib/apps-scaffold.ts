@@ -4,7 +4,7 @@
 // the console's (normalizeSlug), base '/apps/<slug>' baked, node_modules
 // as per-package symlinks (§5), a git repo whose first commit is the
 // scaffold (agent undo is git clean — one history to roll back to), and
-// the operator's AGENTS.md seeded from apps-agent-template/ (§7). This
+// the operator's AGENTS.md seeded from runtime/app-agents/ (§7). This
 // module OWNS the tree-writing; the MCP owns the sockets and the tool
 // shapes. All fs through this one boundary (CODE_STYLE §2): a failure is
 // a Result, never a throw.
@@ -52,7 +52,7 @@ export interface ScaffoldDeps {
   appsRoot: string;
   /** the app-starter template dir shipped in the image */
   templateDir: string;
-  /** apps-agent-template/AGENTS.md — the operator-manual template (§7) */
+  /** runtime/app-agents/AGENTS.md — the operator-manual template (§7) */
   agentTemplateFile: string;
   /** the cybermole install root (its node_modules is what the links
    *  point into; its dist-server carries the app MCP shim) */
@@ -97,6 +97,11 @@ function writeTree(
   input: ScaffoldAppInput & { slug: string },
 ): void {
   fs.cpSync(deps.templateDir, tree, { recursive: true });
+  // npm pack drops a .gitignore nested this deep in the install even when
+  // `files` names it, so the template ships it undotted
+  if (fs.existsSync(path.join(tree, 'gitignore'))) {
+    fs.renameSync(path.join(tree, 'gitignore'), path.join(tree, '.gitignore'));
+  }
   const values = templateValues(input, deps.installRoot);
   const walk = (dir: string): void => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -126,7 +131,7 @@ function writeTree(
   );
 }
 
-/** Seed the tree's AGENTS.md from apps-agent-template/AGENTS.md with the
+/** Seed the tree's AGENTS.md from runtime/app-agents/AGENTS.md with the
  *  same marker substitution — the root-agents only-where-absent policy
  *  does not apply here: the scaffold OWNS this file's birth (branch 5's
  *  add_action regenerates its actions section; §7). */
@@ -187,7 +192,7 @@ export async function scaffoldApp(
     if (!fs.existsSync(deps.agentTemplateFile)) {
       return fail(
         'template_missing',
-        `the apps-agent-template is missing (${deps.agentTemplateFile}) — this cybermole install is broken; nothing was written`,
+        `the app-agents template is missing (${deps.agentTemplateFile}) — this cybermole install is broken; nothing was written`,
       );
     }
     fs.mkdirSync(deps.appsRoot, { recursive: true });

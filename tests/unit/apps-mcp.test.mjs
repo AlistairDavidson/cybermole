@@ -43,8 +43,8 @@ const { runChild } = await import('../../dist-server/src/lib/apps-child.js');
 
 const scaffoldDeps = root => ({
   appsRoot: root,
-  templateDir: path.join(REPO, 'app-starter'),
-  agentTemplateFile: path.join(REPO, 'apps-agent-template', 'AGENTS.md'),
+  templateDir: path.join(REPO, 'runtime', 'app-starter'),
+  agentTemplateFile: path.join(REPO, 'runtime', 'app-agents', 'AGENTS.md'),
   installRoot: REPO,
   run: runChild,
 });

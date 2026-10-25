@@ -90,7 +90,7 @@ function normalizeBase(raw: string): string {
 
 const home = ENV.CYBERMOLE_HOME;
 
-// Controlled pi config. `pi/` in the repo is the versioned template
+// Controlled pi config. `runtime/pi-agent-dir/` in the repo is the versioned template
 // (settings.json, mcp.json, skills/, extensions/, …); the runtime agent dir
 // below is what spawned pi actually uses (PI_CODING_AGENT_DIR) — seeded
 // from the template at boot, so sessions never read or write ~/.pi/agent.
@@ -104,12 +104,12 @@ if (PI_AGENT_DIR && !RAW_ENV.CYBERMOLE_AGENT_DIR) {
       `cybermole uses its own runtime agent dir (${agentDir}). Set CYBERMOLE_AGENT_DIR to move it.`,
   );
 }
-const agentTemplate = path.join(APP_ROOT, 'pi');
+const agentTemplate = path.join(APP_ROOT, 'runtime', 'pi-agent-dir');
 // jobs-agent-plan §9: the one-file template for the workspace-root
 // AGENTS.md (the root agent's standing instructions), seeded into the
 // DEFAULT workspace cwd (the workspace root — /workspace in the split)
 // by the same boot halves as the pi template.
-const rootAgentsTemplate = path.join(APP_ROOT, 'root-agents', 'AGENTS.md');
+const rootAgentsTemplate = path.join(APP_ROOT, 'runtime', 'workspace-root', 'AGENTS.md');
 
 const CFG: ServerConfig = {
   host: ENV.CYBERMOLE_HOST,

@@ -98,7 +98,7 @@ export const ENV = {
   // its deterministic cmd.sh's agent mode.
   CYBERMOLE_AGENT_COMMAND:
     RAW_ENV.CYBERMOLE_AGENT_COMMAND ?? defaultAgentCommand(PI_BIN, fs.existsSync(PI_BIN)),
-  CYBERMOLE_TMUX_CONF: RAW_ENV.CYBERMOLE_TMUX_CONF ?? path.join(APP_ROOT, 'tmux.conf'),
+  CYBERMOLE_TMUX_CONF: RAW_ENV.CYBERMOLE_TMUX_CONF ?? path.join(APP_ROOT, 'runtime', 'tmux.conf'),
 };
 
 /** The built-in agent default (task/defaults-settings): the vendored pi

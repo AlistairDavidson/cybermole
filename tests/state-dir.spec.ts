@@ -1,7 +1,7 @@
 // state-dir.spec.ts — default state layout (DESIGN_REVIEW §3.3): with only
 // CYBERMOLE_HOME (and a port) set, everything cybermole persists lands under
 // $CYBERMOLE_HOME/.local/state/cybermole — set-password writes cybermole.db there,
-// the server seeds pi-agent/ from the repo pi/ template — while
+// the server seeds pi-agent/ from the repo runtime/pi-agent-dir/ template — while
 // CYBERMOLE_STATE_DIR and the per-path overrides still win. Runs the compiled
 // dist-server via child_process (like global-setup), not imports, so it
 // covers the built artifact an operator actually runs.
@@ -102,17 +102,17 @@ async function bootServer(env: Record<string, string>): Promise<void> {
   }
 }
 
-/** Assert dir was seeded byte-identical from the repo's pi/ template. */
+/** Assert dir was seeded byte-identical from the repo's runtime/pi-agent-dir/ template. */
 function expectSeededFromTemplate(dir: string): void {
   const walk = (d: string): string[] =>
     fs.readdirSync(d, { withFileTypes: true }).flatMap(e => {
       const p = path.join(d, e.name);
       return e.isDirectory() ? walk(p) : [p];
     });
-  const templateFiles = walk(path.join(ROOT, 'pi'));
+  const templateFiles = walk(path.join(ROOT, 'runtime', 'pi-agent-dir'));
   expect(templateFiles.length).toBeGreaterThan(0);
   for (const src of templateFiles) {
-    const dst = path.join(dir, path.relative(path.join(ROOT, 'pi'), src));
+    const dst = path.join(dir, path.relative(path.join(ROOT, 'runtime', 'pi-agent-dir'), src));
     expect(fs.existsSync(dst), dst).toBe(true);
     expect(fs.readFileSync(dst, 'utf8')).toBe(fs.readFileSync(src, 'utf8'));
   }

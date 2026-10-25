@@ -203,7 +203,7 @@ export default async function globalSetup(): Promise<void> {
     execFileSync('tmux', [
       '-L',
       TMUX_SOCKET,
-      ...(first ? ['-f', path.resolve(__dirname, '..', 'tmux.conf')] : []),
+      ...(first ? ['-f', path.resolve(__dirname, '..', 'runtime', 'tmux.conf')] : []),
       'new-session',
       '-d',
       '-s',
