@@ -230,6 +230,31 @@ test('workspaceCreateBody: appId null/absent/uuid v4; name required; no cwd (the
   );
 });
 
+test("workspaceCreateBody: kind 'build' is the only literal, and it requires appId", () => {
+  const ID = '123e4567-e89b-42d3-a456-426614174000';
+  assert.deepEqual(parse(workspaceCreateBody, { appId: ID, name: 'x', kind: 'build' }), {
+    appId: ID,
+    name: 'x',
+    kind: 'build',
+  });
+  assert.deepEqual(parse(workspaceCreateBody, { appId: ID, name: 'x', junk: 'build' }), {
+    appId: ID,
+    name: 'x',
+  }); // the literal never sneaks in through another key
+  for (const bad of [
+    { name: 'x', kind: 'build' }, // no appId
+    { appId: null, name: 'x', kind: 'build' },
+    { appId: ID, name: 'x', kind: 'console' },
+    { appId: ID, name: 'x', kind: null },
+  ]) {
+    assert.equal(ok(workspaceCreateBody, bad), false, JSON.stringify(bad));
+  }
+  assert.equal(
+    issueText(workspaceCreateBody, { name: 'x', kind: 'build' }),
+    "kind: kind 'build' requires appId",
+  );
+});
+
 test('workspacePatchBody: either field alone, both optional', () => {
   assert.deepEqual(parse(workspacePatchBody, {}), {});
   assert.deepEqual(parse(workspacePatchBody, { name: 'n' }), { name: 'n' });

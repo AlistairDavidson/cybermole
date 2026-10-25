@@ -12,6 +12,7 @@ import { terminalSessionName } from '../../src/lib/terminals/tmux';
 import { asAppId, asTerminalId } from '@cybermole/app-kit';
 import {
   AGENT_MARKER,
+  APPS_ROOT,
   MARKER,
   PASSWORD,
   TMUX_SOCKET,
@@ -97,6 +98,7 @@ export default async function globalSetup(): Promise<void> {
     username,
     killSession: async () => true,
     defaultCwd: WORKSPACE,
+    appsRoot: APPS_ROOT,
     spawnSession: async name => ({ ok: true, resultType: 'tmux_session', data: { name } }),
     liveSessionNames: async () => new Set(),
     shellCommand: () => cmdOk(cmd),

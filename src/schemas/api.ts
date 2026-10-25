@@ -45,11 +45,19 @@ export const appPatchBody = z.object({
 });
 
 /** appId null or absent = the console group. The cwd is derived: the
- *  parent app's, else CYBERMOLE_NEW_SESSION_CWD. */
-export const workspaceCreateBody = z.object({
-  appId: AppIdSchema.nullable().optional(),
-  name: z.string().max(120, 'name is too long (max 120)'),
-});
+ *  parent app's, else CYBERMOLE_NEW_SESSION_CWD — except kind 'build'
+ *  (a build session), which requires appId and always starts at the
+ *  server default. */
+export const workspaceCreateBody = z
+  .object({
+    appId: AppIdSchema.nullable().optional(),
+    name: z.string().max(120, 'name is too long (max 120)'),
+    kind: z.literal('build').optional(),
+  })
+  .refine(b => b.kind !== 'build' || (b.appId ?? null) !== null, {
+    message: "kind 'build' requires appId",
+    path: ['kind'],
+  });
 
 /** Absent fields keep. */
 export const workspacePatchBody = z.object({
