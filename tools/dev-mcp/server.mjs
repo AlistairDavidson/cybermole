@@ -1,25 +1,11 @@
 #!/usr/bin/env node
-// server.mjs — the cybermole-dev MCP server (docs/plans/dev-test-mcp-plan.md):
-// the repo's validation ladder (AGENTS.md, Testing) as six stdio MCP tools
-// that answer in ONE structured envelope, so an agent's context fills with
-// failure detail only, not per-test reporting. The npm scripts stay the
-// substrate; these tools are the quiet orchestration + output-shaping layer
-// on top (barbarus's project-MCP design, parsed-not-pattern-matched where
-// the runners emit machine formats — plan §1).
+// The cybermole-dev MCP server: the repo's validation ladder as six stdio
+// tools (run_check, run_lint, run_format_check, run_build, run_unit_tests,
+// run_e2e), each answering one quiet envelope so an agent's context gets
+// failure detail, not per-test output. The npm scripts stay the substrate.
 //
-// Deliberately NOT server/mcp.ts's kind of server: that one is the shipped
-// appliance's jobs proxy, results verbatim; this one runs only in dev
-// checkouts, never ships (package.json `files` excludes tools/), and is a
-// subprocess orchestrator. Plain .mjs, no build step — it must run from any
-// checkout or fleet worktree pre-build.
-//
-// The repo root is resolved from import.meta.url (…/tools/dev-mcp → ../..)
-// and every child process runs with THAT as cwd — the launcher's cwd never
-// matters. stdout is the MCP protocol channel: nothing here logs to it.
-//
-// Registered by .pi/mcp.json as `cybermole-dev` (direct exposure):
-//   run_check, run_lint, run_format_check, run_build,
-//   run_unit_tests, run_e2e — one per npm script, plan §2/§3.
+// Dev-only (never shipped) and plain .mjs, so it runs pre-build. Children
+// run with the repo root as cwd. stdout is the MCP channel: nothing logs to it.
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import * as os from 'node:os';
@@ -44,19 +30,15 @@ const REPO_ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const BIN = name => path.join(REPO_ROOT, 'node_modules', '.bin', name);
 const QUIET_REPORTER = path.join(REPO_ROOT, 'tools', 'dev-mcp', 'quiet-reporter.mjs');
 
-// ---------- the child-process runner (plan §1.7: timeout per tool, kill) ----------
+// ---------- child-process runner ----------
 
-/** The live detached children, so this server dying never orphans a run:
- *  pi stops stdio servers by killing the server's process GROUP, but the
- *  children below run in groups of their own (detached, so timeout kills
- *  reach their grandchildren) — and some grandchildren detach AGAIN
- *  (playwright's web servers), so a group kill alone never reaches them.
- *  Killing is therefore tree-shaped: the child's group, plus every
- *  /proc-descendant that slipped into a group of its own. */
+/** Live children, so this server dying never orphans a run. They run in
+ *  their own process groups (so timeouts reach grandchildren), and some
+ *  grandchildren detach again (playwright's web servers), so kills walk
+ *  the /proc tree as well as the group. */
 const liveChildren = new Set();
 
-/** Every process below root, by walking /proc's ppid links (Linux only —
- *  elsewhere the answer is empty and the group kill carries the day). */
+/** Linux only; elsewhere empty, and the group kill does the job. */
 function descendantPids(root) {
   if (process.platform !== 'linux') return [];
   const childrenOf = new Map();
@@ -72,7 +54,7 @@ function descendantPids(root) {
           childrenOf.get(ppid).push(Number(entry));
         }
       } catch {
-        /* raced away — fine */
+        /* raced away */
       }
     }
   } catch {
@@ -106,9 +88,8 @@ function killTree(child, signal) {
   }
 }
 
-/** TERMinate now, SIGKILL the survivors after a grace beat, and let the
- *  process live long enough for that second pass (an unref'd timer after
- *  process.exit never fires — learned live). */
+/** TERM now, KILL survivors after a beat, and stay alive for that second
+ *  pass (an unref'd timer after process.exit never fires). */
 function nuke(child) {
   killTree(child, 'SIGTERM');
   setTimeout(() => killTree(child, 'SIGKILL'), 2000);
@@ -117,9 +98,8 @@ function nuke(child) {
 process.on('exit', () => {
   for (const child of liveChildren) killTree(child, 'SIGTERM');
 });
-// pi stops stdio servers with stdin-close then SIGTERM then SIGKILL — and a
-// SIGTERM kills this process WITHOUT running exit hooks, so the runs must
-// be taken along here, explicitly, with room for the SIGKILL pass
+// pi stops stdio servers with stdin-close, SIGTERM, then SIGKILL, and a
+// SIGTERM skips exit hooks, so take the runs down here explicitly.
 const dieWithChildren = () => {
   for (const child of liveChildren) nuke(child);
   setTimeout(() => process.exit(0), 2500);
@@ -127,18 +107,11 @@ const dieWithChildren = () => {
 process.on('SIGTERM', dieWithChildren);
 process.on('SIGINT', dieWithChildren);
 
-/** One subprocess: command + args, cwd REPO_ROOT, stdout/stderr captured
- *  separately (1 MiB per stream — far over anything the parsers need), a
- *  per-call timeout that kills the whole process GROUP (detached spawn, so
- *  grandchildren — the playwright web servers, node:test's per-file
- *  children — die with it: SIGTERM, then SIGKILL after a grace beat), and
- *  the request's abort signal treated the same — a cancelled call kills
- *  its run instead of leaking it (learned live: an abandoned e2e run
- *  holds the suite's ports). The child env is the parent's minus
- *  NODE_TEST_CONTEXT — a stray marker (the server spawned from inside a
- *  node:test child) makes node:test runners refuse to run files. A spawn
- *  failure (ENOENT &c.) resolves like a 127 exit with the reason in
- *  stderr — it is a tool answer, not an exception. */
+/** One subprocess, stdout/stderr captured separately (1 MiB each). A
+ *  timeout or the request's abort kills the whole tree (an abandoned e2e
+ *  run would hold the suite's ports). NODE_TEST_CONTEXT is stripped from
+ *  the env, or node:test refuses to run files. A spawn failure resolves
+ *  like a 127 exit: a tool answer, not an exception. */
 function runChild(cmd, args, { timeoutMs, env, cwd = REPO_ROOT, signal } = {}) {
   const spawnEnv = { ...(env ?? process.env) };
   delete spawnEnv.NODE_TEST_CONTEXT; // a stray marker makes node:test runners refuse to run files
@@ -203,10 +176,8 @@ function runChild(cmd, args, { timeoutMs, env, cwd = REPO_ROOT, signal } = {}) {
   });
 }
 
-/** A `&&` pipeline over a shared deadline: labeled steps run in order, the
- *  first nonzero (or timed-out) step ends the run. Returns every step's
- *  result plus the aggregate ({code, timedOut} of the failing/last step,
- *  duration summed) — the tools compose per-step text from steps[]. */
+/** Labeled steps over a shared deadline; the first nonzero or timed-out
+ *  step ends the run. */
 async function runPipeline(steps, timeoutMs, signal) {
   const deadline = Date.now() + timeoutMs;
   const results = [];
@@ -239,7 +210,7 @@ async function runPipeline(steps, timeoutMs, signal) {
   };
 }
 
-// ---------- the shared envelope (plan §5) ----------
+// ---------- envelope ----------
 
 function envelope({
   passed,
@@ -264,9 +235,8 @@ function envelope({
   return e;
 }
 
-/** A step's quiet text: anchor-shaped stdout (errors + result tail, boot
- *  noise dropped); a failing step also carries its stderr tail — the crash
- *  reason, the part of stderr that is information. */
+/** Errors and the result tail from stdout (boot noise dropped), plus the
+ *  stderr tail for a failing step. */
 function stepText(label, r, { clean = 'clean' } = {}) {
   const ok = r.code === 0 && !r.timedOut;
   const body = anchorQuiet(r.stdout).trim();
@@ -279,12 +249,9 @@ function stepText(label, r, { clean = 'clean' } = {}) {
 const result = e => ({ content: [{ type: 'text', text: JSON.stringify(e, null, 2) }] });
 const badRequest = why => ({ content: [{ type: 'text', text: why }], isError: true });
 
-/** A heartbeat for long runs: notifications/progress every 30 s with the
- *  elapsed seconds, sent ONLY when the client sent a progressToken (the
- *  spec's rule) — clients that honor progress (pi resets its per-request
- *  timeout on one) stay alive through multi-minute runs. No token, no
- *  notifications; the registration's own `timeout` is the belt to this
- *  braces. Returns the stop function. */
+/** Progress notifications every 30 s, only when the client sent a
+ *  progressToken (pi resets its request timeout on one). Returns the stop
+ *  function. */
 function heartbeat(extra, phase) {
   const token = extra?._meta?.progressToken;
   if (token === undefined) return () => {};
@@ -302,8 +269,6 @@ function heartbeat(extra, phase) {
   return () => clearInterval(timer);
 }
 
-/** Run one long await under the heartbeat, handing the request's abort
- *  signal to the run (a cancelled call kills its child tree). */
 async function beat(extra, phase, fn) {
   const stop = heartbeat(extra, phase);
   try {
@@ -313,11 +278,8 @@ async function beat(extra, phase, fn) {
   }
 }
 
-/** Shared params on every tool (plan §3): quiet defaults true (success is
- *  one glance — flag + counts; verbose only when debugging the reporting
- *  itself), timeout per tool with kill on expiry. Handlers read them with
- *  nullish guards so a client that omits them gets the defaults regardless
- *  of schema-default plumbing. */
+/** quiet (default true) and timeout on every tool. Read with nullish
+ *  guards, so an omitted param gets the default regardless of the schema. */
 const quietParam = z
   .boolean()
   .default(true)
@@ -333,9 +295,8 @@ const timeoutParam = def =>
     .default(def)
     .describe(`timeout in seconds — the whole process group is killed on expiry; default ${def}`);
 
-/** Repo-relative unit test files for a `file` arg: the stem (ids →
- *  tests/unit/ids.test.mjs) or a path; null when nothing matches. No arg =
- *  every tests/unit/*.test.mjs, sorted (the npm glob's order). */
+/** A stem (ids → tests/unit/ids.test.mjs) or a path; null when nothing
+ *  matches. No arg: every unit file, sorted like the npm glob. */
 function unitFiles(file) {
   const unitDir = path.join(REPO_ROOT, 'tests', 'unit');
   if (file === undefined) {
@@ -354,9 +315,7 @@ function unitFiles(file) {
   return null;
 }
 
-/** Spec paths for an e2e `file` arg: stem (terminal-ws →
- *  tests/e2e/terminal-ws.spec.ts) or a repo-relative path; null when nothing
- *  matches. */
+/** A stem (terminal-ws → tests/e2e/terminal-ws.spec.ts) or a path; null when nothing matches. */
 function e2eFile(file) {
   const candidates = [
     file,
@@ -368,7 +327,7 @@ function e2eFile(file) {
   return null;
 }
 
-// ---------- the server ----------
+// ---------- server ----------
 
 const server = new McpServer({ name: 'cybermole-dev', version: '0.1.0' });
 
@@ -455,7 +414,7 @@ server.registerTool(
       for (const w of parsed.warningsByFile) parts.push(`warn  ${w}`);
       output = parts.join('\n');
     } else {
-      // unparseable (or verbose): the raw text is the answer
+      // unparseable or verbose: the raw text is the answer
       output = `${r.stdout}\n${r.stderr}`.trim() || '(no output)';
     }
     if (!passed && r.stderr.trim() !== '')
@@ -606,8 +565,7 @@ server.registerTool(
     }
     const absolute = files.map(f => path.join(REPO_ROOT, f));
 
-    // Verbose: the plain `node --test` run with the spec reporter — the
-    // full per-test reporting, for debugging the reporting itself.
+    // Verbose: plain `node --test` with the spec reporter.
     if (!q) {
       const steps = [];
       if (skip_build !== true) {
@@ -637,7 +595,6 @@ server.registerTool(
       );
     }
 
-    // Quiet: tsc (unless skipped) then the quiet reporter.
     const steps = [];
     if (skip_build !== true) {
       steps.push({
@@ -665,8 +622,8 @@ server.registerTool(
         `, skipped ${counts.skipped}, todo ${counts.todo}, cancelled ${counts.cancelled}` +
         `\n${stripMachineLines(runStep.r.stdout).trim()}`;
     } else {
-      // no machine summary: a step failed before the reporter ran (the tsc
-      // build), or the run collapsed — the collected text is the answer
+      // No machine summary: a step failed before the reporter ran, or the
+      // run collapsed. The collected text is the answer.
       output =
         p.steps.map(({ label, r }) => stepText(label, r, { clean: 'clean' })).join('\n\n') ||
         '(no output)';
@@ -720,8 +677,7 @@ server.registerTool(
     const reportDir = mkdtempSync(path.join(os.tmpdir(), 'cybermole-dev-e2e-'));
     const reportPath = path.join(reportDir, 'report.json');
     try {
-      // JSON to a temp file — stdout stays the list reporter's channel and
-      // the web-server's stderr rides stderr, each captured separately
+      // JSON to a temp file, so stdout and stderr stay separate channels.
       const r = await beat(extra, 'playwright e2e', signal =>
         runChild(BIN('playwright'), ['test', '--reporter=json', ...specArgs], {
           timeoutMs: (timeout ?? 3600) * 1000,
@@ -754,8 +710,7 @@ server.registerTool(
         for (const ge of parsed.globalErrors)
           output += `\nglobal error: ${ge.split('\n').join('\n    ')}`;
       } else if (q) {
-        // no report file (infra collapse, kill mid-run, parse miss): the
-        // raw text is the answer — anchor-miss fallback, another shape
+        // No report file (infra collapse, kill, parse miss): the raw text is the answer.
         output = `${r.stdout}\n${r.stderr}`.trim() || '(no output)';
       } else {
         output = `${r.stdout}\n--- stderr ---\n${r.stderr}`;
@@ -781,6 +736,6 @@ server.registerTool(
   },
 );
 
-// ---------- the entry ----------
+// ---------- entry ----------
 
 await server.connect(new StdioServerTransport());

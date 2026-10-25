@@ -1,17 +1,7 @@
-// auto-update.ts — the 'auto-update pi' setting (TODO top block): when ON,
-// check for a newer pi WITHIN the range cybermole declares in package.json
-// (read the way settings.ts's piDeclared does) and install it through the
-// manual updater's machinery (runPiUpdate — shared busy guard, output
-// capture, no restart). Default OFF; the toggle and the last outcomes live
-// in the state db's settings kv, surfaced on /settings via /api/settings.
-//
-// SAFETY CHOICE vs the manual button: auto-update installs the newest
-// version that SATISFIES the declared range (e.g. `npm install
-// @earendil-works/pi-coding-agent@^1.0.1` — the range is derived from
-// package.json, never hardcoded), where the button installs @latest with
-// the README's 'stay within ^1' caveat. A pi above the declared range
-// (installed by hand via the button) is left alone: latest-in-range <
-// installed means no update, and auto-update never downgrades into range.
+// The 'auto-update pi' setting (default off): checks daily for a newer pi
+// within the range package.json declares and installs it via runPiUpdate.
+// Unlike the manual button (@latest), it stays within the range, and leaves
+// alone a pi installed above it (never downgrades).
 import { execFile } from 'node:child_process';
 import type { StateDb } from './db';
 import { databaseRead, databaseUpdate } from '@cybermole/app-kit';
@@ -21,7 +11,6 @@ import { PI_PACKAGE, npmPath, piDeclared, piInstalled, runPiUpdate } from './set
 
 const log = componentLogger('update');
 
-// settings kv keys (db.ts settings table)
 const KEY_ENABLED = 'piAutoUpdate.enabled';
 const KEY_LAST_CHECK = 'piAutoUpdate.lastCheck';
 const KEY_LAST_UPDATE = 'piAutoUpdate.lastUpdate';
@@ -31,40 +20,30 @@ export const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const VIEW_TIMEOUT_MS = 60_000;
 const OUTPUT_CAP = 16 * 1024;
 
-// ---------- pure decision logic (unit-tested with no npm, no db) ----------
+// ---------- decision logic ----------
 
-/** Declared values that can act as an npm version RANGE. Deliberately
- *  narrow — digits, comparators, wildcards, range glue — so URLs, git
- *  refs, dist-tags (`latest`) and `unknown` all disqualify auto-update
- *  instead of being guessed at. */
+/** Deliberately narrow: URLs, git refs and dist-tags disable auto-update rather than be guessed at. */
 const RANGE_RE = /^[\d.^~*<>=|\sxX-]+$/;
 
-/** The npm spec that targets the newest pi WITHIN the declared range
- *  (`@earendil-works/pi-coding-agent@^1.0.1`), or null when the declared
- *  value can't be a range — an unusable declaration disables the check
- *  (recorded as a failed outcome) rather than installing anything. */
+/** null when the declared value can't be a range (recorded as a failed check). */
 export function autoUpdateSpec(declared: string): string | null {
   const d = declared.trim();
   if (!d || !RANGE_RE.test(d)) return null;
   return `${PI_PACKAGE}@${d}`;
 }
 
-/** `major.minor.patch[-prerelease][+build]` as comparable parts, null if
- *  not a plain semver string. Build metadata is parsed and IGNORED, per
- *  semver precedence rules (1.2.3+abc ≡ 1.2.3). */
+/** Build metadata is ignored, per semver precedence. */
 function parseSemver(v: string): [number, number, number, string[]] | null {
   const m = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(v.trim());
   if (!m) return null;
   return [Number(m[1]), Number(m[2]), Number(m[3]), m[4] === undefined ? [] : m[4].split('.')];
 }
 
-/** A string that parses as a plain semver version. */
 export function isPlainVersion(v: string): boolean {
   return parseSemver(v) !== null;
 }
 
-/** semver precedence: <0 when a<b, 0 when equal or UNPARSEABLE (an
- *  unparseable side never wins — the caller fails safe, no install). */
+/** 0 when either side is unparseable, so the caller never installs. */
 export function compareVersions(a: string, b: string): number {
   const pa = parseSemver(a),
     pb = parseSemver(b);
@@ -92,19 +71,13 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-/** Install iff latest-in-range is strictly newer than what's installed.
- *  Not-installed counts as outdated; an unparseable installed version
- *  never does (compareVersions answers 0) — never touch what can't be
- *  reasoned about. */
+/** Not installed counts as outdated; an unparseable installed version never does. */
 export function shouldAutoUpdate(installed: string | null, latestInRange: string): boolean {
   return installed === null || compareVersions(latestInRange, installed) > 0;
 }
 
-/** The newest version out of `npm view <spec> version --json` output.
- *  npm answers a range spec with EVERY matching version, ascending
- *  (single match → a JSON string); the newest — what `npm install
- *  <spec>` would pick — is the max entry, by precedence not list order.
- *  Null when nothing in the output looks like a version. */
+/** npm answers a range with every match (or a bare string for one); take
+ *  the max by precedence, not list order. */
 export function parseNpmViewVersion(out: string): string | null {
   const t = out.trim();
   let v: unknown;
@@ -112,7 +85,7 @@ export function parseNpmViewVersion(out: string): string | null {
     v = JSON.parse(t);
   } catch {
     v = t;
-  } // not json — try the plain form
+  }
   if (typeof v === 'string') return parseSemver(v) ? v : null;
   if (Array.isArray(v)) {
     let newest: string | null = null;
@@ -129,10 +102,9 @@ export function parseNpmViewVersion(out: string): string | null {
   return null;
 }
 
-// ---------- outcome persistence (settings kv) ----------
+// ---------- outcome persistence ----------
 
-/** A stored outcome, or null for a missing — or corrupt — row (a corrupt
- *  row reads as "never": it is data we wrote, not a db failure). */
+/** A corrupt row reads as "never": it's our own data, not a db failure. */
 function parseJsonSetting<T>(raw: string | null): T | null {
   if (raw === null) return null;
   let v: unknown;
@@ -144,14 +116,12 @@ function parseJsonSetting<T>(raw: string | null): T | null {
   return v && typeof v === 'object' ? (v as T) : null;
 }
 
-/** An unreadable db is a database_error — never read as "never". */
+/** An unreadable db is database_error, never "never". */
 function readJsonSetting<T>(db: StateDb, key: string) {
   return databaseRead(`could not read ${key}`, () => parseJsonSetting<T>(db.getSetting(key)));
 }
 
-/** Persist an outcome. Best-effort by design: a background check has no
- *  caller to report to, so a failed write is logged and the next check
- *  writes again. */
+/** Best-effort: a background check has nobody to report to. */
 function writeJsonSetting(db: StateDb, key: string, value: unknown): void {
   const saved = databaseUpdate(`pi auto-update: could not persist ${key}`, () =>
     db.setSetting(key, JSON.stringify(value)),
@@ -159,9 +129,7 @@ function writeJsonSetting(db: StateDb, key: string, value: unknown): void {
   if (!saved.ok) log.error(saved.errorMessage ?? key);
 }
 
-/** Read the persisted toggle (database_read: value true/false). Default
- *  OFF — a missing row is OFF; an unreadable db is a database_error, not
- *  OFF. */
+/** A missing row is off; an unreadable db is database_error, not off. */
 export function autoUpdateEnabled(db: StateDb) {
   return databaseRead(
     'could not read the auto-update setting',
@@ -191,17 +159,14 @@ function saveCheck(db: StateDb, outcome: AutoUpdateCheck['outcome'], detail: str
   } satisfies AutoUpdateCheck);
 }
 
-// ---------- the check itself ----------
+// ---------- check ----------
 
 export interface CheckDeps {
   db: StateDb;
   appRoot: string;
 }
 
-/** One check: query the registry for the newest pi within the declared
- *  range, install it through runPiUpdate when it is newer than the
- *  installed one, and persist the outcome either way. Never throws —
- *  failures are recorded as outcomes. */
+/** Never throws; failures are recorded as outcomes. */
 export async function performAutoUpdateCheck(deps: CheckDeps): Promise<void> {
   const { db, appRoot } = deps;
   const fail = (detail: string): void => saveCheck(db, 'failed', detail);
@@ -213,7 +178,6 @@ export async function performAutoUpdateCheck(deps: CheckDeps): Promise<void> {
   const npm = npmPath();
   if (!npm) return fail('npm was not found on the server PATH — cannot check');
 
-  // Registry query only — nothing is installed by `npm view`.
   const latest = await new Promise<string | null>(resolve =>
     execFile(
       npm,
@@ -227,10 +191,7 @@ export async function performAutoUpdateCheck(deps: CheckDeps): Promise<void> {
 
   const installed = piInstalled(appRoot);
   if (!shouldAutoUpdate(installed, latest)) {
-    // No install happens for exactly three reasons — the installed pi IS
-    // the newest in range, it sits ABOVE the range (manual @latest — never
-    // downgraded back into range), or it doesn't compare at all (never
-    // touch what can't be reasoned about). The status line says which.
+    // Newest in range, above the range, or not comparable; say which.
     const detail = !isPlainVersion(installed as string)
       ? `installed pi "${installed}" does not compare as a version — left alone`
       : compareVersions(installed as string, latest) > 0
@@ -239,13 +200,6 @@ export async function performAutoUpdateCheck(deps: CheckDeps): Promise<void> {
     return saveCheck(db, 'up-to-date', detail);
   }
 
-  // FLEET JUNCTION (task/privilege-split): in the two-container shape pi's
-  // node_modules moves to the workspace container, so this install (and the
-  // registry probe above) become workspace-side operations. The decision
-  // logic (range, compare, outcomes) stays web-side; a split-aware delegate
-  // replaces exactly this runPiUpdate call — e.g. forward the spec to the
-  // workspace container and relay its PiUpdateResult back. Not implemented:
-  // single-process today; see also the sibling note in settings.ts.
   log.info(
     `pi auto-update: ${latest} is newer than ${installed ?? 'nothing'} — installing within ${declared}`,
   );
@@ -269,28 +223,21 @@ export async function performAutoUpdateCheck(deps: CheckDeps): Promise<void> {
   );
 }
 
-// ---------- the periodic wiring ----------
+// ---------- scheduling ----------
 
 export interface AutoUpdaterDeps {
   db: StateDb;
   appRoot: string;
-  /** delay before the first check after boot / after the toggle is turned
-   *  ON. Default 60s, also on purpose for the e2e suite: the settings test
-   *  toggles the setting ON through the UI near the end of the run, and
-   *  the suite (webServer teardown included) finishes well inside a
-   *  minute — so the e2e server never reaches a real npm invocation. */
+  /** Default 60 s, which also keeps the e2e suite (it toggles this on near
+   *  the end) from ever reaching a real npm run. */
   firstDelayMs?: number;
-  /** default 24h */
   intervalMs?: number;
-  /** replaces the whole check flow (tests stub this, never real npm) */
+  /** tests stub this */
   check?: () => Promise<void>;
 }
 
-/** Owns the auto-update timing: with the setting ON, one check shortly
- *  after boot (or after the toggle is turned ON) and then every 24h.
- *  OFF means no npm runs, full stop — the boot probe reads the setting
- *  lazily (never at construction: the state db opens lazily by design,
- *  and the e2e webServer boots before global-setup resets its workspace). */
+/** Off means npm never runs. The setting is read lazily, never at
+ *  construction, since the state db opens lazily. */
 export class AutoUpdater {
   private probe: ReturnType<typeof setTimeout> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -308,11 +255,6 @@ export class AutoUpdater {
     return check ?? ((): Promise<void> => performAutoUpdateCheck({ db, appRoot }));
   }
 
-  /** Arm the boot probe: FIRST_CHECK_DELAY_MS after start, read the
-   *  persisted setting; when ON, run the first check and arm the 24h
-   *  interval. Calling this on an OFF server is inert apart from that one
-   *  deferred point query — nothing npm-shaped is ever scheduled by an
-   *  OFF setting. */
   start(): void {
     this.armProbe();
   }
@@ -328,9 +270,7 @@ export class AutoUpdater {
     }
   }
 
-  /** The toggle endpoint: persist, then rewire. ON arms the probe (a
-   *  first check within firstDelayMs); OFF stops everything. A failed
-   *  save leaves the timers as they were. */
+  /** A failed save leaves the timers as they were. */
   setEnabled(on: boolean) {
     const saved = setAutoUpdateEnabled(this.deps.db, on);
     if (!saved.ok) return saved;
@@ -340,13 +280,12 @@ export class AutoUpdater {
   }
 
   private armProbe(): void {
-    if (this.probe || this.timer) return; // already armed
+    if (this.probe || this.timer) return;
     this.probe = setTimeout(() => {
       this.probe = null;
       const enabled = autoUpdateEnabled(this.deps.db);
       if (!enabled.ok) {
-        // Unreadable setting: neither ON nor OFF is known, and npm never
-        // runs on a guess — look again after another delay.
+        // Neither on nor off is known; never run npm on a guess.
         log.error(`pi auto-update: ${enabled.errorMessage} — retrying`);
         this.armProbe();
         return;
@@ -359,9 +298,7 @@ export class AutoUpdater {
     }, this.firstDelayMs);
   }
 
-  /** One check, guarded against overlap (a slow install must not stack
-   *  with the next fire) and against throwing into a timer (a failed
-   *  check must never take the server down). */
+  /** Guards against overlapping checks and against throwing into a timer. */
   private async runCheck(): Promise<void> {
     if (this.checking) return;
     this.checking = true;

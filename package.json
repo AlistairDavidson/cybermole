@@ -1,7 +1,7 @@
 {
   "name": "cybermole",
   "version": "0.1.0",
-  "description": "pi coding-agent sessions in the browser — Astro SSR (Node middleware) + Web Awesome web components + one small Node server (terminal over WebSocket → tmux)",
+  "description": "pi coding-agent sessions in the browser",
   "license": "MIT",
   "engines": {
     "node": ">=22.13.0"

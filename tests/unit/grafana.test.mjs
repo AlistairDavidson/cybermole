@@ -1,12 +1,6 @@
-// grafana.test.mjs — task/logs-page: the CYBERMOLE_GRAFANA_URL env
-// contract (readGrafanaUrl, src/lib/platform/env.ts) and the Explore deep link it
-// feeds (grafanaExploreUrl, src/lib/platform/grafana.ts), plus the compose wiring
-// that delivers the var. readGrafanaUrl runs in a FRESH process (RAW_ENV
-// is read at module load — same pattern as the CYBERMOLE_LOKI_* boot
-// checks in observability.test.mjs); grafanaExploreUrl is pure, imported
-// directly. The Explore URL shape is pinned against grafana/grafana
-// 13.2.3 (the image compose.yaml pins): ?panes=<JSON>&schemaVersion=1
-// with the pane's datasource = the provisioned Loki uid.
+// CYBERMOLE_GRAFANA_URL (readGrafanaUrl, in a fresh process since RAW_ENV is
+// read at load), the Explore deep link, and the compose wiring. The URL shape
+// is Explore's v1: ?schemaVersion=1&panes=<JSON> with the Loki uid.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -17,8 +11,7 @@ import { parse } from 'yaml';
 const root = path.join(import.meta.dirname, '..', '..');
 const compose = parse(readFileSync(path.join(root, 'compose.yaml'), 'utf8'));
 
-/** readGrafanaUrl() in a fresh process (RAW_ENV is read at module load),
- *  or its error. */
+/** In a fresh process: the value or its error. */
 function bootRead(env) {
   const clean = Object.fromEntries(
     Object.entries(process.env).filter(([k]) => k !== 'CYBERMOLE_GRAFANA_URL'),
@@ -93,7 +86,7 @@ test('grafanaExploreUrl: v1 panes payload preselecting the provisioned Loki data
   const url = new URL(grafanaExploreUrl('http://127.0.0.1:3300'));
   assert.equal(url.pathname, '/explore');
   assert.equal(url.searchParams.get('schemaVersion'), '1');
-  // schemaVersion first (Grafana's own truncation ordering — init.ts).
+  // schemaVersion first, as Grafana orders it
   assert.match(url.search.slice(1), /^schemaVersion=1&/);
   const panes = JSON.parse(url.searchParams.get('panes'));
   const [paneId, pane] = Object.entries(panes)[0];
@@ -102,8 +95,7 @@ test('grafanaExploreUrl: v1 panes payload preselecting the provisioned Loki data
   assert.ok(/[a-z]/i.test(paneId), 'pane id carries a letter');
   assert.equal(pane.datasource, LOKI_DATASOURCE_UID);
   assert.equal(LOKI_DATASOURCE_UID, 'cybermole-loki'); // deploy/grafana provisioning uid
-  // No queries: Explore seeds a default query for the pane datasource
-  // (synchronizer/init.ts in 13.2.3) — the "Loki preselected" state.
+  // No queries: Explore seeds a default for the pane's datasource.
   assert.deepEqual(pane.queries, []);
   assert.deepEqual(pane.range, { from: 'now-1h', to: 'now' });
 });
@@ -117,14 +109,12 @@ test('grafanaExploreUrl: a subpath base keeps its prefix (appended, not resolved
 });
 
 test('compose: the logs link is default-off; grafana allows the frame', () => {
-  // Default-off: the interpolation default is EMPTY — grafana runs only
-  // under the opt-in observability profile, so a default-on URL would
-  // iframe a dead port for every plain-stack user.
+  // Default empty: grafana only runs under the opt-in profile, so a default
+  // URL would iframe a dead port.
   assert.equal(
     compose.services.cybermole.environment.CYBERMOLE_GRAFANA_URL,
     '${CYBERMOLE_GRAFANA_URL:-}',
   );
-  // Without this grafana 13 answers X-Frame-Options: deny and the /logs
-  // iframe stays blank.
+  // Without this grafana answers X-Frame-Options: deny and the iframe stays blank.
   assert.equal(compose.services.grafana.environment.GF_SECURITY_ALLOW_EMBEDDING, 'true');
 });

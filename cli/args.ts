@@ -1,10 +1,5 @@
-// args.ts — the CLI's thin option parser (task/jobs-cli,
-// docs/plans/jobs-agent-plan.md §5): long options (--flag, --flag=value,
-// --flag value), short aliases (-a value), and `--` to stop option
-// parsing. No clustering, no quoting tricks — usage errors (unknown
-// option, an option missing its value) come back as strings for the
-// caller to print. Keeping parsing this small is what lets the unit
-// tests drive the command layer directly.
+// A small option parser: --flag, --flag=value, --flag value, short aliases
+// (-a value) and `--`. No clustering. Usage errors come back as strings.
 
 export interface ParsedArgs {
   positionals: string[];
@@ -64,7 +59,7 @@ export function parseArgs(argv: string[], spec: ArgSpec): ParsedArgs {
       } else usageErrors.push(`unknown option ${name}`);
       continue;
     }
-    // short option: -a (aliases only — every long name above is canonical)
+    // short options are aliases only
     const canonical = aliases[arg];
     if (canonical === undefined) {
       usageErrors.push(`unknown option ${arg}`);

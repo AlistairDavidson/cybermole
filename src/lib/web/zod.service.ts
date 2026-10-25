@@ -1,20 +1,9 @@
-// zod.service.ts — HTML validation attributes from a zod object schema
-// (soothing-booking's zodSchemaToHTMLAttributes), so an <input>/<wa-input>
-// carries the same native constraints the schema enforces — the baseline
-// before validation-enhancer-zod takes over in the browser.
-//
-// Rebuilt on zod's public z.toJSONSchema() instead of the private `_def`
-// internals the original walked, so a zod upgrade can't silently break it.
-// `io: 'input'` describes what the user types (a transform/pipe exposes its
-// input side); `unrepresentable: 'any'` lets refinements and transforms
-// through as "no constraint" — they still run on the server.
-//
-// Supports string fields: required (not optional/nullable/defaulted),
-// min/max length, regex pattern, email/url format. A pattern that would
-// not compile as an HTML `pattern` (the `v` flag — e.g. an unescaped `-`
-// in a character class) is omitted with a warning: browsers silently
-// ignore an invalid pattern, so emitting it would only look like a
-// constraint.
+// HTML validation attributes from a zod object schema, so inputs carry the
+// same native constraints the server enforces. Built on z.toJSONSchema()
+// rather than zod internals. `io: 'input'` describes what the user types;
+// refinements and transforms pass as "no constraint" (the server still runs
+// them). A pattern that won't compile under the HTML `v` flag is omitted
+// with a warning, since browsers silently ignore an invalid pattern.
 import { z } from 'zod';
 
 export interface HtmlInputAttrs {
@@ -35,7 +24,7 @@ type JsonSchemaNode = {
 };
 
 function attrsFromNode(node: JsonSchemaNode, required: boolean, field: string): HtmlInputAttrs {
-  // nullable → anyOf [T, null]: a field that may be empty is not required
+  // nullable is anyOf [T, null]: not required
   let n = node;
   let nullable = false;
   if (n.anyOf) {
@@ -52,13 +41,10 @@ function attrsFromNode(node: JsonSchemaNode, required: boolean, field: string): 
   else if (n.format === 'uri') attrs.type = 'url';
   if (n.minLength !== undefined) attrs.minlength = n.minLength;
   if (n.maxLength !== undefined) attrs.maxlength = n.maxLength;
-  // A typed field's own format check covers it; zod's email pattern is
-  // not meant as an HTML pattern.
+  // A typed field's format check covers it; zod's email pattern isn't meant for HTML.
   if (n.pattern !== undefined && attrs.type === undefined) {
     if (compilesAsHtmlPattern(n.pattern)) attrs.pattern = n.pattern;
-    // console.warn on purpose, not src/lib/platform/logger.ts: this module is
-    // Astro-bundled (frontmatter imports it) and the winston logger must
-    // stay out of the Vite bundle (docs/conventions/CODE_STYLE.md §6).
+    // console.warn: this module is Astro-bundled, and winston must stay out of the bundle.
     else
       console.warn(
         `zodSchemaToHTMLAttributes: ${field}: pattern /${n.pattern}/ is not valid under the HTML v flag — omitted`,
@@ -78,10 +64,6 @@ export function compilesAsHtmlPattern(pattern: string): boolean {
 }
 
 /**
- * Given a ZodObject schema, return a record mapping each field name
- * to its derived HTML validation attributes.
- *
- * Usage:
  * ```astro
  * const validation = zodSchemaToHTMLAttributes(MySchema);
  * <wa-input name="email" {...validation.email}></wa-input>

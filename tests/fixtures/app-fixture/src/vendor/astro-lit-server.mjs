@@ -1,18 +1,8 @@
-// VENDORED copy of @awesome.me/astro-lit's server.js — the renderer
-// entrypoint the integration force-EXTERNALIZES (its own vite config puts
-// it on ssr.external, and it readFileSync()s its package.json relative to
-// its own module URL, which only works unbundled). Externalized, the
-// built entry would import '@awesome.me/astro-lit/server.js' at SERVE
-// time through the app's node_modules symlinks — exactly the resolution
-// the apps-plan §5 self-containment property forbids. This copy is
-// identical except: the './server-shim.js' import points at our verbatim
-// shim copy, and the self-read is replaced by the literal name (the
-// original reads package.json only to get that string). Every import is
-// a bare specifier the fixture's astro.config resolution-alias maps to
-// its node_modules link, so the build inlines the whole renderer; the
-// non-relative imports left in the built graph are node: builtins only
-// (tools/check-app-selfcontained.mjs gates it). The kit branch ships a
-// compiled renderer and this copy goes away.
+// Vendored copy of @awesome.me/astro-lit's server.js. Upstream forces it
+// external and reads its own package.json at runtime, so the built entry
+// would resolve it through node_modules at serve time. Differences: the shim
+// import points at our copy, and the package.json read is a literal name.
+// Every import is aliased to node_modules at build so the renderer inlines.
 import './astro-lit-server-shim.mjs';
 
 import { LitElementRenderer } from '@lit-labs/ssr/lib/lit-element-renderer.js';

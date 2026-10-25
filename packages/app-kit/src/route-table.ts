@@ -1,30 +1,14 @@
-// route-table.ts — the route-table binder (docs/plans/apps-plan.md §5): an app
-// declares ONE table (src/routes.ts — name, method, path, zod in, handler
-// → Result) and the kit binds it to every face the plan promised:
+// The route-table binder: an app declares one table (src/routes.ts: name,
+// method, path, zod schemas, handler → Result) and the kit binds it to:
 //
-//   (a) handleApiRequest()/astroApiHandlers() — the Astro catch-all API
-//       glue: method+path matching, zod parse, handler, Result→HTTP. An
-//       app's src/pages/api/[...path].ts delegates here; unknown
-//       method+path answers 404 Result JSON.
-//   (b) toMcpToolShapes() — MCP tool shapes (name, description,
-//       inputSchema as JSON schema, converted from the zod schemas by the
-//       documented subset in zodToJSONSchema below).
-//   (c) createRouteClient() — the typed client for sibling calls: one
-//       function per entry, issuing the very HTTP request the entry names
-//       (plan §3: "no parallel RPC to invent or let drift"), reading the
-//       Result JSON back.
-//   (d) serializeRouteTable() (+ writeRouteTable in route-table-emit.ts)
-//       — dist/route-table.json: what describe/call and the app's MCP
-//       shim read.
+//   (a) handleApiRequest()/astroApiHandlers(): the Astro catch-all API.
+//   (b) toMcpToolShapes(): MCP tool shapes, schemas converted to JSON schema.
+//   (c) createRouteClient(): a typed client issuing the same HTTP requests.
+//   (d) serializeRouteTable(): dist/route-table.json, for describe/call and
+//       the app's MCP shim.
 //
-// Results are the wire bodies VERBATIM (plan §0: one action vocabulary —
-// same Result JSON on the UI, the tools and the sibling calls); statuses
-// come from the entry's errorStatus map, one status per closed error
-// code, exhaustive by construction. Binder-own failures (unknown route,
-// invalid input, a thrown handler) are the RouteApi family below.
-//
-// Node-free — client islands may import the client face; only
-// route-table-emit.ts (the build-time writer) touches node:fs.
+// Results go over the wire verbatim; statuses come from each entry's
+// errorStatus map. Node-free: only route-table-emit.ts touches node:fs.
 import type { z } from 'zod';
 import type { APIRoute } from 'astro';
 import { jsonResponse } from './web/responses.service';
@@ -32,19 +16,13 @@ import type { Result, ResultFailure } from './types/result';
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
-/** Any Result a table entry's handler may return (apps bring their own
- *  families; `string` is the loosest closed shape). */
+/** Apps bring their own families; `string` is the loosest closed shape. */
 export type RouteResult = Result<string, object, string>;
 
-/** The error codes of everything a handler can return (success members
- *  distribute away). */
 type RouteErrors<R> = R extends { ok: false; errorCode: infer E } ? E : never;
 
-/** What a handler receives: the entry's parsed parts. params are the
- *  :segments of the path — they arrive as STRINGS (use z.coerce.number()
- *  and friends when a param is not a string); query is the URL's search
- *  params (last value wins per key); body is the parsed JSON body
- *  (application/json only). */
+/** params arrive as strings (use z.coerce for others); query is the search
+ *  params, last value wins; body is parsed JSON (application/json only). */
 export interface RouteInput<Params, Query, Body> {
   params: Params;
   query: Query;
@@ -53,45 +31,33 @@ export interface RouteInput<Params, Query, Body> {
 
 type OptionalSchemaOutput<S> = S extends z.ZodTypeAny ? z.output<S> : undefined;
 
-// The loose table the binder's runtime reads through carries the same
-// deliberate `any`s as the distribution any in types/result.ts — see
-// AnyRouteEntry below.
-/** One entry: declared with defineRoute() below so params/query/body and
- *  the handler's Result family all infer from one object literal. */
+/** Declare with defineRoute() so everything infers from one literal. */
 export interface RouteEntry<
   Params extends z.ZodTypeAny = z.ZodTypeAny,
   Query extends z.ZodTypeAny | undefined = undefined,
   Body extends z.ZodTypeAny | undefined = undefined,
   R extends RouteResult = RouteResult,
 > {
-  /** Unique across the table — the MCP tool name and the client method. */
+  /** Unique in the table: the MCP tool name and client method. */
   name: string;
-  /** One line, third person: the tool description and the table doc. */
+  /** One line, third person. */
   description: string;
   method: HttpMethod;
-  /** Path with :param segments, relative to the app's baked base
-   *  ('/api/notes/:id'). */
+  /** Relative to the app's base, with :param segments ('/api/notes/:id'). */
   path: string;
-  /** Parses the path's :params (required on every entry — z.object({})
-   *  when the path has none). */
+  /** Required on every entry: z.object({}) when the path has none. */
   params: Params;
-  /** Parses the query string as an object of strings. */
   query?: Query;
-  /** Parses the JSON body (methods that carry one). */
   body?: Body;
-  /** One status per error code of the family the handler returns — the
-   *  entry's own responses.service, exhaustive by type: a new code is a
-   *  type error here until it gets a status. */
+  /** One status per error code; a new code is a type error until it gets one. */
   errorStatus: { [E in RouteErrors<R>]: number };
-  /** Success status override (e.g. 201 for creates); 200 by default. */
+  /** Default 200. */
   successStatus?: number;
   handler: (
     input: RouteInput<z.output<Params>, OptionalSchemaOutput<Query>, OptionalSchemaOutput<Body>>,
   ) => R | Promise<R>;
 }
 
-/** Declare one entry with full inference (params/query/body schemas, the
- *  handler's Result family and the errorStatus map check each other). */
 export function defineRoute<
   Params extends z.ZodTypeAny,
   Query extends z.ZodTypeAny | undefined,
@@ -105,11 +71,9 @@ export function defineRoute<
 export type AnyRouteEntry = RouteEntry<any, any, any, any>;
 export type RouteTable = readonly AnyRouteEntry[];
 
-// ---------- (a) the HTTP face ----------
+// ---------- (a) HTTP ----------
 
-/** Binder-own failures: the closed family everything around the handlers
- *  answers with (an entry's handler failures use the entry's own family
- *  and errorStatus map). */
+/** The binder's own failures (entries use their own families). */
 export type RouteApiErrorCode =
   | 'route_not_found'
   | 'method_not_allowed'
@@ -122,16 +86,12 @@ export type RouteApiErrorCode =
 export type RouteApiFailure = ResultFailure<'route_api', object, RouteApiErrorCode>;
 
 export interface BindRoutesOptions {
-  /** Strip this prefix from the request path before matching — the app's
-   *  baked Astro base ('/apps/notes'), so entries name paths the way the
-   *  app thinks of them ('/api/notes/:id'). */
+  /** The app's baked base, stripped before matching. */
   basePath?: string;
 }
 
 const splitSegments = (p: string): string[] => p.split('/').filter(s => s.length > 0);
 
-/** Match a request path against an entry's :param pattern; the captured
- *  params (raw string segments) or null. */
 function matchPath(pattern: string, segments: string[]): Record<string, string> | null {
   const pat = splitSegments(pattern);
   if (pat.length !== segments.length) return null;
@@ -156,9 +116,7 @@ function routeApiFailure(
   );
 }
 
-/** zod issues → the per-field record the house validation bodies carry
- *  (first issue per field, dotted path, "" for the root — parseZod's
- *  shape, so tool results and sibling calls read one format). */
+/** First issue per field, dotted path ("" for the root): parseZod's shape. */
 function zodIssues(error: z.ZodError): Record<string, string> {
   const issues: Record<string, string> = {};
   for (const issue of error.issues) {
@@ -168,13 +126,11 @@ function zodIssues(error: z.ZodError): Record<string, string> {
   return issues;
 }
 
-/** The Astro catch-all API glue: match, parse, run, map. An app's
- *  src/pages/api/[...path].ts delegates every method here:
+/** Match, parse, run, map. An app's src/pages/api/[...path].ts:
  *
  *   export const { GET, POST, PATCH, PUT, DELETE } =
  *     astroApiHandlers(routes, { basePath: import.meta.env.BASE_URL });
- *
- * (or calls handleApiRequest() directly from its own handlers). */
+ */
 export async function handleApiRequest(
   request: Request,
   table: RouteTable,
@@ -247,8 +203,6 @@ export async function handleApiRequest(
   return jsonResponse(result, status);
 }
 
-/** Every method Astro routes export, delegating to handleApiRequest —
- *  the one-liner an app's [...path].ts route spreads. */
 export function astroApiHandlers(
   table: RouteTable,
   options: BindRoutesOptions = {},
@@ -257,20 +211,15 @@ export function astroApiHandlers(
   return { GET: handler, POST: handler, PATCH: handler, PUT: handler, DELETE: handler };
 }
 
-// ---------- (b) MCP tool shapes + (d) the serialized table ----------
+// ---------- (b) MCP tool shapes, (d) serialized table ----------
 
-/** JSON schema, as far as the documented subset below goes. Unknown zod
- *  constructs convert to {} (permissive) — never a wrong rejection. */
+/** Unknown zod constructs convert to {}, never a wrong rejection. */
 export type JsonSchema = Record<string, unknown>;
 
-/** zod → JSON schema, the documented subset: objects (properties,
- *  required, additionalProperties: false), strings (minLength/maxLength),
- *  numbers (integer, bounds), booleans, enums/literals (enum/const),
- *  arrays, records, unions, nullable, optional/default (unwrapped),
- *  .describe() → description. Everything else (dates, effects, template
- *  literals, …) becomes {} — an MCP client never rejects valid input on
- *  the kit's account. Reads zod's _zod.def shape (v4); guarded access,
- *  total function. */
+/** The supported subset: objects, strings (length), numbers (integer,
+ *  bounds), booleans, enums/literals, arrays, records, unions, nullable,
+ *  optional/default (unwrapped) and .describe(). Anything else becomes {}.
+ *  Reads zod v4's _zod.def. */
 export function zodToJSONSchema(schema: z.ZodTypeAny): JsonSchema {
   return convert(schema);
 }
@@ -288,9 +237,7 @@ function convert(schema: z.ZodTypeAny): JsonSchema {
       const required: string[] = [];
       for (const [key, value] of Object.entries(shape)) {
         properties[key] = convert(unwrap(value));
-        // optionality is a property of the WRAPPER, so it is read before
-        // unwrap() strips it — reading it after would mark every optional
-        // field required (the notes app's emitted table caught that).
+        // Optionality lives on the wrapper, so read it before unwrap().
         const wrapper = value._zod.def.type;
         if (wrapper !== 'optional' && wrapper !== 'default') required.push(key);
       }
@@ -377,8 +324,7 @@ function convert(schema: z.ZodTypeAny): JsonSchema {
       return node;
     }
     default:
-      // optional/default are unwrapped by the caller (unwrap below);
-      // anything else (pipe, date, effects, catch, …) is permissive.
+      // optional/default are unwrapped by the caller; the rest is permissive.
       return Object.keys(node).length ? node : {};
   }
 }
@@ -390,10 +336,8 @@ function unwrap(schema: z.ZodTypeAny): z.ZodTypeAny {
   return t === 'optional' || t === 'default' ? unwrap(def.innerType) : schema;
 }
 
-/** An entry's flattened input schema: params + query + body properties in
- *  ONE object (an MCP tool takes one input object). The namespaces share
- *  the flat key space — a name used twice collides (body wins, in
- *  declaration order params → query → body); name them apart. */
+/** params + query + body flattened into one object (a tool takes one
+ *  input). Duplicate names collide, later namespaces winning. */
 export function flattenedInputSchema(entry: AnyRouteEntry): JsonSchema {
   const properties: Record<string, JsonSchema> = {};
   let required: string[] = [];
@@ -415,8 +359,6 @@ export function flattenedInputSchema(entry: AnyRouteEntry): JsonSchema {
   return node;
 }
 
-/** One MCP tool shape per entry (inputSchema is a JSON schema; tools read
- *  results as Result JSON verbatim — the shim's contract). */
 export interface McpToolShape {
   name: string;
   description: string;
@@ -431,9 +373,7 @@ export function toMcpToolShapes(table: RouteTable): McpToolShape[] {
   }));
 }
 
-/** One dist/route-table.json entry — what describe/call and the app's
- *  MCP shim read (same shape the internal API's verbs are described in:
- *  name, method, path, input, description). */
+/** One dist/route-table.json entry. */
 export interface SerializedRouteEntry {
   name: string;
   method: HttpMethod;
@@ -442,7 +382,6 @@ export interface SerializedRouteEntry {
   input: JsonSchema;
 }
 
-/** The serialized table — the dist/route-table.json body. */
 export function serializeRouteTable(table: RouteTable): SerializedRouteEntry[] {
   return table.map(entry => ({
     name: entry.name,
@@ -453,11 +392,10 @@ export function serializeRouteTable(table: RouteTable): SerializedRouteEntry[] {
   }));
 }
 
-// ---------- (c) the typed client ----------
+// ---------- (c) typed client ----------
 
-/** The client's own failure: the HTTP call itself failed (network error,
- *  a non-JSON answer — a proxy's 502 HTML page). Everything else is the
- *  entry's Result JSON, verbatim. */
+/** The call itself failed (network, or a non-JSON answer like a proxy's
+ *  502 page). Everything else is the entry's Result, verbatim. */
 export type RouteClientTransportFailure = {
   ok: false;
   resultType: 'route_client';
@@ -466,20 +404,15 @@ export type RouteClientTransportFailure = {
 };
 
 export interface RouteClientOptions {
-  /** Where the table is served — the app's own base for islands, the host
-   *  socket's origin for sibling calls. A path prefix is kept as-is. */
+  /** The app's base for islands, the host socket's origin for sibling calls. */
   base: string | URL;
-  /** Headers every call carries (auth, when the base needs it). */
   headers?: Record<string, string>;
-  /** Injectable for tests; global fetch by default. */
+  /** for tests */
   fetchImpl?: typeof fetch;
 }
 
-/** A table's client: one function per entry, typed by that entry (the
- *  handler's Result family is the return; params are the :segments).
- *  query/body inputs are loosely typed (Record<string, unknown> /
- *  unknown) — the binder validates them against the entry's schemas at
- *  runtime; wrap locally when you want them precise. */
+/** One function per entry, returning its handler's Result family. query
+ *  and body are loosely typed; the binder validates them at runtime. */
 export function createRouteClient<T extends RouteTable>(
   table: T,
   options: RouteClientOptions,

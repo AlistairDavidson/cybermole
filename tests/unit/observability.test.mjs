@@ -1,10 +1,6 @@
-// observability.test.mjs — static validation of the compose-side
-// observability stack (this sandbox has no docker daemon; the shape is
-// checked here so a host bring-up can only fail on runtime concerns).
-// Parses compose.yaml, deploy/loki/config.yaml and the grafana datasource
-// provisioning with the `yaml` package (transitively lockfile-pinned via
-// astro — no new dependency) and asserts the invariants the logger
-// (src/lib/platform/logger.ts) and README document.
+// Static checks of the compose observability stack (no docker here): parses
+// compose.yaml, the loki config and the grafana provisioning, and asserts
+// what the logger and README rely on.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -33,8 +29,7 @@ test('loki, loki-init and grafana are opt-in behind the observability profile', 
     assert.ok(svc, `${name} service exists`);
     assert.deepEqual(svc.profiles, ['observability'], `${name} is profile-gated`);
   }
-  // profile-gated services must not start on plain up: cybermole/workspace
-  // carry no profiles, the dev trio and the observability trio do.
+  // profile-gated services don't start on a plain up
   for (const name of ['cybermole', 'workspace', 'seaweedfs']) {
     assert.equal(compose.services[name].profiles, undefined, `${name} starts on plain up`);
   }
@@ -43,8 +38,7 @@ test('loki, loki-init and grafana are opt-in behind the observability profile', 
 
 test('loki publishes no port and is reached over the compose network', () => {
   assert.equal(compose.services.loki.ports, undefined);
-  // cybermole gets the push URL through compose interpolation — empty default
-  // means console-only logging on a plain up.
+  // an empty default push URL means console-only logging on a plain up
   assert.equal(
     compose.services.cybermole.environment.CYBERMOLE_LOKI_URL,
     '${CYBERMOLE_LOKI_URL:-}',
@@ -129,12 +123,10 @@ test('resource limits are set and modest on the observability services', () => {
   }
 });
 
-// The code-side env contract the compose wiring meets.
+// The env contract the compose wiring meets.
 const { envSchema } = await import('../../dist-server/src/lib/platform/env-schema.js');
 
-/** readLokiConfig() in a fresh process (RAW_ENV is read at module load —
- *  same pattern as the CYBERMOLE_S3_* boot checks in storage.test.mjs), or
- *  its error. */
+/** In a fresh process (RAW_ENV is read at load): the config or its error. */
 function bootConfig(env) {
   const clean = Object.fromEntries(
     Object.entries(process.env).filter(([k]) => !k.startsWith('CYBERMOLE_LOKI_')),

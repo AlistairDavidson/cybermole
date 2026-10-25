@@ -1,7 +1,5 @@
 ---
-// Frontmatter imports SSR the wa-* components (astro-lit, declarative
-// shadow DOM); the client script below re-imports them so the browser
-// upgrades them — both halves, like the console's login page.
+// These wa-* imports only SSR; the client script re-imports them so they upgrade.
 import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 const builtAt = new Date().toISOString();
@@ -31,9 +29,7 @@ const builtAt = new Date().toISOString();
       </wa-card>
     </main>
     <script>
-      // Support modules MUST precede the wa-* imports — if the SSR'd
-      // elements define before lit hydration support installs, they
-      // render twice (@awesome.me/astro-lit README).
+      // Must precede the wa-* imports, or SSR'd elements render twice.
       import '@awesome.me/astro-lit/dsd-polyfill.js';
       import '@awesome.me/astro-lit/hydration-support.js';
       import '@awesome.me/webawesome/dist/components/card/card.js';

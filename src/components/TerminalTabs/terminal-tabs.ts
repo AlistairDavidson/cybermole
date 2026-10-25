@@ -1,38 +1,16 @@
-// terminal-tabs.ts — <terminal-tabs>: the selected workspace's tab bar and
-// panes (plan §8). Light DOM (xterm injects its own styles; the bar is
-// plain buttons + wa-icon, upgraded when this module defines them).
+// <terminal-tabs>: the selected workspace's tab bar and panes. Each tab's
+// <agent-terminal> is created on first activation and stays connected while
+// hidden. The editor tab (an iframe of the /editor proxy) is pinned last.
+// Bar updates are granular node moves and class flips, never innerHTML
+// swaps, so listeners and focus survive.
 //
-// One <agent-terminal> per terminal tab, created on the tab's FIRST
-// activation: a never-activated tab holds no xterm/WS/WebGL at all, an
-// activated-then-hidden tab KEEPS its instance connected (state and
-// scrollback persist, matching how tmux detach works) and activate()
-// restores it on re-show. The editor tab is pinned last — an iframe of
-// the same-origin /editor proxy with the workspace cwd as the ?folder=
-// param (spike-pinned URI-encoded), created only when the editor tab is
-// opened — and rendered only when the editor is configured. Tab-bar
-// updates are granular (per-tab dot flips and label edits), never
-// innerHTML swaps of the bar (the AGENTS.md sidebar caveat): sync()
-// moves/adds/removes button nodes and touches classes.
+// Pop-out moves a terminal to its own browser tab (/?t=<id>). It's a move,
+// not a copy: the server attaches with `tmux attach -d`, so two clients
+// would bump each other. The pane's socket closes but the session survives;
+// the terminal comes back when the popped tab closes or this tab is clicked.
 //
-// Pop-out (the pane toolbar's pop-out button, task/popout-toolbar): a
-// tab pops to its own browser TAB at /?t=<id> — a MOVE, not a copy: the
-// server's attach runs `tmux attach -d`, which detaches any other
-// client, so a popped tab and an in-page pane would fight over the
-// session. Popping tears the pane down here (socket closed; the SESSION
-// survives — unlike close-terminal, which kills it), keeps the row
-// (marked popped, a notice in the body), and the terminal comes back on
-// the popped tab's pagehide (this page holds the window handle — same
-// origin; window.open returns one for a tab too) or on the tab's next
-// activation (a fresh attach bumps the popped tab, once, no loop). The
-// button lives in the ACTIVE pane's toolbar (agent-terminal.ts's
-// ensureToolbar), so its click arrives here as a bubbled
-// 'terminal-pop-out' {id} — the panes are this element's descendants.
-//
-// Emits: new-terminal {workspaceId}, close-terminal {id},
-// new-workspace {appId} (the no-workspace empty state's prompt),
-// pop-blocked {id} (a pop-out the browser refused — the pane never
-// moved; <console-app> explains). All bubble to <console-app>, which
-// owns the dialogs and the API calls.
+// Emits (bubbling, handled by <console-app>): new-terminal {workspaceId},
+// close-terminal {id}, new-workspace {appId}, pop-blocked {id}.
 import type { TerminalState, WorkspaceState } from '../../lib/platform/types';
 import type { TerminalId, TmuxSessionName, WorkspaceId } from '@cybermole/app-kit';
 import { BASE } from '../../base';
@@ -41,30 +19,17 @@ import '@awesome.me/webawesome/dist/components/button/button.js';
 import type { AgentTerminal } from '../AgentTerminal/agent-terminal';
 import '../AgentTerminal/agent-terminal';
 
-/** The editor tab's pseudo-id (a terminal id is a uuid — no collision). */
+/** A terminal id is a uuid, so no collision. */
 const EDITOR = 'editor';
 
-/** The editor pane's src: the same-origin /editor proxy with the
- *  workspace cwd as the ?folder= param (spike-pinned, URI-encoded). No
- *  theme param — VERIFIED against the vendored reh-web build (1.140.x,
- *  docs/guides/editor-webapp.md): the workbench client parses only folder/
- *  workspace/ew from the URL, so a theme param would be ignored. The
- *  workbench instead follows the BROWSER's scheme at boot (the proxy
- *  injects window.autoDetectColorScheme — src/lib/terminals/editor.ts), which is
- *  why a mode flip RELOADS the iframe (see the observer below): a reload
- *  re-reads the scheme at boot and lands the pane in the new mode. */
+/** No theme param: the workbench only reads folder/workspace/ew from the
+ *  URL. It follows the browser's scheme at boot instead, so a mode flip
+ *  reloads the iframe. */
 const editorSrc = (cwd: string): string => `${BASE}/editor/?folder=${encodeURIComponent(cwd)}`;
 
-// One page-wide observer (the agent-terminal shared-wake pattern): when
-// Base.astro's blocking script flips html's wa-dark/wa-light classes, an
-// existing editor pane re-navigates. Re-assigning src (even the same
-// value) is a reload per the iframe spec — the workbench re-boots in the
-// now-current mode. The injected autoDetectColorScheme default
-// (src/lib/terminals/editor.ts) sometimes re-themes a booted workbench live too,
-// but not reliably (it rides a theme-file fetch); the reload is the
-// deterministic path and is task-sanctioned — the two converge on the
-// same theme either way. Workspace state is server-side; nothing is
-// lost but the pane's scroll position.
+// On a colour-mode flip, reload any editor pane (re-assigning src reloads)
+// so the workbench boots in the new mode. Its own live re-theming is
+// unreliable. Only scroll position is lost.
 let editorThemeArmed = false;
 function armEditorThemeReload(): void {
   if (editorThemeArmed) return;
@@ -75,8 +40,7 @@ function armEditorThemeReload(): void {
   }).observe(document.documentElement, { attributeFilter: ['class'], attributes: true });
 }
 
-/** After a popped window's pagehide, how long before `closed` is trusted
- * (the close settles just after the event; a navigation does not). */
+/** After a popped tab's pagehide, wait this long before trusting `closed`. */
 const POPUP_GONE_MS = 300;
 
 type ActiveTab = TerminalId | typeof EDITOR | null;
@@ -89,29 +53,23 @@ export class TerminalTabs extends HTMLElement {
   private readonly panes = new Map<TerminalId, AgentTerminal>();
   private bar: HTMLElement | null = null;
   private body: HTMLElement | null = null;
-  /** Popped tabs — the live window handle of each (window.open returns
-   *  one for a tab too; its pagehide brings the terminal back, `closed`
-   *  catches a tab that died without one). */
+  /** Popped tabs' window handles; pagehide or `closed` brings the terminal back. */
   private readonly popped = new Map<TerminalId, Window>();
-  /** The active popped tab's body notice (only one tab can be popped AND
-   *  active; clicking any other tab clears it). */
+  /** Only one tab can be both popped and active. */
   private poppedNotice: HTMLElement | null = null;
   private editorTab: HTMLButtonElement | null = null;
   private plusButton: HTMLButtonElement | null = null;
   private editorPane: HTMLIFrameElement | null = null;
   private runHost: HTMLElement | null = null;
   private runPane: AgentTerminal | null = null;
-  /** The panes' toolbar pop-out buttons arrive as bubbled
-   *  'terminal-pop-out' {id} events — a named field so a reconnect's
-   *  addEventListener dedupes (the reconnectNow pattern in
-   *  agent-terminal.ts). */
+  /** A named field so re-adding the listener on reconnect dedupes. */
   private readonly onPanePopOut = (e: Event): void => {
     this.popTerminal((e as CustomEvent<{ id: TerminalId }>).detail.id);
   };
 
   connectedCallback(): void {
     this.addEventListener('terminal-pop-out', this.onPanePopOut);
-    if (this.bar) return; // already built
+    if (this.bar) return;
     this.innerHTML = `
       <div class="tabs-bar" role="tablist" aria-label="terminal tabs"></div>
       <div class="tabs-body"></div>`;
@@ -121,12 +79,10 @@ export class TerminalTabs extends HTMLElement {
 
   // ---- workspace lifecycle ----
 
-  /** Show a workspace (null = none selected: the create prompt). Tears
-   *  down the previous workspace's panes — switching workspaces is the
-   *  one place instances are discarded (within a workspace they persist);
-   *  tmux keeps the content, a re-visit re-attaches and redraws.
-   *  initialTab: the tab to activate instead of the first (the ?t= deep
-   *  link) — avoids attaching a pane the deep link immediately hides. */
+  /** null shows the create prompt. Switching workspaces is the one place
+   *  panes are discarded; tmux keeps the content. initialTab (the ?t= deep
+   *  link) is activated instead of the first, so no pane attaches only to
+   *  be hidden. */
   setWorkspace(ws: WorkspaceState | null, editorEnabled: boolean, initialTab?: TerminalId): void {
     this.ws = ws;
     this.editorEnabled = editorEnabled;
@@ -153,8 +109,6 @@ export class TerminalTabs extends HTMLElement {
       return;
     }
     this.body.innerHTML = '';
-    // addTabButton + updateTabButton: the bar renders with the state's
-    // dots/labels immediately — live flags are in hand, no poll needed.
     for (const [i, t] of ws.terminals.entries()) {
       this.addTabButton(t);
       this.updateTabButton(t, i);
@@ -168,22 +122,17 @@ export class TerminalTabs extends HTMLElement {
     else if (!this.selectFirstTerminal()) this.renderNoTerminals();
   }
 
-  /** Reconcile with a fresh state poll: add new tabs (in order), drop
-   *  closed ones (destroying their panes), flip dots and edit labels —
-   *  granular, per-tab; the bar's nodes are moved into order, never
-   *  rebuilt, so listeners and focus survive. */
+  /** Granular reconcile with a fresh poll: nodes are moved, never rebuilt. */
   sync(ws: WorkspaceState): void {
     if (!this.bar || this.ws?.id !== ws.id) return;
     this.ws = ws;
-    // order first: appendChild MOVES existing buttons into state order,
-    // then the editor tab and + button are re-pinned last.
+    // appendChild moves buttons into state order; editor and + stay last.
     for (const t of ws.terminals) {
       if (!this.tabs.has(t.id)) this.addTabButton(t);
       this.bar.appendChild(this.tabs.get(t.id)!);
     }
     if (this.editorTab) this.bar.appendChild(this.editorTab);
     if (this.plusButton) this.bar.appendChild(this.plusButton);
-    // granular updates + removals
     const seen = new Set<TerminalId>();
     ws.terminals.forEach((t, i) => {
       seen.add(t.id);
@@ -206,13 +155,9 @@ export class TerminalTabs extends HTMLElement {
 
   // ---- pop-out ----
 
-  /** Pop a tab's terminal out to its own tab (/?t=<id> re-attaches it
-   *  there through the deep-link path). MOVE, not copy: the popped
-   *  tab's `tmux attach -d` would detach this page's pane the moment it
-   *  attached, so the pane goes first — its socket closes, the SESSION
-   *  survives (destroy(), not the close-terminal kill). The row stays,
-   *  marked popped; the terminal returns on the popped tab's pagehide
-   *  or the tab's next click. */
+  /** Closes the pane before the popped tab attaches (its `attach -d` would
+   *  bump this one). destroyPane only closes the socket; the close-terminal
+   *  path would kill the session. */
   popTerminal(id: TerminalId): void {
     if (!this.ws || !this.ws.terminals.some(t => t.id === id)) return;
     const existing = this.popped.get(id);
@@ -220,12 +165,11 @@ export class TerminalTabs extends HTMLElement {
       if (!existing.closed) {
         existing.focus();
         return;
-      } // already popped: the click focuses its tab
-      this.unpop(id); // its tab died without a pagehide (crash): stale mark
+      }
+      this.unpop(id); // its tab died without a pagehide
     }
-    // Open BEFORE tearing down: a refused open (this is the user-gesture
-    // call) must leave the pane exactly as it was. No features string:
-    // '_blank' alone is the browser's own NEW TAB, not a sized popup.
+    // Open before tearing down, so a blocked open leaves the pane intact.
+    // '_blank' with no features string is a new tab, not a popup.
     const win = window.open(`${BASE}/?t=${id}`, '_blank');
     if (!win) {
       this.dispatchEvent(
@@ -238,21 +182,11 @@ export class TerminalTabs extends HTMLElement {
       return;
     }
     this.popped.set(id, win);
-    // HOOK(popout-toolbar): the MOVE's teardown half — close this page's
-    // pane socket BEFORE the popped tab can attach, so its `attach -d`
-    // finds no client to detach (both attached, they would bump each
-    // other; reusing the close-terminal path here would instead KILL the
-    // tmux session the popped tab is about to open). destroyPane only
-    // closes the socket: the session survives for the popped tab's
-    // attach.
     this.destroyPane(id);
     this.markPopped(id, true);
     this.showPoppedNotice();
-    // The pagehide listener rides the popped tab's window object, which
-    // same-origin navigation REUSES — so the initial about:blank →
-    // /?t=<id> swap fires pagehide too. Count it only once the tab is
-    // really gone (a swap leaves it open; a close flips `closed`), checked
-    // after a beat to let the close settle.
+    // Same-origin navigation reuses the window, so the about:blank → /?t=
+    // swap fires pagehide too. Only count it once `closed` is true.
     win.addEventListener('pagehide', () => {
       setTimeout(() => {
         if (win.closed) this.popupClosed(id, win);
@@ -260,26 +194,18 @@ export class TerminalTabs extends HTMLElement {
     });
   }
 
-  /** The popped tab went away (its pagehide reaches this page through
-   *  the handle — same origin). The active popped tab re-attaches here
-   *  right away; an inactive one just drops its mark (its next
-   *  activation attaches a fresh pane). */
+  /** The active popped tab re-attaches here at once; an inactive one just drops its mark. */
   private popupClosed(id: TerminalId, win: Window): void {
-    if (this.popped.get(id) !== win) return; // reclaimed / re-popped / torn down meanwhile
+    if (this.popped.get(id) !== win) return; // reclaimed or re-popped meanwhile
     this.unpop(id);
     if (this.active === id) this.selectTerminal(id);
   }
 
-  /** Drop a tab's popped mark (its tab, if any, is no longer this
-   *  page's to manage — an old handle's pagehide is ignored above). */
   private unpop(id: TerminalId): void {
     if (this.popped.delete(id)) this.markPopped(id, false);
   }
 
-  /** The popped class on a tab's row button (dimmed — its terminal
-   *  lives in another tab) — and its aria label NOW, not at
-   *  the next sync poll (updateTabButton recomputes the same string from
-   *  state, so the two can never disagree). */
+  /** Updates the aria label now rather than at the next poll. */
   private markPopped(id: TerminalId, on: boolean): void {
     const tab = this.tabs.get(id);
     if (!tab) return;
@@ -289,8 +215,7 @@ export class TerminalTabs extends HTMLElement {
     if (i >= 0) this.updateTabButton(ws!.terminals[i]!, i);
   }
 
-  /** The body's "this terminal is elsewhere" notice — the popped tab
-   *  stays selected, so its pane's spot must say where it went. */
+  /** The popped tab stays selected, so its spot says where the terminal went. */
   private showPoppedNotice(): void {
     this.clearPoppedNotice();
     if (!this.body) return;
@@ -310,19 +235,15 @@ export class TerminalTabs extends HTMLElement {
 
   // ---- tab selection ----
 
-  /** Activate a terminal tab: creates the pane (and its WS attach) on
-   *  first activation, shows it, hides every other pane. A pane whose
-   *  attach ENDED (the session died out-of-band — plan §4's dead tab) is
-   *  destroyed and re-created, so the click is a fresh attach and the
-   *  server respawns the session at the workspace cwd. */
+  /** A pane whose attach ended (the session died) is re-created, so the
+   *  click is a fresh attach and the server respawns the session. */
   selectTerminal(id: TerminalId): void {
     if (!this.body || !this.ws || !this.ws.terminals.some(t => t.id === id)) return;
     this.hideRun();
     this.clearNoTerminals();
     this.clearPoppedNotice();
-    // A popped tab's click is a bring-back: drop the mark and let the
-    // pane below re-attach (its `attach -d` bumps the popped tab's
-    // client — once; the popped tab's 'exit' ends its attach, no loop).
+    // Clicking a popped tab brings it back: this attach bumps the popped
+    // tab's client once, and its 'exit' ends it, so no loop.
     if (this.popped.has(id)) this.unpop(id);
     this.active = id;
     const dead = this.panes.get(id);
@@ -348,16 +269,11 @@ export class TerminalTabs extends HTMLElement {
     this.markActive();
   }
 
-  /** The ?run=<name> deep link (a live job run — the jobs page's "view"):
-   *  a transient pane above the workspace's tabs, never a tab (a run is
-   *  not a workspace terminal). Clicking any tab (or the editor) hides
-   *  it — hideRun() destroys its instance (socket closed, reconnect
-   *  cancelled), so the next run shows a FRESH attach; there is nothing
-   *  to preserve: the run is the session, and it dies with the command. */
+  /** ?run=<name>: a transient pane for a live job run, never a tab. Hiding
+   *  it destroys the instance, since the run dies with its command anyway. */
   showRun(target: TmuxSessionName): void {
     if (!this.body) return;
-    // like selectTerminal/selectEditor: never show the run pane next to
-    // an empty-state prompt (a workspace with no terminals, or none at all)
+    // Never show the run pane next to an empty-state prompt.
     this.clearNoTerminals();
     this.clearPoppedNotice();
     this.querySelector('.tabs-empty-nows')?.classList.add('hidden');
@@ -379,8 +295,7 @@ export class TerminalTabs extends HTMLElement {
   private hideRun(): void {
     if (this.runPane) this.runPane.destroy();
     this.runHost?.classList.add('hidden');
-    // restore the no-workspace prompt a showRun hid (a workspace switch
-    // rebuilds it anyway — this covers the tab-click path)
+    // Restore the no-workspace prompt showRun hid.
     this.querySelector('.tabs-empty-nows')?.classList.remove('hidden');
   }
 
@@ -388,14 +303,9 @@ export class TerminalTabs extends HTMLElement {
     return this.active === null || this.active === EDITOR ? null : this.active;
   }
 
-  /** The workspace this element is currently showing (the poll's sync()
-   *  guard — also how <console-app> tells a selection change from a
-   *  refresh). */
   activeWorkspaceId(): WorkspaceId | null {
     return this.ws?.id ?? null;
   }
-
-  // ---- internals ----
 
   private tabLabel(t: TerminalState, index: number): string {
     return t.title ?? `term ${index + 1}`;
@@ -431,8 +341,7 @@ export class TerminalTabs extends HTMLElement {
     this.bar.appendChild(tab);
   }
 
-  /** The granular half of sync(): dot + label, only where they changed
-   *  (index-shifted "term N" labels included). */
+  /** Only touches what changed (including index-shifted "term N" labels). */
   private updateTabButton(t: TerminalState, index: number): void {
     const tab = this.tabs.get(t.id);
     if (!tab) return;
@@ -485,9 +394,6 @@ export class TerminalTabs extends HTMLElement {
     this.plusButton = plus;
   }
 
-  /** The selected tab's <agent-terminal>, attached (first activation:
-   *  the pane AND its WS come into existence together — a never-visited
-   *  tab holds neither). */
   private ensurePane(id: TerminalId): AgentTerminal {
     const existing = this.panes.get(id);
     if (existing) return existing;
@@ -499,9 +405,7 @@ export class TerminalTabs extends HTMLElement {
     return el;
   }
 
-  /** The editor iframe pane — created on first open of the editor tab (a
-   *  hidden iframe would still boot the whole workbench), src pinned by
-   *  the spike's ?folder= shape (URI-encoded, editorSrc above). */
+  /** Created on first open: a hidden iframe would still boot the whole workbench. */
   private ensureEditorPane(): void {
     if (this.editorPane || !this.body || !this.ws) return;
     armEditorThemeReload();
@@ -513,8 +417,7 @@ export class TerminalTabs extends HTMLElement {
     this.editorPane = frame;
   }
 
-  /** End one pane's life: socket closed (no reconnect — this is a
-   *  teardown, not a drop), element removed. */
+  /** A teardown, not a drop: no reconnect. */
   private destroyPane(id: TerminalId): void {
     const pane = this.panes.get(id);
     if (!pane) return;
@@ -523,10 +426,7 @@ export class TerminalTabs extends HTMLElement {
     this.panes.delete(id);
   }
 
-  /** Everything pane-shaped goes: terminal panes, the editor iframe, the
-   *  run pane, the bar's buttons, the popped marks (their tabs stay
-   *  open — an old handle's pagehide is a no-op in popupClosed). The
-   *  bar/body shells stay. */
+  /** Popped tabs stay open; their old handles' pagehide is ignored. */
   private teardownPanes(): void {
     for (const id of [...this.panes.keys()]) this.destroyPane(id);
     this.tabs.clear();
@@ -548,8 +448,6 @@ export class TerminalTabs extends HTMLElement {
     this.runHost = null;
   }
 
-  /** Select the workspace's first terminal tab (returns false when there
-   *  is none). Used on workspace switch and when the active tab closed. */
   private selectFirstTerminal(): boolean {
     const first = this.ws?.terminals[0];
     if (!first) return false;
@@ -582,7 +480,6 @@ export class TerminalTabs extends HTMLElement {
     this.querySelector('.tabs-empty-terminals')?.remove();
   }
 
-  /** The run pane's host (hidden until a run is shown). */
   private runPaneHost(): HTMLElement {
     if (!this.runHost) {
       this.runHost = document.createElement('div');
@@ -592,7 +489,6 @@ export class TerminalTabs extends HTMLElement {
     return this.runHost;
   }
 
-  /** Active styling on the bar — class flips, no rebuilds. */
   private markActive(): void {
     for (const [id, tab] of this.tabs) {
       const on = this.active === id;

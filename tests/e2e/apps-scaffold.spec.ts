@@ -1,22 +1,11 @@
-// apps-scaffold.spec.ts — task/app-scaffold (docs/plans/apps-plan.md §1/§6/§10)
-// e2e: the WHOLE build loop through the cybermole-apps verbs, against the
-// shared webServer's real sockets — scaffold a REAL app into the hermetic
-// apps root (the tree lands in WORKSPACE/apps), check it green (the gate,
-// one quiet envelope — this is also the starter template's live
-// verification: a real kit-consuming check + build + self-containment
-// gate), register + reload, then assert it SERVES through the console
-// origin (SSR page + the example action's Result JSON) and shows up in
-// /api/state serving.
+// The whole build loop through the cybermole-apps verbs, against the shared
+// webServer's sockets: scaffold a real app into the hermetic apps root,
+// check it green (which also verifies the starter template), register and
+// reload, then assert it serves through the console origin and shows as
+// serving in /api/state. The verbs are the compiled MCP module's own
+// functions, called in-process; stdio wiring has its own unit.
 //
-// The verbs are the compiled MCP module's own functions (registerTool,
-// reloadTool, … — the exact code the stdio tools call), invoked
-// IN-PROCESS: the e2e exercises the loop, not stdio plumbing (the tool
-// wiring has its own unit).
-//
-// Serial + budget rules: one login() for this file; afterAll unregisters
-// and removes the tree so the fixture world (one app, "alpha app"; the
-// app-fixture tree) stays exact for the other specs. This file runs
-// BEFORE apps.spec.ts (alphabetical), so its leftovers would poison it.
+// Apps-spec discipline: see apps-notes.spec.ts.
 import { expect, test } from '@playwright/test';
 import type { Cookie, Page } from '@playwright/test';
 import * as fs from 'node:fs';
@@ -42,12 +31,9 @@ import { checkApp } from '../../dist-server/src/lib/apps/apps-gate.js';
 
 const REPO = path.resolve(__dirname, '..', '..');
 const SLUG = 'loop-probe';
-/** The entry sweep's once-per-run latch (see beforeAll): inside
- * APPS_ROOT, so the hermetic WORKSPACE's per-run rm -rf makes it
- * run-scoped — nothing else ever needs to clear it. */
+/** Inside APPS_ROOT, so the per-run WORKSPACE rm makes it run-scoped. */
 const SWEEP_MARKER = path.join(APPS_ROOT, `.${SLUG}.swept`);
-/** The MCP's own deps shape, resolved like main() would — against THIS
- *  suite's sockets and hermetic apps root. */
+/** Resolved like main() would, against this suite's sockets and apps root. */
 const deps = {
   appsRoot: APPS_ROOT,
   internalSocketPath: INTERNAL_SOCKET,
@@ -55,13 +41,10 @@ const deps = {
   installRoot: REPO,
 };
 
-// dist-server ships no .d.ts, so the compiled verbs' answers are read
-// as loose JSON here (the units assert the typed shapes); one disable
-// covers the spec's parsed-answer style.
+// dist-server ships no .d.ts, so tool answers are loose JSON here.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- parsed tool JSON
 type Json = any;
 
-/** One tool answer: isError + the parsed body (the tools' result shape). */
 async function tool(
   run: Promise<{ isError?: boolean; content?: Array<{ text?: string }> } | undefined>,
 ): Promise<{ isError: boolean; body: Json }> {
@@ -69,8 +52,7 @@ async function tool(
   return { isError: r?.isError === true, body: JSON.parse(r?.content?.[0]?.text ?? '{}') };
 }
 
-/** Authed in-page JSON fetch (the shared suite idiom — Playwright's API
- *  client doesn't send the Secure session cookie over plain http). */
+/** In-page fetch, so the Secure session cookie is sent. */
 async function api(
   page: Page,
   method: string,
@@ -86,11 +68,8 @@ Promise<{ status: number; json: any }> {
   );
 }
 
-/** Signs in ONCE for this file, the cookie reused after (apps.spec.ts's
- *  helper, copied — the shared 10/15-min login budget). */
-/** Signs in ONCE for the whole RUN — the shared cookie file first (the
- *  sibling apps specs' login budget note, env.ts), this file's own
- *  sign-in only when nobody has signed in yet. */
+/** Signs in once per run: the shared cookie file first, a form sign-in
+ *  only if nobody has yet. */
 let sessionCookie: Cookie | null = null;
 async function login(page: Page): Promise<void> {
   if (!sessionCookie) {
@@ -126,16 +105,9 @@ async function login(page: Page): Promise<void> {
 }
 
 test.beforeAll(async () => {
-  // ENTRY sweep — idempotent by INTENT, but GATED once per run by the
-  // marker: the scheduler may split this file across workers, and a
-  // replacement worker's re-run beforeAll would otherwise unregister +
-  // rm the app an earlier worker's tests in THIS run just built (the
-  // observed mid-test vanishing). The marker lives inside APPS_ROOT
-  // (under the hermetic WORKSPACE — global-setup's per-run rm -rf makes
-  // it run-scoped) and NOTHING removes it mid-run (there is no afterAll:
-  // the run's true cleanup is structural — rows die with the per-run db,
-  // trees with the per-run WORKSPACE rm; later files sweep their own
-  // slugs at entry the same way).
+  // Entry sweep, gated once per run by the marker: the scheduler may split
+  // this file across workers, and a replacement worker's beforeAll would
+  // otherwise unregister and remove what earlier tests in this run built.
   if (fs.existsSync(SWEEP_MARKER)) return;
   fs.mkdirSync(APPS_ROOT, { recursive: true });
   fs.writeFileSync(SWEEP_MARKER, `${process.pid} ${Date.now()}\n`);
@@ -143,7 +115,7 @@ test.beforeAll(async () => {
   try {
     await unregisterTool(deps, SLUG);
   } catch {
-    /* no row — fine */
+    /* no row */
   }
 });
 
@@ -151,15 +123,12 @@ test('the build loop: scaffold → check green → register + reload → serving
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- the fixture is the point: a uniform signature per file (see below)
   page: _page,
 }) => {
-  // `page` asked for (and unused): every test in this file then carries
-  // the SAME fixture signature, so Playwright's scheduler keeps the file
-  // in ONE worker — a mixed fixture set let it split the file across
-  // workers, whose re-run hooks and racing teardowns made the shared
-  // app row vanish mid-test (the pair-run flake). The unused browser
-  // context is ~300ms once per file.
+  // `page` is unused, but giving every test the same fixtures keeps the
+  // file in one worker; split across workers, racing hooks made the app
+  // row vanish mid-test.
   test.setTimeout(240_000);
 
-  // scaffold — the real template, baked, linked, committed.
+  // scaffold: the real template, baked, linked, committed
   const scaffolded: Json = await scaffoldApp(
     {
       appsRoot: APPS_ROOT,
@@ -174,9 +143,7 @@ test('the build loop: scaffold → check green → register + reload → serving
   if (!scaffolded.ok) return;
   expect(scaffolded.data).toMatchObject({ slug: SLUG, linked: true, committed: true });
 
-  // check — THE gate: one quiet envelope, green (this run is the starter
-  // template's live verification: astro check + tsc + units + build +
-  // the §5 self-containment gate, all in the scaffolded tree).
+  // The gate: one quiet envelope, green.
   const checked: Json = await checkApp({ appsRoot: APPS_ROOT, run: runChild }, SLUG);
   expect(checked.ok, JSON.stringify(checked)).toBe(true);
   if (!checked.ok) return;
@@ -185,7 +152,7 @@ test('the build loop: scaffold → check green → register + reload → serving
   expect(envelope.counts?.tests).toEqual({ pass: 3, fail: 0, skipped: 0 });
   expect(fs.existsSync(path.join(APPS_ROOT, SLUG, 'dist', 'route-table.json'))).toBe(true);
 
-  // the status join BEFORE registration: an unregistered tree, built.
+  // Before registration, status shows an unregistered, built tree.
   const pre = await tool(statusTool(deps, SLUG));
   expect(pre.isError).toBe(false);
   expect(pre.body.unregisteredTrees).toEqual([SLUG]);
@@ -197,7 +164,7 @@ test('the build loop: scaffold → check green → register + reload → serving
     mounted: false,
   });
 
-  // register + reload — the sync point (§1's order: row first, then sync).
+  // register, then reload (the sync point)
   const registered = await tool(registerTool(deps, SLUG));
   expect(registered.isError, JSON.stringify(registered)).toBe(false);
   expect(registered.body).toMatchObject({
@@ -213,14 +180,8 @@ test('the build loop: scaffold → check green → register + reload → serving
   ).toContain(SLUG);
 });
 
-/** The browser tests' shared precondition: the app REGISTERED and
- *  MOUNTED, established idempotently. The suite's Playwright scheduler
- *  may split this file across workers (observed: hooks re-run in a
- *  replacement worker while another worker's afterAll tears down the
- *  previous state — the registration a file-order assumption made
- *  vanish mid-test), so each page test re-asserts the world it needs
- *  instead of inheriting it from the previous test. Cheap when the
- *  world is already right: one statusTool round-trip. */
+/** Registered and mounted, re-established per test since the file may be
+ *  split across workers. One status round trip when already right. */
 async function ensureRegisteredAndMounted(): Promise<void> {
   const status = await tool(statusTool(deps, SLUG));
   expect(status.isError, JSON.stringify(status)).toBe(false);
@@ -228,10 +189,7 @@ async function ensureRegisteredAndMounted(): Promise<void> {
   if (!app?.registered) {
     const registered = await tool(registerTool(deps, SLUG));
     expect(registered.isError, JSON.stringify(registered)).toBe(false);
-    // duplicate_slug is the API's green "already there" answer for a
-    // row another worker just registered (the scheduler-split note in
-    // beforeAll) — it satisfies the precondition the same as a fresh
-    // register; every other body is a failure the expect above caught.
+    // duplicate_slug: another worker just registered it, which is fine.
     expect(
       [true, registered.body?.code === 'duplicate_slug'].some(Boolean),
       JSON.stringify(registered),
@@ -250,25 +208,16 @@ test('the scaffolded app serves through the console origin, and /api/state repor
 }) => {
   await ensureRegisteredAndMounted();
   await login(page);
-  // The SSR page (the wa-card's header slot is light DOM inside the
-  // astro-lit declarative-shadow-DOM pipeline) — through the origin,
-  // behind the session gate.
+  // The SSR page, through the origin and behind the session gate.
   await page.goto(`/apps/${SLUG}/`);
   await expect(page.locator('wa-card h1')).toHaveText('Loop Probe');
-  // The island upgraded in the real browser: the preact-signals island's
-  // own rendering (its aria-live paragraph) replaces the SSR'd initial
-  // content once the client script runs.
+  // The island upgraded: its own rendering replaces the SSR'd content.
   await expect(page.locator('.ping-island p[aria-live="polite"]')).toHaveText('— not pinged yet —');
-  // The example action's API answers its Result JSON through the origin.
   const ping = await api(page, 'GET', `/apps/${SLUG}/api/ping?name=loop`);
   expect(ping.status, JSON.stringify(ping.json)).toBe(200);
   expect(ping.json).toMatchObject({ ok: true, resultType: 'ping', data: { hello: 'loop' } });
-  // /api/state carries the app as serving — EVENTUALLY: the flag rides
-  // a ~10 s success-cached host-status snapshot (apps-serving.ts — a
-  // still-open tab's poll can cache a pre-mount snapshot a moment before
-  // the reload lands), so the assertion POLLS past the cache window
-  // instead of demanding an instant the design deliberately doesn't
-  // promise.
+  // Eventually serving: the flag rides a ~10 s cached host-status snapshot,
+  // which an open tab's poll may have taken just before the reload.
   await expect
     .poll(
       async () => {
@@ -292,10 +241,10 @@ test('after unregister the app stops serving but the tree stands (status shows i
   expect(dropped.isError, JSON.stringify(dropped)).toBe(false);
   expect(dropped.body.unregister).toBeTruthy();
   expect(dropped.body.reload).toBeTruthy();
-  // gone through the origin (the proxy's unregistered-slug 404)…
+  // Gone through the origin (the proxy's unregistered-slug 404)…
   const gone = await api(page, 'GET', `/apps/${SLUG}/`);
   expect(gone.status).toBe(404);
-  // …and the tree still stands at the apps root, honestly unregistered.
+  // …while the tree still stands, unregistered.
   expect(fs.existsSync(path.join(APPS_ROOT, SLUG, 'app.json'))).toBe(true);
   const after = await tool(statusTool(deps, SLUG));
   expect(after.isError).toBe(false);

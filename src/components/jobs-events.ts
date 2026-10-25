@@ -1,45 +1,25 @@
-// jobs-events.ts — the jobs pages' /ws/events subscription (plan §7,
-// "live consistency"). The service layer emits domain events at its
-// choke points whoever acted (src/lib/platform/events.ts); the server forwards
-// them over this WebSocket; the page runs the SAME partial refresh its
-// 15 s poll already runs, debounced — one rendering path, no granular
-// DOM patching. The poll STAYS as the safety net (a dropped WS, a
-// missed event, a failure anywhere — the page is at most 15 s stale).
-//
-// The WS reconnects with backoff like the terminal WS
-// (agent-terminal.ts): 1 s doubling to 15 s, reset on a successful
-// open, and a pending backoff fires as soon as the browser reports
-// 'online' again.
-//
-// ACCEPTANCE LINE (plan §7): "a mutation over the internal socket (the
-// agent path) updates an open jobs page without waiting for the poll —
-// asserted in e2e." The orchestrator writes that e2e after merging the
-// internal-socket branch (§3–§4); it mutates a job over the socket API
-// and expects this subscription to refresh an open /jobs or /jobs/:name
-// page well inside the 15 s poll.
+// The jobs pages' /ws/events subscription: on any domain event, re-run the
+// same partial refresh the 15 s poll runs, debounced. The poll stays as the
+// safety net. Reconnects with backoff like the terminal (1 s doubling to
+// 15 s), waking early when the browser comes back online or visible.
 import { BASE } from '../base';
 import { debounceTrailing } from '../lib/platform/debounce';
 
 const RECONNECT_MIN_MS = 1000;
 const RECONNECT_MAX_MS = 15_000;
-/** Bus events can arrive in bursts (a save + a run, several jobs at
- *  once); one refresh per burst. */
+/** Events come in bursts; one refresh per burst. */
 const REFRESH_DEBOUNCE_MS = 250;
 
-/** What the server sends (src/lib/platform/events-ws.ts): a domain event, or one
- *  of the two control frames. Anything else — or nothing parseable at
- *  all — still means "something changed": an empty or unknown payload
- *  triggers the refresh too, never an error. */
+/** A domain event or a control frame. Anything unparseable still triggers a refresh. */
 type EventsFrame = { type?: string };
 
-/** Open (and keep open) the /ws/events subscription for a page. Returns
- *  the teardown the page calls from disconnectedCallback. */
+/** Returns the teardown for disconnectedCallback. */
 export function subscribeJobsEvents(onEvent: () => void): () => void {
   const refresh = debounceTrailing(onEvent, REFRESH_DEBOUNCE_MS);
   let socket: WebSocket | undefined;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectDelay = RECONNECT_MIN_MS;
-  let final = false; // the server said signed-out — never reconnect
+  let final = false; // signed out: never reconnect
   let closedByUs = false;
 
   const scheduleReconnect = (): void => {
@@ -62,11 +42,10 @@ export function subscribeJobsEvents(onEvent: () => void): () => void {
       try {
         frame = JSON.parse(String(ev.data)) as EventsFrame;
       } catch {
-        /* garbage still means "refresh" below */
+        /* garbage still refreshes below */
       }
       if (frame?.type === 'signed-out') {
-        // The session died (logout / expiry): stop here. The page's own
-        // next fetch 401s and navigates to /login.
+        // The page's own next fetch 401s and goes to /login.
         final = true;
         closedByUs = true;
         try {
@@ -76,8 +55,7 @@ export function subscribeJobsEvents(onEvent: () => void): () => void {
         }
         return;
       }
-      // 'restart' (server shutting down) behaves like a drop: the close
-      // handler reconnects with backoff once the server is back.
+      // 'restart' acts like a drop: the close handler reconnects.
       refresh();
     };
     socket.onclose = () => {
@@ -86,14 +64,11 @@ export function subscribeJobsEvents(onEvent: () => void): () => void {
       scheduleReconnect();
     };
     socket.onerror = () => {
-      /* the close that follows does the work */
+      /* the close that follows handles it */
     };
   };
 
-  // A pending backoff must not wait out its full delay once the browser
-  // says the network is back, or the tab is visible again (the terminal
-  // WS wakes on both — agent-terminal.ts; a hidden tab's timers are
-  // throttled, so visibility is the one that usually fires).
+  // Hidden tabs' timers are throttled, so visibility is usually what fires.
   const wake = (): void => {
     if (reconnectTimer === null || final || closedByUs) return;
     if (document.visibilityState === 'hidden') return;

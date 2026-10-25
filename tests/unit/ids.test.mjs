@@ -1,8 +1,6 @@
-// ids.test.mjs — the ID rules (the kit's schemas/patterns.ts + ids.ts — task/app-kit moved them to @cybermole/app-kit): what each
-// validating schema accepts and rejects, that a pass yields the same string
-// (the brand is type-only), and that every pattern still compiles as an
-// HTML `pattern` attribute (the `v` flag — an unescaped `-` in a character
-// class is a syntax error there, and browsers silently drop the pattern).
+// The ID schemas: what each accepts and rejects, that a pass returns the same
+// string (the brand is type-only), and that every pattern compiles as an HTML
+// `pattern` (an unescaped `-` in a class is a `v`-flag syntax error).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {

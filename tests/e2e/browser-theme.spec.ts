@@ -1,22 +1,12 @@
-// browser-theme.spec.ts — task/theme-browser, end to end against the
-// compiled app: the global light/dark mode follows the BROWSER
-// (prefers-color-scheme, emulated by Playwright) on every page — the
-// wa-dark/wa-light class the blocking theme-boot script sets, the two
-// per-mode brand surfaces, color-scheme, the two theme-color metas, a LIVE
-// scheme flip flipping the class and the xterm theme of a live pane, and
-// the editor iframe pane (src + reload on flip).
+// Light/dark follows the browser's prefers-color-scheme on every page: the
+// wa-dark/wa-light class, per-mode surfaces, color-scheme, the theme-color
+// metas, a live flip re-theming a live terminal pane, and the editor pane
+// reloading on a flip.
 //
-// File name sorts BEFORE e2e.spec.ts on purpose: that file's LAST test
-// exhausts the shared server's login rate-limit budget on purpose, so any
-// spec signing in against the shared webServer must run before it. This
-// file signs in through the real form exactly ONCE (the login() helper
-// pattern) and reuses the cookie for its other shared-server tests. The
-// editor-pane test boots its own private server (the terminal-ws.spec
-// pattern: own port + db + login budget) with the editor upstream pointed
-// at a dead port — editor "configured" (the tab and pane exist, which is
-// what the assertions need) without a real VSCodium; the proxy answers 502
-// into the iframe and nothing is asserted of its content. External
-// navigation is blocked at the route level (hermeticity).
+// Sorts before e2e.spec.ts, whose last test exhausts the shared login
+// budget; signs in once. The editor test boots a private server with the
+// editor upstream at a dead port, so the tab and pane exist and the iframe
+// gets 502s. External navigation is blocked.
 import { spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -24,9 +14,8 @@ import * as path from 'node:path';
 import { expect, test, type Cookie, type Page } from '@playwright/test';
 import { PASSWORD, USERNAME } from '../support/env';
 
-// ---------- shared server (the suite webServer, :3470) ----------
+// ---------- shared server ----------
 
-/** The root element's mode classes + the surfaces/metas that follow them. */
 const modeState = (page: Page) =>
   page.evaluate(() => {
     const cls = document.documentElement.classList;
@@ -45,9 +34,7 @@ const modeState = (page: Page) =>
     };
   });
 
-/** Lands on the signed-in console. The FIRST call signs in through the real
- *  login form (one POST /login — the shared budget); later calls reuse the
- *  session cookie, the e2e.spec login() convention. */
+/** The first call signs in through the form; later calls reuse the cookie. */
 let sessionCookie: Cookie | null = null;
 async function login(page: Page): Promise<void> {
   if (sessionCookie) {
@@ -79,19 +66,17 @@ test.describe('browser scheme dark', () => {
       .toBe(true);
     const state = await modeState(page);
     expect(state.light).toBe(false);
-    // the dark brand surface (console.css html.wa-dark: #11131a)
+    // the dark surface (#11131a)
     expect(state.bodyBg).toBe('rgb(17, 19, 26)');
     expect(state.colorScheme).toBe('dark');
-    // both metas, one per mode, carrying the two surfaces
+    // one meta per mode
     expect(state.metaDark).toBe('#11131a');
     expect(state.metaLight).toBe('#e1e2e7');
   });
 
   test('login and offline shells render the same mode (every page is Base)', async ({ page }) => {
-    // /login is pre-auth, /offline the PWA shell — both render through
-    // Base.astro, so the same blocking script and classes apply. The
-    // blocking script must run before first paint, so no poll is needed —
-    // but tolerate the script's first load racing the assert.
+    // /login and /offline render through Base.astro too. The script runs
+    // before first paint, but tolerate its first load racing the assert.
     await page.goto('/login');
     await expect.poll(async () => (await modeState(page)).dark).toBe(true);
     expect((await modeState(page)).bodyBg).toBe('rgb(17, 19, 26)');
@@ -108,8 +93,7 @@ test.describe('browser scheme light', () => {
     await expect.poll(async () => (await modeState(page)).light).toBe(true);
     const state = await modeState(page);
     expect(state.dark).toBe(false);
-    // the light brand surface (console.css html.wa-light: #e1e2e7,
-    // the Tokyo-Night Day counterpart)
+    // the light surface (#e1e2e7)
     expect(state.bodyBg).toBe('rgb(225, 226, 231)');
     expect(state.colorScheme).toBe('light');
   });
@@ -120,12 +104,11 @@ test.describe('live scheme flip', () => {
 
   test("a live flip flips the class and the attached pane's xterm theme", async ({ page }) => {
     await login(page);
-    // The auto-selected fixture tab is a live session: the pane attaches.
     await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText(
       'attached',
       { timeout: 15_000 },
     );
-    // The pane's theme was built from the resolved mode (dark brand bg).
+    // Built from the resolved mode (dark bg).
     await expect
       .poll(async () =>
         page.evaluate(() => {
@@ -137,9 +120,8 @@ test.describe('live scheme flip', () => {
       )
       .toBe('#11131a');
 
-    // LIVE flip: emulateMedia changes matchMedia inside the page, the
-    // theme-boot listener flips the classes, and the agent-terminal class
-    // observer re-themes the live pane at runtime.
+    // A live flip: the theme-boot listener flips the class, and the
+    // terminal's observer re-themes the pane.
     await page.emulateMedia({ colorScheme: 'light' });
     await expect.poll(async () => (await modeState(page)).light).toBe(true);
     await expect
@@ -154,7 +136,7 @@ test.describe('live scheme flip', () => {
       .toBe('#e1e2e7');
     expect((await modeState(page)).bodyBg).toBe('rgb(225, 226, 231)');
 
-    // and back — the flip is repeatable, no reload involved
+    // and back again, no reload
     await page.emulateMedia({ colorScheme: 'dark' });
     await expect.poll(async () => (await modeState(page)).dark).toBe(true);
     await expect
@@ -170,15 +152,13 @@ test.describe('live scheme flip', () => {
   });
 });
 
-// ---------- private server: the editor pane follows the mode ----------
+// ---------- private server: the editor pane ----------
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const PORT = 3487; // clear of the shared :3470 and the specs' 3471–3486
 const BASE = `http://127.0.0.1:${PORT}`;
 
-/** Child env with the CYBERMOLE_ / PI_CODING_AGENT_ overrides stripped: the
- *  values under test must not see this machine's (or the suite webServer's)
- *  explicit settings. */
+/** The machine's and suite's CYBERMOLE_ / PI_CODING_AGENT_ settings must not leak in. */
 function bareEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) {
@@ -191,13 +171,9 @@ function bareEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
 let server: { cookie: string; dir: string } | null = null;
 let child: ReturnType<typeof spawn> | null = null;
 
-/** Boot the private server once for the file — same shape as
- *  terminal-ws.spec's bootServer, but the editor upstream points at a DEAD
- *  port: the editor is "configured" (the console renders its tab and
- *  pane), while the proxy answers 502 into the iframe. The assertions are
- *  about the pane's src and its reload on a mode flip, never its content.
- *  The node:sqlite ExperimentalWarning in the set-password output is
- *  expected (AGENTS.md). */
+/** The editor upstream points at a dead port: configured, so the tab and
+ *  pane render, but the iframe gets 502s. Only its src and reload are
+ *  asserted. */
 async function spawnServer(): Promise<void> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-theme-'));
   server = { cookie: '', dir };
@@ -214,12 +190,8 @@ async function spawnServer(): Promise<void> {
       CYBERMOLE_PORT: String(PORT),
       CYBERMOLE_HOST: '127.0.0.1',
       CYBERMOLE_STATE_DIR: dir,
-      // task/app-web: this spec's server doesn't exercise the apps surface
-      // — empty CYBERMOLE_APPS_SOCK keeps the single-user spawn rule from
-      // starting a supervised app host beside this boot.
       CYBERMOLE_APPS_SOCK: '',
-      // the editor upstream: configured (editor: true in the state the
-      // console polls) but nothing listens — dead-on-arrival 502s only.
+      // configured, but nothing listens
       CYBERMOLE_EDITOR_UPSTREAM: 'http://127.0.0.1:1',
       CYBERMOLE_NEW_SESSION_CWD: dir,
     }),
@@ -279,17 +251,14 @@ test.describe('editor pane (private server, dead upstream)', () => {
   test('the editor pane opens at the workspace folder, and a mode flip reloads it', async ({
     page,
   }) => {
-    // Hermeticity: nothing this page loads may leave the loopback — the
-    // editor iframe boots only local URLs (and here gets 502s), but a
-    // guard makes that an invariant instead of an assumption.
+    // Nothing may leave the loopback.
     await page.route('**/*', route => {
       const host = new URL(route.request().url()).hostname;
       if (host === '127.0.0.1' || host === 'localhost') return route.continue();
       return route.abort();
     });
 
-    // One console workspace (no terminals needed — the pane under test is
-    // the editor tab), through the real routes.
+    // A workspace via the routes (the pane under test is the editor tab).
     const ws = await fetch(`${BASE}/api/workspaces`, {
       method: 'POST',
       headers: { cookie: server!.cookie, 'Content-Type': 'application/json' },
@@ -307,16 +276,12 @@ test.describe('editor pane (private server, dead upstream)', () => {
     await page.goto(`${BASE}/`);
     await page.waitForSelector('workspace-sidebar .nav');
 
-    // The editor tab (rendered because the state's editor flag is on)...
     await page.click('button.tab.editor-tab');
     const frame = page.locator('iframe.editor-frame');
     await expect(frame).toBeVisible();
-    // ...opens the workspace folder through the same-origin proxy. NO
-    // theme parameter — VERIFIED against the vendored reh-web build: the
-    // workbench parses only folder/workspace/ew from the URL, so a
-    // ?theme= would be dead weight; the mode-following mechanism is the
-    // proxy's configurationDefaults injection (src/lib/terminals/editor.ts) plus
-    // this pane's reload-on-flip below.
+    // ...opens the folder through the proxy, with no theme param: the
+    // workbench ignores one. Mode-following is the proxy's injected
+    // defaults plus the reload below.
     await expect
       .poll(async () =>
         page.evaluate(
@@ -326,9 +291,7 @@ test.describe('editor pane (private server, dead upstream)', () => {
       )
       .toContain(`/editor/?folder=${encodeURIComponent(server!.dir)}`);
 
-    // A live scheme flip reloads the iframe (the workbench reads the
-    // browser scheme at boot; the console's class observer re-navigates
-    // the pane). Count the frame's loads across the flip.
+    // A flip reloads the iframe; count its loads across the flip.
     await page.evaluate(() => {
       const frame = document.querySelector('iframe.editor-frame');
       if (!frame) return;
@@ -346,8 +309,7 @@ test.describe('editor pane (private server, dead upstream)', () => {
         { timeout: 15_000 },
       )
       .toBeGreaterThan(0);
-    // ...and the src is unchanged by the flip (the folder is still the
-    // folder; there is no per-mode src to carry).
+    // ...with the src unchanged.
     await expect
       .poll(async () =>
         page.evaluate(

@@ -1,24 +1,15 @@
-// jobs.ts — the `cybermole-cli jobs` verb group (task/jobs-cli,
-// docs/plans/jobs-agent-plan.md §5): every user action on the /jobs page has
-// a verb here, and each verb is a THIN client over the internal API's
-// route of the same meaning (server/internal-api.ts, plan §4) — same
-// path, same body, same answer; no parallel logic to drift. Human
-// output is tables and one-liners; --json prints the server's body
-// verbatim for scripting. The help text below is the agent-facing
-// documentation (plan §5's parity line: self-describing, no discovery
-// round-trip needed).
+// `cybermole-cli jobs`: one thin verb per internal API route (same path,
+// body and answer). --json prints the server's body verbatim. The help text
+// is the agent-facing documentation.
 //
-// Exit codes: 0 success · 1 the operation failed (the server's error
-// answer, or no server on the socket) · 2 usage error. validate is the
-// one nuance: its ANSWER is the validity, so 0 = all valid,
-// 1 = something invalid — still printed, still --json-able.
+// Exit codes: 0 success, 1 the operation failed (or no server), 2 usage.
+// validate's answer is the validity: 1 means something was invalid.
 import { discoverInternalSocket, internalRequest } from './client';
 import { formatLocalMs, renderTable, truncate, type ApiResponse, type Output } from './output';
 import { parseArgs, type ArgSpec, type ParsedArgs } from './args';
 
-// ---------- the wire (the internal API's bodies, typed for the CLI) ----------
+// ---------- wire types ----------
 
-/** One ScheduledJob as GET /jobs answers it (src/lib/jobs/jobs.ts listJobs). */
 interface JobView {
   name: string;
   schedule: string;
@@ -28,7 +19,7 @@ interface JobView {
   active: boolean;
   running: boolean;
   session: string;
-  /** "YYYY-MM-DD HH:mm" (local), pre-formatted server-side */
+  /** local "YYYY-MM-DD HH:mm", formatted server-side */
   next: string | null;
   last: string | null;
   lastResult: 'success' | 'failed' | 'unknown';
@@ -36,8 +27,7 @@ interface JobView {
 interface JobsBody {
   jobs: JobView[];
 }
-/** One run-history row (GET /jobs/:name/runs) — firedAt is the run's
- *  identity (the log/kill path params). */
+/** firedAt is the run's identity. */
 interface RunView {
   firedAt: number;
   origin: string;
@@ -48,8 +38,7 @@ interface RunView {
 interface RunsBody {
   runs: RunView[];
 }
-/** POST /jobs/validate's answer: each present field's check, absent
- *  fields null — an invalid value is an ANSWER (200), not a failure. */
+/** Absent fields are null; an invalid value is a 200 answer, not a failure. */
 interface CalendarCheckView {
   valid: boolean;
   next: string | null;
@@ -59,9 +48,7 @@ interface ValidateBody {
   schedule: CalendarCheckView | null;
   command: { valid: boolean; error: string | null } | null;
 }
-/** The failure body every route answers with ({ error, detail, code,
- *  issues? } — src/lib/web/responses.service.ts): the `error` text is
- *  the same one the /jobs page shows. */
+/** `error` is the same text the /jobs page shows. */
 interface FailureBody {
   error?: string;
   detail?: string | null;
@@ -85,10 +72,7 @@ interface VerbContext {
   socketPath: string;
 }
 
-/** Failure codes → a short human line, for the never-today case of a
- *  body arriving without its `error` text. The body's own error/detail
- *  is always preferred (it is the message /jobs shows, and it is where
- *  new codes surface first). */
+/** Only used if a body arrives without its own `error` text. */
 const CODE_FALLBACK: Record<string, string> = {
   validation_failure: 'the request body did not validate',
   invalid_schedule: 'invalid schedule',
@@ -113,8 +97,7 @@ const CODE_FALLBACK: Record<string, string> = {
   internal_error: 'internal error',
 };
 
-/** One failure answer: short human message + code on stderr (the raw
- *  body with --json), per-field issues when the server sent them. */
+/** stderr (or the raw body with --json), plus per-field issues. */
 function printFailure(ctx: VerbContext, response: ApiResponse): void {
   if (ctx.json) {
     ctx.io.out(response.text);
@@ -132,16 +115,13 @@ function printFailure(ctx: VerbContext, response: ApiResponse): void {
   if (typeof body.detail === 'string' && body.detail !== '') ctx.io.err(`  ${body.detail}`);
   if (body.issues !== undefined) {
     for (const [field, message] of Object.entries(body.issues)) {
-      // the head line is the first issue ('field: message') — don't echo it
+      // the head line already shows the first issue
       if (`${field}: ${message}` !== head) ctx.io.err(`  ${field}: ${message}`);
     }
   }
 }
 
-/** One request from a verb. Non-2xx → the failure is printed (see
- *  printFailure) and null returns, so the verb's failure path is just
- *  `return 1`. 2xx → the parsed body plus the raw response (--json
- *  prints it verbatim). */
+/** Non-2xx prints the failure and returns null, so a verb just `return 1`s. */
 async function api<T extends object>(
   ctx: VerbContext,
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
@@ -164,7 +144,6 @@ async function api<T extends object>(
   return { response, body: parsed };
 }
 
-/** A usage error: the message, the verb's usage line, the way out. */
 function usage(ctx: VerbContext, message: string, usageLine: string): number {
   ctx.io.err(`cybermole-cli: ${message}`);
   ctx.io.err(`usage: ${usageLine}`);
@@ -172,21 +151,19 @@ function usage(ctx: VerbContext, message: string, usageLine: string): number {
   return 2;
 }
 
-/** A /jobs/… path with every segment escaped (names and firedAts are
- *  CLI arguments — never spliced raw into the path). */
+/** Every segment escaped: names come from CLI arguments. */
 function jobPath(...segments: string[]): string {
   return `/${segments.map(s => encodeURIComponent(s)).join('/')}`;
 }
 
-/** A value option's value (undefined for absent — never a flag's true). */
+/** undefined when absent (never a flag's true). */
 function valueOf(options: Record<string, string | boolean>, name: string): string | undefined {
   const v = options[name];
   return typeof v === 'string' ? v : undefined;
 }
 
-// ---------- the verbs (plan §4's routes, one client each) ----------
+// ---------- verbs ----------
 
-/** GET /jobs — the /jobs page's list. */
 async function listVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
   const USAGE = 'cybermole-cli jobs list [-a <app-slug>] [--json]';
   if (args.positionals.length > 0) return usage(ctx, 'list takes no positional arguments', USAGE);
@@ -215,7 +192,6 @@ async function listVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
   return 0;
 }
 
-/** GET /jobs/:name/runs — the job's run history. */
 async function runsVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
   const USAGE = 'cybermole-cli jobs runs <name> [--json]';
   if (args.positionals.length !== 1) return usage(ctx, 'runs takes exactly one job name', USAGE);
@@ -243,9 +219,8 @@ async function runsVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
   return 0;
 }
 
-/** GET /jobs/:name/runs/:firedAt/log — the run's log tail (text/plain:
- *  the one non-JSON success body, printed verbatim; --json wraps it so
- *  the flag always means valid JSON on stdout). */
+/** The one non-JSON success body, printed verbatim; --json wraps it so
+ *  stdout is always JSON with that flag. */
 async function logVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
   const USAGE = 'cybermole-cli jobs log <name> <firedAt> [--json]';
   if (args.positionals.length !== 2)
@@ -273,8 +248,7 @@ async function logVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
   return 0;
 }
 
-/** POST /jobs — create, or overwrite a same-named job (the browser
- *  form's save is the same upsert; the CLI verb keeps the page's name). */
+/** An upsert: a same-named job is overwritten, as in the browser form. */
 async function createVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
   const USAGE =
     'cybermole-cli jobs create --name <name> --schedule <cron> --command <cmd> [--app <app-id>] [--json]';
@@ -286,7 +260,6 @@ async function createVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
   if (name === undefined || schedule === undefined || command === undefined) {
     return usage(ctx, 'create needs --name, --schedule and --command', USAGE);
   }
-  // the browser save sends appId: null when the picker is empty (jobs-app.ts)
   const answer = await api<{ name: string; session: string | null }>(
     ctx,
     'POST',
@@ -302,8 +275,7 @@ async function createVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
   return 0;
 }
 
-/** PATCH /jobs/:name — set fields; absent keeps the stored value, null
- *  clears the app tag (the internal route's read-merge-write contract). */
+/** Absent keeps the stored value; null clears the app tag. */
 async function setVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
   const USAGE =
     'cybermole-cli jobs set <name> [--schedule <cron>] [--command <cmd>] [--app <app-id> | --clear-app] [--json]';
@@ -339,7 +311,6 @@ async function setVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
   return 0;
 }
 
-/** DELETE /jobs/:name. */
 async function deleteVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
   const USAGE = 'cybermole-cli jobs delete <name> [--json]';
   if (args.positionals.length !== 1) return usage(ctx, 'delete takes exactly one job name', USAGE);
@@ -358,10 +329,8 @@ async function deleteVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
   return 0;
 }
 
-/** POST /jobs/:name/run — fire now, NO request body (the route reads
- *  none; a bodyless request needs no Content-Length either). ok means
- *  FIRED — the run session opened — and the output says so: outcomes
- *  land in the run history when the server's tick observes the finish. */
+/** No body. ok means fired (the session opened); the outcome lands in the
+ *  run history once the tick observes the finish. */
 async function runVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
   const USAGE = 'cybermole-cli jobs run <name> [--json]';
   if (args.positionals.length !== 1) return usage(ctx, 'run takes exactly one job name', USAGE);
@@ -383,7 +352,6 @@ async function runVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
   return 0;
 }
 
-/** POST /jobs/:name/runs/:firedAt/kill — no request body, like run. */
 async function killVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
   const USAGE = 'cybermole-cli jobs kill <name> <firedAt> [--json]';
   if (args.positionals.length !== 2)
@@ -408,9 +376,7 @@ async function killVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
   return 0;
 }
 
-/** POST /jobs/validate — cron and/or command checks; an invalid value
- *  is the ANSWER (200), and the exit code carries it: 0 all valid,
- *  1 something invalid, 2 usage. */
+/** Exit 0 all valid, 1 something invalid, 2 usage. */
 async function validateVerb(ctx: VerbContext, args: ParsedArgs): Promise<number> {
   const USAGE = 'cybermole-cli jobs validate [--schedule <cron>] [--command <cmd>] [--json]';
   if (args.positionals.length > 0)
@@ -449,12 +415,12 @@ async function validateVerb(ctx: VerbContext, args: ParsedArgs): Promise<number>
   return invalid ? 1 : 0;
 }
 
-// ---------- the verb table + help (the agent-facing documentation) ----------
+// ---------- verb table + help ----------
 
 interface Verb {
   readonly name: string;
   readonly usage: string;
-  /** verb-specific options; --json/--help (-h) are added for every verb */
+  /** --json and --help (-h) are added for every verb */
   readonly spec: ArgSpec;
   readonly help: string;
   run(ctx: VerbContext, args: ParsedArgs): Promise<number>;
@@ -653,8 +619,7 @@ Examples:
   },
 };
 
-/** `cybermole-cli jobs` / `cybermole-cli jobs --help`: the group's map — one line per
- *  verb, one example per verb (plan §5: the help is the documentation). */
+/** One line and one example per verb. */
 export function jobsGroupHelp(): string {
   return `cybermole-cli jobs — scheduled jobs (parity with the /jobs page)
 
@@ -699,13 +664,11 @@ The server side is the internal API over the unix socket — see
 \`cybermole --help\` (Socket) for how the CLI finds it.`;
 }
 
-/** Run `cybermole-cli jobs <verb> …`: parse, help, discover the socket, run.
- *  Never throws — every failure is a printed message + exit code (the
- *  connect-time socket failure names the CYBERMOLE_SOCK knob). */
+/** Never throws: every failure is a printed message and an exit code. */
 export async function runJobsCommand(argv: string[], io: Output): Promise<number> {
   const [verbName, ...rest] = argv;
   if (verbName === undefined) {
-    // no verb at all is the group's help, like `git` with nothing
+    // no verb: the group's help, like `git`
     io.out(jobsGroupHelp());
     return 0;
   }
@@ -743,8 +706,7 @@ export async function runJobsCommand(argv: string[], io: Output): Promise<number
   try {
     return await verb.run(ctx, args);
   } catch (err) {
-    // The CLI's crash guard (main.ts's stance): one printed line, never
-    // a stack trace — a verb bug costs one exit 1, not a Node dump.
+    // Crash guard: one printed line, not a stack trace.
     io.err(`cybermole-cli: ${(err as Error).message}`);
     return 1;
   }

@@ -1,35 +1,19 @@
-// apps-serving.ts — GET /api/state's per-app `serving` flag
-// (task/app-web, apps-plan §4): a cheap GET /_admin/status against the
-// app host's socket, once per state-poll window, so a dead host is
-// visible in the console rather than mysterious (the sidebar's open
-// link dims; a proxied request answers 502 with the same story).
-//
-// Bounded by construction: the ping carries a SHORT timeout (a hung
-// socket must never stall the 15 s state poll), is single-flight
-// (every open tab's poll shares one attempt), and its outcome — success
-// OR failure — is cached until the window passes (the failure
-// NEGATIVELY cached: the next window's poll is what retries, not a
-// retry storm of dead sockets).
-//
-// The join itself (joinServing) is pure: rows + one snapshot → the
-// augmented apps array /api/state serves (an ADDITIVE field — the
-// console's other consumers ignore it).
+// GET /api/state's per-app `serving` flag, from the app host's /_admin/status.
+// Bounded: a short timeout and single-flight (all open tabs share one ping),
+// so a hung socket never stalls the poll. Successes are cached briefly;
+// failures aren't.
 import { requestInternalApi } from '../platform/internal-api-client';
 import type { AppState, AppServingState } from '../platform/types';
 
-/** The app host's /_admin/status, reduced to what the join needs. */
 export interface AppHostStatusView {
-  /** false while the host's boot retry loop is still waiting for the
-   *  internal API (the compose boot race) — the socket answers, but
-   *  with no mounts yet. */
+  /** false while the host is still waiting for the internal API at boot. */
   booted: boolean;
   mounted: Set<string>;
-  /** slug → the reported reason a complete mount did not happen. */
+  /** slug → why it wasn't mounted */
   skipped: Map<string, string>;
 }
 
-/** One snapshot: reachable (the host answered a well-formed status) or
- *  not, with a one-line reason the sidebar shows as the tooltip. */
+/** failureReason becomes the sidebar tooltip. */
 export interface AppsServingInfo {
   reachable: boolean;
   status: AppHostStatusView | null;
@@ -38,10 +22,7 @@ export interface AppsServingInfo {
 
 const SURFACE_OFF_REASON = 'apps surface off (CYBERMOLE_APPS_SOCK is empty)';
 
-/** Fetch + parse the host's /_admin/status over its socket. Transport
- *  failures, non-200 answers and malformed bodies all degrade to a
- *  failure result — the state poll serves apps with serving:false
- *  rather than erroring over the badge data. */
+/** Any failure degrades to serving:false rather than failing the state poll. */
 export async function fetchAppHostStatus(
   socketPath: string,
   timeoutMs: number,
@@ -95,27 +76,16 @@ export async function fetchAppHostStatus(
 }
 
 export interface AppsServingDeps {
-  /** The resolved apps socket (env.ts readAppsSocket); null = the
-   *  surface is off — every app reports serving:false with the
-   *  empty-env reason, and no request is ever made. */
+  /** null: apps off; every app reports serving:false and nothing is requested. */
   socketPath: string | null;
-  /** Ping timeout. Default 500 ms — the status route is a registry
-   *  read; anything slower is a wedging host. */
+  /** Default 500 ms: the status route is a registry read. */
   timeoutMs?: number;
-  /** Cache window for SUCCESSFUL snapshots, default 10 s (under the
-   *  15 s state poll — each poll's join sees a fresh-enough snapshot
-   *  while concurrent tabs share one attempt). FAILURES ARE NOT CACHED:
-   *  a dead socket answers ECONNREFUSED in ~0.1 ms (free to retry every
-   *  poll), and a stale negative would lie about an app that just
-   * mounted — observed in e2e: register + reload, the page serves, and
-   * /api/state still dimmed the app for the rest of a success-only
-   * window. A HUNG socket — the case the plan's "failure cached" wording
-   * guarded — is bounded by the ping timeout + single-flight, not by
-   * the cache. */
+  /** Success cache window, default 10 s (under the 15 s poll). Failures
+   *  aren't cached: a dead socket refuses in ~0.1 ms, and a stale negative
+   *  would keep dimming an app that just mounted. A hung socket is bounded
+   *  by the timeout and single-flight instead. */
   ttlMs?: number;
-  /** Clock injectable for units. */
   now?: () => number;
-  /** Transport injectable for units. */
   fetchStatus?: typeof fetchAppHostStatus;
 }
 
@@ -129,17 +99,11 @@ export class AppsServing {
     this.deps = deps;
   }
 
-  /** One snapshot: SUCCESS cached for the window, FAILURE served fresh
-   *  (the first caller of a window does the attempt — single-flight:
-   *  every open tab's poll awaits the SAME promise, so a hung socket
-   *  costs its timeout once). */
   info(): Promise<AppsServingInfo> {
     if (this.deps.socketPath === null && this.cached) return Promise.resolve(this.cached);
     const now = this.deps.now ?? Date.now;
     const ttl = this.deps.ttlMs ?? 10_000;
     const fresh = this.cached !== null && now() - this.cachedAt < ttl;
-    // A cached SUCCESS inside the window serves; a cached FAILURE never
-    // does (see ttlMs's comment — no stale negatives).
     if (this.cached !== null && this.cached.reachable && fresh) return Promise.resolve(this.cached);
     if (this.inFlight) return this.inFlight;
     const attempt = (async (): Promise<AppsServingInfo> => {
@@ -158,7 +122,7 @@ export class AppsServing {
         this.cached = info;
         this.cachedAt = (this.deps.now ?? Date.now)();
       })
-      .catch(() => undefined) // fetchStatus is total; the belt keeps a throw from wedging inFlight
+      .catch(() => undefined) // fetchStatus never rejects; this just keeps inFlight from wedging
       .finally(() => {
         this.inFlight = null;
       });
@@ -166,10 +130,7 @@ export class AppsServing {
   }
 }
 
-/** The pure join: app rows + one snapshot → the augmented array
- *  /api/state serves. serving means the host answered AND has this slug
- *  mounted; the reason names the honest story otherwise (the host's own
- *  skip reason when it reported one). */
+/** serving: the host answered and has the slug mounted; otherwise the reason says why. */
 export function joinServing(apps: AppState[], info: AppsServingInfo): AppServingState[] {
   return apps.map(app => {
     if (info.reachable && info.status !== null && info.status.mounted.has(app.slug)) {

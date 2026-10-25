@@ -1,23 +1,11 @@
-// terminal-search.spec.ts — task/terminal-search, end to end against the
-// compiled server: the attach-time scrollback backfill (capture-pane
-// history → the 'backfill' frame, written into the fresh buffer UNDER the
-// attach redraw) and the Ctrl+F find bar (@xterm/addon-search behind the
-// .terminal-toolbar cluster), including the don't-hijack-real-inputs rule
-// and the query surviving pane switches.
-// Non-page-boot specs share the terminal-ws.spec pattern: its own server
-// child on its own port + db + login, so the serial suite's shared login
-// budget and tmux socket are untouched; the node:sqlite ExperimentalWarning
-// in the set-password boot output is expected (AGENTS.md).
+// The attach-time scrollback backfill and the Ctrl+F find bar, against a
+// private server (own port, db and login, so the shared suite's budget and
+// socket are untouched). Its sessions must survive page reloads.
 //
-// Scrollback mechanics under test (verified against a real browser
-// terminal): tmux.conf's terminal-overrides keep the attached client out
-// of the alternate screen (smcup@/rmcup@) and out of scroll-by-N (indn@ —
-// xterm.js's SU handler DISCARDS scrolled rows instead of pushing them
-// into scrollback), so live output accumulates scrollback. Bursty output
-// still coalesces in the client view (tmux's screen-diff skips lines for
-// any outer terminal, real xterm included) — which is exactly what the
-// attach backfill heals: after a reload the buffer holds the pane's full
-// history, each line exactly once, with the redraw's screen below it.
+// tmux.conf keeps the client out of the alternate screen (smcup@/rmcup@)
+// and out of scroll-by-N (indn@: xterm.js discards SU-scrolled rows), so
+// live output accumulates scrollback. Bursty output still coalesces in the
+// live view; the backfill heals that, since it reads tmux's own history.
 import { spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -32,9 +20,7 @@ const PASSWORD = 'correct-horse-9';
 const MARKER = 'TS_MARKER_READY';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
-/** Child env with the CYBERMOLE_ / PI_CODING_AGENT_ overrides stripped: the
- *  values under test must not see this machine's (or the suite
- *  webServer's) explicit settings. */
+/** The machine's and suite's CYBERMOLE_ / PI_CODING_AGENT_ settings must not leak in. */
 function bareEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) {
@@ -52,20 +38,15 @@ const childEnv = () =>
     CYBERMOLE_PORT: String(PORT),
     CYBERMOLE_HOST: '127.0.0.1',
     CYBERMOLE_STATE_DIR: server!.dir,
-    // task/app-web: this spec's server doesn't exercise the apps surface
-    // — empty CYBERMOLE_APPS_SOCK keeps the single-user spawn rule from
-    // starting a supervised app host beside this boot.
     CYBERMOLE_APPS_SOCK: '',
     CYBERMOLE_TMUX_SOCKET: SOCKET,
     CYBERMOLE_NEW_SESSION_CWD: os.tmpdir(),
     CYBERMOLE_COMMAND: path.join(server!.dir, 'cmd.sh'),
-    // task/defaults-settings: the auto-opened first tab — deterministic
-    // (same cmd.sh as plain tabs; this spec never asserts its banner).
+    // deterministic agent command (never asserted here)
     CYBERMOLE_AGENT_COMMAND: path.join(server!.dir, 'cmd.sh'),
   });
 
-/** Boot the server child (beforeAll, and again by the restart test) —
- *  resolves once it listens. */
+/** Resolves once it listens. */
 async function spawnServer(): Promise<void> {
   const next = spawn('node', ['dist-server/server/main.js'], {
     cwd: ROOT,
@@ -95,8 +76,7 @@ async function spawnServer(): Promise<void> {
   child = next;
 }
 
-/** SIGTERM the server child (its graceful shutdown: every WS gets
- *  'restart') and wait for the process to be gone. */
+/** SIGTERM (every WS gets 'restart') and wait for the exit. */
 async function stopServer(): Promise<void> {
   const c = child;
   if (!c || c.exitCode !== null || c.signalCode !== null) return;
@@ -118,10 +98,7 @@ test.afterAll(async () => {
   if (server) fs.rmSync(server.dir, { recursive: true, force: true });
 });
 
-/** Boot the private server once for the file: the deterministic cmd.sh
- *  banner + a shell we type into, exactly like the shared suite's
- *  fixture. terminal-ws.spec's bootServer, minus the per-test socket
- *  lifecycle (this spec wants its sessions to SURVIVE page reloads). */
+/** Boot once for the file. */
 test.beforeAll(async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-ts-'));
   const cmd = path.join(dir, 'cmd.sh');
@@ -148,8 +125,6 @@ test.beforeAll(async () => {
   server = { cookie, dir };
 });
 
-/** One JSON call against the private server (node fetch + cookie: this
- *  spec's pages are on this origin anyway). */
 async function api(
   method: string,
   url: string,
@@ -167,8 +142,7 @@ Promise<{ status: number; json: any }> {
   return { status: r.status, json: await r.json().catch(() => null) };
 }
 
-/** A workspace + one terminal row through the real routes; the session
- *  spawns (fork-to-start socket) at the workspace cwd. */
+/** The session spawns at the workspace cwd. */
 async function makeTerminal(name: string): Promise<{ ws: string; id: string }> {
   const ws = await api('POST', '/api/workspaces', { name, cwd: server!.dir });
   expect(ws.status, JSON.stringify(ws.json)).toBe(200);
@@ -178,7 +152,7 @@ async function makeTerminal(name: string): Promise<{ ws: string; id: string }> {
   return { ws: ws.json.id, id: term.json.id };
 }
 
-/** The visible pane's buffer as exact (trimmed) lines. */
+/** Trimmed lines of the visible pane's buffer. */
 function bufferLines(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
@@ -199,8 +173,7 @@ function bufferLines(page: Page): Promise<string[]> {
   });
 }
 
-/** How many buffer lines are EXACTLY `line` — the doubling probe: a
- *  duplicated backfill or redraw would push this past 1. */
+/** A duplicated backfill or redraw pushes this past 1. */
 async function countExactLine(page: Page, line: string): Promise<number> {
   const lines = await bufferLines(page);
   return lines.filter(l => l === line).length;
@@ -231,7 +204,6 @@ async function waitForTermLine(page: Page, line: string, timeout = 10_000): Prom
   );
 }
 
-/** The visible pane's buffer length + rows (live-scrollback proof). */
 function bufferShape(page: Page): Promise<{ len: number; rows: number; type: string }> {
   return page.evaluate(() => {
     const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
@@ -245,10 +217,7 @@ function bufferShape(page: Page): Promise<{ len: number; rows: number; type: str
   });
 }
 
-/** Land on the console with a workspace's terminal tab attached. The
- *  first call signs in through the real form (this server's own login
- *  budget); later calls reuse that cookie in the (fresh per test)
- *  context — the shared-suite convention. */
+/** The first call signs in through the form; later calls reuse the cookie. */
 let sessionCookie: Cookie | null = null;
 async function openTerminal(page: Page, id: string): Promise<void> {
   if (!sessionCookie) {
@@ -271,9 +240,7 @@ async function openTerminal(page: Page, id: string): Promise<void> {
   );
 }
 
-/** Every n of `seq 1 60` appears exactly once as a whole line — the
- *  backfill dedupe proof: a missing n means history was lost, a doubled n
- *  means the screen was painted twice (backfill overlapping the redraw). */
+/** A missing n means lost history; a doubled n, a screen painted twice. */
 async function expectSeqOnceEach(page: Page): Promise<void> {
   const lines = await bufferLines(page);
   for (let n = 1; n <= 60; n++) {
@@ -285,11 +252,8 @@ async function expectSeqOnceEach(page: Page): Promise<void> {
   expect(markers, 'the cmd.sh banner must appear exactly once').toBe(1);
 }
 
-/** The first exact-once violation in `lines` — null when every line of
- *  the seq 1 60 and the banner sit in the buffer exactly once. The
- *  settle poll's value: a timeout surfaces it as the Received line,
- *  naming the first offender, while expectSeqOnceEach above stays the
- *  one-shot reporter (every line, its own precise message). */
+/** The first line not present exactly once, or null. Used as the settle
+ *  poll's value so a timeout names the offender. */
 function firstSeqViolation(lines: string[]): string | null {
   for (let n = 1; n <= 60; n++) {
     const want = String(n);
@@ -301,17 +265,10 @@ function firstSeqViolation(lines: string[]): string | null {
   return null;
 }
 
-/** Wait for a reloaded buffer to SETTLE. waitForTermLine('1') proves
- *  only that the backfill history landed: xterm.js parses writes in
- *  chunks on its own cadence, so the attach redraw that repaints the
- *  current screen BELOW that history can still be in flight, and a
- *  one-shot sample taken between the two reads a mid-screen line
- *  ('24') as 0 — the transient the churn probes flaked on, not a lost
- *  line. Poll the full exact-once condition instead (expect.poll
- *  retries a bad value, not a thrown callback): a genuine double cannot
- *  heal (it stays 2 forever → timeout, the first offender named) and a
- *  genuinely lost line times out the same way — expectSeqOnceEach
- *  after it still walks every line for the complete message. */
+/** Seeing '1' only proves the backfill landed: the redraw below it can
+ *  still be parsing, and a sample in between reads a mid-screen line as 0.
+ *  So poll the full condition; a genuine double or loss never heals and
+ *  times out. */
 async function waitForSeqOnceEach(page: Page, timeout = 10_000): Promise<void> {
   await expect.poll(async () => firstSeqViolation(await bufferLines(page)), { timeout }).toBe(null);
 }
@@ -323,8 +280,6 @@ test('backfill: reload brings the scrollback back under the redraw — nothing d
   await openTerminal(page, id);
   await waitForTermLine(page, MARKER);
 
-  // Live scrollback accumulates while attached (tmux.conf's indn@ override
-  // — xterm.js discards SU-scrolled rows, so tmux must scroll with LFs):
   // 60 lines into a ~40-row terminal must push the buffer past one screen.
   await page.click('agent-terminal:not(.hidden) .terminal-container');
   await page.keyboard.type('seq 1 60\n');
@@ -333,14 +288,9 @@ test('backfill: reload brings the scrollback back under the redraw — nothing d
   expect(live.type).toBe('normal');
   expect(live.len, 'live output must grow the buffer past one screen').toBeGreaterThan(live.rows);
 
-  // Reload: fresh buffer, the server captures the pane's history and
-  // writes it as the backfill BEFORE the attach redraw flows. Line "1"
-  // only exists in history — it coming back is the backfill; each line
-  // exactly once is the dedupe (the capture stops above the screen, the
-  // client pads the viewport down, the redraw repaints the screen BELOW
-  // the history instead of over it). Bursty output that coalesced in the
-  // live view (tmux's screen-diff) is healed here too — the capture reads
-  // tmux's own history, which is complete.
+  // After a reload, '1' only exists in history, so seeing it is the
+  // backfill; each line exactly once proves the redraw landed below the
+  // history rather than over it.
   await page.reload();
   await page.waitForSelector('agent-terminal:not(.hidden) .terminal-container .xterm');
   await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText(
@@ -348,13 +298,11 @@ test('backfill: reload brings the scrollback back under the redraw — nothing d
     { timeout: 15_000 },
   );
   await waitForTermLine(page, '1');
-  // '1' proves the backfill landed; the redraw under it can still be in
-  // flight this early — settle before the one-shot assert.
+  // Settle before the one-shot assert.
   await waitForSeqOnceEach(page);
   await expectSeqOnceEach(page);
 
-  // A second reload: same proof against a history that now includes
-  // everything — still exactly one copy of each line.
+  // A second reload: still exactly one copy of each line.
   await page.reload();
   await page.waitForSelector('agent-terminal:not(.hidden) .terminal-container .xterm');
   await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText(
@@ -373,8 +321,7 @@ test('backfill is skipped on reconnect (buffer already holds the session) — no
   await openTerminal(page, id);
   await waitForTermLine(page, MARKER);
 
-  // Slow, line-per-tick output: no coalescing, every line lands in the
-  // live buffer — the complete-history baseline the reconnect keeps.
+  // Slow output: every line lands in the live buffer.
   await page.click('agent-terminal:not(.hidden) .terminal-container');
   await page.keyboard.type('for i in $(seq 1 20); do echo RELINE_$i; sleep 0.15; done\n');
   await waitForTermLine(page, 'RELINE_20', 20_000);
@@ -382,12 +329,9 @@ test('backfill is skipped on reconnect (buffer already holds the session) — no
     expect(await countExactLine(page, `RELINE_${n}`), `RELINE_${n} once before the drop`).toBe(1);
   }
 
-  // Server restart (deploy/container stop — the graceful shutdown tells
-  // every WS 'restart'): the pane's tmux session SURVIVES (the tmux server
-  // is its own process), the page's terminal reconnects with its usual
-  // backoff onto the SAME element — the buffer is kept, so the reattach's
-  // backfill frame must be ignored (a second copy of the history would
-  // double every line).
+  // After a server restart the session survives and the terminal reconnects
+  // onto the same element, keeping its buffer, so the reattach's backfill
+  // must be ignored or every line doubles.
   await stopServer();
   await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText(
     'reconnect',
@@ -415,8 +359,7 @@ test('find bar: ctrl+F searches the (backfilled) scrollback, Esc refocuses the t
   await openTerminal(page, id);
   await waitForTermLine(page, MARKER);
 
-  // Searchable scrollback: distinct matches, then enough output to push
-  // them into history, then a RELOAD so they only exist via the backfill.
+  // Matches pushed into history, then a reload so they only exist via the backfill.
   await page.click('agent-terminal:not(.hidden) .terminal-container');
   await page.keyboard.type('echo alpha_one; echo alpha_two; seq 1 60\n');
   await waitForTermLine(page, '60');
@@ -428,21 +371,19 @@ test('find bar: ctrl+F searches the (backfilled) scrollback, Esc refocuses the t
   );
   await waitForTermLine(page, 'alpha_one');
 
-  // The toolbar + find bar exist and stay hidden until Ctrl+F.
+  // Hidden until Ctrl+F.
   const pane = page.locator('agent-terminal:not(.hidden)');
   const findBar = pane.locator('.terminal-find');
   await expect(pane.locator('.terminal-toolbar')).toBeVisible();
   await expect(findBar).toHaveClass(/hidden/);
 
-  // Ctrl+F opens the bar (the terminal pane is the active context —
-  // focus is in the terminal, xterm's own hidden textarea).
+  // Ctrl+F opens it while focus is in the terminal (xterm's hidden textarea).
   await page.keyboard.press('Control+f');
   await expect(findBar).not.toHaveClass(/hidden/);
   const input = findBar.locator('wa-input input');
   await expect(input).toBeFocused();
 
-  // Live search: typing a query whose matches are in the BACKFILLED
-  // history (alpha_* is above the screen) must scroll the viewport up.
+  // alpha_* is above the screen: a live search must scroll up to it.
   const viewportBefore = await page.evaluate(
     () =>
       (
@@ -467,8 +408,7 @@ test('find bar: ctrl+F searches the (backfilled) scrollback, Esc refocuses the t
     )
     .toBeLessThan(viewportBefore);
 
-  // Enter steps to the next match, Shift+Enter back — no crash, focus
-  // stays in the find input.
+  // Enter / Shift+Enter step through matches; focus stays in the input.
   await page.keyboard.press('Enter');
   await page.keyboard.press('Shift+Enter');
   await expect(input).toBeFocused();
@@ -478,23 +418,20 @@ test('find bar: ctrl+F searches the (backfilled) scrollback, Esc refocuses the t
       .evaluate(el => (el as unknown as { value: string | null }).value),
   ).toBe('alpha');
 
-  // Esc closes the bar and hands focus back to the terminal.
+  // Esc closes and refocuses the terminal.
   await page.keyboard.press('Escape');
   await expect(findBar).toHaveClass(/hidden/);
   await expect(pane.locator('.terminal-container .xterm-helper-textarea')).toBeFocused();
 
-  // Ctrl+F is NOT hijacked while a real input has focus (the sidebar's
-  // workspace filter): the find bar stays closed.
+  // Not hijacked while a real input (the sidebar filter) has focus.
   await page.fill('workspace-sidebar wa-input#workspace-search input', 'find');
   await page.keyboard.press('Control+f');
   await expect(findBar).toHaveClass(/hidden/);
 
-  // The query survives pane switches: module-level state, not DOM. A
-  // second terminal in the same workspace, its pane opened by clicking
-  // the tab, gets the previous pane's query prefilled.
+  // The query survives a pane switch (module state, not DOM).
   const second = await api('POST', `/api/workspaces/${ws}/terminals`, {});
   expect(second.status).toBe(200);
-  // the console's own state-refresh path (the 15 s poll, forced)
+  // force the 15 s poll
   await page.evaluate(async () => {
     await (
       document.querySelector('console-app') as unknown as { loadState(): Promise<void> }

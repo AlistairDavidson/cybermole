@@ -1,33 +1,14 @@
-// internal-api-client.ts — the reusable HTTP-over-unix-socket client for
-// the internal API (server/internal-api.ts): one request per call, a
-// one-shot socket (agent: false), Content-Length on every body — the
-// API's 411 body policy demands a declared length, and never letting
-// node stream it chunked is this client's side of that contract.
-//
-// Generalized from the local client inside server/mcp.ts (the jobs MCP)
-// so every internal-API consumer shares one transport: server/app-host.ts
-// (the app host's discovery call, GET /apps) is the first; mcp.ts keeps
-// its private copy for now and can adopt this module at a later merge
-// (apps-plan §5 lists it as kit-bound too). Rejects on TRANSPORT failure
-// only (ECONNREFUSED/ENOENT: nothing answering on the file, a reset
-// mid-response, a timeout) — the caller turns that into its own error
-// story; a domain failure arrives as a normal answer with its status.
+// HTTP over the internal API's (or app host's) unix socket. Rejects only on
+// transport failure; a domain failure is a normal answer with its status.
 import * as http from 'node:http';
 
-/** One request to the internal API: method + request path (params
- *  already interpolated, percent-encoded) and, for the body verbs, a
- *  PRE-SENT body string — sent with a Content-Length header, always.
- *  PUT rides along with PATCH (the kit's route table allows it as an
- *  action method; app dispatch through this client must not be narrower
- *  than the table). */
+/** A present body is always sent with Content-Length: the APIs answer 411 to chunked bodies. */
 export interface InternalApiCall {
   method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   path: string;
   body?: string;
 }
 
-/** The internal API's answer: the wire body verbatim (JSON, except the
- *  log route's plain text) plus the status and headers it came with. */
 export interface InternalApiAnswer {
   status: number;
   body: string;
@@ -35,14 +16,11 @@ export interface InternalApiAnswer {
 }
 
 export interface InternalApiCallOptions {
-  /** Cut the request off after this many ms (the socket destroyed, the
-   *  promise rejected) — a listener that accepted but never answers must
-   *  not hang the caller. Undefined: no timeout (mcp.ts's semantics). */
+  /** A listener that accepts but never answers must not hang the caller. Default: none. */
   timeoutMs?: number;
 }
 
-/** One HTTP request over the internal API's unix socket. `agent: false`
- *  keeps the process holding nothing open between calls. */
+/** `agent: false`: nothing stays open between calls. */
 export function requestInternalApi(
   socketPath: string,
   call: InternalApiCall,

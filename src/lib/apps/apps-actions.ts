@@ -1,44 +1,22 @@
-// apps-actions.ts — the add_action half of the cybermole-apps MCP
-// (task/app-actions, docs/plans/apps-plan.md §6): THE action-vocabulary
-// generator (§1: "route + MCP tool + UI stub + test stub + the AGENTS.md
-// action section, all from one table entry"). One table entry is
-// appended to the tree's src/routes.ts and everything else is written in
-// lockstep from it: the domain module (src/lib/<name>.ts — ping's shape),
-// the unit-test stub (tests/<name>.test.mjs — picked up by the tree's
-// existing tests/*.test.mjs glob, no script edit), the UI island stub
-// (src/islands/<Pascal>Island.tsx + its mount point on the page), and
-// the operator manual's BEGIN/END ACTIONS block in AGENTS.md —
-// REGENERATED from the table (read back from disk), so the manual cannot
-// drift from the code (§7).
-//
-// add_action does NOT build: the loop stays agent-driven — the answer
-// names it (check → build → reload). Idempotent by refusal: a name
-// already in the table is a clear duplicate answer, never a mangled
-// file; a target artifact that exists without its table entry means a
-// hand-diverged tree and is refused too. All fs through this one
-// boundary (CODE_STYLE §2): a failure is a Result, never a throw.
+// add_action: generates one action into an app tree from one route-table
+// entry: the entry in src/routes.ts, src/lib/<name>.ts, a test stub, a UI
+// island + its page mount, and the AGENTS.md actions block regenerated from
+// the table (so the manual can't drift). It never builds, and refuses rather
+// than overwrite: an existing name, or an artifact without its table entry.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
 import type { ResultFailure, ResultSuccess } from '@cybermole/app-kit';
 
-// ---------- the action-name rule (defined once, reused) ----------
+// ---------- action names ----------
 
-/** Longest action name — table entries are MCP tool names and file-name
- *  stems, so they cap like the slugs do. */
+/** Names double as MCP tool names and file stems. */
 export const MAX_ACTION_NAME = 40;
 
-/** Action names: kebab or snake, lowercase — the route-table name is the
- *  MCP tool name (the shim registers it verbatim, prefix-free) and a
- *  file-name stem, so it stays a URL-shaped identifier. Underscores stay
- *  legal (the kit's own fixture tables use snake names like
- *  note_create). */
+/** Lowercase kebab or snake case (snake is used, e.g. note_create). */
 export const ACTION_NAME_RE = new RegExp(`^[a-z0-9][a-z0-9_\\-]{0,${MAX_ACTION_NAME - 1}}$`);
 
-/** Normalize an action name (the normalizeSlug rules, underscores kept):
- *  lowercase, runs of anything else collapse to '-', edges stripped,
- *  capped at MAX_ACTION_NAME. '' means nothing usable was typed. The
- *  output always satisfies ACTION_NAME_RE or is empty. */
+/** normalizeSlug's rules with underscores kept; '' means nothing usable. */
 export function normalizeActionName(raw: string): string {
   return raw
     .trim()
@@ -49,7 +27,6 @@ export function normalizeActionName(raw: string): string {
     .replace(/[^a-z0-9]+$/, '');
 }
 
-/** The MCP tool's input schema for the action name (the rule, once). */
 export const ActionNameSchema = z
   .string()
   .min(1)
@@ -58,27 +35,23 @@ export const ActionNameSchema = z
     message: `an action name is kebab/snake case — lowercase letters, digits, "-" and "_", max ${MAX_ACTION_NAME} chars`,
   });
 
-// ---------- identifier helpers (the generated files' names) ----------
+// ---------- identifiers ----------
 
-/** 'note_create' / 'note-create' → 'noteCreate' (a valid TS identifier —
- *  the generated family's function name). */
+/** 'note_create' / 'note-create' → 'noteCreate' */
 export function actionCamel(name: string): string {
   const parts = name.split(/[-_]/).filter(p => p.length > 0);
   const [first, ...rest] = parts;
   return [first ?? '', ...rest.map(p => p[0]!.toUpperCase() + p.slice(1))].join('');
 }
 
-/** 'note_create' → 'NoteCreate' (the generated types' prefix). */
+/** 'note_create' → 'NoteCreate' */
 export function actionPascal(name: string): string {
   const camel = actionCamel(name);
   return camel[0]!.toUpperCase() + camel.slice(1);
 }
 
-// ---------- the light route-table parse (AGENTS.md regeneration) ----------
+// ---------- route-table parse (for AGENTS.md) ----------
 
-/** One entry as read back out of the tree's src/routes.ts — the table is
- *  the source of truth (§7), and the operator manual's actions block is
- *  rendered from exactly this. */
 export interface ParsedAction {
   name: string;
   description: string;
@@ -87,9 +60,7 @@ export interface ParsedAction {
   fields: Array<{ name: string; type: string; optional: boolean }>;
 }
 
-/** Scan out every `defineRoute({ … })` block, honoring quotes (a brace or
- *  apostrophe inside a description must not end the block). Total: an
- *  unparsable entry is skipped, never thrown. */
+/** Honors quotes, so a brace in a description doesn't end the block. Never throws. */
 function defineRouteBlocks(source: string): string[] {
   const blocks: string[] = [];
   let i = 0;
@@ -131,26 +102,17 @@ const singleQuoted = (block: string, key: string): string | null => {
 
 const FIELD_LINE_RE = /^[ \t]+([A-Za-z_$][A-Za-z0-9_$]*):[ \t]*z[.\s[(]/gm;
 
-/** The entry's own property keys — schemas, not fields (params/query/body
- *  name z schemas themselves; their INDENTED members are the fields).
- *  A property line is a NAMESPACE only when the name is one of those
- *  keys AND its value names an object schema — a FIELD named `body`
- *  (`body: z.string()`, the notes app's case) is a field, not a
- *  namespace. */
+/** params/query/body are namespaces only when their value is an object
+ *  schema; a field named `body: z.string()` is a field. */
 const NAMESPACE_KEYS = new Set(['params', 'query', 'body']);
 const NAMESPACE_VALUE_RE = /^z\s*\.\s*(?:looseObject|object)\s*\(/;
 
-/** The input fields of one block: every `name: z…` property line inside
- *  its params/query/body schemas (the flattened key space the emitted
- *  table carries), with the declared scalar kind when the chain names
- *  one and whether it is optional. Best-effort by design — the emitted
- *  dist/route-table.json is the precise shape; this is the manual's one
- *  line per field. */
+/** Best-effort: the emitted dist/route-table.json is the precise shape;
+ *  this only feeds one manual line per field. */
 function parseFields(block: string): ParsedAction['fields'] {
   const matches = [...block.matchAll(FIELD_LINE_RE)].filter(m => {
     if (!NAMESPACE_KEYS.has(m[1]!)) return true;
-    // the match ends one char INTO the value (the regex's trailing `z`
-    // plus one delimiter), so the slice starts at the schema's own name
+    // the match ends one char into the value, so back up to the schema's name
     const value = block.slice((m.index ?? 0) + m[0].length - 2);
     return !NAMESPACE_VALUE_RE.test(value);
   });
@@ -173,9 +135,7 @@ function parseFields(block: string): ParsedAction['fields'] {
   return fields;
 }
 
-/** Parse the tree's src/routes.ts into its action list (the light parse —
- *  the kit's binder stays the real compiler; this reads only what the
- *  manual's block needs). Entries missing any core fact are skipped. */
+/** A light parse for the manual; entries missing a core fact are skipped. */
 export function parseRouteTableSource(source: string): ParsedAction[] {
   const actions: ParsedAction[] = [];
   for (const block of defineRouteBlocks(source)) {
@@ -189,7 +149,6 @@ export function parseRouteTableSource(source: string): ParsedAction[] {
   return actions;
 }
 
-/** One AGENTS.md section, from one parsed action. */
 export function renderActionSection(slug: string, action: ParsedAction): string {
   const fields =
     action.fields.length === 0
@@ -209,8 +168,6 @@ export function renderActionSection(slug: string, action: ParsedAction): string 
 export const ACTIONS_BEGIN_RE = /<!-- BEGIN ACTIONS[^\n]*-->/;
 export const ACTIONS_END_RE = /<!-- END ACTIONS[^\n]*-->/;
 
-/** The whole marked block's inner content: one section per action, in
- *  table order. */
 export function renderActionsBlock(slug: string, actions: ParsedAction[]): string {
   return `${actions.map(a => renderActionSection(slug, a)).join('\n\n')}\n`;
 }
@@ -228,15 +185,11 @@ export const ACTIONS_END_LINE = '<!-- END ACTIONS -->';
 
 export interface AgentsRegen {
   text: string;
-  /** the markers were absent — a fresh `## Actions` section was inserted
-   *  (before `## Policy`, or appended at the end) */
+  /** markers were absent; a fresh `## Actions` section was inserted */
   appendedFresh: boolean;
 }
 
-/** Regenerate the tree's AGENTS.md actions block from its route table.
- *  The markers' neighborhood is preserved byte-for-byte; only the content
- *  between them is replaced. Idempotent: regenerating what regeneration
- *  wrote changes nothing. */
+/** Only the content between the markers is replaced. Idempotent. */
 export function regenerateAgentsActions(
   agentsText: string,
   slug: string,
@@ -264,32 +217,27 @@ export function regenerateAgentsActions(
   return { text: `${text}${section}`, appendedFresh: true };
 }
 
-// ---------- the generated artifacts (the starter template's shapes) ----------
+// ---------- generated artifacts ----------
 
 export interface AddActionInput {
   slug: string;
-  /** the action's name — normalized (normalizeActionName) before use */
   name: string;
-  /** one line of intent — the table entry's description and the manual's
-   *  section line. Default names it a generated stub. */
+  /** one line; defaults to naming it a generated stub */
   summary?: string | undefined;
-  /** GET (input lands in the query) or POST (input lands in the body).
-   *  Default POST — an action does something. */
+  /** Where the input lands (query or body). Default POST. */
   method?: 'GET' | 'POST' | undefined;
 }
 
 export type AddActionData = {
   slug: string;
   tree: string;
-  /** the normalized action name (the table entry, tool name, file stem) */
+  /** normalized */
   action: string;
   method: 'GET' | 'POST';
-  /** every artifact written, in write order — the answer's inventory */
+  /** in write order */
   written: Array<{ file: string; what: string }>;
-  /** honest asides: the page's mount markers were appended fresh, the
-   *  manual's section was inserted fresh, the page was missing… */
   notes: string[];
-  /** the loop (§1) — add_action never builds; these are the next verbs */
+  /** the verbs to run next; add_action never builds */
   next: string[];
 };
 export type AddActionErrorCode =
@@ -309,8 +257,7 @@ const fail = (errorCode: AddActionErrorCode, errorMessage: string): AddActionFai
   errorMessage,
 });
 
-/** The sample input field every generated stub carries (ping's `name`,
- *  generalized): required, trimmed, 1–500 chars. */
+/** Every stub gets this one required input field. */
 const SAMPLE_FIELD = 'text';
 const SAMPLE_MAX = 500;
 
@@ -318,13 +265,8 @@ const generatedSummary = (name: string): string =>
   `the ${name} action — a generated stub; edit this line (and src/lib/${name}.ts) to say and do what it should`;
 
 function generatedLib(name: string, camel: string, pascal: string): string {
-  return `// The ${name} action's logic — GENERATED by the cybermole-apps add_action
-// tool as a working stub (one Result family per concern, docs/conventions/CODE_STYLE.md
-// §1 — the house rules this template bakes in). Kept node-free AND
-// runtime-kit-free (the family's TYPES are an \`import type\` — stripped
-// before execution) so the unit tests import this file with plain node
-// (see src/lib/ping.ts, the pattern this follows). Replace the echo with
-// the action's real logic; tests/${name}.test.mjs grows with it.
+  return `// The ${name} action's logic, generated by add_action as an echo stub.
+// Node-free (type-only kit imports) so the unit tests run it with plain node.
 import type { ResultFailure, ResultSuccess } from '@cybermole/app-kit';
 
 export type ${pascal}Data = { received: string; at: number };
@@ -360,8 +302,6 @@ export function ${camel}Result(raw${actionPascal(SAMPLE_FIELD)}: string): ${pasc
 `;
 }
 
-/** Escape a text fragment for a single-quoted TS string literal
- *  (quotes and backslashes). */
 const escapeSingleQuoted = (text: string): string =>
   text.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
@@ -392,10 +332,7 @@ ${input}
 }
 
 function generatedTest(name: string, camel: string): string {
-  return `// The ${name} action's unit tests — GENERATED by the cybermole-apps
-// add_action tool as a working stub (ping.test.mjs's shape: one test per
-// error code, not just the happy path — docs/conventions/CODE_STYLE.md §9). Grow it
-// with the action's real logic.
+  return `// Unit tests for ${name}, generated by add_action: one test per error code.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ${camel}Result } from '../src/lib/${name}.ts';
@@ -434,23 +371,17 @@ function generatedIsland(
   pascal: string,
   method: 'GET' | 'POST',
 ): string {
-  // Bracket access, keyed by the literal name (single quotes are safe —
-  // ACTION_NAME_RE admits no quotes): the typed client's methods are the
-  // route names VERBATIM (createRouteClient keys by entry.name), and a
-  // kebab name is not a valid dot-access identifier.
+  // Bracket access: client methods are the route names verbatim, and a
+  // kebab name isn't a valid identifier. ACTION_NAME_RE admits no quotes.
   const call = `client['${name}']({ params: {}, ${method === 'GET' ? 'query' : 'body'}: { ${SAMPLE_FIELD} } })`;
-  return `// ${pascal}Island.tsx — the ${name} action's UI: GENERATED by the cybermole-apps
-// add_action tool as a working stub (a preact island with signals, the
-// kit's convention — the action call goes through the kit's typed client
-// on the SAME table the API route serves: one action vocabulary, every
-// face, apps-plan §0). Shape it into the app's real UI.
+  return `// UI for the ${name} action, generated by add_action. Calls go through the
+// typed client over the same route table the API serves.
 import { useRef } from 'preact/hooks';
 import { signal } from '@preact/signals';
 import { createRouteClient } from '@cybermole/app-kit/route-table';
 import { routes } from '../routes';
 
-/** The wa-input host after the browser upgrades it (before that, .value
- *  is absent — the island reads it defensively). */
+/** .value is absent until the element upgrades. */
 interface WaInputHost extends HTMLElement {
   value: string | null;
 }
@@ -481,7 +412,7 @@ export default function ${pascal}Island() {
 `;
 }
 
-// ---------- the page's marked mount blocks ----------
+// ---------- page mount blocks ----------
 
 export const MOUNT_BEGIN =
   '<!-- BEGIN ACTION MOUNTS (generated — add_action appends one section per action) -->';
@@ -507,13 +438,11 @@ function generatedPageMount(name: string, pascal: string): string {
 
 export interface PageInsert {
   text: string;
-  /** the marked block was absent — a fresh one was appended */
+  /** markers were absent; a fresh block was appended */
   appendedFresh: boolean;
 }
 
-/** Insert one section before the mount block's END marker, appending a
- *  fresh marked block before </main> when the markers are gone (a page
- *  that diverged still gets its affordance, honestly noted). */
+/** Without markers (a diverged page), appends a fresh block before </main>. */
 function insertIntoMountBlock(page: string, section: string): PageInsert {
   const begin = page.indexOf(MOUNT_BEGIN);
   const end = page.indexOf(MOUNT_END);
@@ -554,11 +483,9 @@ function insertIntoIslandBlock(page: string, mount: string): PageInsert {
   return { text: `${page}\n${fresh}`, appendedFresh: true };
 }
 
-// ---------- the generator ----------
+// ---------- generator ----------
 
-/** Generate one action into an app tree, in lockstep from one table
- *  entry. Never throws; never overwrites an unexpected file; never
- *  builds (the answer names the loop: check → build → reload). */
+/** Never throws, never overwrites, never builds. */
 export async function addAction(
   deps: AddActionDeps,
   input: AddActionInput,
@@ -590,16 +517,10 @@ export async function addAction(
   data.action = name;
   const camel = actionCamel(name);
   const pascal = actionPascal(name);
-  // The summary is ONE LINE of intent by contract: collapse any
-  // whitespace it carries (a multi-line summary would corrupt the
-  // generated string literal and the manual's section shape) — a
-  // write-time surprise is never acceptable from a generator.
+  // One line by contract: a newline would break the generated literal.
   const summary = (input.summary ?? '').replace(/\s+/g, ' ').trim() || generatedSummary(name);
   const method = input.method ?? 'POST';
 
-  // The table is the arbiter of existence (idempotence): a name already
-  // there is a clear duplicate answer; a target artifact that exists
-  // WITHOUT its table entry is a diverged tree — refused, never mangled.
   const routesSource = fs.readFileSync(routesPath, 'utf8');
   const existing = parseRouteTableSource(routesSource).map(a => a.name);
   if (existing.includes(name)) {
@@ -621,7 +542,7 @@ export async function addAction(
   }
 
   try {
-    // 1 — the domain module (ping.ts's shape), before the entry imports it.
+    // 1. The domain module, before the entry imports it.
     fs.writeFileSync(
       path.join(tree, 'src', 'lib', `${name}.ts`),
       generatedLib(name, camel, pascal),
@@ -631,8 +552,7 @@ export async function addAction(
       what: 'the action’s Result family — a working echo stub (replace with real logic; its tests grow with it)',
     });
 
-    // 2 — THE table entry: everything else binds from this one line of
-    // truth (the entry + its import, appended after the last import).
+    // 2. The table entry and its import (after the last import).
     const importLine = `import { ${camel}Result } from './lib/${name}';\n`;
     const importAnchor = routesSource.match(/(?:^import[^\n]*\n)+/m);
     const withImport =
@@ -650,16 +570,14 @@ export async function addAction(
       what: `the table entry (${method} /api/${name}) + its import — the one entry every face (HTTP, shim tools, describe/call) binds from`,
     });
 
-    // 3 — the unit-test stub; the tree's `test` script (tests/*.test.mjs
-    // glob) picks it up with no edit.
+    // 3. The test stub; the tree's tests/*.test.mjs glob picks it up.
     fs.writeFileSync(path.join(tree, 'tests', `${name}.test.mjs`), generatedTest(name, camel));
     data.written.push({
       file: `tests/${name}.test.mjs`,
       what: 'the unit-test stub (one test per error code) — the tree’s test glob runs it as-is',
     });
 
-    // 4 — the island stub + its page mount points (the minimal honest
-    // affordance on an existing page: a section the island takes over).
+    // 4. The island and its page mount points.
     fs.writeFileSync(
       path.join(tree, 'src', 'islands', `${pascal}Island.tsx`),
       generatedIsland(name, camel, pascal, method),
@@ -692,9 +610,7 @@ export async function addAction(
       );
     }
 
-    // 5 — the operator manual: the BEGIN/END ACTIONS block, REGENERATED
-    // from the table as it now stands on disk (read back — the source of
-    // truth, never the generator's memory of what it wrote).
+    // 5. AGENTS.md, regenerated from the table as written on disk.
     const agentsPath = path.join(tree, 'AGENTS.md');
     const agentsText = fs.existsSync(agentsPath) ? fs.readFileSync(agentsPath, 'utf8') : '';
     const regen = regenerateAgentsActions(

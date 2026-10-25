@@ -1,7 +1,4 @@
-// GET /api/state — the console's poll (every open tab, every 15 s). It
-// also re-arms the browser cookie's Max-Age when it has drifted near half
-// the sliding window (auth.cookieRefresh decides — see the justification
-// there).
+// The console's 15 s poll. Also re-arms the cookie's Max-Age when due (auth.cookieRefresh).
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../lib/web/locals';
 import { consoleStateFailureResponse } from '../../lib/web/responses.service';

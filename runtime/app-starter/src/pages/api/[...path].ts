@@ -1,8 +1,5 @@
-// Every API method delegates to the kit's binder — the table owns the
-// routes (apps-plan §5): method+path matching, zod parse, handler,
-// Result→status. basePath is the app's baked base, so table entries name
-// paths the way the app thinks of them ('/api/ping') while the mounted
-// URL is '/apps/<slug>/api/ping'.
+// The table owns every API route. basePath is the baked base, so entries
+// name '/api/ping' while the mounted URL is '/apps/<slug>/api/ping'.
 import { astroApiHandlers } from '@cybermole/app-kit/route-table';
 import { routes } from '../../routes';
 

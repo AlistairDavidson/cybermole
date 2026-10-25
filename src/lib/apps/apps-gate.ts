@@ -1,29 +1,16 @@
-// apps-gate.ts — the check/build half of the cybermole-apps MCP
-// (task/app-scaffold, docs/plans/apps-plan.md §6): run an app tree's OWN
-// package.json scripts (the template bakes them; the tree owns the
-// commands) and answer ONE quiet envelope — the cybermole-dev tools'
-// contract ({passed, returncode, duration_s, quiet, timed_out, output,
-// counts?, failures?} — read passed first, counts on a glance, failure
-// detail in failures[]/output). check = astro check + tsc (the tree's
-// typecheck script) + the tree's unit tests + astro build (with the
-// route-table emission and the §5 self-containment gate, both inside the
-// build script) — THE gate before any report of done. build = check's
-// astro-build half alone.
-//
-// Stage 0 is the LINKS check (plan §5): every dependency the tree
-// declares must resolve in its node_modules — the per-package symlinks
-// intact. A bad install dies HERE, with the fix in the message, not
-// three stages later in a compiler error — and never at serve time.
+// check/build for an app tree: runs the tree's own npm scripts and answers
+// one quiet envelope (the cybermole-dev tools' shape). check = links +
+// typecheck + unit tests + build; build is the last stage alone. The links
+// stage first verifies every dependency resolves, so a broken install fails
+// here with the fix in the message, not later as a compiler error.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ResultFailure, ResultSuccess } from '@cybermole/app-kit';
 import { CommandNotFoundError, type ChildRun, type RunChildFn } from './apps-child';
 
-// ---------- the envelope (tools/dev-mcp's shape) ----------
+// ---------- envelope ----------
 
-/** The unit-test counts parsed from the test stage's TAP footer (node
- *  --test reports them; absent when the stage never ran or a crash ate
- *  the footer). */
+/** From the TAP footer; absent if the stage never ran or crashed. */
 export interface GateTestCounts {
   pass: number;
   fail: number;
@@ -51,8 +38,6 @@ export interface GateEnvelope {
   failures?: GateFailure[];
 }
 
-// ---------- the family (the tree-level preconditions) ----------
-
 export type AppGateData = { slug: string; tree: string; envelope: GateEnvelope };
 export type AppGateErrorCode = 'tree_not_found' | 'run_failed';
 export type AppGateSuccess = ResultSuccess<'app_gate', AppGateData>;
@@ -61,22 +46,16 @@ export type AppGateResult = AppGateSuccess | AppGateFailure;
 
 export interface GateDeps {
   appsRoot: string;
-  /** the child runner (injectable; apps-child.runChild is the real one) */
   run: RunChildFn;
-  /** per-stage timeout. Default 300 s — astro build of a real app. */
+  /** Per stage. Default 300 s (astro build of a real app). */
   timeoutMs?: number;
 }
 
-// ---------- stage plumbing ----------
-
 interface StageSpec {
-  /** the npm script the tree owns (npm run <name>) */
+  /** npm run <script> */
   script: string;
-  /** extra args after `npm run <script> --` (e.g. a machine-readable
-   *  test reporter — the REPORTER is the MCP's parsing concern, not a
-   *  command change; the script still owns the command). */
+  /** extra args after `--` (e.g. a TAP reporter for parsing) */
   args?: string[];
-  /** the stage's name in the envelope */
   label: string;
 }
 
@@ -100,8 +79,6 @@ function tail(text: string, lines: number): string {
     .trim();
 }
 
-/** node --test's TAP footer counts (`# pass 3` …), when the run got that
- *  far. TAP is node's stable machine format; the footer is the last word. */
 function parseTapCounts(stdout: string): GateTestCounts | undefined {
   const counts: GateTestCounts = { pass: -1, fail: -1, skipped: -1 };
   for (const line of stdout.split('\n')) {
@@ -116,10 +93,7 @@ function parseTapCounts(stdout: string): GateTestCounts | undefined {
   };
 }
 
-/** The links stage: every dependency (and both build bins) the tree
- *  declares resolves inside it. Missing names → the failure, with the
- *  fix in the text; a tree without package.json is not an app tree (the
- *  tree_not_found family answer covers the dir itself). */
+/** Declared dependencies and the astro/tsc bins that don't resolve in the tree. */
 function missingLinks(tree: string): string[] {
   const pkgPath = path.join(tree, 'package.json');
   let pkg: { dependencies?: Record<string, string> };
@@ -138,9 +112,7 @@ function missingLinks(tree: string): string[] {
   return missing;
 }
 
-/** Run the stages serially, first failure stops (a failed typecheck
- *  means the build would only re-report it). Pure assembly over the
- *  injectable runner — units drive it with fakes. */
+/** Serial; the first failure stops the rest. */
 export async function runGate(
   deps: GateDeps,
   slug: string,
@@ -237,13 +209,10 @@ export async function runGate(
   } satisfies AppGateSuccess;
 }
 
-/** check — THE gate (§1's loop): links + typecheck + unit tests + build. */
 export function checkApp(deps: GateDeps, slug: string): Promise<AppGateResult> {
   return runGate(deps, slug, CHECK_STAGES);
 }
 
-/** build — check's astro-build half alone (route-table emission + the §5
- *  gate ride the tree's build script). */
 export function buildApp(deps: GateDeps, slug: string): Promise<AppGateResult> {
   return runGate(deps, slug, BUILD_STAGES);
 }

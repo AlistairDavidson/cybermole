@@ -1,8 +1,5 @@
-// The note_get action's logic — the read-one half of the notes family,
-// grown from the add_action stub: the path-param face (`GET
-// /api/notes/:id` — the binder hands params over as strings; the table's
-// z.coerce schema makes the number, this family answers for the rest).
-// Runtime-kit-free (types only) and node-free — plain-node testable.
+// note_get: one note by id. Params arrive as strings; the schema's z.coerce
+// makes the number.
 import type { ResultFailure, ResultSuccess } from '@cybermole/app-kit';
 import { rowToNote, storeOp, type Note, type NotesStore } from './notes-core.ts';
 
@@ -19,8 +16,7 @@ const fail = (errorCode: NoteGetErrorCode, errorMessage: string): NoteGetFailure
   errorMessage,
 });
 
-/** One note by its id — archived or live (the archive is hidden from the
- *  default LIST, never from a direct get). */
+/** Archived notes are hidden from the default list, never from a direct get. */
 export function noteGetResult(store: NotesStore, id: number): NoteGetResult {
   const row = storeOp('could not read the note', () => store.findById(id));
   if (!row.ok) return fail('database_error', row.why);

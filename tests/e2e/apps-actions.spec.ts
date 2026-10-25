@@ -1,22 +1,10 @@
-// apps-actions.spec.ts — task/app-actions (docs/plans/apps-plan.md §1/§6/§10)
-// e2e: the action-vocabulary loop continued — the whole §1 build loop PLUS
-// the generator: scaffold a fresh app, add_action a 'note' action (POST
-// with a text field), check green (the gate — the grown unit tests AND the
-// build now emit a two-action route-table.json), register + reload, then
-// every face of the ONE vocabulary answers the same Result JSON:
-//   describe — the emitted table, the new action in it;
-//   the UI face — the page serves the new island's affordance, and driving
-//     it through the real browser answers end to end;
-//   call — the root agent's use path, in-process through the compiled MCP's
-//     own function, the same Result JSON as the page's own API hit;
-//   the shim — ONE stdio spawn of the compiled per-app MCP binary
-//     (node dist-server/server/app-mcp-shim.js <slug> with the suite's env):
-//     its tool list is the route table's names, a call answers verbatim.
+// The build loop plus the generator: scaffold an app, add_action a 'note'
+// action, check green (grown tests, a two-action route table), register and
+// reload, then every face answers the same Result JSON: describe, the UI
+// island in a real browser, `call` in-process, and one stdio spawn of the
+// per-app MCP shim.
 //
-// Serial + budget rules: one login() for this file; afterAll unregisters
-// and removes the tree so the fixture world stays exact for the other
-// specs. This file runs FIRST among the apps specs (alphabetical), before
-// apps-scaffold.spec.ts and apps.spec.ts — its leftovers would poison both.
+// Apps-spec discipline: see apps-notes.spec.ts.
 import { expect, test } from '@playwright/test';
 import type { Cookie, Page } from '@playwright/test';
 import * as fs from 'node:fs';
@@ -46,12 +34,9 @@ import { runChild } from '../../dist-server/src/lib/apps/apps-child.js';
 
 const REPO = path.resolve(__dirname, '..', '..');
 const SLUG = 'actions-probe';
-/** The entry sweep's once-per-run latch (see beforeAll): inside
- * APPS_ROOT, so the hermetic WORKSPACE's per-run rm -rf makes it
- * run-scoped — nothing else ever needs to clear it. */
+/** Inside APPS_ROOT, so the per-run WORKSPACE rm makes it run-scoped. */
 const SWEEP_MARKER = path.join(APPS_ROOT, `.${SLUG}.swept`);
-/** The MCP's own deps shape, resolved like main() would — against THIS
- *  suite's sockets and hermetic apps root (apps-scaffold.spec.ts's shape). */
+/** Resolved like main() would, against this suite's sockets and apps root. */
 const deps = {
   appsRoot: APPS_ROOT,
   internalSocketPath: INTERNAL_SOCKET,
@@ -59,12 +44,10 @@ const deps = {
   installRoot: REPO,
 };
 
-// dist-server ships no .d.ts, so the compiled verbs' answers are read
-// as loose JSON here (the units assert the typed shapes).
+// dist-server ships no .d.ts, so tool answers are loose JSON here.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- parsed tool JSON
 type Json = any;
 
-/** One tool answer: isError + the parsed body (the tools' result shape). */
 async function tool(
   run: Promise<{ isError?: boolean; content?: Array<{ text?: string }> } | undefined>,
 ): Promise<{ isError: boolean; body: Json }> {
@@ -72,8 +55,7 @@ async function tool(
   return { isError: r?.isError === true, body: JSON.parse(r?.content?.[0]?.text ?? '{}') };
 }
 
-/** Authed in-page JSON fetch (the shared suite idiom — Playwright's API
- *  client doesn't send the Secure session cookie over plain http). */
+/** In-page fetch, so the Secure session cookie is sent. */
 async function api(
   page: Page,
   method: string,
@@ -95,10 +77,8 @@ Promise<{ status: number; json: any }> {
   );
 }
 
-/** Signs in ONCE for the whole RUN — the cookie is shared with the
- *  sibling apps specs through the workspace file (env.ts's helpers:
- *  the three apps files were each burning one of the 10/15-min login
- *  attempts, pushing the suite's late re-logins into 429s). */
+/** Signs in once per run via the shared cookie file (the apps specs share
+ *  the 10/15-min login budget). */
 let sessionCookie: Cookie | null = null;
 async function login(page: Page): Promise<void> {
   if (!sessionCookie) {
@@ -134,16 +114,9 @@ async function login(page: Page): Promise<void> {
 }
 
 test.beforeAll(async () => {
-  // ENTRY sweep — idempotent by INTENT, but GATED once per run by the
-  // marker: the scheduler may split this file across workers, and a
-  // replacement worker's re-run beforeAll would otherwise unregister +
-  // rm the app an earlier worker's tests in THIS run just built (the
-  // observed mid-test vanishing). The marker lives inside APPS_ROOT
-  // (under the hermetic WORKSPACE — global-setup's per-run rm -rf makes
-  // it run-scoped) and NOTHING removes it mid-run (there is no afterAll:
-  // the run's true cleanup is structural — rows die with the per-run db,
-  // trees with the per-run WORKSPACE rm; later files sweep their own
-  // slugs at entry the same way).
+  // Entry sweep, gated once per run by the marker: the scheduler may split
+  // this file across workers, and a replacement worker's beforeAll would
+  // otherwise unregister and remove what earlier tests in this run built.
   if (fs.existsSync(SWEEP_MARKER)) return;
   fs.mkdirSync(APPS_ROOT, { recursive: true });
   fs.writeFileSync(SWEEP_MARKER, `${process.pid} ${Date.now()}\n`);
@@ -151,14 +124,14 @@ test.beforeAll(async () => {
   try {
     await unregisterTool(deps, SLUG);
   } catch {
-    /* no row — fine */
+    /* no row */
   }
 });
 
 test('the extended loop: scaffold → add_action → check green → register + reload → serving', async () => {
   test.setTimeout(300_000);
 
-  // scaffold — the real template, baked, linked, committed.
+  // scaffold: the real template, baked, linked, committed
   const { scaffoldApp } = await import('../../dist-server/src/lib/apps/apps-scaffold.js');
   const scaffolded: Json = await scaffoldApp(
     {
@@ -175,8 +148,7 @@ test('the extended loop: scaffold → add_action → check green → register + 
   expect(scaffolded.data).toMatchObject({ slug: SLUG, linked: true, committed: true });
   const tree = scaffolded.data.tree as string;
 
-  // add_action — the generator, in lockstep from one table entry. The
-  // default shape IS the spec's example: POST, one `text` field.
+  // add_action's default shape is this spec's example: POST, one `text` field.
   const added: Json = await addAction(
     { appsRoot: APPS_ROOT },
     { slug: SLUG, name: 'note', summary: 'captures a short note' },
@@ -196,12 +168,11 @@ test('the extended loop: scaffold → add_action → check green → register + 
   expect(added.data.next.join(' ')).toMatch(/check/);
   expect(added.data.next.join(' ')).toMatch(/build/);
   expect(added.data.next.join(' ')).toMatch(/reload/);
-  // the operator manual grew with the table (the block regeneration).
+  // AGENTS.md grew with the table.
   const agents = fs.readFileSync(path.join(tree, 'AGENTS.md'), 'utf8');
   expect(agents.match(/### note[\s\S]*?POST \/apps\/actions-probe\/api\/note/)).toBeTruthy();
 
-  // check — THE gate, green: the grown unit tests (3 ping + 3 note) and
-  // the build's emitted two-action route table.
+  // The gate: the grown unit tests (3 ping + 3 note) and a two-action route table.
   const checked: Json = await checkApp({ appsRoot: APPS_ROOT, run: runChild }, SLUG);
   expect(checked.ok, JSON.stringify(checked)).toBe(true);
   if (!checked.ok) return;
@@ -213,7 +184,7 @@ test('the extended loop: scaffold → add_action → check green → register + 
     ),
   ).toEqual(['ping', 'note']);
 
-  // register + reload — the sync point (§1's order: row first, then sync).
+  // register, then reload (the sync point)
   const registered = await tool(registerTool(deps, SLUG));
   expect(registered.isError, JSON.stringify(registered.body)).toBe(false);
   const reloaded = await tool(reloadTool(deps, SLUG));
@@ -224,18 +195,15 @@ test('the extended loop: scaffold → add_action → check green → register + 
   ).toContain(SLUG);
 });
 
-/** The page test's shared precondition: the app REGISTERED and
- *  MOUNTED, established idempotently — the scheduler-split note in
- *  beforeAll means no file-order state assumptions. Cheap when the
- *  world is already right: one statusTool round-trip. */
+/** Registered and mounted, re-established per test. One status round trip
+ *  when already right. */
 async function ensureRegisteredAndMounted(): Promise<void> {
   const status = await tool(statusTool(deps, SLUG));
   expect(status.isError, JSON.stringify(status)).toBe(false);
   const app = status.body.apps[0] as { registered: boolean } | undefined;
   if (!app?.registered) {
     const registered = await tool(registerTool(deps, SLUG));
-    // duplicate_slug = another worker just registered it (green);
-    // isError + anything else is a real failure.
+    // duplicate_slug: another worker just registered it, which is fine.
     expect(
       !registered.isError || registered.body?.code === 'duplicate_slug',
       JSON.stringify(registered),
@@ -256,7 +224,6 @@ test('every face of the one vocabulary: describe, the UI island, call, and one s
   await ensureRegisteredAndMounted();
   await login(page);
 
-  // describe — the emitted table, the new action in it.
   const described = await tool(describeTool(deps, SLUG));
   expect(described.isError).toBe(false);
   expect(
@@ -271,9 +238,7 @@ test('every face of the one vocabulary: describe, the UI island, call, and one s
   ]);
   expect(described.body[1].input.required).toEqual(['text']);
 
-  // the UI face: the page serves the new island's affordance, SSR'd, and
-  // driving it through the real browser answers end to end (the typed
-  // client on the same table the API serves).
+  // The page serves the new island; driving it in the browser works end to end.
   await page.goto(`/apps/${SLUG}/`);
   await expect(page.locator('.note-island p[aria-live="polite"]')).toHaveText('— not sent yet —');
   await page.fill('.note-island wa-input input', 'from-the-ui');
@@ -282,7 +247,7 @@ test('every face of the one vocabulary: describe, the UI island, call, and one s
     'ok: received from-the-ui',
   );
 
-  // the page's own API hit — the Result JSON face the UI consumes.
+  // The page's own API.
   const viaPage = await api(page, 'POST', `/apps/${SLUG}/api/note`, { text: 'from-page' });
   expect(viaPage.status, JSON.stringify(viaPage.json)).toBe(200);
   expect(viaPage.json).toMatchObject({
@@ -291,8 +256,7 @@ test('every face of the one vocabulary: describe, the UI island, call, and one s
     data: { received: 'from-page' },
   });
 
-  // call — the root agent's use path, in-process through the compiled
-  // MCP's own function: the SAME Result JSON as the page's face (§0).
+  // `call`, in-process: the same Result JSON.
   const viaCall = await tool(
     callActionTool(deps, { slug: SLUG, action: 'note', params: { text: 'from-call' } }),
   );
@@ -300,17 +264,14 @@ test('every face of the one vocabulary: describe, the UI island, call, and one s
   expect(viaCall.body.resultType).toBe('note');
   expect(viaCall.body.data.received).toBe('from-call');
   expect(typeof viaCall.body.data.at).toBe('number');
-  // the shapes agree (the input values and the epoch-ms `at` are the only
-  // legitimate differences) — one vocabulary, every face (§0).
+  // Only the input values and the epoch-ms `at` differ.
   expect(Object.keys(viaCall.body)).toEqual(['ok', 'resultType', 'data']);
   expect(viaCall.body.ok).toBe(viaPage.json.ok);
   expect(viaCall.body.resultType).toBe(viaPage.json.resultType);
   expect(Object.keys(viaCall.body.data)).toEqual(Object.keys(viaPage.json.data));
 
-  // ONE shim round-trip — the compiled per-app binary, spawned as pi
-  // spawns it (the tree's .pi/mcp.json entry: <shim.js> <slug>), spoken
-  // to over stdio: the tool list IS the route table, a call answers the
-  // same verbatim Result JSON (a child process, not a per-test server).
+  // One shim round trip, spawned as pi spawns it (<shim.js> <slug>): its
+  // tools are the route table and calls answer verbatim.
   const client = new Client({ name: 'apps-actions-e2e', version: '0' });
   await client.connect(
     new StdioClientTransport({
@@ -326,7 +287,7 @@ test('every face of the one vocabulary: describe, the UI island, call, and one s
   expect(shimCall.isError, JSON.stringify(shimCall.content)).not.toBe(true);
   const shimBody = JSON.parse((shimCall.content as Array<{ text: string }>)[0].text);
   expect(shimBody).toMatchObject({ ok: true, resultType: 'note', data: { received: 'from-shim' } });
-  // the GET face through the shim too: THE request the entry names.
+  // the GET face through the shim too
   const shimPing = await client.callTool({ name: 'ping', arguments: { name: 'shim-e2e' } });
   expect(JSON.parse((shimPing.content as Array<{ text: string }>)[0].text)).toMatchObject({
     ok: true,

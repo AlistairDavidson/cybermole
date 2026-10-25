@@ -1,29 +1,16 @@
-// apps-notes.spec.ts — task/app-notes (docs/plans/apps-plan.md §1/§9/§10) e2e:
-// the reference app's USE loop, on the tree the run SHIPPED. The build
-// loop ran once, through the verbs, as the epic's acceptance run; this
-// spec keeps the shipped tree honest forever after: it seeds
-// runtime/reference-apps/notes into the hermetic apps root (the same
-// only-where-absent seeding the image's workspace entrypoint performs),
-// re-bakes this checkout's install root over the image's baked values,
-// links the core stack, runs the check gate, registers + reloads — then
-// walks §1's use loop through the console origin:
-//   the list page renders (SSR over the same domain call the API serves);
-//   note_create via the UI island, via the page's own API and via `call`
-//     — one Result JSON, every face (§0);
-//   note_list via the page (reload + the no-JS search form) and via
-//     describe/call;
-//   note_archive hides the note from the default list and keeps it
-//     findable archived — a flag, never a delete;
-//   a domain failure (an empty title) answers the SAME closed error code
-//     on every face — the page's API, `call`, the UI island's own line,
-//     and (one stdio spawn) the app's MCP shim.
+// The notes reference app's use loop, on the shipped tree. Seeds
+// runtime/reference-apps/notes into the hermetic apps root, re-bakes this
+// checkout's install root, runs the check gate, registers and reloads, then
+// walks it through the console origin: create via the island, the page's
+// API and `call` (one Result JSON on every face); list via the page and
+// describe/call; archive hides from the default list without deleting; and
+// an empty title answers the same error code on every face, the MCP shim
+// included.
 //
-// Serial + budget rules (the apps specs' discipline — see the sibling
-// headers): ONE login() through the shared cookie file (env.ts), never a
-// fresh form sign-in; no afterAll teardown (the entry sweep at beforeAll
-// is marker-gated once per run; the run's true cleanup is structural —
-// rows die with the per-run db, trees with the per-run WORKSPACE rm);
-// per-test preconditions idempotent (ensureRegisteredAndMounted).
+// Apps-spec discipline: one login() via the shared cookie file (env.ts); no
+// afterAll (rows die with the per-run db, trees with the per-run WORKSPACE
+// rm); the entry sweep is marker-gated once per run; per-test preconditions
+// are re-established idempotently (ensureRegisteredAndMounted).
 import { expect, test } from '@playwright/test';
 import type { Cookie, Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
@@ -53,12 +40,9 @@ import { runChild } from '../../dist-server/src/lib/apps/apps-child.js';
 
 const REPO = path.resolve(__dirname, '..', '..');
 const SLUG = 'notes';
-/** The entry sweep's once-per-run latch (see beforeAll): inside
- *  APPS_ROOT, so the hermetic WORKSPACE's per-run rm -rf makes it
- *  run-scoped — nothing else ever needs to clear it. */
+/** Inside APPS_ROOT, so the per-run WORKSPACE rm makes it run-scoped. */
 const SWEEP_MARKER = path.join(APPS_ROOT, `.${SLUG}.swept`);
-/** The MCP's own deps shape, resolved like main() would — against THIS
- *  suite's sockets and hermetic apps root (the sibling specs' shape). */
+/** Resolved like main() would, against this suite's sockets and apps root. */
 const deps = {
   appsRoot: APPS_ROOT,
   internalSocketPath: INTERNAL_SOCKET,
@@ -66,12 +50,10 @@ const deps = {
   installRoot: REPO,
 };
 
-// dist-server ships no .d.ts, so the compiled verbs' answers are read
-// as loose JSON here (the units assert the typed shapes).
+// dist-server ships no .d.ts, so tool answers are loose JSON here.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- parsed tool JSON
 type Json = any;
 
-/** One tool answer: isError + the parsed body (the tools' result shape). */
 async function tool(
   run: Promise<{ isError?: boolean; content?: Array<{ text?: string }> } | undefined>,
 ): Promise<{ isError: boolean; body: Json }> {
@@ -79,8 +61,7 @@ async function tool(
   return { isError: r?.isError === true, body: JSON.parse(r?.content?.[0]?.text ?? '{}') };
 }
 
-/** Authed in-page JSON fetch (the shared suite idiom — Playwright's API
- *  client doesn't send the Secure session cookie over plain http). */
+/** In-page fetch, so the Secure session cookie is sent. */
 async function api(
   page: Page,
   method: string,
@@ -102,9 +83,8 @@ Promise<{ status: number; json: any }> {
   );
 }
 
-/** Signs in ONCE for the whole RUN — the shared cookie file first (env.ts's
- *  helpers: the apps specs share the 10/15-min login budget), this file's
- *  own sign-in only when nobody has signed in yet. */
+/** Signs in once per run: the shared cookie file first, a form sign-in
+ *  only if nobody has yet (the apps specs share the login budget). */
 let sessionCookie: Cookie | null = null;
 async function login(page: Page): Promise<void> {
   if (!sessionCookie) {
@@ -140,13 +120,9 @@ async function login(page: Page): Promise<void> {
 }
 
 test.beforeAll(async () => {
-  // ENTRY sweep — idempotent by INTENT, but GATED once per run by the
-  // marker (the sibling specs' discipline: the scheduler may split this
-  // file across workers, and a replacement worker's re-run beforeAll
-  // would otherwise unregister + rm the app an earlier worker's tests in
-  // THIS run just built). The marker lives inside APPS_ROOT (under the
-  // hermetic WORKSPACE — global-setup's per-run rm -rf makes it
-  // run-scoped) and NOTHING removes it mid-run (there is no afterAll).
+  // Entry sweep, gated once per run by the marker: the scheduler may split
+  // this file across workers, and a replacement worker's beforeAll would
+  // otherwise unregister and remove what earlier tests in this run built.
   if (fs.existsSync(SWEEP_MARKER)) return;
   fs.mkdirSync(APPS_ROOT, { recursive: true });
   fs.writeFileSync(SWEEP_MARKER, `${process.pid} ${Date.now()}\n`);
@@ -154,17 +130,12 @@ test.beforeAll(async () => {
   try {
     await unregisterTool(deps, SLUG);
   } catch {
-    /* no row — fine */
+    /* no row */
   }
 });
 
-/** Seed the SHIPPED reference tree into the hermetic apps root — the
- *  image entrypoint's only-where-absent seeding, re-enacted per run
- *  against a fresh world: copy the tree (the sources, its .pi/, its
- *  AGENTS.md, data/.gitkeep — never a dist/ or a db), re-bake THIS
- *  checkout's install root over the image's baked values, link the core
- *  stack (the per-package node_modules), and give the tree its own git
- *  repo (the scaffold's shape — agent undo is git clean). */
+/** Copy the sources (never dist/ or a db), re-bake this checkout's install
+ *  root, link the core stack, and git init (as the scaffold does). */
 function seedReferenceTree(): string {
   const tree = path.join(APPS_ROOT, SLUG);
   fs.rmSync(tree, { recursive: true, force: true });
@@ -209,19 +180,17 @@ test('the shipped reference tree: seed → check green → register + reload →
 }) => {
   test.setTimeout(240_000);
 
-  // seed — the image's only-where-absent contract, against the fresh world
+  // seed, as the image's entrypoint does
   const tree = seedReferenceTree();
   expect(fs.existsSync(path.join(tree, 'app.json'))).toBe(true);
   expect(fs.existsSync(path.join(tree, 'data', 'app.db'))).toBe(false); // never a db in the seed
 
-  // status BEFORE registration: the honest unregistered tree (§9 —
-  // nothing auto-registers; status is what shows it).
+  // Before registration, status shows an unregistered tree.
   const pre = await tool(statusTool(deps, SLUG));
   expect(pre.isError, JSON.stringify(pre.body)).toBe(false);
   expect(pre.body.unregisteredTrees).toEqual([SLUG]);
 
-  // check — THE gate, green: the shipped tree's own typecheck, its 33
-  // unit tests, and the build (route-table emission + self-containment).
+  // The gate: typecheck, the tree's unit tests, and the build.
   const checked: Json = await checkApp({ appsRoot: APPS_ROOT, run: runChild }, SLUG);
   expect(checked.ok, JSON.stringify(checked)).toBe(true);
   if (!checked.ok) return;
@@ -229,7 +198,7 @@ test('the shipped reference tree: seed → check green → register + reload →
   expect(checked.data.envelope.counts.tests).toEqual({ pass: 33, fail: 0, skipped: 0 });
   expect(checked.data.envelope.output).toContain('all green');
 
-  // register + reload — the privileged act, then the sync point (§1's order).
+  // register, then reload (the sync point)
   const registered = await tool(registerTool(deps, SLUG));
   expect(registered.isError, JSON.stringify(registered.body)).toBe(false);
   expect(registered.body).toMatchObject({
@@ -245,10 +214,8 @@ test('the shipped reference tree: seed → check green → register + reload →
   ).toContain(SLUG);
 });
 
-/** The browser tests' shared precondition: the app REGISTERED and
- *  MOUNTED, established idempotently (the scheduler-split note in
- *  beforeAll — no file-order state assumptions). Cheap when the world
- *  is already right: one statusTool round-trip. */
+/** Registered and mounted, established idempotently (no file-order
+ *  assumptions). One status round trip when already right. */
 async function ensureRegisteredAndMounted(): Promise<void> {
   const status = await tool(statusTool(deps, SLUG));
   expect(status.isError, JSON.stringify(status.body)).toBe(false);
@@ -275,13 +242,12 @@ test('the use loop through the console origin: list, capture on every face, find
   await ensureRegisteredAndMounted();
   await login(page);
 
-  // the list page renders — SSR over the same note_list domain call the
-  // API serves, through the console origin, behind the session gate.
+  // The list page renders through the console origin, behind the session gate.
   await page.goto(`/apps/${SLUG}/`);
   await expect(page.locator('wa-card h1')).toHaveText('Notes');
   await expect(page.locator('.note-editor wa-button')).toHaveText('save note');
 
-  // ---- note_create, face 1: the UI island (the signal editor) ----
+  // ---- note_create via the UI island ----
   await page.locator('.note-editor wa-input').nth(0).locator('input').fill('UI-created note');
   await page
     .locator('.note-editor wa-textarea textarea')
@@ -292,7 +258,7 @@ test('the use loop through the console origin: list, capture on every face, find
     /saved: UI-created note \(#\d+\)/,
   );
 
-  // ---- note_create, face 2: the page's own API (what the island calls) ----
+  // ---- note_create via the page's API ----
   const viaPage = await api(page, 'POST', `/apps/${SLUG}/api/notes`, {
     title: 'from-the-page',
     body: 'created through the page API face',
@@ -305,9 +271,7 @@ test('the use loop through the console origin: list, capture on every face, find
     data: { note: { title: 'from-the-page', tags: ['ui'], archived: false } },
   });
 
-  // ---- note_create, face 3: `call` — the root agent's use path, the
-  // SAME Result JSON (§0; the timestamps are the only legitimate
-  // difference, so the shapes and the stable fields are asserted equal). ----
+  // ---- note_create via `call`: the same Result JSON (only timestamps differ) ----
   const viaCall = await tool(
     callActionTool(deps, {
       slug: SLUG,
@@ -324,7 +288,7 @@ test('the use loop through the console origin: list, capture on every face, find
   const callNoteId = viaCall.body.data.note.id as number;
   expect(typeof callNoteId).toBe('number');
 
-  // ---- note_list: describe says the shape, call finds, the page shows ----
+  // ---- note_list: describe, call, and the page ----
   const described = await tool(describeTool(deps, SLUG));
   expect(described.isError).toBe(false);
   const table = described.body as Array<{ name: string; method: string; path: string }>;
@@ -348,8 +312,7 @@ test('the use loop through the console origin: list, capture on every face, find
     'from-the-page',
   ]);
 
-  // the page face: reload — all three notes are there (SSR list); then
-  // the no-JS search form narrows to one.
+  // Reload shows all three; the no-JS search form narrows to one.
   await page.goto(`/apps/${SLUG}/`);
   await expect(page.locator('.notes a')).toHaveCount(3);
   await page.locator('form.find input[name="search"]').fill('from-call');
@@ -357,8 +320,7 @@ test('the use loop through the console origin: list, capture on every face, find
   await expect(page.locator('.notes a')).toHaveCount(1);
   await expect(page.locator('.notes a')).toHaveText('from-call');
 
-  // ---- the domain failure: an empty title answers the SAME closed
-  // error code on every face ----
+  // ---- an empty title answers the same error code on every face ----
   const badViaPage = await api(page, 'POST', `/apps/${SLUG}/api/notes`, { title: '   ' });
   expect(badViaPage.status).toBe(400);
   expect(badViaPage.json).toMatchObject({
@@ -376,15 +338,14 @@ test('the use loop through the console origin: list, capture on every face, find
     resultType: 'note_create',
     errorCode: 'invalid_title',
   });
-  // …and the island's own line says it too (the browser face).
+  // …including the island's own line.
   await page.locator('.note-editor wa-input').nth(0).locator('input').fill('   ');
   await page.locator('.note-editor wa-button').click();
   await expect(page.locator('.note-editor p[aria-live="polite"]')).toHaveText(
     'error: title is required',
   );
 
-  // ---- note_edit through the island on the note page (the editor's
-  // other mode): the SSR'd note + the PATCH face ----
+  // ---- note_edit through the island on the note page ----
   const toEdit = listed.body.data.notes.find((n: { title: string }) => n.title === 'from-call') as {
     id: number;
   };
@@ -400,7 +361,7 @@ test('the use loop through the console origin: list, capture on every face, find
   );
   expect(reread.body.data.note.title).toBe('from-call, edited');
 
-  // ---- note_archive: gone from the default list, findable archived ----
+  // ---- note_archive: gone from the default list, still findable archived ----
   const archived = await tool(
     callActionTool(deps, { slug: SLUG, action: 'note_archive', params: { id: toEdit.id } }),
   );
@@ -413,8 +374,7 @@ test('the use loop through the console origin: list, capture on every face, find
   await expect(page.locator('.notes a')).toHaveCount(1);
   await expect(page.locator('.notes a')).toHaveText('from-call, edited');
   await expect(page.locator('.notes wa-badge').first()).toHaveText('archived');
-  // the archived note is hidden from the default LIST only — note_get
-  // and the note page still answer it, every byte intact.
+  // Hidden from the list only: note_get and the note page still serve it.
   const stillThere = await tool(
     callActionTool(deps, { slug: SLUG, action: 'note_list', params: { search: 'edited' } }),
   );
@@ -432,9 +392,8 @@ test('the app MCP shim: the table\u2019s tools over stdio, note_get by id, the s
   test.setTimeout(60_000);
   await ensureRegisteredAndMounted();
 
-  // ONE stdio spawn — the compiled per-app binary, as the tree's
-  // .pi/mcp.json registers it (pi's shape): the tool list IS the emitted
-  // route table, and a call answers the app's Result JSON verbatim.
+  // One stdio spawn of the per-app shim, as .pi/mcp.json registers it: its
+  // tools are the route table and calls answer the app's JSON verbatim.
   const client = new Client({ name: 'apps-notes-e2e', version: '0' });
   await client.connect(
     new StdioClientTransport({
@@ -454,8 +413,7 @@ test('the app MCP shim: the table\u2019s tools over stdio, note_get by id, the s
   ]);
   expect(tools.tools[2]!.description).toContain('list notes');
 
-  // create through call, then note_get BY ID through the shim: the same
-  // note, byte for byte (the path-param face over stdio).
+  // Create via call, then note_get by id through the shim: the same note.
   const created = await tool(
     callActionTool(deps, {
       slug: SLUG,
@@ -473,8 +431,7 @@ test('the app MCP shim: the table\u2019s tools over stdio, note_get by id, the s
     data: { note: { id, title: 'shim round-trip', tags: ['shim'] } },
   });
 
-  // the domain failure through the shim too: the SAME closed code every
-  // other face answered (§0 — the last face).
+  // The empty-title failure through the shim too: the same code.
   const bad = await client.callTool({ name: 'note_create', arguments: { title: '   ' } });
   expect(JSON.parse((bad.content as Array<{ text: string }>)[0].text)).toMatchObject({
     ok: false,

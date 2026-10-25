@@ -1,6 +1,4 @@
-// POST /api/jobs/validate — the /jobs dialog's live cron check. An invalid
-// schedule is a 200 with { valid: false, error } — it's an answer, not a
-// failed request.
+// An invalid schedule is a 200 with { valid: false, error }: an answer, not a failed request.
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../../lib/web/locals';
 import { parseAndValidateAPIRequest } from '../../../lib/web/parsing.service';

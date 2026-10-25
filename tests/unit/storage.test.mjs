@@ -1,10 +1,7 @@
-// storage.test.mjs — src/lib/platform/storage.ts against the in-memory fake S3
-// (tests/support/fake-s3.mjs): one test per StoreUploadResult / FetchObjectResult
-// error code, the bucket check/create on first use, streamed and
-// multipart uploads (and the abort when a stream fails midway), and the
-// responses objectStoreFailureResponse / fileDownloadResponse build. Plus
-// the CYBERMOLE_S3_* boot checks in src/lib/platform/env.ts, which read RAW_ENV at
-// module load (child processes).
+// storage.ts against the fake S3: one test per error code, the bucket check
+// on first use, streamed and multipart uploads (aborted when a stream fails),
+// the download responses, and the CYBERMOLE_S3_* boot checks (in child
+// processes, since RAW_ENV is read at load).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -410,9 +407,9 @@ test('fileDownloadResponse: always an attachment, sandboxed, allowlisted type or
   assert.equal(head.headers.get('content-disposition'), "attachment; filename*=UTF-8''a.txt");
 });
 
-// ---------- CYBERMOLE_S3_* boot checks (src/lib/platform/env.ts) ----------
+// ---------- CYBERMOLE_S3_* boot checks ----------
 
-/** readObjectStoreConfig() in a fresh process (RAW_ENV is read at module load), or its error. */
+/** In a fresh process: the config or its error. */
 function bootConfig(env) {
   const clean = Object.fromEntries(
     Object.entries(process.env).filter(([k]) => !k.startsWith('CYBERMOLE_S3_')),

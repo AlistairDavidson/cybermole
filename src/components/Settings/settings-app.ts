@@ -1,14 +1,10 @@
-// settings-app.ts — <settings-app>: enhances the server-rendered /settings
-// dashboard (SettingsView.astro). Data arrives as HTML; this element only
-// wires the actions — the manual pi update (POST /api/update-pi), the
-// auto-update toggle (POST /api/auto-update-pi), log out everywhere — and,
-// after an update, refreshes the data regions from /partials/settings
-// (swapping the [data-refresh] elements by id: plain HTML, no wa-*
-// inside, so nothing re-hydrates). Events are delegated to this element.
+// <settings-app>: wires the server-rendered /settings actions (pi update,
+// auto-update toggle, terminal defaults, log out everywhere), then refreshes
+// [data-refresh] regions from /partials/settings. Those regions hold no wa-*,
+// so nothing needs re-hydrating.
 import type { UpdateResult } from '../../lib/platform/types';
 import { BASE } from '../../base';
 import { signedInFetch, type SignedInFetchFailure } from '../signed-in-fetch';
-// Registers <validation-enhancer-zod> (and the base <validation-enhancer>).
 import 'validation-enhancer/zod';
 import type { ValidationEnhancerZod } from 'validation-enhancer/zod';
 import { terminalDefaultsBody } from '../../schemas/api';
@@ -19,9 +15,7 @@ import '@awesome.me/webawesome/dist/components/callout/callout.js';
 import '@awesome.me/webawesome/dist/components/badge/badge.js';
 import '@awesome.me/webawesome/dist/components/details/details.js';
 import '@awesome.me/webawesome/dist/components/switch/switch.js';
-// The terminal-defaults form's SSR'd controls (AGENTS.md: SSR imports ≠
-// client imports — without this the wa-inputs never upgrade, and a wa-*
-// form that hasn't upgraded submits none of its values).
+// Needed client-side too, or the SSR'd wa-inputs never upgrade (AGENTS.md).
 import '@awesome.me/webawesome/dist/components/input/input.js';
 
 interface WaButtonLike extends HTMLElement {
@@ -38,10 +32,7 @@ interface WaSwitchLike extends HTMLElement {
   checked: boolean;
   disabled: boolean;
 }
-/** wa-input's surface for the terminal-defaults fields. An empty
- *  wa-input's value is null, not '' — and either way the payload means
- *  CLEAR: the schema normalizes '' to null (validation-enhancer-zod
- *  feeds an emptied field as ''). */
+/** An empty wa-input's value is null, not ''; both mean clear. */
 interface WaInputLike extends HTMLElement {
   value: string | null;
   name: string;
@@ -59,11 +50,9 @@ export class SettingsApp extends HTMLElement {
       if (button?.id === 'update-pi') void this.updatePi();
       else if (button?.id === 'logout-all') void this.logoutAll();
     });
-    // The terminal-defaults buttons: direct onclick on the hosts
-    //  (jobs-app's #job-save pattern — they live inside the form, where a
-    //  native submit default action would race the validated submit).
-    //  The save button requestSubmits so validation-enhancer-zod runs
-    //  first (the AGENTS.md rule); the reset posts its explicit nulls.
+    // Click handlers on the buttons themselves: inside the form, a native
+    // submit would race the validated one. Save requestSubmits so the
+    // enhancer validates first.
     (this.querySelector('#save-terminal-defaults') as HTMLElement | null)?.addEventListener(
       'click',
       () => this.defaultsForm()?.requestSubmit(),
@@ -75,19 +64,15 @@ export class SettingsApp extends HTMLElement {
     this.addEventListener('change', e => {
       if ((e.target as HTMLElement).id === 'pi-auto-update') void this.toggleAutoUpdate();
     });
-    // Valid submits only (task/defaults-settings): the enhancer stops an
-    // invalid one from propagating, so this listener sits ABOVE it — a
-    // listener on the form itself would fire (target phase) before
-    // validation ran.
+    // Above the enhancer: it stops invalid submits, and a listener on the
+    // form itself would fire before validation.
     this.addEventListener('submit', e => {
       if ((e.target as HTMLElement).id !== 'terminal-defaults-form') return;
       e.preventDefault();
       void this.saveDefaults();
     });
-    // The form validates against the same schema POST /api/settings parses
-    // with; the fields prefill from the source region's data (the effective
-    // values — wa-input's value is a property, so the server render can't
-    // set it and the prefill runs once the control has upgraded).
+    // wa-input's value is a property the server can't render, so prefill
+    // once it has upgraded.
     void customElements
       .whenDefined('validation-enhancer-zod')
       .then(() =>
@@ -96,13 +81,9 @@ export class SettingsApp extends HTMLElement {
         ),
       );
     void customElements.whenDefined('wa-input').then(() => this.prefillDefaults());
-    // A blocked submit leaves the zod layer's setCustomValidity on the
-    //  wa-input HOST (the inner input's own state clears on edit; the
-    //  host's does not) — and requestSubmit's interactive validation
-    //  consults the host, silently refusing to submit at all. Clear the
-    //  stale flag on every edit (observed here, on the host — before the
-    //  enhancer's ancestor listener re-marks a still-invalid value, so a
-    //  zod error keeps showing while it should).
+    // A blocked submit leaves setCustomValidity on the wa-input host, and
+    // requestSubmit then silently refuses. Clear it on every edit, before
+    // the enhancer re-marks a still-invalid value.
     for (const name of ['agentCommand', 'shellCommand'] as const) {
       this.defaultsField(name)?.addEventListener('input', function (this: WaInputLike) {
         this.setCustomValidity('');
@@ -111,10 +92,9 @@ export class SettingsApp extends HTMLElement {
     this.localizeTimes();
   }
 
-  // ---- terminal defaults (task/defaults-settings) ----
+  // ---- terminal defaults ----
 
-  /** The effective values this element last applied to the fields — the
-   *  edit-detector prefillDefaults() skips changed fields against. */
+  /** What we last put in the fields, to tell user edits apart. */
   private applied: { agentCommand: string; shellCommand: string } | null = null;
 
   private defaultsForm(): HTMLFormElement | null {
@@ -125,7 +105,6 @@ export class SettingsApp extends HTMLElement {
     return this.querySelector(`wa-input[name="${name}"]`);
   }
 
-  /** The field's message element (its hint slot — WaField). */
   private defaultsError(control: WaInputLike): HTMLElement | null {
     const id = control.getAttribute('aria-errormessage');
     return id ? this.querySelector(`#${CSS.escape(id)}`) : null;
@@ -143,9 +122,7 @@ export class SettingsApp extends HTMLElement {
     }
   }
 
-  /** A 400's per-field issues, in the fields' hint slots (jobs-app's
-   *  showFieldErrors pattern: the custom validity clears itself once the
-   *  user edits and the enhancer re-validates). */
+  /** The custom validity clears once the user edits and the enhancer re-validates. */
   private showDefaultsErrors(issues: Record<string, string>): void {
     for (const [name, text] of Object.entries(issues)) {
       const control = this.defaultsField(name as 'agentCommand' | 'shellCommand');
@@ -158,13 +135,9 @@ export class SettingsApp extends HTMLElement {
     }
   }
 
-  /** Fill the two fields with the server's effective values (the source
-   *  region's data attributes — #terminal-defaults-source, refreshed by
-   *  refresh()). Runs on load and after every save/reset — but never over
-   *  a field the user has edited since: the refresh ride can land while
-   *  they type, and clobbering their edit (or quietly re-saving it as the
-   *  stale shown value) is the worse wrong. A field is skipped when its
-   *  current value no longer equals the one WE last applied. */
+  /** Fill the fields with the server's effective values, but never over a
+   *  field the user edited since we last filled it (a refresh can land
+   *  mid-typing). */
   private prefillDefaults(): void {
     const source = this.$('terminal-defaults-source');
     const agent = this.defaultsField('agentCommand');
@@ -198,10 +171,7 @@ export class SettingsApp extends HTMLElement {
     const shell = this.defaultsField('shellCommand');
     if (!agent || !shell) return;
     result.classList.add('hidden');
-    // An emptied field is null on an upgraded wa-input ('' once the
-    //  enhancer has had it) — either way the schema's transform makes it
-    //  null: the PER-FIELD clear. A too-long or multiline value never got
-    //  past the enhancer.
+    // An emptied field is null (or ''); the schema turns either into a clear.
     const sent = await signedInFetch(`${BASE}/api/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -230,11 +200,10 @@ export class SettingsApp extends HTMLElement {
     result.variant = 'success';
     result.textContent = 'saved — the next terminal runs it';
     result.classList.remove('hidden');
-    // What was sent is what the server now reports — mark the fields as
-    // ours at these values, so the refresh's prefill skips only a field
-    // genuinely edited while the save was in flight.
+    // The fields now hold what the server reports, so the refresh's prefill
+    // only skips a field edited mid-flight.
     this.applied = { agentCommand: agent.value ?? '', shellCommand: shell.value ?? '' };
-    void this.refresh(); // the source line + the config row re-render server-side
+    void this.refresh();
   }
 
   private async resetDefaults(): Promise<void> {
@@ -258,27 +227,24 @@ export class SettingsApp extends HTMLElement {
     result.variant = 'success';
     result.textContent = 'back to the defaults (env / built-in chain)';
     result.classList.remove('hidden');
-    this.applied = null; // a reset MEANS re-filling both fields from the server
+    this.applied = null; // refill both fields from the server
     void this.refresh();
   }
 
-  /** Server-rendered <time> values are ISO; show them in the browser's
-   *  locale and timezone. */
+  /** Show server ISO times in the browser's locale. */
   private localizeTimes(): void {
     this.querySelectorAll<HTMLTimeElement>('time[datetime]').forEach(t => {
       t.textContent = new Date(t.dateTime).toLocaleString();
     });
   }
 
-  /** An action's failure, in its callout. */
   private showError(callout: WaCalloutLike, message: string): void {
     callout.variant = 'danger';
     callout.textContent = message;
     callout.classList.remove('hidden');
   }
 
-  /** An action whose request got no answer. Signed out shows nothing: the
-   *  page is already on its way to /login. */
+  /** Signed out shows nothing: the page is already heading to /login. */
   private notAnswered(
     callout: WaCalloutLike,
     failure: SignedInFetchFailure,
@@ -295,7 +261,6 @@ export class SettingsApp extends HTMLElement {
     }
   }
 
-  /** Re-render the data regions from the partial and re-apply the flags. */
   private async refresh(): Promise<void> {
     const sent = await signedInFetch(`${BASE}/partials/settings`);
     if (!sent.ok) return;
@@ -308,9 +273,6 @@ export class SettingsApp extends HTMLElement {
       );
     });
     this.localizeTimes();
-    // task/defaults-settings: the terminal-defaults fields follow the
-    //  refreshed effective values (a save/reset just changed them; on a
-    //  plain refresh nothing moves).
     this.prefillDefaults();
     const flags = this.$('pi-flags').dataset;
     const npmAvailable = flags.npmAvailable === 'true';
@@ -349,7 +311,7 @@ export class SettingsApp extends HTMLElement {
         return;
       }
       const res = sent.data.response;
-      // Not an UpdateResult (e.g. a proxy's error page): the status says it.
+      // null: not an UpdateResult (e.g. a proxy's error page).
       const r = (await res.json().catch(() => null)) as UpdateResult | null;
       if (r === null) {
         result.variant = 'danger';
@@ -377,9 +339,7 @@ export class SettingsApp extends HTMLElement {
     }
   }
 
-  // The auto-update toggle applies immediately (no form): persist via the
-  // API, revert the switch when the save fails. The first check runs
-  // within a minute of turning the setting on, so the status line says so.
+  // Applies immediately; reverts the switch if the save fails.
   private async toggleAutoUpdate(): Promise<void> {
     const autoSwitch = this.$<WaSwitchLike>('pi-auto-update');
     const autoResult = this.$<WaCalloutLike>('auto-result');
@@ -397,7 +357,7 @@ export class SettingsApp extends HTMLElement {
           this.$('auto-check-line').textContent = 'not checked yet — first check within a minute';
         return;
       }
-      autoSwitch.checked = !enabled; // the save failed — restore what's persisted
+      autoSwitch.checked = !enabled;
       if (!sent.ok) this.notAnswered(autoResult, sent, 'could not save the setting');
       else
         this.showError(autoResult, `could not save the setting: HTTP ${sent.data.response.status}`);
@@ -406,9 +366,7 @@ export class SettingsApp extends HTMLElement {
     }
   }
 
-  // 'Log out everywhere': the server drops every session token and ends
-  // every live terminal. This browser is sent back to the sign-in page —
-  // other browsers find out on their next request (or terminal message).
+  // Other browsers find out on their next request or terminal message.
   private async logoutAll(): Promise<void> {
     const logoutAllBtn = this.$<WaButtonLike>('logout-all');
     const logoutResult = this.$<WaCalloutLike>('logout-result');
@@ -422,7 +380,7 @@ export class SettingsApp extends HTMLElement {
         headers: { 'Content-Type': 'application/json' },
         body: '{}',
       });
-      // signed_out = the session already expired elsewhere — back to sign-in too.
+      // signed_out: already expired elsewhere.
       if (!sent.ok) {
         this.notAnswered(logoutResult, sent);
         return;

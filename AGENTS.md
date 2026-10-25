@@ -9,7 +9,11 @@ README.md.
 closed error codes, branded IDs, shared node-free schemas, thin Astro API
 routes behind the main.ts gate, HTML web components, and forms.
 `docs/conventions/REFACTOR_STYLE.md` covers porting older code into them. Formatting
-and comment density aren't prescribed; match the surrounding code.
+isn't prescribed; match the surrounding code.
+
+Comments are short and only say what the code can't: why, invariants,
+non-obvious constraints. Don't restate the code, and don't reference task
+branches, plan sections or past designs.
 
 ## Testing
 
@@ -61,8 +65,7 @@ For authenticated API calls use in-page `fetch` (`page.evaluate`), not
 cookie over the suite's plain-http origin. Build first (`npm run build`)
 or let global-setup do it when dist/ is missing.
 
-The `tests/e2e/apps-*.spec.ts` files add the apps-e2e discipline (their
-header comments are the pattern): the whole suite's login budget is
+The `tests/e2e/apps-*.spec.ts` files add the apps-e2e discipline: the whole suite's login budget is
 shared through the cookie file in `tests/support/env.ts` (readSharedSessionCookie
 — the first apps spec to need a browser signs in, the rest reuse the
 cookie; never a fresh form sign-in per file), each spec sweeps its OWN

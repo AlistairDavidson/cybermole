@@ -1,10 +1,7 @@
-// logger.test.mjs — the winston logging module (src/lib/platform/logger.ts):
-// transport selection with and without CYBERMOLE_LOKI_URL, the loki
-// transport's labels/levels, console visibility of the levels, and — in a
-// child process against a dead URL — the hard requirement that a down
-// loki never takes the server down (no unhandled rejections, no retry
-// spam, exactly one throttled warn). Run against the compiled output:
-// `npm run test:unit`.
+// logger.ts: transport selection with and without CYBERMOLE_LOKI_URL, loki
+// labels and levels, console visibility, and (in a child, against a dead
+// URL) that a down loki never takes the process down: no unhandled
+// rejections, exactly one throttled warning.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
@@ -13,9 +10,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-// No CYBERMOLE_LOKI_* in this process: the module-level `logger` is the
-// console-only shape (the fresh-process env reads below cover the
-// configured shape through createLogger).
+// No CYBERMOLE_LOKI_* here, so the module logger is console-only;
+// createLogger covers the configured shape.
 delete process.env.CYBERMOLE_LOKI_URL;
 delete process.env.CYBERMOLE_LOKI_JOB;
 
@@ -62,11 +58,8 @@ test('the module-level logger is the console-only shape on a plain host', () => 
   assert.deepEqual(names(logger), ['Console']);
 });
 
-// Console VISIBILITY is asserted in a child process: capturing this
-// process's stdout would mean patching process.stdout.write, which breaks
-// node:test's own child protocol (tests completing before the patch
-// silently vanish from the run — verified with a minimal repro). The
-// child's own captured output is the honest place to look.
+// Visibility is checked in a child: patching this process's stdout breaks
+// node:test's own child protocol (tests silently vanish).
 const VISIBILITY_CHILD = `
 const { createLogger, closeLogger } = require(process.cwd() + '/dist-server/src/lib/platform/logger.js');
 const log = createLogger(null);
@@ -106,14 +99,11 @@ test(
   },
 );
 
-// ---------- a configured-but-down loki (child process) ----------
+// ---------- a configured but down loki (child) ----------
 //
-// The requirement is behavioural, not just structural: with
-// CYBERMOLE_LOKI_URL pointing at a closed port the process must stay alive
-// and quiet. The child logs, waits past the first failed push (the 5s
-// batch interval), logs again, and exits 0 — any unhandledRejection or
-// uncaughtException fails it. Port 1 on loopback: connection refused
-// instantly, nothing listens there.
+// Port 1 on loopback refuses instantly. The child logs, waits past the first
+// failed push (5 s batches), logs again and exits 0; any unhandledRejection
+// or uncaughtException fails it.
 
 const DOWN_CHILD = `
 const { componentLogger } = require(process.cwd() + '/dist-server/src/lib/platform/logger.js');
@@ -154,12 +144,10 @@ test(
   },
 );
 
-// ---------- the configured loki transport actually pushes (child) ----------
+// ---------- the loki transport pushes (child) ----------
 //
-// A tiny HTTP server stands in for loki's /loki/api/v1/push and captures
-// the POST body: proves the label scheme (job static, level, component)
-// and structured JSON lines arrive end-to-end, and that closeLogger()
-// flushes the last batch.
+// A stub /loki/api/v1/push captures the body: the label scheme, structured
+// JSON lines, and closeLogger() flushing the last batch.
 
 const PUSH_CHILD = `
 const { componentLogger, closeLogger } = require(process.cwd() + '/dist-server/src/lib/platform/logger.js');

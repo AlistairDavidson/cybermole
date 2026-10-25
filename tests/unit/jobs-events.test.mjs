@@ -1,12 +1,7 @@
-// jobs-events.test.mjs — the domain-event bus (src/lib/platform/events.ts) and
-// the service-layer emission choke points (src/lib/jobs/jobs.ts, plan §7):
-// every mutation path emits exactly the right event with the right
-// payload, and failure paths emit nothing. The db-only families
-// (created/updated/deleted) run in-process; the run lifecycle
-// (started/killed/finished) needs tmux — real tmux for the happy path
-// (private ABSOLUTE socket, set before the import so nothing can touch a
-// real cybermole socket), and a stand-in tmux on PATH for killRun's error
-// codes (deterministic, no server needed).
+// The domain-event bus and jobs.ts's emission points: each mutation emits
+// exactly the right event, and failures emit nothing. Run lifecycle events
+// use real tmux on a private absolute socket for the happy path, and a fake
+// tmux for killRun's error codes.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -36,7 +31,7 @@ const haveTmux = (() => {
   }
 })();
 
-/** Scheduler + its db handle (to read fired_at rows back). */
+/** Plus its db, to read fired_at rows back. */
 function fresh() {
   const db = new StateDb(path.join(fs.mkdtempSync(path.join(dir, 'db-')), 'cybermole.db'));
   return {
@@ -45,7 +40,7 @@ function fresh() {
   };
 }
 
-/** A Scheduler whose state db can never open (its parent is a file). */
+/** Its state db can never open (the parent is a file). */
 function brokenScheduler() {
   const file = path.join(fs.mkdtempSync(path.join(dir, 'broken-')), 'not-a-dir');
   fs.writeFileSync(file, '');
@@ -56,8 +51,7 @@ function brokenScheduler() {
   });
 }
 
-/** Collect bus events for the duration of `body` (always unsubscribes —
- *  the bus is a module singleton shared by every test here). */
+/** Always unsubscribes: the bus is a module singleton. */
 async function collecting(body) {
   const events = [];
   const off = onDomainEvent(e => events.push(e));
@@ -90,7 +84,7 @@ test('saveJob: job_created first, job_updated after; failures emit nothing', asy
     const { s } = fresh();
     assert.ok((await s.saveJob(parsed(GOOD))).ok);
     assert.ok((await s.saveJob(parsed({ ...GOOD, schedule: '0 8 * * *' }))).ok);
-    // invalid input and a dead db never reach the write — no event.
+    // invalid input and a dead db never reach the write: no event
     assert.equal(
       (await s.saveJob(parsed({ ...GOOD, schedule: 'daily' }))).errorCode,
       'invalid_schedule',
@@ -118,9 +112,8 @@ test('deleteJob: job_deleted on success; not-found and db failures emit nothing'
 });
 
 test('killRun: every error code; only a successful kill emits run_killed', async () => {
-  // Stand-in tmux on PATH: `up` marks the server up, `sessions` lists
-  // live sessions, `kill-fails` makes kill-session fail — everything
-  // killRun's checks issue (src/lib/terminals/tmux.ts has-session / kill-session).
+  // Fake tmux: `up` marks the server up, `sessions` lists live sessions,
+  // `kill-fails` makes kill-session fail.
   const fakeDir = fs.mkdtempSync(path.join(dir, 'fake-tmux-'));
   fs.writeFileSync(
     path.join(fakeDir, 'tmux'),
@@ -157,27 +150,23 @@ exit 0
 
       assert.equal((await s.killRun('nope', 1000)).errorCode, 'job_not_found');
       assert.equal((await s.killRun('nightly', 999)).errorCode, 'run_not_found');
-      // server down (no `up` file): has-session fails → run_not_active
-      // (the reconciled family from task/jobs-socket — plan §4's route
-      // asserts the same codes; the event still must NOT fire)
+      // server down: run_not_active, and no event
       assert.equal((await s.killRun('nightly', 1000)).errorCode, 'run_not_active');
 
       fs.writeFileSync(path.join(fakeDir, 'up'), '');
       fs.writeFileSync(path.join(fakeDir, 'sessions'), 'cybermole-nightly\n');
-      // the named run is not the live one: a NEWER row exists
+      // not the live run: a newer row exists
       db.db()
         .prepare('INSERT INTO job_runs (job, fired_at, origin) VALUES (?, ?, ?)')
         .run('nightly', 2000, 'manual');
       assert.equal((await s.killRun('nightly', 1000)).errorCode, 'run_not_active');
 
-      // the newest run, live, but kill-session fails → tmux_error
+      // the newest run, live, but kill-session fails: tmux_error
       fs.writeFileSync(path.join(fakeDir, 'kill-fails'), '');
       assert.equal((await s.killRun('nightly', 2000)).errorCode, 'tmux_error');
       fs.rmSync(path.join(fakeDir, 'kill-fails'));
 
-      // happy path: the kill lands, run_killed fires (data shape is the
-      // reconciled { name, firedAt } — the session is derivable, the
-      // internal API's route passes it through)
+      // the kill lands: run_killed with { name, firedAt }
       const killed = await s.killRun('nightly', 2000);
       assert.deepEqual(killed, {
         ok: true,
@@ -202,8 +191,7 @@ test('killRun: database_error when the job or runs cannot be read', async () => 
 });
 
 test('a fire that cannot spawn emits no run_started (nothing started)', async () => {
-  // No tmux server behind the socket: the fire is spent (recorded) but
-  // the run never opened — run_started must NOT fire.
+  // No tmux server: the fire is spent but the run never opened, so no run_started.
   const events = await collecting(async () => {
     const { s } = fresh();
     await s.saveJob(parsed(GOOD));
@@ -232,8 +220,7 @@ test(
         const kill = await s.killRun('nightly', firedAt);
         assert.ok(kill.ok, kill.errorMessage);
 
-        // The tick sees the session gone and records the finish →
-        // run_finished (at OBSERVATION time, not process exit).
+        // The tick sees the session gone: run_finished, at observation time.
         await s.tick();
         const row = db
           .db()
@@ -244,8 +231,7 @@ test(
       assert.deepEqual(
         events.map(e => [e.topic, e.type]),
         [
-          // the saveJob inside the block emits first — the lifecycle
-          // assertions below are about the RUN events
+          // the saveJob above emitted first; these assertions are about run events
           ['jobs', 'job_created'],
           ['jobs', 'run_started'],
           ['jobs', 'run_killed'],

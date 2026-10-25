@@ -1,16 +1,11 @@
-// PingIsland.tsx — the example action's UI: a preact island with signals
-// (the kit's convention — pages render server-side, islands carry the
-// interactive regions, client state lives in signals so prop drilling
-// and effect chains stay out of small UIs). The action call goes through
-// the kit's typed client on the SAME table the API route serves — one
-// action vocabulary, every face (apps-plan §0).
+// The example action's UI: a preact island with signals, calling the action
+// through the kit's typed client over the same route table the API serves.
 import { useRef } from 'preact/hooks';
 import { signal } from '@preact/signals';
 import { createRouteClient } from '@cybermole/app-kit/route-table';
 import { routes } from '../routes';
 
-/** The wa-input host after the browser upgrades it (before that, .value
- *  is absent — the island reads it defensively). */
+/** .value is absent until the element upgrades. */
 interface WaInputHost extends HTMLElement {
   value: string | null;
 }

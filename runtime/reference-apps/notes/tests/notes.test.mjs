@@ -1,6 +1,4 @@
-// The pure core's own tests — shapes, tags and filter compilation (the
-// pieces every action assembles from; the actions' behavior is covered
-// per family in tests/note_*.test.mjs).
+// The pure core: shapes, tags and filter compilation.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {

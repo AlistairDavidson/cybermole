@@ -1,8 +1,5 @@
-// zod-attributes.test.mjs — zodSchemaToHTMLAttributes (src/lib/web/zod.service.ts):
-// soothing-booking's cases ported to the toJSONSchema rebuild, plus the
-// HTML-pattern guard — every pattern the app's form schemas emit must
-// compile under the `v` flag browsers use for `pattern` (an invalid one is
-// silently ignored by the browser, so it must never be emitted).
+// zodSchemaToHTMLAttributes, plus a guard that every pattern the form schemas
+// emit compiles under the `v` flag (browsers silently ignore invalid ones).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { z } from 'zod';
@@ -52,7 +49,7 @@ test('combines checks on one field, and keeps them through optional/nullable wra
 test('non-string fields get no attributes; refinements and transforms are skipped, not fatal', () => {
   assert.deepEqual(attrs({ n: z.number().min(1), b: z.boolean() }), { n: {}, b: {} });
   assert.deepEqual(attrs({ a: z.string().refine(v => v !== 'x') }).a, { required: true });
-  // a pipe exposes its INPUT side: the user types anything that normalizes validly
+  // a pipe exposes its input side: anything that normalizes validly
   assert.deepEqual(
     attrs({
       a: z
@@ -77,7 +74,7 @@ test('the app’s form schemas: the attributes the forms render', () => {
     name: { required: true, maxlength: 40 }, // typed length only: the charset applies after normalizing
     schedule: { required: true, minlength: 1, maxlength: 120, pattern: '^[^\\r\\n]*$' },
     command: { required: true, minlength: 1, maxlength: 4000, pattern: '^[^\\r\\n]*$' },
-    appId: { pattern: UUID_RE.source }, // optional tag (task/ws-schema); not required, just shaped
+    appId: { pattern: UUID_RE.source }, // optional: not required, just shaped
   });
   assert.deepEqual(zodSchemaToHTMLAttributes(loginForm), {
     username: { required: true, minlength: 1 },
@@ -97,7 +94,7 @@ test('every pattern an app schema emits compiles under the v flag', () => {
         assert.equal(compilesAsHtmlPattern(a.pattern), true, `${field}: ${a.pattern}`);
     }
   }
-  // and the ID schemas really do emit theirs (the escaped hyphens are why they pass)
+  // the ID schemas emit theirs (the escaped hyphens are why they compile)
   const ids = zodSchemaToHTMLAttributes(z.object({ a: JobNameSchema, b: TmuxSessionNameSchema }));
   assert.ok(ids.a.pattern && ids.b.pattern);
 });

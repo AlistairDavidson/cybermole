@@ -1,5 +1,3 @@
-// /api/jobs — GET lists the scheduled jobs; POST creates or updates one
-// (JobSaveSchema — the same schema the /jobs dialog validates with).
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../../lib/web/locals';
 import { parseAndValidateAPIRequest } from '../../../lib/web/parsing.service';

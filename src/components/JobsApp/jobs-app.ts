@@ -1,8 +1,6 @@
-// jobs-app.ts — <jobs-app>: enhances the server-rendered /jobs page
-// (JobsApp.astro, JobsList.astro / JobCard.astro). The list arrives as
-// HTML; this element wires the actions (run / edit / delete by delegated
-// clicks — the cards carry their data), the create/edit dialog, and a 15 s
-// refresh that swaps in /partials/jobs-list.
+// <jobs-app>: wires the server-rendered /jobs list (delegated card clicks),
+// the create/edit dialog, and refreshes from /partials/jobs-list on the 15 s
+// poll and on live job events.
 import type { CalendarCheck } from '../../lib/platform/types';
 import { BASE } from '../../base';
 import { parseServerHTML } from '../html';
@@ -17,7 +15,6 @@ import '@awesome.me/webawesome/dist/components/select/select.js';
 import '@awesome.me/webawesome/dist/components/option/option.js';
 import '@awesome.me/webawesome/dist/components/textarea/textarea.js';
 import '@awesome.me/webawesome/dist/components/toast/toast.js';
-// Registers <validation-enhancer-zod> (and the base <validation-enhancer>).
 import 'validation-enhancer/zod';
 import type { ValidationEnhancerZod } from 'validation-enhancer/zod';
 import { JobSaveSchema } from '../../schemas/jobs';
@@ -27,8 +24,7 @@ import { RunLogViewer } from './run-log';
 import { fmtDuration, fmtRunTime } from './run-format';
 
 type WaDialog = HTMLElement & { open: boolean };
-/** wa-input / wa-textarea / wa-select surface used here. An empty
- *  wa-input's value is null, not ''; an unselected wa-select's is ''. */
+/** An empty wa-input's value is null, not ''; an unselected wa-select's is ''. */
 type WaFormControl = HTMLElement & {
   value: string | null;
   disabled: boolean;
@@ -39,8 +35,7 @@ type WaToast = HTMLElement & {
   create(message: string, options?: Record<string, unknown>): Promise<unknown>;
 };
 
-/** What the dialog edits — read off a card's edit button (the app tag
- *  as the tagged app's id, '' when the job is untagged). */
+/** Read off a card's edit button; app is the tag's id, '' when untagged. */
 interface JobFields {
   name: string;
   schedule: string;
@@ -48,8 +43,7 @@ interface JobFields {
   app: string;
 }
 
-/** The picker's options, from the swapped-in list's data-apps (the same
- *  server render that listed the jobs — refreshed by the 15 s poll). */
+/** From the list's data-apps, refreshed with it. */
 interface AppChoice {
   id: string;
   name: string;
@@ -58,18 +52,15 @@ interface AppChoice {
 export class JobsApp extends HTMLElement {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private validateTimer: ReturnType<typeof setTimeout> | null = null;
-  /** /ws/events teardown (plan §7's live consistency — jobs-events.ts). */
   private unsubscribeEvents: (() => void) | null = null;
   private deleting: string | null = null;
-  /** The job whose history the runs dialog shows. */
   private runsJob: string | null = null;
-  /** The shared log-tail viewer (run-log.ts) over the dialog's box. */
   private logViewer = new RunLogViewer(this, () => this.runsJob);
   private inflight = false;
 
   connectedCallback(): void {
     (this.querySelector('#jobs-new') as HTMLElement).onclick = () => this.openDialog(null);
-    // Card actions, delegated: refreshed cards need no rewiring.
+    // Delegated, so refreshed cards need no rewiring.
     this.addEventListener('click', e => {
       const button = (e.target as HTMLElement).closest<HTMLElement>(
         '[data-run], [data-edit], [data-del], [data-runs], [data-log]',
@@ -88,22 +79,18 @@ export class JobsApp extends HTMLElement {
       else if (runs) void this.openRuns(runs);
       else if (log) void this.logViewer.show(Number(log));
     });
-    // The footer button lives outside the form (dialog footer slot):
-    // submit the form so <validation-enhancer-zod> validates it first.
+    // The footer button is outside the form; requestSubmit so the enhancer validates first.
     (this.querySelector('#job-save') as HTMLElement).onclick = () => this.jobForm().requestSubmit();
     (this.querySelector('#job-delete-confirm') as HTMLElement).onclick = () => this.deleteJob();
-    // #run-log-close is wired by the shared RunLogViewer (run-log.ts).
     (this.querySelector('#job-schedule') as WaFormControl).addEventListener('input', () =>
       this.queueValidate(),
     );
-    // Valid submits only: the enhancer stops an invalid one from
-    // propagating, so the save listener sits ABOVE it — a listener on the
-    // form itself would fire (target phase) before validation ran.
+    // Above the enhancer: it stops invalid submits, and a listener on the
+    // form itself would fire before validation.
     this.addEventListener('submit', e => {
       e.preventDefault();
       void this.save();
     });
-    // The dialog validates against the same schema POST /api/jobs parses with.
     void customElements
       .whenDefined('validation-enhancer-zod')
       .then(() =>
@@ -112,23 +99,14 @@ export class JobsApp extends HTMLElement {
         ),
       );
 
-    // The list is server-rendered; the 15 s poll keeps it fresh (and
-    // retries a failed listing — the partial answers 500 with no fragment
-    // then, so what is shown stays until a good one lands).
+    // A failed partial answers 500 with no fragment, so what's shown stays.
     this.pollTimer = setInterval(() => {
       void this.load();
     }, 15000);
-    // task/jobs-page (plan §7): live consistency — the /ws/events
-    // subscription runs the SAME partial refresh the poll runs (load),
-    // debounced inside jobs-events.ts. Whoever mutated the job (this
-    // page, another tab, an agent over the internal socket API of plan
-    // §4), the list follows within a moment instead of up to 15 s; the
-    // poll above stays as the safety net.
+    // Live events refresh within a moment; the poll is the safety net.
     this.unsubscribeEvents = subscribeJobsEvents(() => void this.load());
-    // The job detail page's edit entry lands here with the dialog open
-    // (ONE editor — the /jobs dialog — reused, no second form to drift):
-    // /jobs?edit=<name>. The URL is cleaned so a reload does not reopen
-    // the dialog; a name that has no card (deleted, bad link) is a no-op.
+    // /jobs?edit=<name> (from the job detail page) opens the one shared
+    // editor. The URL is cleaned so a reload doesn't reopen it.
     const wanted = new URLSearchParams(location.search).get('edit');
     if (wanted) {
       history.replaceState(null, '', `${BASE}/jobs`);
@@ -160,8 +138,7 @@ export class JobsApp extends HTMLElement {
     });
   }
 
-  /** A failed action's toast: the server's error (and detail) when it
-   *  answered with one, else `fallback`. */
+  /** The server's error and detail when it gave one, else `fallback`. */
   private errorToast(
     fallback: string,
     body: { error?: string; detail?: string | null } = {},
@@ -173,8 +150,7 @@ export class JobsApp extends HTMLElement {
     );
   }
 
-  /** An action whose request got no answer. Signed out needs no toast:
-   *  the page is already on its way to /login. */
+  /** Signed out needs no toast: the page is already heading to /login. */
   private notAnswered(failure: SignedInFetchFailure, fallback: string): void {
     switch (failure.errorCode) {
       case 'signed_out':
@@ -187,7 +163,7 @@ export class JobsApp extends HTMLElement {
     }
   }
 
-  /** Swap in a fresh server-rendered list. A failed fetch keeps what is shown. */
+  /** A failed fetch keeps what's shown. */
   private async load(): Promise<void> {
     const sent = await signedInFetch(`${BASE}/partials/jobs-list`);
     if (!sent.ok) return;
@@ -207,13 +183,11 @@ export class JobsApp extends HTMLElement {
     return this.jobForm().querySelector(`[name="${name}"]`) as WaFormControl | null;
   }
 
-  /** The field's message element (its hint slot — WaField). */
   private fieldError(control: WaFormControl): HTMLElement | null {
     const id = control.getAttribute('aria-errormessage');
     return id ? this.querySelector(`#${CSS.escape(id)}`) : null;
   }
 
-  /** Reset every field's validation state (a re-opened dialog starts clean). */
   private clearFieldErrors(): void {
     for (const name of ['name', 'schedule', 'command']) {
       const control = this.field(name);
@@ -226,9 +200,7 @@ export class JobsApp extends HTMLElement {
     }
   }
 
-  /** A 400's per-field issues, shown where the client-side errors go. The
-   *  custom validity clears itself once the user edits the field (the
-   *  enhancer re-validates against the schema). */
+  /** The custom validity clears once the user edits and the enhancer re-validates. */
   private showFieldErrors(issues: Record<string, string>): void {
     for (const [name, text] of Object.entries(issues)) {
       const control = this.field(name);
@@ -248,7 +220,7 @@ export class JobsApp extends HTMLElement {
     const command = this.querySelector('#job-command') as WaFormControl;
     dlg.setAttribute('label', job ? `edit job ${job.name}` : 'new job');
     name.value = job?.name ?? '';
-    name.disabled = job !== null; // the name is the job identity — no renames
+    name.disabled = job !== null; // the name is the identity: no renames
     schedule.value = job?.schedule ?? '';
     command.value = job?.command ?? '';
     this.setAppOptions(job?.app ?? '');
@@ -259,8 +231,7 @@ export class JobsApp extends HTMLElement {
     (job ? schedule : name).focus();
   }
 
-  /** (Re)populate the tag picker from the swapped-in list's data-apps and
-   *  select the tagged app — '' clears it. */
+  /** '' selects no app. */
   private setAppOptions(selected: string): void {
     const select = this.querySelector('#job-app') as WaSelect | null;
     if (!select) return;
@@ -270,9 +241,9 @@ export class JobsApp extends HTMLElement {
         this.querySelector('#jobs-list')?.getAttribute('data-apps') ?? '[]',
       ) as AppChoice[];
     } catch {
-      /* a bad payload must not break the dialog — the picker just offers nothing */
+      /* a bad payload just leaves the picker empty */
     }
-    select.textContent = ''; // options are rebuilt, never appended to
+    select.textContent = '';
     for (const app of apps) {
       const option = document.createElement('wa-option');
       option.value = app.id;
@@ -314,16 +285,14 @@ export class JobsApp extends HTMLElement {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ schedule }),
     });
-    // No answer is transient — the save path re-validates server-side.
+    // No answer is transient; the save re-validates server-side anyway.
     if (!sent.ok || !sent.data.response.ok) return;
     const check = (await sent.data.response.json().catch(() => null)) as CalendarCheck | null;
     if (check) this.setFeedback(check);
   }
 
-  /** Runs only for a submit the enhancer let through (the schema passed
-   *  client-side); the server re-validates with the same schema. The app
-   *  tag is not one of the enhancer's fields (an empty optional select
-   *  would trip the uuid pattern) — it rides along as null when unset. */
+  /** The app tag isn't an enhancer field (an empty optional select would
+   *  trip the uuid pattern); it's sent as null when unset. */
   private async save(): Promise<void> {
     if (this.inflight) return;
     const value = (name: string): string => this.field(name)?.value ?? '';
@@ -423,11 +392,9 @@ export class JobsApp extends HTMLElement {
     await this.load();
   }
 
-  // ---- run history + log tail (plan §9) ----
+  // ---- run history + log tail ----
 
-  /** Open the per-job run history: GET /api/jobs/:name/runs, rendered
-   *  into the dialog body (numbers + closed unions only — nothing
-   *  untrusted is templated). */
+  /** Only numbers and closed unions are templated, nothing untrusted. */
   private async openRuns(name: string): Promise<void> {
     this.runsJob = name;
     this.logViewer.hide();

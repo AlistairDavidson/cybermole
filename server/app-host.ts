@@ -1,31 +1,10 @@
-// app-host.ts — the app host (task/app-host, docs/plans/apps-plan.md §3): a
-// mini main.ts running on the WORKSPACE side of the privilege split,
-// listening on its own unix socket (CYBERMOLE_APPS_SOCK — the
-// CYBERMOLE_SOCK rules verbatim: unset = /run/cybermole/apps.sock when
-// the shared dir exists, else <state dir>/apps.sock; empty = the apps
-// surface is off; a set value must be absolute). It never serves TCP:
-// the socket's file mode (0660, the shared setgid group in compose) is
-// the gate, exactly the internal API's stance — app code runs as the
-// workspace uid with exactly a terminal's powers (plan §8), reachable
-// for browsers only through the web container's future /apps/* proxy
-// (branch 2), which adds the session gate.
+// App host: runs on the workspace side, serving registered apps over its own
+// unix socket (CYBERMOLE_APPS_SOCK, file mode 0660 as the gate). Browsers
+// reach it only through the web server's session-gated /apps/* proxy.
 //
-// The loop: DISCOVER registered apps (the internal API's read-only
-// GET /apps over CYBERMOLE_SOCK, plus each row's app.json + dist/),
-// MOUNT each complete one (cache-busted dynamic import of its built
-// dist/server/entry.mjs — the @astrojs/node middleware `handler`, the
-// same shape server/main.ts loads for the console — plus its dist/client
-// static assets), and RELOAD on demand (POST /_admin/reload — the single
-// sync point: register/unregister write rows, reload makes the mounts
-// match them). Row + manifest + build = mounted; anything missing is
-// skipped and reported (/_admin/status, logs). A throwing app handler is
-// a 500 for that app's paths only — the main.ts crash-guard stance, per
-// mount; a middleware that fails to import is a skipped-and-reported app.
-//
-// Importable without side effects — unit tests boot this module alone on
-// a tmp-dir socket against a real internal-api fixture. The env rules
-// live in src/lib/platform/env.ts (readAppsSocket); this module takes resolved
-// absolute paths.
+// Discovers app rows over the internal API, mounts each complete one (app.json
+// + built dist/), and re-syncs on POST /_admin/reload. A throwing app is a 500
+// on its own paths only.
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -40,23 +19,16 @@ const log = componentLogger('app-host');
 
 // ---------- types ----------
 
-/** The @Astrojs/node middleware export every mounted app provides — the
- *  same shape server/main.ts loads from the console's dist/server/entry.mjs
- *  (docs/plans/apps-plan.md §3: "the same static+middleware split main.ts
- *  performs for the console"). Apps get NO locals: the console's
- *  { cybermole, session } never crosses into app code (plan §8). */
+/** The @astrojs/node middleware export. Apps get no locals: the console's
+ *  { cybermole, session } never reaches app code. */
 type AppHandler = (
   req: http.IncomingMessage,
   res: http.ServerResponse,
   next: (err?: unknown) => void,
 ) => void;
 
-/** app.json — the app's self-description (plan §2: the db row stays
- *  structural; the manifest is the app's own file). slug is the mount
- *  identity cross-check: the ROW's slug is what registration means, and
- *  the app's base path is baked as /apps/<slug> at build — a manifest
- *  that disagrees names a tree whose baked base will not match the
- *  mount, so it is skipped, not served broken. */
+/** A manifest slug that disagrees with the row would have a baked base that
+ *  doesn't match the mount, so the app is skipped. */
 interface AppManifest {
   name: string;
   description: string | null;
@@ -65,7 +37,7 @@ interface AppManifest {
 
 interface MountedApp {
   readonly slug: string;
-  /** '/apps/<slug>' — the baked base the app was built with. */
+  /** '/apps/<slug>', baked in at build. */
   readonly base: string;
   readonly cwd: string;
   readonly manifest: AppManifest;
@@ -80,8 +52,6 @@ interface SkippedApp {
   readonly reason: string;
 }
 
-/** One app row as the internal API's GET /apps answers it (AppState,
- *  src/lib/platform/types.ts). */
 interface AppRow {
   id: string;
   name: string;
@@ -91,29 +61,19 @@ interface AppRow {
 }
 
 export interface AppHostDeps {
-  /** the host's own socket path (env.ts readAppsSocket — never null here;
-   *  an empty CYBERMOLE_APPS_SOCK means the host does not run at all). */
+  /** Never null here: an empty CYBERMOLE_APPS_SOCK means the host doesn't run. */
   socketPath: string;
-  /** the internal API's socket (env.ts readInternalApiSocket) — the
-   *  discovery source. The host requires it: without the internal API
-   *  there are no rows to mount. */
+  /** Required: the discovery source. */
   internalSocketPath: string;
-  /** boot-discovery retry base delay (backoff doubles to 10 s). Default
-   *  2 s; tests inject milliseconds. */
+  /** Boot-discovery retry base delay, doubling to 10 s. Default 2 s. */
   retryDelayMs?: number;
-  /** per-call discovery timeout against the internal socket. Default 5 s —
-   *  a listener that accepted but never answers must not hang the boot
-   *  retry loop. */
+  /** Default 5 s: a listener that accepts but never answers mustn't hang the boot loop. */
   discoveryTimeoutMs?: number;
 }
 
-/** What one reload did — the report both /_admin/reload answers with and
- *  the boot sync logs. */
 export interface ReloadReport {
-  /** the scoped slug, null = every app */
+  /** null = every app */
   slug: string | null;
-  /** rows the internal API answered (all scopes see this; it is the row
-   *  count the sync ran against) */
   rows: number;
   mounted: string[];
   reimported: string[];
@@ -127,8 +87,7 @@ export interface AppHostStatus {
   uptimeS: number;
   socket: string;
   internalSocket: string;
-  /** false while the boot retry loop is still waiting for the internal
-   *  API (the compose boot race) — the socket answers, with no mounts. */
+  /** false while waiting for the internal API at boot. */
   booted: boolean;
   mounted: Array<{
     slug: string;
@@ -144,21 +103,14 @@ export interface AppHostStatus {
 
 export interface AppHostHandle {
   readonly socketPath: string;
-  /** Re-run discovery, then mount/re-import/drop (reload's core — the
-   *  single sync point, plan §3). Rejects on discovery failure (the
-   *  internal API unreachable/erroring): the registry stands as-is. */
+  /** Rejects on discovery failure, leaving the registry as-is. */
   reload(slug?: string): Promise<ReloadReport>;
   status(): AppHostStatus;
-  /** Stop listening, let in-flight requests drain, unlink the socket
-   *  file (best-effort — a crash leaves it behind and the next boot's
-   *  stale-socket check removes it). */
+  /** Unlink is best-effort; the next boot's stale-socket check covers a crash. */
   close(): Promise<void>;
 }
 
-/** The socket file exists AND answers — another app host owns it (a
- *  second workspace container on the same socket dir, a stray process).
- *  main() exits 1 on it: the supervisor restarts the host, and the boot
- *  stays loud instead of serving nothing. */
+/** main() exits 1 on it, so the supervisor restarts the host loudly. */
 export class AppsSocketOwnedError extends Error {
   constructor(readonly socketPath: string) {
     super(
@@ -169,12 +121,7 @@ export class AppsSocketOwnedError extends Error {
   }
 }
 
-// ---------- small plumbing (main.ts / internal-api.ts shapes) ----------
-
-/** The built entry's middleware graph must be self-contained apart from
- *  node: builtins (plan §5) — serve-time resolution through a symlink an
- *  app's extra install could disturb is the failure mode; the fixture's
- *  build is gated on it (tools/check-app-selfcontained.mjs). */
+// ---------- plumbing ----------
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -197,10 +144,7 @@ function sendJSON(res: http.ServerResponse, code: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
-// The console's header set (server/main.ts), filled-in-absent so an app
-// setting its own CSP keeps control. App content reaches browsers through
-// the web proxy behind the session gate (branch 2); the host sends the
-// posture for socket-local clients and the proxied path alike.
+// Only filled in where absent, so an app's own CSP wins.
 const SECURITY_HEADERS: Record<string, string> = {
   'Content-Security-Policy':
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
@@ -210,9 +154,7 @@ const SECURITY_HEADERS: Record<string, string> = {
   'Referrer-Policy': 'same-origin',
 };
 
-/** Arm `res` so the security headers ride on every response (main.ts's
- *  hardenResponse: injection at writeHead AND end, idempotent, absent
- *  headers only). */
+/** Fills in absent security headers at writeHead or end. */
 function hardenResponse(res: http.ServerResponse): void {
   const apply = (): void => {
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
@@ -240,8 +182,7 @@ function logAccess(req: http.IncomingMessage, res: http.ServerResponse): void {
   });
 }
 
-// The reload body's policy (the internal API's): 10 KiB, JSON, a
-// declared length — the body is an optional {slug} and nothing more.
+// The reload body is just an optional {slug}.
 const BODY_MAX_BYTES = 10 * 1024;
 
 function bodyCapStatus(req: http.IncomingMessage): 411 | 413 | null {
@@ -290,9 +231,6 @@ function readBody(req: http.IncomingMessage): Promise<Record<string, unknown> | 
 
 // ---------- discovery ----------
 
-/** Row + manifest + build, checked — or the reason it cannot mount. The
- *  fs probes are sync and cheap: one reload per register/rebuild, not a
- *  hot path. */
 function inspectRow(
   row: AppRow,
 ):
@@ -301,9 +239,7 @@ function inspectRow(
   try {
     return inspectRowChecked(row);
   } catch (err) {
-    // A malformed tree (permissions, a half-deleted dist, a race between
-    // the probes and the reads) must degrade to a SKIP reason — never
-    // reject the sync and poison every other app's mount with it.
+    // A malformed tree must be a skip, never reject the whole sync.
     return { ok: false, reason: `could not inspect the tree: ${(err as Error).message}` };
   }
 }
@@ -353,29 +289,22 @@ function inspectRowChecked(
   return { ok: true, manifest: { name: raw.name.trim(), description, slug }, entryPath, clientDir };
 }
 
-// ---------- the host ----------
+// ---------- host ----------
 
 class AppHost {
   private readonly mounted = new Map<string, MountedApp>();
   private skipped: SkippedApp[] = [];
   private booted = false;
   private readonly startedAt = Date.now();
-  /** serializes reloads (a boot retry landing on a manual poke) — the
-   *  registry is the shared state. Queued as a FUNCTION, not a started
-   *  promise: an async IIFE would already be running when it chains. */
+  /** Serializes reloads; chained as a function so it doesn't start early. */
   private reloadChain: Promise<unknown> = Promise.resolve();
   private importCounter = 0;
-  /** set by close(): the boot-retry loop checks it every pass, and the
-   *  pending sleep is woken + unref'd so a closed host can never hold
-   *  the process open (a retry timer outliving its tests hung the unit
-   *  run once — never again). */
+  /** Set by close(); the pending retry sleep is woken and unref'd so a
+   *  closed host never holds the process open. */
   private stopped = false;
   private wakeRetry: (() => void) | null = null;
-  /** resolves once the FIRST boot discovery attempt has settled (success
-   *  or failure) — startAppHost awaits it, so a caller that then calls
-   *  reload() deterministically runs the SECOND sync, never a race with
-   *  the boot pass (a row created right after boot landed either pass).
-   *  The loop itself keeps retrying in the background. */
+  /** Resolves when the first boot discovery settles, so a later reload()
+   *  never races the boot pass. */
   private resolveFirstSync!: () => void;
   readonly firstSync = new Promise<void>(resolve => {
     this.resolveFirstSync = resolve;
@@ -383,8 +312,6 @@ class AppHost {
 
   constructor(private readonly deps: AppHostDeps) {}
 
-  /** The boot retry's sleep — resolves early when stop() wakes it, and
-   *  unref'd so even a lost loop cannot keep the event loop alive. */
   private retrySleep(ms: number): Promise<void> {
     return new Promise(resolve => {
       const timer = setTimeout(() => {
@@ -399,19 +326,13 @@ class AppHost {
     });
   }
 
-  /** Stop the boot-retry loop (close() calls this). Idempotent; a loop
-   *  already past its last check simply returns on the next one. */
   stop(): void {
     this.stopped = true;
     this.wakeRetry?.();
   }
 
-  /** Boot sync with the compose-boot-race retry: the web server (and its
-   *  internal API) may not be listening when the workspace container
-   *  comes up. Backoff from retryDelayMs, doubling to 10 s, forever —
-   *  rows persist in the db and the next successful pass mounts them; a
-   *  loud line per attempt keeps the wait visible. Stops silently once
-   *  close() has run. */
+  /** The web server's internal API may not be up yet when the workspace
+   *  starts, so retry forever with backoff; rows persist meanwhile. */
   bootWithRetry(): void {
     const base = this.deps.retryDelayMs ?? 2000;
     void (async () => {
@@ -443,9 +364,7 @@ class AppHost {
     })();
   }
 
-  /** GET /apps over the internal socket → rows. Transport failures, non-200
-   *  answers and malformed bodies all throw (the boot retry loop re-tries;
-   *  a reload surfaces the error to its caller). */
+  /** Throws on transport failure, non-200, or a malformed body. */
   private async discoverRows(): Promise<AppRow[]> {
     const answer = await requestInternalApi(
       this.deps.internalSocketPath,
@@ -470,11 +389,8 @@ class AppHost {
     );
   }
 
-  /** Cache-busted dynamic import of a built entry: the query makes every
-   *  reload a fresh module record, so a rebuilt entry (and its hashed
-   *  chunks) is re-read from disk instead of served from the ESM cache.
-   *  The superseded record stays cached (ESM has no eviction) — reloads
-   *  are rare, deliberate events, not a loop. */
+  /** The query makes each reload a fresh module record so a rebuild is
+   *  re-read. ESM can't evict the old one; reloads are rare. */
   private async importHandler(entryPath: string): Promise<AppHandler> {
     const url = pathToFileURL(entryPath);
     url.search = `v=${Date.now()}-${this.importCounter++}`;
@@ -485,14 +401,9 @@ class AppHost {
     return m.handler as AppHandler;
   }
 
-  /** Re-run discovery, then mount/re-import/drop. A named slug scopes the
-   *  re-import/drop to that app (others carry over untouched); every
-   *  other app is re-imported. Import failures on an app that was
-   *  already mounted keep the previous build serving — a poison rebuild
-   *  must not take a working mount down (plan §3's per-app tolerance). */
+  /** A slug scopes the sync to that app. A failed re-import keeps the
+   *  previous build serving. */
   async reload(slug: string | null = null): Promise<ReloadReport> {
-    // Serialize: the boot retry, a manual poke and a scoped reload all
-    // mutate one registry — queued as a function, not a started promise.
     const run = this.reloadChain.catch(() => undefined).then(() => this.doReload(slug));
     this.reloadChain = run.catch(() => undefined);
     return run;
@@ -514,7 +425,7 @@ class AppHost {
       const scoped = slug === null || row.slug === slug;
       const existing = this.mounted.get(row.slug);
       if (!scoped && existing) {
-        next.set(row.slug, existing); // another app's scope: carry over
+        next.set(row.slug, existing);
         continue;
       }
       const inspected = inspectRow(row);
@@ -561,7 +472,7 @@ class AppHost {
     for (const [name, mounted] of this.mounted) {
       if (next.has(name)) continue;
       if (slug !== null && name !== slug) {
-        next.set(name, mounted); // outside the scope: keep
+        next.set(name, mounted);
         continue;
       }
       report.dropped.push(name);
@@ -600,13 +511,11 @@ class AppHost {
     return this.mounted.get(slug) ?? null;
   }
 
-  /** A static file from the app's dist/client (hashed _astro/ assets
-   *  cache-busted, everything else no-store) — served BEFORE the
-   *  middleware, the adapter's own standalone split. */
+  /** Served before the middleware; hashed _astro/ assets are cacheable. */
   serveClientFile(res: http.ServerResponse, m: MountedApp, url: string): boolean {
     const rel = url.slice(m.base.length);
     const file = path.normalize(path.join(m.clientDir, rel));
-    if (!file.startsWith(m.clientDir + path.sep)) return false; // traversal: fall through to 404
+    if (!file.startsWith(m.clientDir + path.sep)) return false; // traversal
     let stat: fs.Stats;
     try {
       stat = fs.statSync(file);
@@ -630,7 +539,7 @@ class AppHost {
   }
 }
 
-// ---------- the listener ----------
+// ---------- listener ----------
 
 export async function startAppHost(deps: AppHostDeps): Promise<AppHostHandle> {
   fs.mkdirSync(path.dirname(deps.socketPath), { recursive: true });
@@ -644,9 +553,6 @@ export async function startAppHost(deps: AppHostDeps): Promise<AppHostHandle> {
   const server = http.createServer((req, res) => {
     hardenResponse(res);
     logAccess(req, res);
-    // Crash guard, main.ts's stance: a throwing dispatch costs one 500,
-    // never the process — and per-mount guards below keep one app's
-    // throw from touching another's paths.
     dispatch(host, req, res).catch(err => {
       log.error('request handler error', { error: err });
       if (!res.headersSent) send(res, 500, 'internal error');
@@ -667,13 +573,13 @@ export async function startAppHost(deps: AppHostDeps): Promise<AppHostHandle> {
     `app host listening on ${deps.socketPath} (0660) — discovering apps via ${deps.internalSocketPath}`,
   );
   host.bootWithRetry();
-  await host.firstSync; // the first discovery attempt has settled (either way)
+  await host.firstSync;
   return {
     socketPath: deps.socketPath,
     reload: slug => host.reload(slug ?? null),
     status: () => host.status(),
     close() {
-      host.stop(); // the boot-retry loop must not outlive the listener
+      host.stop();
       return new Promise(resolve => {
         server.close(() => {
           try {
@@ -689,9 +595,7 @@ export async function startAppHost(deps: AppHostDeps): Promise<AppHostHandle> {
   };
 }
 
-/** Socket-local admin routes + per-app dispatch. Everything else under
- *  /apps/<slug>/ is the app's own HTTP, forwarded verbatim (plan §3:
- *  actions are the app's routes — the host invents no parallel RPC). */
+/** Admin routes, then the app's own HTTP forwarded verbatim. */
 async function dispatch(
   host: AppHost,
   req: http.IncomingMessage,
@@ -739,7 +643,6 @@ async function dispatch(
   if (mount === null) {
     return sendJSON(res, 404, { error: 'no such app', code: 'app_not_mounted' });
   }
-  // Static assets first (the adapter's split), then the app's middleware.
   if (req.method === 'GET' || req.method === 'HEAD') {
     if (host.serveClientFile(res, mount, url)) return;
   }
@@ -751,27 +654,20 @@ async function dispatch(
         else res.destroy();
         return;
       }
-      // next() with no error: the app's route table knows no such path.
+      // next() without an error: the app has no such route.
       send(res, 404, 'not found');
     });
   } catch (err) {
-    // Per-mount crash guard (plan §3): one app's throw is a 500 on ITS
-    // paths only — never the process, never a sibling app.
     log.error(`app ${mount.slug} handler threw`, { error: err });
     if (!res.headersSent) send(res, 500, 'app error');
     else res.destroy();
   }
 }
 
-// ---------- the entry ----------
+// ---------- entry ----------
 
-/** Resolve the sockets and serve. Env rules are env.ts's: CYBERMOLE_APPS_SOCK
- *  empty = the apps surface is off — the host exits 0 with a loud line
- *  (clients must fail with their own clear errors); a non-absolute value
- *  is an operator wiring mistake: stderr + exit 1, the web server's
- *  stop-the-boot stance. The host also REQUIRES the internal API (its
- *  discovery source): CYBERMOLE_SOCK empty is a boot error — there are
- *  no rows to mount without it. */
+/** CYBERMOLE_APPS_SOCK empty: exit 0 (apps off). CYBERMOLE_SOCK empty or a
+ *  bad value: exit 1, since there's nothing to discover from. */
 export async function main(): Promise<void> {
   let appsSocket: string | null;
   let internalSocket: string | null;
@@ -814,10 +710,7 @@ export async function main(): Promise<void> {
   process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
-// The self-exec guard in the CommonJS build's terms (the compiled
-// `import.meta.url === argv[1]` idiom — the server build emits CJS; see
-// server/mcp.ts's note). This file is both the importable module (unit
-// tests) and a runnable entry (the workspace entrypoint).
+// The CJS build's self-exec guard: this file is both a module and an entry.
 if (require.main === module) {
   main().catch(err => {
     console.error(`cybermole app-host: ${(err as Error).stack ?? err}`);

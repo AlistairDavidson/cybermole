@@ -1,9 +1,6 @@
-// tmux.test.mjs — the privilege split's socket plumbing (src/lib/terminals/tmux.ts):
-// -S-vs-L selection for CYBERMOLE_TMUX_SOCKET, the never-fork guard's
-// decision table, and (where tmux exists — a stated requirement) the
-// guarded new-session behaviour against a real server on an absolute-path
-// socket, the live-name set /api/state diffs against, plus the
-// umask-0007 inheritance the split's group-sharing relies on. Run against the compiled output: `npm run test:unit`.
+// tmux.ts: -S vs -L socket selection, the never-fork guard's decisions, and
+// against a real tmux server on an absolute socket: guarded new-session,
+// the live-name set, the backfill capture, and umask inheritance.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -11,8 +8,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-// Absolute-path socket BEFORE the first import: tmux.ts binds SOCKET at
-// module load. Everything session-shaped below then runs in split mode.
+// Set before the import: tmux.ts reads SOCKET at load, so everything below is split mode.
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-tmux-test-'));
 process.env.CYBERMOLE_TMUX_SOCKET = path.join(dir, 'tmux');
 
@@ -69,18 +65,16 @@ test('forksServer: only relative names keep fork-to-start (the guard gate)', () 
 
 test('isServerDown: down-server errors, an answering server, unknown failures', () => {
   const err = stderr => Object.assign(new Error('tmux failed'), { stderr });
-  // No socket file / stale socket from a dead server — both mean DOWN.
+  // No socket file, or a stale one: both down.
   assert.equal(
     isServerDown(err(`error connecting to ${SOCKET} (No such file or directory)`)),
     true,
   );
   assert.equal(isServerDown(err(`no server running on ${SOCKET}`)), true);
-  // The one error an ALIVE server can answer list-sessions with.
+  // The one error a live server gives list-sessions.
   assert.equal(isServerDown(err('no sessions')), false);
-  // The server answered fine.
   assert.equal(isServerDown(null), false);
-  // Anything unreadable (timeout kill, permission denied on the socket)
-  // reads as down: refusing is always safe, forking never is.
+  // Anything unreadable reads as down: refusing is always safe.
   assert.equal(isServerDown(err('')), true);
   assert.equal(isServerDown(err(`error connecting to ${SOCKET} (Permission denied)`)), true);
   assert.equal(
@@ -90,15 +84,13 @@ test('isServerDown: down-server errors, an answering server, unknown failures', 
 });
 
 test('jobSessionName: every valid job name yields a valid tmux session name (40-char names included)', () => {
-  // JOB_NAME_RE allows 40 chars; 'cybermole-' + 40 = 46. The old 40-char tmux
-  // name cap rejected these runs outright (newSession refused, hasSession
-  // always false) — the brand now promises validity, this holds it to that.
+  // 'cybermole-' + a 40-char job name = 46, inside the 64-char limit.
   for (const job of ['a', 'nightly-check', 'x'.repeat(40), 'a_b-c'.repeat(8)]) {
     assert.equal(TmuxSessionNameSchema.safeParse(jobSessionName(job)).success, true, job);
   }
 });
 
-// ---------- task/ws-terminal (plan §4): the terminal-tab session ----------
+// ---------- terminal-tab sessions ----------
 
 test('terminalSessionName: t-<uuid> for every terminal row id — always a valid session name', () => {
   for (const id of [
@@ -113,10 +105,8 @@ test('terminalSessionName: t-<uuid> for every terminal row id — always a valid
 });
 
 test('newSessionArgs: detached, named, at the cwd, -e env pairs, command after -- (the spawn/respawn argv)', () => {
-  // The argv both the create route's spawn and the WS respawn build —
-  // pure here, no tmux needed: the shape is the contract (a missing '--'
-  // would let a command flag eat tmux's own; env must ride -e so the
-  // command's env never depends on when the server was started).
+  // Shared by spawn and respawn. '--' keeps command flags from reaching
+  // tmux; env rides -e so it doesn't depend on when the server started.
   assert.deepEqual(
     newSessionArgs('t-123e4567-e89b-42d3-a456-426614174000', '/workspace', ['/bin/sh', '-l'], {
       HOME: '/home/u',
@@ -138,7 +128,7 @@ test('newSessionArgs: detached, named, at the cwd, -e env pairs, command after -
       '-l',
     ],
   );
-  // no env → no -e pairs; the command stays last, flags and all
+  // no env → no -e pairs; the command stays last
   assert.deepEqual(newSessionArgs('t-x', '/w', ['/bin/sh', '-c', 'echo hi'], {}), [
     'new-session',
     '-d',
@@ -153,13 +143,10 @@ test('newSessionArgs: detached, named, at the cwd, -e env pairs, command after -
   ]);
 });
 
-// ---------- task/terminal-search: the attach backfill capture ----------
+// ---------- attach backfill capture ----------
 
 test('capturePaneHistoryArgs: plain text, history capped at BACKFILL_LINES, screen EXCLUDED (-E -1)', () => {
-  // The dedupe contract: the capture stops at the last HISTORY line so
-  // the attach redraw (which repaints the screen itself) never lands on
-  // a second copy of it. Pure argv — the spawn (server/main.ts) and this
-  // test share it.
+  // Stops at the last history line, so it never duplicates the screen the redraw paints.
   assert.equal(BACKFILL_LINES, 5000);
   assert.deepEqual(capturePaneHistoryArgs('t-123e4567-e89b-42d3-a456-426614174000'), [
     'capture-pane',
@@ -173,28 +160,21 @@ test('capturePaneHistoryArgs: plain text, history capped at BACKFILL_LINES, scre
   ]);
 });
 
-// ---------- functional (real tmux, absolute-path socket, split mode) ----------
+// ---------- real tmux, absolute socket ----------
 
-/** Bring the server up the way the workspace entrypoint does: -f conf
- *  carrying exit-empty off (a separate `set-option` races the empty
- *  server's instant exit — the option must ride the server-start conf). */
+/** As the workspace entrypoint does: exit-empty off in the -f conf (a
+ *  separate set-option races the empty server's exit). */
 function startServer() {
-  // The PREVIOUS test's kill-server returns before the server process
-  // has exited and unlinked the socket; starting against that window
-  // attaches to the dying server and fails with "server exited
-  // unexpectedly" (a flake that grew with the suite's parallel load).
-  // Wait out the unlink; if the file outlives the wait it is a dead
-  // server's stale leftover — remove it, like the entrypoint's
-  // stale-socket handling.
+  // The previous test's kill-server returns before the socket is unlinked;
+  // starting in that window hits "server exited unexpectedly". Wait, then
+  // remove the file if it's a stale leftover.
   const sleep = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
   for (let i = 0; i < 500 && fs.existsSync(SOCKET); i += 1) sleep(10);
   if (fs.existsSync(SOCKET)) fs.rmSync(SOCKET, { force: true });
   const conf = path.join(dir, 'server.conf');
   fs.writeFileSync(conf, 'set -g exit-empty off\n');
   execFileSync('tmux', ['-S', SOCKET, '-f', conf, 'start-server']);
-  // tmux hardcodes the socket 0600 at creation (umask ignored); the
-  // workspace entrypoint chmod 0660's it — same here, single uid is
-  // enough for the mechanics under test.
+  // tmux creates the socket 0600 regardless of umask; the entrypoint chmods it.
   fs.chmodSync(SOCKET, 0o660);
 }
 
@@ -202,7 +182,6 @@ test(
   'requireServer (the guard runner, absolute socket): refuses while down, passes once a server answers',
   { skip: !haveTmux },
   async () => {
-    // The export every guarded call site (new-session/attach spawn) uses.
     assert.equal(fs.existsSync(SOCKET), false);
     const refused = await requireServer();
     assert.equal(refused.ok, false, 'must refuse');
@@ -245,15 +224,14 @@ test(
       {},
     );
     assert.deepEqual(created, { ok: true, resultType: 'tmux_session', data: { name: 'live1' } });
-    // The session really runs on the shared socket.
     assert.equal(await hasSession('live1'), true);
     const names = await liveSessionNames();
     assert.ok(names.has('live1'));
-    // A taken name is tmux's own failure — tmux_error, not the guard.
+    // A taken name is tmux's failure (tmux_error), not the guard's.
     const dup = await newSession('live1', dir, ['/bin/sh', '-c', 'true'], {});
     assert.equal(dup.ok, false);
     assert.equal(dup.errorCode, 'tmux_error');
-    // -e env delivery through the guarded path.
+    // -e env through the guarded path.
     const envfile = path.join(dir, 'env.txt');
     const created2 = await newSession(
       'live2',
@@ -279,7 +257,7 @@ test(
     fs.rmSync(SOCKET, { force: true });
     startServer();
     try {
-      // 40 lines on a 10-row pane: 31+ land in history, the rest is screen.
+      // 40 lines on a 10-row pane: 31+ in history, the rest on screen.
       const made = await newSession('captest', dir, ['/bin/sh', '-c', 'seq 1 40; sleep 30'], {});
       assert.equal(made.ok, true);
       await new Promise(r => setTimeout(r, 500));
@@ -295,12 +273,10 @@ test(
       ]).toString();
       const history = await capturePaneHistory('captest');
       assert.ok(history !== null, 'history must capture');
-      // terminal-ready line endings (\r\n — a bare \n would drift the column),
-      // one trailing newline, no trimmed-away blank lines at the tail
+      // \r\n endings (a bare \n drifts the column), one trailing newline
       assert.ok(history.endsWith('\r\n'), 'line-per-\\r\\n shape');
       assert.equal(/\r\n[ \t]*\r\n$/.test(history), false, 'trailing blank lines trimmed');
-      // HISTORY ONLY: a strict, line-aligned prefix of the full capture —
-      // the visible screen stays out (the redraw's job, not the backfill's)
+      // History only: a strict line-aligned prefix of the full capture.
       const fullLines = full.split('\n');
       const histLines = history.slice(0, -2).split('\r\n');
       assert.ok(
@@ -308,18 +284,15 @@ test(
         `history (${histLines.length}) must be shorter than history+screen (${fullLines.length})`,
       );
       assert.deepEqual(fullLines.slice(0, histLines.length), histLines);
-      // dead session (the attach race): null, never a throw — the attach
-      // this capture rides on must survive it
+      // dead session: null, never a throw
       assert.equal(await capturePaneHistory('captest-nope'), null);
-      // empty history (nothing scrolled yet): trimmed to null
+      // empty history: null
       const fresh = await newSession('capfresh', dir, ['/bin/sh', '-c', 'sleep 30'], {});
       assert.equal(fresh.ok, true);
       await new Promise(r => setTimeout(r, 300));
       assert.equal(await capturePaneHistory('capfresh'), null);
-      // the `-E -1` empty-history QUIRK, gated by paneHistorySize: with no
-      // history, capture-pane's -E -1 clamps to the first SCREEN line (a
-      // printed banner comes back) — backfilling it would duplicate the
-      // line the redraw paints. The gate reads history_size first: 0 → null.
+      // With no history, -E -1 clamps to the first screen line; the
+      // history_size check makes it null instead.
       const banner = await newSession(
         'capbanner',
         dir,
@@ -348,9 +321,7 @@ test(
   'liveSessionNames: the name set the /api/state live diff reads',
   { skip: !haveTmux },
   async () => {
-    // A name-set source only now (plan §11): the cwd/attached fields died
-    // with the Live list + its editor button. A down server reads as empty
-    // (the previous test left a live one behind — clean slate first).
+    // A down server reads as empty (clean slate first: the last test left one up).
     try {
       execFileSync('tmux', ['-S', SOCKET, 'kill-server'], { stdio: 'ignore' });
     } catch {
@@ -381,9 +352,7 @@ test(
   'umask 0007 on the tmux server is inherited by what it spawns (group-readable session files)',
   { skip: !haveTmux },
   async () => {
-    // The mechanism the split's sharing relies on (sidebar reads pi's
-    // session store from the web side): the umask rides the server fork,
-    // so it must be in place BEFORE start-server.
+    // The umask rides the server fork, so it must be set before start-server.
     const old = process.umask(0o007);
     startServer();
     try {

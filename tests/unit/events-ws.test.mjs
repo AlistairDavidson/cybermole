@@ -1,9 +1,6 @@
-// events-ws.test.mjs — /ws/events (src/lib/platform/events-ws.ts, plan §7): the
-// cookie-gate decision (every refusal branch and the allow path), and
-// the relay end to end — boot, upgrade, receive a forwarded bus event,
-// exactly one frame per event, and the token-death sweep closing the
-// socket with the signed-out frame. A real http server + the ws client;
-// the gate runs the same checks main.ts applies around the relay.
+// /ws/events: every branch of the upgrade gate, and the relay end to end
+// (one frame per bus event; a dead token closes with signed-out) over a real
+// http server and ws client.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as http from 'node:http';
@@ -30,7 +27,7 @@ const session = { ok: true, resultType: 'session_check', data: { token: TOKEN } 
 
 const reqWith = headers => ({ headers });
 
-/** Reject a hung wait (a missed frame would otherwise hang the suite). */
+/** A missed frame would otherwise hang the suite. */
 const within = (promise, ms, label) =>
   Promise.race([
     promise,
@@ -60,8 +57,7 @@ test('checkEventsUpgrade: allow, and every refusal branch', () => {
     reply: 'destroy',
     why: 'rate-limited',
   });
-  // Browser-only, like the terminal: a missing OR mismatching Origin is
-  // destroyed, never waved through.
+  // Browser-only: a missing or mismatched Origin is destroyed.
   assert.deepEqual(checkEventsUpgrade(reqWith({}), '1.1.1.1', checks()), {
     ok: false,
     reply: 'destroy',
@@ -72,7 +68,7 @@ test('checkEventsUpgrade: allow, and every refusal branch', () => {
     reply: 'destroy',
     why: 'missing or mismatched Origin',
   });
-  // The cookie gate: no session → 401, an unreadable store → 503.
+  // no session → 401, an unreadable store → 503
   assert.deepEqual(checkEventsUpgrade(reqWith(origin), '1.1.1.1', checks({ session: noSession })), {
     ok: false,
     reply: 'status',
@@ -87,8 +83,7 @@ test('checkEventsUpgrade: allow, and every refusal branch', () => {
   });
 });
 
-/** Boot the relay behind the gate, the way server/main.ts wires it, on a
- *  private port. `alive` flips when the test says the token died. */
+/** Wired as main.ts wires it, on a private port. `alive` flips when the token dies. */
 function bootRelay() {
   let tokenAlive = true;
   const relay = new EventsRelay({
@@ -164,7 +159,7 @@ test('relay: boot, connect, forward — one frame per event, then signed-out clo
       firedAt: 7,
     });
 
-    // start() is idempotent: a second subscribe would double the frames.
+    // start() is idempotent: subscribing twice would double the frames
     relay.start();
     let received = 0;
     const counted = new Promise(resolve =>
@@ -177,8 +172,7 @@ test('relay: boot, connect, forward — one frame per event, then signed-out clo
     await counted;
     assert.equal(received, 1, 'exactly one frame per event');
 
-    // The token dies (logout / expiry): the sweep answers signed-out and
-    // closes — never a reconnectable drop.
+    // A dead token: signed-out, then close (not a reconnectable drop).
     killToken();
     const final = await within(frames(ws), 2000, 'signed-out frame');
     assert.deepEqual(final, { type: 'signed-out' });
@@ -221,8 +215,7 @@ test('the cookie gate refuses an upgrade without a session (401), destroys witho
   const { relay, server, url } = await bootRelay();
   const { port } = new URL(url);
   try {
-    // No cookie: the gate answers 401 — the browser sees a failed
-    // upgrade, not a socket.
+    // no cookie: 401, a failed upgrade
     const refused = await within(
       new Promise((resolve, reject) => {
         const r = http.request({
@@ -247,7 +240,7 @@ test('the cookie gate refuses an upgrade without a session (401), destroys witho
     );
     assert.equal(refused.statusCode, 401);
 
-    // No Origin header: destroyed outright (no HTTP answer at all).
+    // no Origin: destroyed with no HTTP answer
     const destroyed = await within(
       new Promise((resolve, reject) => {
         const r = http.request({

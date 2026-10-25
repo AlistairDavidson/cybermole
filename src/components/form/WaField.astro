@@ -1,16 +1,10 @@
 ---
-// WaField.astro — a <wa-input> (or, with as="textarea", a <wa-textarea>)
-// whose validation message lives in its hint slot (the soothing-booking
-// SbInput idea, on Web Awesome; docs/conventions/CODE_STYLE.md §8). Why the hint slot:
-// the real <input>/<textarea> is inside the wa-* element's shadow DOM, so
-// aria-errormessage / aria-invalid on the host never reach it — but its
-// aria-describedby points at the hint slot, so a message slotted there is
-// announced with the field.
-// validation-enhancer(-zod) finds the message element through
-// aria-errormessage (an id lookup inside the enhancer) and writes into it;
-// `error` pre-fills it (a server-rendered failure).
-// Client side, the page must still import the wa-input / wa-textarea
-// module (AGENTS.md: SSR imports ≠ client imports).
+// A wa-input (or wa-textarea) whose validation message lives in its hint
+// slot. The real input is in the shadow DOM, so aria-errormessage on the
+// host never reaches it, but its aria-describedby points at the hint slot,
+// so a message there is announced. The enhancer finds the message element
+// via aria-errormessage; `error` pre-fills it. Pages must still import the
+// wa-* module client-side (AGENTS.md).
 import '@awesome.me/webawesome/dist/components/input/input.js';
 import '@awesome.me/webawesome/dist/components/textarea/textarea.js';
 
@@ -20,7 +14,6 @@ interface Props {
   label: string;
   hint?: string;
   error?: string | undefined;
-  /** The control: a wa-input (default) or a wa-textarea. */
   as?: 'input' | 'textarea';
   [key: string]: unknown;
 }

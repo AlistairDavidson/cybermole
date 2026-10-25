@@ -1,8 +1,5 @@
-// The fixture's one API route: zod in → Result JSON out, hand-rolled in
-// the console's wire shapes ({ ok, resultType, data } success bodies and
-// { error, code, issues? } failures — the responses.service mapping; the
-// app-kit binder generates this shape per table entry in a later branch,
-// the fixture hand-rolls it).
+// The fixture's one API route, hand-rolled in the console's wire shapes
+// rather than through the kit's binder.
 import type { APIRoute } from 'astro';
 import { z } from 'zod';
 

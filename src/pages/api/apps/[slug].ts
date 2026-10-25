@@ -1,7 +1,5 @@
-// /api/apps/:slug — PATCH renames and/or sets the cwd (the slug is stable
-// once created, v1; cwd null clears it back to unset — task/app-cwd),
-// DELETE cascades workspaces + terminals and un-tags jobs (§6). A slug
-// that isn't APP_SLUG_RE is a 400 before the domain is reached.
+// PATCH renames and/or sets the cwd (null clears it); the slug never changes.
+// DELETE cascades workspaces and terminals and un-tags jobs.
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../../lib/web/locals';
 import { parseAndValidateAPIRequest } from '../../../lib/web/parsing.service';

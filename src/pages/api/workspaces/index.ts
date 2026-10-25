@@ -1,8 +1,5 @@
-// /api/workspaces — POST creates a workspace (workspaces-plan §6):
-// appId null/absent = the console group. No cwd on the wire (task/app-cwd
-// — "no folder setting when creating workspace: the app does that"): the
-// domain derives it — the parent app's cwd when it has one, else
-// CYBERMOLE_NEW_SESSION_CWD — and validates it absolute + existing dir.
+// POST creates a workspace (appId null = the console group). The cwd is
+// derived: the parent app's, else CYBERMOLE_NEW_SESSION_CWD.
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../../lib/web/locals';
 import { parseAndValidateAPIRequest } from '../../../lib/web/parsing.service';

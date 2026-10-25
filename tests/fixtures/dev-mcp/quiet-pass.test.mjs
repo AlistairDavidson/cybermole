@@ -1,6 +1,4 @@
-// quiet-pass.test.mjs — a quiet-reporter smoke fixture (tests/unit/
-// dev-mcp.test.mjs spawns the runner on it): a passing file, one skip.
-// Lives under fixtures/ so the unit glob never picks it up.
+// A passing file with one skip. Under fixtures/ so the unit glob skips it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 

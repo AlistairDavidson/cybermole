@@ -1,12 +1,6 @@
-// middleware.ts — fail closed for the data routes. The JSON API
-// (/api/*) and the server-rendered partials (/partials/*) only ever run
-// inside the cybermole server: server/main.ts checks the origin and the
-// session BEFORE handing a request to Astro, and passes the services in
-// locals only on that authenticated path. Without them — `astro dev`
-// serving a route itself, or the Astro handler run on its own — these
-// routes answer 503 instead of running unauthenticated
-// (docs/conventions/CODE_STYLE.md §6). Pages carry no data of their own without
-// locals, so they render normally.
+// The API and partials only run inside the cybermole server, which passes
+// services in locals after its auth checks. Without them (`astro dev`, or the
+// handler run on its own) they answer 503 rather than run unauthenticated.
 import { defineMiddleware } from 'astro:middleware';
 import { jsonResponse } from '@cybermole/app-kit';
 

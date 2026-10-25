@@ -1,38 +1,20 @@
 #!/usr/bin/env node
-// quiet-reporter.mjs — run_unit_tests' quiet half (docs/plans/dev-test-mcp-plan.md
-// §4 "node:test — suppress at the source"). A thin runner over node:test's
-// programmatic `run()` that reports ONLY diagnostics, failures (name, error,
-// duration) and a final counts line: on a passing run the whole output is a
-// handful of lines instead of a line per test.
+// run_unit_tests' quiet runner over node:test's programmatic run(): reports
+// only diagnostics, failures and a final counts line.
 //
-// Why a runner and not a `--test-reporter` module: module reporters receive
-// the event stream after node's structured-clone IPC, which strips Error
-// messages and stacks entirely (assertion causes survive only as enumerable
-// fields) — a quiet reporter that cannot see why a test failed is useless.
-// `run()`'s in-process stream carries the real Error objects, so the failure
-// text below is the assertion's own message. The child-per-file isolation
-// and semantics are `node --test`'s own — the same run `npm run test:unit`
-// does, differently reported.
+// A runner rather than a --test-reporter module: module reporters get events
+// after structured-clone IPC, which strips Error messages and stacks.
 //
-// Node 22 quirks this file absorbs (each verified against 22.22):
-//  - `run({ testNamePattern })` is silently IGNORED; the pattern must ride
-//    execArgv as --test-name-pattern to reach the per-file children.
-//  - a stray NODE_TEST_CONTEXT in the environment (inherited when this
-//    runner is itself spawned from inside a node:test child — the dev-mcp
-//    unit suite does exactly that) makes run() "skip running files". This
-//    is an entry-point process, so the marker is always an accident of
-//    inheritance: drop it.
-//  - a test file that dies without running tests (import error, an
-//    uncaught exception) surfaces as an envelope test:fail whose name is
-//    the file path, or as a subtestsFailed test:complete with zero leaf
-//    failures — both become crash entries, with the file's stderr tail
-//    (where the thrown error actually is) as the detail.
+// Node 22 quirks handled here:
+//  - run({ testNamePattern }) is ignored; it must go in execArgv as
+//    --test-name-pattern.
+//  - An inherited NODE_TEST_CONTEXT makes run() skip files; drop it.
+//  - A file that dies without running tests shows up as a file-level
+//    test:fail, or a subtestsFailed complete with no leaf failures; both
+//    become crash entries carrying the file's stderr tail.
 //
-// The last stdout line is the machine summary — one line of JSON prefixed
-// `@@devmcp ` ({counts, failures, success}) that tools/dev-mcp/server.mjs
-// parses (parsers.mjs extractUnitSummary) into the envelope's structured
-// fields; every line before it is quiet human text. Exit code: 0 on
-// success, 1 otherwise (the same contract `node --test` has).
+// The last stdout line is `@@devmcp {counts, failures, success}` for
+// server.mjs to parse. Exit 0 on success, 1 otherwise.
 //
 // Usage: node quiet-reporter.mjs <test-file...> [--name-pattern <pattern>]
 import { run } from 'node:test';
@@ -63,9 +45,8 @@ let summary = null;
 const emit = line => process.stdout.write(`${line}\n`);
 const ms = v => (typeof v === 'number' ? `${Math.round(v * 10) / 10}ms` : '');
 
-/** A failure's error text: the real Error's message (node:test wraps it in
- *  an ERR_TEST_FAILURE envelope whose code says nothing new — the message
- *  and its assertion diff are the value), trimmed per-failure. */
+/** node:test wraps the real Error in ERR_TEST_FAILURE; the inner message
+ *  and assertion diff are what matter. */
 function errorText(err) {
   if (err === null || err === undefined) return 'unknown error';
   const parts = [err.message ?? String(err)];
@@ -90,12 +71,10 @@ for await (const ev of stream) {
   const d = ev.data ?? {};
   const details = d.details ?? {};
   if (ev.type === 'test:fail' && d.name === d.file) {
-    // the file envelope failing as a test of its own: the file died (an
-    // import error, an early throw) — a crash, not a leaf failure
+    // the file itself failed (import error, early throw): a crash
     crashFiles.add(d.file);
   } else if (ev.type === 'test:fail' && details.type !== 'suite') {
-    // a leaf test failure (failing describe-suites also emit test:fail,
-    // with details.type 'suite' — their leaves are counted individually)
+    // a leaf failure (failing suites also emit test:fail; their leaves count individually)
     const file = typeof d.file === 'string' ? `${d.file}:${d.line ?? 0}` : '';
     leafFailsByFile.set(d.file, (leafFailsByFile.get(d.file) ?? 0) + 1);
     const failure = {
@@ -113,8 +92,7 @@ for await (const ev of stream) {
     details.error?.failureType === 'subtestsFailed' &&
     (leafFailsByFile.get(d.file) ?? 0) === 0
   ) {
-    // the file envelope reporting subtest failure with NO leaf failures:
-    // the file died mid-run (after starting, before/around its tests)
+    // the file died mid-run with no leaf failures
     crashFiles.add(d.file);
   } else if (ev.type === 'test:stderr' && typeof d.file === 'string') {
     noteStderr(d.file, String(d.message ?? ''));
@@ -123,8 +101,7 @@ for await (const ev of stream) {
   }
 }
 
-// File crashes become failure entries too — a suite that never loaded is
-// the loudest failure there is; its stderr tail is where the error lives.
+// A suite that never loaded is the loudest failure; its stderr has the error.
 for (const file of crashFiles) {
   const error = trimOutput(
     (stderrByFile.get(file) ?? '').trim() || `test file failed without running any test (${file})`,
@@ -136,10 +113,9 @@ for (const file of crashFiles) {
 }
 
 const c = summary?.counts ?? {};
-// The summary's failed count includes the file envelope when a file died
-// before running anything (an import error), but NOT a mid-run file death
-// (only its leaf failures) — max() of the two spellings is the honest
-// total: every leaf failure plus every crashed file, never double-counted.
+// The runner's failed count includes a file that died before running
+// anything, but not one that died mid-run; max() counts every leaf failure
+// and crashed file exactly once.
 const leafTotal = [...leafFailsByFile.values()].reduce((a, b) => a + b, 0);
 const counts = {
   pass: c.passed ?? 0,
@@ -148,9 +124,7 @@ const counts = {
   todo: c.todo ?? 0,
   cancelled: c.cancelled ?? 0,
 };
-// success from the runner's own summary when it emitted one (it saw
-// everything, including outcomes this reporter filters); otherwise the
-// conservative read of what we collected.
+// Prefer the runner's own summary when it emitted one (it saw everything).
 const success = summary ? summary.success === true : failures.length === 0;
 
 emit(

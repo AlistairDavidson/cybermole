@@ -1,13 +1,7 @@
 ---
-// JobsList.astro — the scheduled-jobs list, server-rendered: by the /jobs
-// page and by the partial <jobs-app> refreshes from
-// (src/pages/partials/jobs-list.astro). `jobs` is null only for a failed
-// listing (the page and the partial render inside the cybermole server or
-// not at all) — the message below shows, and the 15 s poll retries it.
-// `apps` rides along (plan §9: the dialog's tag picker is fed by the
-// same render — one read, no per-job fetches) as a data attribute on the
-// swapped-in root: <jobs-app> re-reads it when the dialog opens, so a
-// list refresh renews the picker without a second fetch.
+// The jobs list, rendered by the /jobs page and the partial. `jobs` is null
+// only for a failed listing. `apps` rides along as data-apps on the root, so
+// the tag picker renews with each refresh without a second fetch.
 import JobCard from './JobCard.astro';
 import type { AppState } from '../../lib/platform/types';
 import type { ScheduledJob } from '../../lib/platform/types';

@@ -1,17 +1,13 @@
-// jobs.test.mjs — pure scheduling math for the in-process scheduler
-// (src/lib/jobs/jobs.ts): next-fire, due-ness, missed-window/catch-up, and
-// cron validation. Everything here takes an injected "now" — no wall
-// clock, no db, no tmux. Run against the compiled output:
-// `npm run test:unit` (node --test).
+// Pure scheduling math: next fire, due-ness, catch-up, cron validation,
+// with an injected "now".
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { checkCron, isDue, nextFireMs } from '../../dist-server/src/lib/jobs/jobs.js';
 
-/** Local-time epoch ms (cron fields are interpreted in local time). */
+/** Local-time epoch ms (cron fields are local). */
 const L = (y, mo, d, h, mi) => new Date(y, mo - 1, d, h, mi, 0, 0).getTime();
 const MIN = 60_000;
 
-/** nextFireMs's fire time, asserting success. */
 const at = (schedule, afterMs) => {
   const r = nextFireMs(schedule, afterMs);
   assert.equal(r.ok, true, r.errorMessage);
@@ -50,7 +46,7 @@ test('isDue: not due before the next fire, due at/after it', () => {
   assert.equal(isDue('* * * * *', ref, ref + 59_000), false);
   assert.equal(isDue('* * * * *', ref, ref + MIN), true);
   assert.equal(isDue('* * * * *', ref, ref + 5 * MIN), true);
-  // a fire exactly at the reference is spent — never double-counted
+  // a fire exactly at the reference is spent, never counted twice
   assert.equal(isDue('* * * * *', ref, ref), false);
 });
 
@@ -89,29 +85,23 @@ test('checkCron: 5-field cron accepted, other syntax rejected with an error', ()
   }
 });
 
-// ---------- task/ws-jobs (plan §9) + task/job-log-caps (plan §8): the run
-// wrapper + file paths, pure ----------
+// ---------- run wrapper and file paths ----------
 
 import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const { runCommandArgv, runLogPaths } = await import('../../dist-server/src/lib/jobs/jobs.js');
 
-/** Where jobs.ts's LOG_APPENDER points: the appender, compiled next to it
- *  (module-relative at load — never cwd; the wrapper executes it inside
- *  the workspace container, which ships the same image). */
+/** LOG_APPENDER: compiled next to jobs.js, resolved module-relative. */
 const APPENDER = fileURLToPath(
   new URL('../../dist-server/src/lib/jobs/job-log-appender.js', import.meta.url),
 );
 
 test('runCommandArgv: the exact wrapper argv — command as $1, never string-embedded', () => {
-  // The plan's pinned argv: an outer /bin/sh -c whose script pipes the
-  // inner command's output to the capped appender (§8 — $4 with the byte
-  // cap $5, replacing tee) and captures its exit INSIDE the pipeline
-  // (before the appender) into $3. 'sh' is $0; the user command, log
-  // path, exit path, appender path and cap are $1–$5 argv elements, so
-  // any quoting, #, braces or quotes in the command can't break the
-  // wrapper.
+  // The pinned argv: an outer sh -c pipes the inner command into the capped
+  // appender and captures its exit inside the pipeline. 'sh' is $0; command,
+  // log, exit, appender and cap are $1–$5, so nothing in the command can
+  // break the wrapper.
   const tricky = 'echo "hi there" # not a comment-start for the wrapper; } | pipe &';
   assert.deepEqual(runCommandArgv(tricky, '/logs/j/1.log', '/logs/j/1.exit', 20971520), [
     '/bin/sh',
@@ -124,8 +114,7 @@ test('runCommandArgv: the exact wrapper argv — command as $1, never string-emb
     APPENDER,
     '20971520',
   ]);
-  // The user command rides as its OWN argv element — it is not inside
-  // the script string, and the script mentions $1–$5 only.
+  // The command is its own argv element; the script only mentions $1–$5.
   const [sh, flag, script, argv0, command, log, exitFile, appender, maxBytes] = runCommandArgv(
     'true',
     'L',
@@ -142,12 +131,10 @@ test('runCommandArgv: the exact wrapper argv — command as $1, never string-emb
   assert.equal(maxBytes, '4096', 'the cap rides as a string argv element');
   assert.ok(fs.existsSync(APPENDER), 'the appender is built with the server (tsc ships it)');
   assert.ok(!script.includes('true'));
-  // Pure POSIX: no pipefail (dash rejects it), no shell-specific bits,
-  // and tee is gone — the sink is the appender (plan §8).
+  // POSIX only: no pipefail (dash rejects it), and no tee.
   assert.ok(!/pipefail/.test(script));
   assert.ok(!/\btee\b/.test(script));
-  // The exit code is captured before the appender: $? is written inside
-  // the { }, and the appender is the pipeline's last stage.
+  // $? is captured inside the { }, before the appender stage.
   assert.ok(script.includes('echo $? > "$3"'));
   assert.match(script, /\} \| node "\$4" "\$2" "\$5"$/);
 });

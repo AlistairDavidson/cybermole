@@ -1,17 +1,6 @@
-// apps.ts — the app domain (docs/plans/workspaces-plan.md §1–§3): a named,
-// slug'd, ordered container for workspaces. Barebones on purpose — the
-// workspace/terminal structure lives in workspaces.ts; apps are the
-// grouping, the ordering and the URL identity (slug, stable once
-// created). Constructed once per process (services.ts, fed by
-// server/main.ts) and reached by routes through locals.cybermole — never
-// runtime-imported by Astro code (docs/conventions/CODE_STYLE.md §6).
-//
-// Deletion is cascade-first: the FK chain (apps → workspaces → terminals,
-// ON DELETE CASCADE) does the structural delete in one statement (PRAGMA
-// foreign_keys is set at open, src/lib/platform/db.ts), and the deleted terminals'
-// tmux sessions are then killed best-effort — derived 't-<uuid>' names,
-// never stored — logged, never failing the delete. Jobs are untouched:
-// jobs.app_id is a TAG (ON DELETE SET NULL), not ownership.
+// Apps: named, ordered groups of workspaces with a stable slug. Deleting one
+// cascades through workspaces and terminals via FKs, then kills their tmux
+// sessions best-effort. Jobs are only tagged (SET NULL), never owned.
 import { randomUUID } from 'node:crypto';
 import { qb, type StateDb } from '../platform/db';
 import { componentLogger } from '../platform/logger';
@@ -35,18 +24,11 @@ import type { AppState } from '../platform/types';
 
 const log = componentLogger('apps');
 
-// ---------- results (HTTP statuses are mapped in responses.service.ts) ----------
+// ---------- results ----------
 
 export type SaveAppData = { id: AppId; name: string; slug: AppSlug; cwd: string | null };
-/** invalid_name: the display name is empty, or slugs to nothing usable.
- *  invalid_cwd: the optional cwd (task/app-cwd — where workspaces under
- *  the app start) is not an absolute existing directory (workspaces.ts's
- *  checkedCwd, the same rule a workspace cwd passes). duplicate_slug: the
- *  derived slug is taken (pre-checked, not message-sniffed — plan §2).
- *  app_not_found: rename of a slug that no longer resolves (the plan's §3
- *  list predates the PATCH route; the code is added so a missing app is a
- *  404, not a 500). database_error: the state db failed (also the residual
- *  pre-check/insert race's answer). */
+/** invalid_name: empty, or slugs to nothing. duplicate_slug is pre-checked;
+ *  the check-then-insert race degrades to database_error. */
 export type SaveAppErrorCode =
   'invalid_name' | 'invalid_cwd' | 'duplicate_slug' | 'app_not_found' | 'database_error';
 export type SaveAppSuccess = ResultSuccess<'save_app', SaveAppData>;
@@ -54,41 +36,31 @@ export type SaveAppFailure = ResultFailure<'save_app', SaveAppData, SaveAppError
 export type SaveAppResult = SaveAppSuccess | SaveAppFailure;
 
 export type DeleteAppData = { id: AppId };
-/** app_not_found: no app with that slug. The best-effort tmux kills are
- *  logged (src/lib/terminals/tmux.ts) and never turn a successful delete into a
- *  failure. */
 export type DeleteAppErrorCode = 'app_not_found' | 'database_error';
 export type DeleteAppSuccess = ResultSuccess<'delete_app', DeleteAppData>;
 export type DeleteAppFailure = ResultFailure<'delete_app', DeleteAppData, DeleteAppErrorCode>;
 export type DeleteAppResult = DeleteAppSuccess | DeleteAppFailure;
 
-/** The app list (task/ws-jobs plan §9 + task/ws-console plan §5): ONE
- *  read serves both the jobs dialog's tag picker (server-rendered
- *  options, no per-job fetches anywhere) and GET /api/state's apps
- *  half. AppState is the shared client+server shape (src/lib/platform/types.ts). */
+/** One read serves both the jobs tag picker and GET /api/state. */
 export type ListAppsData = { apps: AppState[] };
 export type ListAppsErrorCode = 'database_error';
 export type ListAppsSuccess = ResultSuccess<'list_apps', ListAppsData>;
 export type ListAppsFailure = ResultFailure<'list_apps', ListAppsData, ListAppsErrorCode>;
 export type ListAppsResult = ListAppsSuccess | ListAppsFailure;
 
-// ---------- the domain ----------
+// ---------- domain ----------
 
 export interface AppsDeps {
   db: StateDb;
-  /** The single credential row's username — created_by/updated_by
-   *  (plan §2), read through services (Auth.username). */
+  /** For created_by/updated_by. */
   username: () => DatabaseReadResult<string | null>;
-  /** Best-effort tmux kill for a deleted terminal's session. */
   killSession: (name: TmuxSessionName) => Promise<boolean>;
 }
 
 export class Apps {
   constructor(private deps: AppsDeps) {}
 
-  /** Who writes rows: the credential username. A missing credential
-   *  cannot happen on an authenticated route (login requires it) —
-   *  'unknown' keeps the write honest if it ever does. */
+  /** 'unknown' if the credential is somehow missing (login requires it). */
   private actor(): { ok: true; username: string } | { ok: false; errorMessage: string } {
     const who = this.deps.username();
     return who.ok
@@ -96,7 +68,7 @@ export class Apps {
       : { ok: false, errorMessage: who.errorMessage ?? 'could not read the credential' };
   }
 
-  /** max(sort_order) + 10 — order allocation in steps of 10 (plan §2). */
+  /** Steps of 10. */
   private nextOrder() {
     return databaseRead(
       'could not read app order',
@@ -117,13 +89,8 @@ export class Apps {
     );
   }
 
-  /** Create an app: the slug is DERIVED (normalizeSlug) and checked
-   *  against the table before the insert — constraint violations are
-   *  closed error codes, never message-sniffed (plan §2); the residual
-   *  check-then-insert race degrades to database_error. The optional cwd
-   *  (task/app-cwd) is empty/absent = unset (workspaces under the app
-   *  start at the server default); a non-empty one passes workspaces.ts's
-   *  checkedCwd — the same rule a workspace cwd passes. */
+  /** The slug is derived from the name. An empty cwd means unset (the
+   *  server default). */
   async saveApp(name: string, cwd?: string): Promise<SaveAppResult> {
     const fail = (errorCode: SaveAppErrorCode, errorMessage: string) =>
       ({ ok: false, resultType: 'save_app', errorCode, errorMessage }) satisfies SaveAppFailure;
@@ -173,12 +140,7 @@ export class Apps {
     } satisfies SaveAppSuccess;
   }
 
-  /** Patch an app: name and/or cwd, absent fields keep (the {title?}
-   *  convention of the workspace patches); the slug is stable once
-   *  created (v1 — plan §6); an absent everything is a no-op that returns
-   *  the row as it stands. cwd null CLEARS it back to unset — the app's
-   *  workspaces then start at the server default (terminalPatchBody's
-   *  title convention); a string passes workspaces.ts's checkedCwd. */
+  /** Absent fields keep; the slug never changes. cwd null clears it. */
   async renameApp(
     slug: AppSlug,
     name: string | undefined,
@@ -201,7 +163,7 @@ export class Apps {
     if (trimmed === '') return fail('invalid_name', 'name is required');
     let dir: string | null | undefined;
     if (cwd === null)
-      dir = null; // null CLEARS it; an empty string is a 400, not a clear
+      dir = null; // an empty string is a 400, not a clear
     else if (cwd !== undefined) {
       const checked = checkedCwd(cwd.trim());
       if (!checked.ok) return fail('invalid_cwd', checked.reason);
@@ -230,10 +192,7 @@ export class Apps {
     } satisfies SaveAppSuccess;
   }
 
-  /** Delete an app: the FK cascades its workspaces and their terminals,
-   *  and un-tags its jobs (SET NULL); the deleted terminals' tmux
-   *  sessions are killed best-effort afterwards — a kill can never fail
-   *  the delete. */
+  /** Tmux kills come after the cascade and never fail the delete. */
   async deleteApp(slug: AppSlug): Promise<DeleteAppResult> {
     const fail = (errorCode: DeleteAppErrorCode, errorMessage: string) =>
       ({ ok: false, resultType: 'delete_app', errorCode, errorMessage }) satisfies DeleteAppFailure;
@@ -241,8 +200,7 @@ export class Apps {
     if (!found.ok) return fail('database_error', found.errorMessage);
     const row = found.data.value;
     if (!row) return fail('app_not_found', 'no such app');
-    // Collected before the cascade removes them: the ids name the tmux
-    // sessions to kill (terminalSessionName derives them — never stored).
+    // Read before the cascade removes them; the ids name the sessions.
     const terminals = databaseRead('could not read terminals', () =>
       this.deps.db.all(
         qb
@@ -257,9 +215,6 @@ export class Apps {
       this.deps.db.run(qb.deleteFrom('apps').where('id', '=', row.id)),
     );
     if (!deleted.ok) return fail('database_error', deleted.errorMessage);
-    // These kills are best-effort and logged either way (plan §4): a
-    // terminal whose spawn failed (dead tab) or whose workspace side is
-    // down simply has no session to kill — the kill is then a no-op.
     for (const t of terminals.data.value) await this.deps.killSession(terminalSessionName(t.id));
     log.info(
       `app ${slug} deleted (${terminals.data.value.length} terminal sessions killed best-effort)`,
@@ -267,11 +222,7 @@ export class Apps {
     return { ok: true, resultType: 'delete_app', data: { id: row.id } } satisfies DeleteAppSuccess;
   }
 
-  /** Every app, sort_order asc (+ created_at tiebreak — order allocation
-   *  is in steps of 10, plan §2, but nothing rewrites gaps in v1). One
-   *  read: the sidebar's grouping order (plan §5), the jobs dialog's
-   *  tag picker (plan §9) and the new-workspace dialog's start-path hint
-   *  (task/app-cwd: the app cwd vs the server default). */
+  /** sort_order, then created_at as a tiebreak. */
   listApps(): ListAppsResult {
     const read = databaseRead(
       'could not read apps',

@@ -1,6 +1,4 @@
-// debounce.test.mjs — debounceTrailing (src/lib/platform/debounce.ts): the jobs
-// pages' /ws/events refresh coalescing (plan §7) — several bus events in
-// quick succession become ONE partial refresh with the last arguments.
+// debounceTrailing: a burst of calls becomes one, with the last arguments.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 

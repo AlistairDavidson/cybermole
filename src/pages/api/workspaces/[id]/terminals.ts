@@ -1,7 +1,4 @@
-// /api/workspaces/:id/terminals — POST opens a terminal tab (§6): the
-// domain inserts the row (sort_order = max+10) and best-effort-spawns
-// its tmux session (plan §4) — a failed spawn still returns the row
-// (live:false, a dead tab; the first attach retries the spawn).
+// POST opens a tab. A failed spawn still returns the row (live:false); the first attach retries.
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../../../lib/web/locals';
 import { parseAndValidateAPIRequest } from '../../../../lib/web/parsing.service';

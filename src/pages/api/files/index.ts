@@ -1,12 +1,6 @@
-// POST /api/files — store one uploaded file in object storage and answer
-// its key (201); GET /api/files/<key> ([...key].ts) serves it back.
-// multipart/form-data, the file in field "file"; the policy (size, types)
-// is src/schemas/uploads.ts. The file streams from the request straight
-// into storage — never held in memory whole. The only route whose body may
-// pass the JSON API's 10 KiB: server/main.ts's per-route cap and the
-// adapter's bodySizeLimit (astro.config.mjs) both allow it
-// UPLOAD_MAX_BODY_BYTES, and main.ts trades its whole-request deadline
-// for a stall timeout here.
+// POST /api/files: streams the multipart "file" field into object storage
+// and answers its key (201). The only route allowed past the JSON API's
+// 10 KiB body cap.
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../../lib/web/locals';
 import { streamFileUpload } from '../../../lib/web/parsing.service';

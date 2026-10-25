@@ -1,13 +1,7 @@
 ---
-// ConsoleApp.astro — SSRs the console app shell: <wa-page> (sidebar +
-// free mobile drawer), header, <workspace-sidebar> slot, the terminal
-// tabs pane, toasts, and the dialogs the sidebar's innerHTML poll can't
-// host (they live outside it, so their open/closed state survives every
-// re-render). console-app.ts (imported client-side below) upgrades
-// <console-app> and orchestrates it. Frontmatter imports SSR the wa-*
-// components in this markup (astro-lit, declarative shadow DOM); they do
-// NOT register in the browser — console-app.ts re-imports them there
-// (AGENTS.md: SSR ≠ client).
+// The console shell. The dialogs live here, outside the sidebar's
+// innerHTML re-render, so their state survives it. The wa-* imports here
+// only SSR; console-app.ts re-imports them client-side (AGENTS.md).
 import '@awesome.me/webawesome/dist/components/page/page.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/dialog/dialog.js';
@@ -17,9 +11,7 @@ import WaField from '../form/WaField.astro';
 import { zodSchemaToHTMLAttributes } from '../../lib/web/zod.service';
 import { appForm, workspaceForm } from '../../schemas/api';
 
-// Native constraints matching the schemas the dialogs validate with in
-// the browser (validation-enhancer-zod — an empty field never costs a
-// POST; the server re-validates with its own bodies either way).
+// Native constraints from the dialogs' schemas; the server re-validates anyway.
 const appValidation = zodSchemaToHTMLAttributes(appForm);
 const wsValidation = zodSchemaToHTMLAttributes(workspaceForm);
 ---
@@ -73,9 +65,7 @@ const wsValidation = zodSchemaToHTMLAttributes(workspaceForm);
 </console-app>
 
 <script>
-  // MUST come first, before any wa-* component import — see
-  // @awesome.me/astro-lit README: if these run after components define,
-  // SSR'd elements render twice (DSD copy + fresh Lit render).
+  // Must precede any wa-* import, or SSR'd elements render twice.
   import '@awesome.me/astro-lit/dsd-polyfill.js';
   import '@awesome.me/astro-lit/hydration-support.js';
   import '../../icons';

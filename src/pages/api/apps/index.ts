@@ -1,8 +1,4 @@
-// /api/apps — POST creates an app (workspaces-plan §6). The name is any
-// string; the domain slugs it (normalizeSlug) — normalization is not
-// validation. The optional cwd (task/app-cwd) is validated by the domain
-// (absolute + existing dir — the same rule a workspace cwd passes). A
-// duplicate slug is 409, an unusable name 400.
+// POST creates an app; the domain derives the slug from the name.
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../../lib/web/locals';
 import { parseAndValidateAPIRequest } from '../../../lib/web/parsing.service';

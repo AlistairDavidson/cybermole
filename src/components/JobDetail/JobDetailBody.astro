@@ -1,12 +1,6 @@
 ---
-// JobDetailBody.astro — the /jobs/:name detail FRAGMENT: the definition
-// card (name, schedule, command, app tag — with the edit entry) and the
-// run history (exit codes + durations, the log buttons). Rendered by the
-// page (src/pages/jobs/[name].astro) and by the partial
-// (src/pages/partials/jobs/[name].astro) its 15 s poll and /ws/events
-// subscription swap in — the same classes the runs dialog uses
-// (console.css), so the two surfaces read alike. data-job carries the
-// name across swaps (<job-detail> reads it — never its own state).
+// The swappable /jobs/:name fragment, rendered by the page and the partial.
+// data-job carries the name across swaps for <job-detail>.
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/card/card.js';
@@ -17,12 +11,11 @@ import type { JobRunView } from '../../lib/jobs/jobs';
 
 interface Props {
   job: ScheduledJob;
-  /** null only for a failed history read (the refresh retries). */
+  /** null only when the history read failed (the refresh retries). */
   runs: JobRunView[] | null;
 }
 const { job, runs } = Astro.props;
 
-// Matches the server's CYBERMOLE_BASE ('' for root, else '/foo').
 const base = (import.meta.env.BASE_URL ?? '/').replace(/\/+$/, '');
 const last = job.last
   ? `${job.last}${job.lastResult === 'success' ? ' · ok' : job.lastResult === 'failed' ? ' · failed' : ''}`

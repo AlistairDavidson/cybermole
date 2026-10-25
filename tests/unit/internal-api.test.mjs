@@ -1,13 +1,7 @@
-// internal-api.test.mjs — task/jobs-socket (docs/plans/jobs-agent-plan.md §3–§4)
-// units: the internal jobs API — a real HTTP listener on a tmp-dir unix
-// socket, exercised over node:http socketPath for EVERY verb, plus the
-// socket lifecycle (stale file unlinked+rebound, a live listener refused,
-// the 0660 chmod, close() unlinking) and the CYBERMOLE_SOCK env rules
-// (src/lib/platform/env.ts — child processes, the editor/storage test pattern).
-// Needs no real tmux: the jobs-runs stand-in on PATH answers the
-// commands src/lib/terminals/tmux.ts issues (plus kill-session, which the kill
-// verb adds); the socket path is set before the import so tmux.ts binds
-// it at module load.
+// The internal API over a real tmp-dir unix socket: every verb, the socket
+// lifecycle (stale file rebound, live listener refused, 0660, close
+// unlinking) and CYBERMOLE_SOCK resolution. A fake tmux on PATH stands in;
+// the socket path is set before the import since tmux.ts reads it at load.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -31,8 +25,7 @@ const { StateDb } = await import('../../dist-server/src/lib/platform/db.js');
 const { Apps } = await import('../../dist-server/src/lib/apps/apps.js');
 const { internalSocketDefault } = await import('../../dist-server/src/lib/platform/env.js');
 
-// The jobs-runs stand-in tmux, plus kill-session (the kill verb): $dir/up
-// marks the server up, $dir/sessions lists live session names.
+// Fake tmux (with kill-session): $dir/up marks the server up, $dir/sessions lists live sessions.
 const FAKE_TMUX = `#!/bin/sh
 dir="$FAKE_TMUX_DIR"; sessions="$dir/sessions"
 [ -e "$sessions" ] || : > "$sessions"
@@ -65,8 +58,7 @@ esac
 `;
 fs.writeFileSync(path.join(fakeBin, 'tmux'), FAKE_TMUX, { mode: 0o755 });
 
-/** The app domain over a db (light deps: apps.ts needs no tmux for
- *  reads). */
+/** Reads need no tmux. */
 function appsFor(db) {
   return new Apps({
     db,
@@ -75,17 +67,15 @@ function appsFor(db) {
   });
 }
 
-/** One case's world: fresh db + scheduler + apps domain + the API booted
- *  on its own socket. The fake tmux server is "up" from the start so
- *  run/kill work; cases that want it down remove the marker. */
+/** Fresh db, scheduler, apps domain and the API on its own socket. The fake
+ *  tmux server starts up; cases wanting it down remove the marker. */
 async function boot() {
   const root = fs.mkdtempSync(path.join(dir, 'case-'));
   const logDir = path.join(root, 'job-logs');
   const db = new StateDb(path.join(root, 'cybermole.db'));
   const scheduler = new Scheduler(db, { cwd: root, env: {}, logDir });
   const apps = appsFor(db);
-  // the fake tmux's live-session list is shared across cases (it stands
-  // in for the one tmux server); each case starts with none.
+  // The fake's session list is shared (one tmux server); start each case with none.
   fs.writeFileSync(path.join(dir, 'sessions'), '');
   fs.writeFileSync(path.join(dir, 'up'), '');
   const socketPath = path.join(root, 'cybermole.sock');
@@ -93,7 +83,6 @@ async function boot() {
   return { root, logDir, db, scheduler, apps, api, socketPath };
 }
 
-/** One HTTP request over the socket; resolves status/headers/body. */
 function call(socketPath, method, urlPath, body) {
   return new Promise((resolve, reject) => {
     const req = http.request(
@@ -112,7 +101,7 @@ function call(socketPath, method, urlPath, body) {
           try {
             json = JSON.parse(text);
           } catch {
-            /* the log route answers text/plain */
+            /* the log route is text/plain */
           }
           resolve({ status: res.statusCode, headers: res.headers, text, json });
         });
@@ -126,12 +115,11 @@ function call(socketPath, method, urlPath, body) {
 
 const GOOD = { name: 'nightly', schedule: '0 4 * * *', command: 'echo hello' };
 
-// ---------- §3: socket lifecycle ----------
+// ---------- socket lifecycle ----------
 
 test('startInternalApi: creates a missing socket parent dir (the state-dir default is otherwise never materialized)', async () => {
-  // The e2e specs' spawned second servers hit exactly this: CYBERMOLE_SOCK
-  // unset, agent dir / db pointed elsewhere, so nothing ever mkdirs
-  // ~/.local/state/cybermole and listen() died EACCES on the missing parent.
+  // With CYBERMOLE_SOCK unset and the db and agent dir elsewhere, nothing
+  // creates the state dir; listen() must not die on the missing parent.
   const root = fs.mkdtempSync(path.join(dir, 'case-'));
   const db = new StateDb(path.join(root, 'cybermole.db'));
   const scheduler = new Scheduler(db, { cwd: root, env: {}, logDir: path.join(root, 'job-logs') });
@@ -147,7 +135,7 @@ test('startInternalApi: creates a missing socket parent dir (the state-dir defau
   }
 });
 
-// ---------- §4: the verbs ----------
+// ---------- verbs ----------
 
 test('GET /jobs: the browser shape, empty first', async () => {
   const w = await boot();
@@ -183,8 +171,7 @@ test('POST /jobs creates; GET /jobs lists; bodies match the browser API', async 
 test('POST /jobs: a name that normalizes invalid is the browser 400 validation body', async () => {
   const w = await boot();
   try {
-    // "cybermole-…" is reserved for run sessions (JOB_NAME_RE) — and does
-    // not normalize away, unlike punctuation
+    // "cybermole-…" is reserved for run sessions and doesn't normalize away
     const r = await call(w.socketPath, 'POST', '/jobs', { ...GOOD, name: 'cybermole-nightly' });
     assert.equal(r.status, 400);
     assert.deepEqual(r.json, {
@@ -245,7 +232,7 @@ test('POST /jobs: non-JSON content type and oversized bodies are refused like th
     assert.equal(big.status, 413);
     assert.equal(big.json.code, 'body_too_large');
 
-    // chunked with no Content-Length: the public API's 411 stance
+    // chunked with no Content-Length: 411
     const chunked = await new Promise((resolve, reject) => {
       const req = http.request(
         {
@@ -372,8 +359,7 @@ test('GET /jobs?app=<slug>: filters; unknown slug is a 404, bad slug a 400', asy
 });
 
 test('GET /apps: the picker rows over the socket; database_error when the apps db breaks', async () => {
-  // task/jobs-mcp (plan §6): the MCP's apps_list tool's verb — the same
-  // rows the browser dialog renders (the /api/state apps half).
+  // The MCP's apps_list verb: the same rows the browser dialog renders.
   const w = await boot();
   try {
     const app = await w.apps.saveApp('Deploy Tools');
@@ -382,15 +368,13 @@ test('GET /apps: the picker rows over the socket; database_error when the apps d
     assert.deepEqual(r.json, {
       apps: [{ id: app.data.id, name: 'Deploy Tools', slug: 'deploy-tools', cwd: null, order: 10 }],
     });
-    // The other verbs exist now (§0's amendment — the tests below cover
-    // them); the surface's unknown-verb answer is still the Result 404.
+    // other methods on /apps exist; an unknown one is still a JSON 404
     const notAVerb = await call(w.socketPath, 'PUT', '/apps');
     assert.equal(notAVerb.status, 404);
   } finally {
     await w.api.close();
   }
 
-  // a broken apps db answers the family's one failure code
   const root = fs.mkdtempSync(path.join(dir, 'broken-apps-'));
   const notADir = path.join(root, 'not-a-dir');
   fs.writeFileSync(notADir, '');
@@ -408,10 +392,8 @@ test('GET /apps: the picker rows over the socket; database_error when the apps d
   }
 });
 
-// task/app-web (apps-plan §0's amendment): the app_save/app_delete
-// verbs — registration is the workspace side's power now, the same trust
-// level as job creation, mirroring the console routes 1:1 through the
-// same Apps domain calls and mappers (wire JSON byte-identical).
+// App create/patch/delete, mirroring the console routes through the same
+// Apps domain calls and mappers (byte-identical JSON).
 test("POST /apps creates (name + optional cwd), the browser verb's bodies verbatim", async () => {
   const w = await boot();
   try {
@@ -425,12 +407,12 @@ test("POST /apps creates (name + optional cwd), the browser verb's bodies verbat
     assert.equal(made.json.cwd, w.root);
     assert.ok(typeof made.json.id === 'string');
 
-    // the same success shape the console's POST /api/apps answers
+    // the console's POST /api/apps success shape
     const listed = await call(w.socketPath, 'GET', '/apps');
     assert.equal(listed.json.apps.length, 1);
     assert.equal(listed.json.apps[0].slug, 'app-fixture');
 
-    // the browser verb's failure bodies: closed codes, not messages
+    // closed codes, not messages
     const dup = await call(w.socketPath, 'POST', '/apps', { name: 'app fixture' });
     assert.equal(dup.status, 409);
     assert.equal(dup.json.code, 'duplicate_slug');
@@ -551,7 +533,7 @@ test('run/kill/log: the run lifecycle over the socket', async () => {
     assert.equal(run.status, 200);
     assert.deepEqual(run.json, { name: 'nightly', session: 'cybermole-nightly' });
 
-    // the previous run is still live (the fake tmux session exists)
+    // the previous run is still live
     const busy = await call(w.socketPath, 'POST', '/jobs/nightly/run', {});
     assert.equal(busy.status, 409);
     assert.equal(busy.json.code, 'run_active');
@@ -562,9 +544,7 @@ test('run/kill/log: the run lifecycle over the socket', async () => {
     assert.equal(origin, 'manual');
     assert.equal(hasLog, false);
 
-    // a failing kill-session (the fake tmux's kill-fail marker, session
-    // still live): the kill family's own tmux_error body — never the
-    // run-open text
+    // A failing kill-session (session still live): tmux_error with the kill's own text.
     fs.writeFileSync(path.join(dir, 'kill-fail'), '');
     try {
       const failed = await call(w.socketPath, 'POST', `/jobs/nightly/runs/${firedAt}/kill`, {});
@@ -576,7 +556,7 @@ test('run/kill/log: the run lifecycle over the socket', async () => {
       fs.rmSync(path.join(dir, 'kill-fail'), { force: true });
     }
 
-    // the kill: the live run dies, a repeat is run_not_active
+    // the live run dies; a repeat is run_not_active
     const killed = await call(w.socketPath, 'POST', `/jobs/nightly/runs/${firedAt}/kill`, {});
     assert.equal(killed.status, 200);
     assert.deepEqual(killed.json, { name: 'nightly', firedAt });
@@ -584,13 +564,12 @@ test('run/kill/log: the run lifecycle over the socket', async () => {
     assert.equal(rekill.status, 409);
     assert.equal(rekill.json.code, 'run_not_active');
 
-    // a firedAt no run recorded under: run_not_found (404), not run_active
+    // an unrecorded firedAt: run_not_found (404), not run_active
     const noSuchRun = await call(w.socketPath, 'POST', '/jobs/nightly/runs/123/kill', {});
     assert.equal(noSuchRun.status, 404);
     assert.equal(noSuchRun.json.code, 'run_not_found');
 
-    // a second run can start now; killing the OLD fired_at names a run
-    // that is no longer the current one — never the newer run
+    // A new run can start; killing the old firedAt must never hit the newer run.
     const second = await call(w.socketPath, 'POST', '/jobs/nightly/run', {});
     assert.equal(second.status, 200);
     const staleKill = await call(w.socketPath, 'POST', `/jobs/nightly/runs/${firedAt}/kill`, {});
@@ -599,7 +578,7 @@ test('run/kill/log: the run lifecycle over the socket', async () => {
     const secondRuns = await call(w.socketPath, 'GET', '/jobs/nightly/runs');
     assert.equal(secondRuns.json.runs.length, 2); // the newer run survived
 
-    // the log: written where the wrapper would, read back as the tail
+    // a log where the wrapper would write it, read back as the tail
     const secondFiredAt = secondRuns.json.runs[0].firedAt;
     const paths = runLogPaths(w.logDir, 'nightly', secondFiredAt);
     fs.mkdirSync(path.dirname(paths.log), { recursive: true });
@@ -640,9 +619,8 @@ test('the 1 MiB log tail cap, same as the browser verb', async () => {
 });
 
 test('a broken state db answers 500 database_error on the read verbs', async () => {
-  // jobs-runs.test.mjs's broken-db trick: the db's parent is a file, so
-  // every lazy open fails — the boundary turns it into database_error
-  // results, and the routes map them like the browser API does.
+  // The db's parent is a file, so every lazy open fails and the routes map
+  // the resulting database_error like the browser API does.
   const root = fs.mkdtempSync(path.join(dir, 'broken-'));
   const notADir = path.join(root, 'not-a-dir');
   fs.writeFileSync(notADir, '');
@@ -710,10 +688,10 @@ test('unknown paths and verbs answer 404 with a Result body, never HTML', async 
       assert.equal(r.status, 404, `${method} ${urlPath}`);
       assert.deepEqual(r.json, { error: 'not found', detail: null, code: 'not_found' });
     }
-    // a bad %-escape in the path: a client error, 400
+    // a bad %-escape: 400
     const badEscape = await call(w.socketPath, 'GET', '/jobs/%E0/runs');
     assert.equal(badEscape.status, 400);
-    // a name that is not a JobName: the browser's invalid_job_name body
+    // not a JobName: invalid_job_name
     const badName = await call(w.socketPath, 'DELETE', '/jobs/cybermole-x');
     assert.equal(badName.status, 400);
     assert.deepEqual(badName.json, {
@@ -721,7 +699,7 @@ test('unknown paths and verbs answer 404 with a Result body, never HTML', async 
       detail: null,
       code: 'invalid_job_name',
     });
-    // a fired_at that is not an integer: the browser's invalid_fired_at body
+    // not an integer: invalid_fired_at
     const badFiredAt = await call(w.socketPath, 'GET', '/jobs/nightly/runs/abc/log');
     assert.equal(badFiredAt.status, 400);
     assert.equal(badFiredAt.json.code, 'invalid_fired_at');
@@ -730,7 +708,7 @@ test('unknown paths and verbs answer 404 with a Result body, never HTML', async 
   }
 });
 
-// ---------- §3: the socket lifecycle ----------
+// ---------- socket lifecycle ----------
 
 test('after listen the socket file is 0660; close() unlinks it', async () => {
   const w = await boot();
@@ -738,14 +716,13 @@ test('after listen the socket file is 0660; close() unlinks it', async () => {
   assert.equal(mode, 0o660);
   await w.api.close();
   assert.equal(fs.existsSync(w.socketPath), false);
-  // a request after close fails to connect
   await assert.rejects(call(w.socketPath, 'GET', '/jobs'));
 });
 
 test('a stale socket file is unlinked and rebound at boot', async () => {
   const w = await boot();
   await w.api.close();
-  // leave a stale file behind (the crash case): dead socket → ECONNREFUSED
+  // a stale file (the crash case): ECONNREFUSED
   fs.writeFileSync(w.socketPath, '');
   assert.equal(await probeSocketFile(w.socketPath), 'stale');
   const again = await startInternalApi({
@@ -767,9 +744,8 @@ test('a live listener owns the socket: the typed error main.ts degrades on', asy
     await assert.rejects(
       startInternalApi({ socketPath: w.socketPath, scheduler: w.scheduler, apps: w.apps }),
       err => {
-        // The typed marker is the contract: main.ts serves on (loud log,
-        // listener disabled) ONLY for this error; every other failure
-        // still stops the boot (plan §3, amended in integration).
+        // main.ts serves on without the listener only for this typed
+        // error; anything else stops the boot.
         assert.ok(
           err instanceof InternalSocketOwnedError,
           'the typed marker, not just the message',
@@ -795,10 +771,9 @@ test('probeSocketFile: a plain foreign server on the socket counts as live', asy
   }
 });
 
-// ---------- §3: CYBERMOLE_SOCK resolution (src/lib/platform/env.ts) ----------
+// ---------- CYBERMOLE_SOCK resolution ----------
 
-/** readInternalApiSocket() in a child process (env.ts reads CYBERMOLE_* at
- *  module load — the editor/storage test pattern). */
+/** In a child process: env.ts reads CYBERMOLE_* at module load. */
 function readSock(env) {
   const clean = Object.fromEntries(
     Object.entries(process.env).filter(([k]) => k !== 'CYBERMOLE_SOCK'),

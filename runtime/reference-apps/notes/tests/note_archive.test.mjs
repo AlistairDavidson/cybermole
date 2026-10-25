@@ -1,4 +1,3 @@
-// The note_archive action's unit tests — grown from the add_action stub.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { noteArchiveResult } from '../src/lib/note_archive.ts';

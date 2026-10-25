@@ -1,39 +1,18 @@
 #!/usr/bin/env node
-// dev-server-watch.mjs — `npm run dev:server`: build once, boot the
-// compiled server on :3001, then keep it current. The data pages
-// (/settings, /jobs) render only inside that process
-// (assertCybermoleLocals in their frontmatter — astro dev's own render has
-// no services), so its build inputs changing IS the dev loop for them.
+// `npm run dev:server`: build, boot the compiled server on :3001, and rebuild
+// and restart on changes to what the build reads (src/, server/, public/,
+// the tsconfigs, astro.config.mjs). Pages needing services only render in
+// this process. Docs and tests are ignored: every restart drops the open
+// terminals.
 //
-// What it watches: exactly what the build reads — src/ (pages,
-// components, lib, schemas), server/ (the gate), public/ (copied into
-// the client build), the two tsconfigs, astro.config.mjs. Docs, tests
-// and package.json deliberately stay out: they change nothing the
-// server serves, and every restart drops the open terminals (the WS
-// bridge lives in the restarted process).
+// The build is staged so a failure changes nothing the running server sees:
+// astro builds into .dist-watch (it cleans its outDir, and the running entry
+// lazy-loads chunks from dist/), tsc emits into dist-server in place. Only
+// when both succeed, and after the old server has drained, does the staged
+// tree replace dist. Keep these steps in sync with `npm run build`.
 //
-// The build is STAGED, and a failed one changes nothing the running
-// server sees. The astro half builds into .dist-watch (astro cleans its
-// outDir up front, and the running entry lazy-loads route chunks from
-// dist/server/chunks at render time — an in-place failed build breaks
-// every page not yet rendered), the tsc half emits into dist-server in
-// place (tsc never cleans). Only when BOTH succeed does the staged tree
-// swap in for dist — after the old server has exited (it serves its old
-// tree through its graceful drain; nothing serves while the trees
-// mismatch) — followed by the new boot. These steps are npm run build's;
-// they must stay in sync with it (package.json keeps its plain form —
-// e2e, prepack and production build in place, with nothing serving).
-//
-// The port is forced to 3001, as the old one-liner forced it: the
-// compose dev service publishes it (and the historical astro-dev proxy
-// targeted it). Everything else is inherited from this process's
-// environment.
-//
-// fs.watch noise (inotify) is filtered — dotfiles, `#`-prefixed locks,
-// editor swap (vim's 4913, *.swp/*.swo, *~): opening a file in vim
-// alone must not cost every open terminal a restart. Events are
-// debounced (250 ms quiet) and coalesced while a cycle runs, so a save
-// that touches several files is one rebuild.
+// Editor noise (dotfiles, locks, vim's 4913 and swap files) is filtered, and
+// events are debounced (250 ms) and coalesced while a cycle runs.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -57,7 +36,6 @@ const log = message => console.log(`[dev:server] ${message}`);
 const bin = name => path.join(ROOT, 'node_modules', '.bin', name);
 const rm = p => fs.rmSync(p, { recursive: true, force: true });
 
-/** A noise event (editor scratch): dotfiles, lock files, vim's 4913, swap. */
 const noise = basename =>
   basename.startsWith('.') ||
   basename.startsWith('#') ||
@@ -66,7 +44,7 @@ const noise = basename =>
   basename.endsWith('.swp') ||
   basename.endsWith('.swo');
 
-/** Resolve when the process exits — SIGKILL after `killAfterMs` if it hangs. */
+/** SIGKILL after `killAfterMs` if it hangs. */
 const exited = (proc, killAfterMs = KILL_AFTER_MS) =>
   new Promise(resolve => {
     if (proc.exitCode !== null || proc.signalCode !== null) return resolve();
@@ -77,15 +55,13 @@ const exited = (proc, killAfterMs = KILL_AFTER_MS) =>
     });
   });
 
-/** A build step's exit code (0 on success), with its output streamed.
- *  cwd: ROOT — astro and tsc resolve the project from the cwd. */
+/** cwd ROOT: astro and tsc resolve the project from it. */
 const run = (command, args) =>
   new Promise(resolve => {
     spawn(command, args, { stdio: 'inherit', cwd: ROOT }).once('exit', code => resolve(code ?? 1));
   });
 
-/** Build, staged: astro into .dist-watch (clean first — a crashed run
- *  may have left a partial), tsc into dist-server. */
+/** Clean .dist-watch first: a crashed run may have left a partial. */
 async function build() {
   rm(STAGE);
   const astro = await run(bin('astro'), ['build', '--outDir', STAGE]);
@@ -98,8 +74,7 @@ async function build() {
   return tsc; // running server is unaffected; the next good build re-emits
 }
 
-/** Move the staged build in as dist. Only called with the old server
- *  gone — nothing serves while the trees swap. */
+/** Only with the old server gone, so nothing serves mismatched trees. */
 function swap() {
   rm(DIST);
   fs.renameSync(STAGE, DIST);
@@ -111,7 +86,6 @@ let busy = false; // a build/restart cycle is running
 let queued = false; // a change landed mid-cycle — run another
 let timer = null;
 
-/** Boot the fresh build (the child logs its own 'cybermole listening' line). */
 function boot() {
   server = spawn('node', ['dist-server/server/main.js'], {
     stdio: 'inherit',
@@ -125,9 +99,7 @@ function boot() {
   });
 }
 
-/** Stop the old server (SIGTERM is its graceful path: every WS client
- *  gets 'restart', terminals close, it drains out within its deadline;
- *  SIGKILL after 10 s if it hangs), then swap in the new tree, then boot. */
+/** SIGTERM is the graceful path (WS clients get 'restart'); SIGKILL after 10 s. */
 async function restart() {
   if (server) {
     stopping = true;
@@ -139,9 +111,8 @@ async function restart() {
   boot();
 }
 
-/** One cycle: build, and on success swap + serve — a failed build
- *  leaves the running server and its dist untouched. `fatal`: the FIRST
- *  build — a broken tree fails the command, like the old `&&` chain did. */
+/** A failed build leaves the running server untouched. `fatal`: the first
+ *  build, where a broken tree fails the command. */
 async function cycle(fatal) {
   busy = true;
   let code;
@@ -177,9 +148,8 @@ function schedule() {
   }, QUIET_MS);
 }
 
-// Ctrl-C / TERM: take the server down with us. A terminal sends the
-// signal to the whole process group, so the server also gets it directly
-// — its shutdown path is idempotent; either order works.
+// The terminal also signals the server directly (same process group); its
+// shutdown is idempotent, so either order works.
 let exiting = false;
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {

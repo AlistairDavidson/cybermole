@@ -1,36 +1,12 @@
-// apps-mcp.ts — the apps MCP server `cybermole-apps` (task/app-scaffold,
-// docs/plans/apps-plan.md §6): the ROOT agent's build-loop surface — scaffold,
-// check, build, reload, register, unregister, status — plus the action
-// vocabulary (task/app-actions): add_action (the generator — one table
-// entry becomes route + MCP tool + UI stub + test stub + the AGENTS.md
-// action section, in lockstep) and describe/call (the emitted table's
-// read face and the root agent's use path; the app's own per-tree MCP
-// is the shim, server/app-mcp-shim.ts). Everything the tools do is the
-// plan's loop (§1): scaffold a starter → check green → register (the db
-// row; the tree existed since scaffold) → reload (the host's sync
-// point) → serve; the same reload after unregister drops the mount;
-// add_action extends a tree between check and reload.
+// Apps MCP server (`cybermole-apps`): the root agent's build loop (scaffold,
+// check, build, register, reload, unregister, status) and action vocabulary
+// (add_action, describe, call).
 //
-// Result vocabulary, the jobs MCP's rule (server/mcp.ts): socket-backed
-// tools (reload/register/unregister/status) carry the APIs' wire JSON
-// VERBATIM — an API failure is a normal tool result the model must read;
-// the only isError results are TRANSPORT failures (a socket unreachable,
-// the apps surface off — no answer at all, never a domain code). The
-// local tools (scaffold/check/build) answer their own Result families /
-// one quiet envelope (the cybermole-dev contract: {passed, returncode,
-// duration_s, quiet, timed_out, output, counts?, failures?}) — a red
-// envelope is information, not isError.
+// Socket-backed tools return the APIs' JSON verbatim; isError is reserved for
+// transport failures. Local tools answer their own Result or quiet envelope,
+// where a red result is information, not isError.
 //
-// stdout is the protocol channel: this process logs NOTHING (no logger —
-// componentLogger's winston console transport writes to stdout and would
-// corrupt the stream); boot-time diagnostics go to stderr.
-//
-// Importable standalone (units, the e2e loop driving the tools
-// in-process) and runnable as an entry: `node
-// dist-server/server/apps-mcp.js` — the pi template's mcp.json registers
-// exactly that, user-level next to cybermole-jobs so every root-agent
-// session gets it; an app tree's own .pi/mcp.json disables it (the
-// scaffold writes that — operators don't scaffold, §6's role boundary).
+// stdout is the protocol channel, so nothing logs to it.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
@@ -72,9 +48,7 @@ const transportError = (why: string): CallToolResult => ({
   isError: true,
 });
 
-/** One socket call: either the answer (status + parsed-or-raw body) or
- *  the transport's isError result. A 4xx/5xx body is the API's own
- *  failure JSON — the CALLER returns it verbatim, never as isError. */
+/** A 4xx/5xx body is the API's own failure JSON: return it verbatim, not as isError. */
 type SocketFetch =
   { ok: true; status: number; body: string } | { ok: false; result: CallToolResult };
 
@@ -121,32 +95,25 @@ const unreachable = (sock: string, code: string | undefined, message: string): s
   '— is the cybermole server (and the app host) running, and do they serve this socket?';
 
 export interface AppsMcpDeps {
-  /** env.ts readAppsRoot — where scaffold writes trees */
   appsRoot: string;
-  /** env.ts readInternalApiSocket — register/unregister + status rows
-   *  (null = the listener off → the clear disabled error). */
+  /** null: listener off. */
   internalSocketPath: string | null;
-  /** env.ts readAppsSocket — the app host's admin socket (reload, the
-   *  unregister sync, status's mounted half). */
+  /** The app host's admin socket. */
   appsSocketPath: string | null;
-  /** the cybermole install root: the templates live in it and its
-   *  node_modules is what the scaffolded links point into. */
+  /** Holds the templates; scaffolded node_modules link into it. */
   installRoot: string;
   templateDir?: string | undefined;
   agentTemplateFile?: string | undefined;
-  /** the child runner, injectable for tests */
   run?: typeof runChild | undefined;
 }
 
-// ---------- the local precheck for register (pure, unit-tested) ----------
+// ---------- register precheck ----------
 
 export interface RegisterPrecheck {
   ok: boolean;
-  /** the name the registration carries (the manifest's — §2: the
-   *  manifest is the app's self-description) */
+  /** From the manifest. */
   name?: string;
   tree: string;
-  /** a failure's wire JSON (the register_app family) */
   failure?: { errorCode: string; errorMessage: string };
 }
 
@@ -158,7 +125,7 @@ export function registerPrecheck(appsRoot: string, slug: string): RegisterPreche
       name?: unknown;
     };
   } catch {
-    /* no tree or unreadable manifest — answered below */
+    /* answered below */
   }
   if (manifest === null) {
     return {
@@ -184,10 +151,7 @@ export function registerPrecheck(appsRoot: string, slug: string): RegisterPreche
   return { ok: true, name: name.trim(), tree };
 }
 
-/** The register answer's one deliberate deviation from verbatim: the
- *  internal API's duplicate_slug text names the collision, not the
- *  recovery — the ANSWER must name it (plan §6): the human renames or
- *  unregisters the old group, and no tree is touched either way. */
+/** The one deviation from verbatim: add the recovery to duplicate_slug's text. */
 function withDuplicateSlugRecovery(body: unknown): CallToolResult {
   if (
     typeof body === 'object' &&
@@ -205,9 +169,8 @@ function withDuplicateSlugRecovery(body: unknown): CallToolResult {
   return json(body);
 }
 
-// ---------- the socket verbs (the tools 1:1; the e2e loop calls the same functions) ----------
+// ---------- socket verbs ----------
 
-/** reload — POST /_admin/reload (the sync point). Verbatim report. */
 export async function reloadTool(
   deps: AppsMcpDeps,
   slug: string | undefined,
@@ -228,8 +191,7 @@ export async function reloadTool(
   return r.ok ? json(parseOrRaw(r.body)) : r.result;
 }
 
-/** register — the local precheck, then POST /apps (name from the
- *  manifest, cwd = the tree). duplicate_slug grows the recovery text. */
+/** Name from the manifest, cwd = the tree. */
 export async function registerTool(deps: AppsMcpDeps, slug: string): Promise<CallToolResult> {
   const pre = registerPrecheck(deps.appsRoot, slug);
   if (!pre.ok || pre.name === undefined) {
@@ -254,8 +216,7 @@ export async function registerTool(deps: AppsMcpDeps, slug: string): Promise<Cal
   return withDuplicateSlugRecovery(parseOrRaw(r.body));
 }
 
-/** unregister — DELETE /apps/:slug (the row + cascade; the tree never
- *  touched), then the reload that drops the mount. */
+/** Deletes the row (never the tree), then reloads to drop the mount. */
 export async function unregisterTool(deps: AppsMcpDeps, slug: string): Promise<CallToolResult> {
   const deleted = await fetchSocket(
     deps.internalSocketPath,
@@ -265,15 +226,10 @@ export async function unregisterTool(deps: AppsMcpDeps, slug: string): Promise<C
   );
   if (!deleted.ok) return deleted.result;
   const body = parseOrRaw(deleted.body);
-  // A green delete reloads (the sync point); a domain failure
-  // (app_not_found …) is the API's verbatim answer, nothing to sync.
   if (deleted.status !== 200 || (body as { code?: unknown }).code !== undefined) {
     return json(body);
   }
-  // A green delete syncs the mount away — EXCEPT when the apps surface
-  // is off entirely: no host means nothing was ever mounted, so the row
-  // deletion IS the whole story (an honest note, not an error — the
-  // unreachable case below is the one that needs the operator's eyes).
+  // Apps surface off: nothing was ever mounted, so the delete is the whole story.
   if (deps.appsSocketPath === null) {
     return json({
       unregister: body,
@@ -295,7 +251,6 @@ export async function unregisterTool(deps: AppsMcpDeps, slug: string): Promise<C
   return json({ unregister: body, reload: parseOrRaw(reload.body) });
 }
 
-/** status — the join (both sockets; transport failures are isError). */
 export async function statusTool(
   deps: AppsMcpDeps,
   slug: string | undefined,
@@ -307,10 +262,7 @@ export async function statusTool(
     unreachable,
   );
   if (!rows.ok) return rows.result;
-  // A non-200 from either socket is that API's own failure JSON — verbatim,
-  // a normal result (the module's contract: only TRANSPORT failures are
-  // isError, never a domain code — a database_error on GET /apps is
-  // information the model must read).
+  // A non-200 is the API's own failure JSON: a normal result, not isError.
   if (rows.status !== 200) return json(parseOrRaw(rows.body));
   const host = await fetchSocket(
     deps.appsSocketPath,
@@ -338,12 +290,9 @@ export async function statusTool(
   return json(data);
 }
 
-// ---------- the action vocabulary (add_action / describe / call — §6) ----------
+// ---------- action vocabulary ----------
 
-/** describe — the app's route table from dist/route-table.json, VERBATIM
- *  (the emitted table: one entry per action — name, method, path, input
- *  schema, description). An unbuilt app is a DOMAIN answer naming the
- *  build, never isError. */
+/** dist/route-table.json verbatim; an unbuilt app is a domain answer, not isError. */
 export async function describeTool(deps: AppsMcpDeps, slug: string): Promise<CallToolResult> {
   const read = readRouteTable(path.join(deps.appsRoot, slug));
   if (!read.ok) {
@@ -357,11 +306,7 @@ export async function describeTool(deps: AppsMcpDeps, slug: string): Promise<Cal
   return json(read.table);
 }
 
-/** call — invoke one action through the host socket: THE request the
- *  table entry names (method + /apps/<slug> + path), params checked
- *  leniently against the emitted input (the app's own handler is the
- *  authority), the app's Result JSON answered VERBATIM. The root agent's
- *  use path — the same Result JSON the UI face answers (§0). */
+/** Params are checked leniently; the app's own handler is the authority. */
 export async function callActionTool(
   deps: AppsMcpDeps,
   input: { slug: string; action: string; params?: unknown },
@@ -410,11 +355,8 @@ export async function callActionTool(
   return r.ok ? json(parseOrRaw(r.body)) : r.result;
 }
 
-// ---------- the server ----------
+// ---------- server ----------
 
-/** Build the stdio MCP server. Paths are RESOLVED values (env.ts's
- *  readers — one logic), injected so units and the e2e loop drive the
- *  same code against hermetic worlds. */
 export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
   const gateDeps = { appsRoot: deps.appsRoot, run: deps.run ?? runChild };
   const scaffoldDeps = {
@@ -494,7 +436,7 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
     {
       description:
         "Register a scaffolded app: write its db row through the internal API (name from the tree's " +
-        'app.json, cwd = the tree). Registration is the privileged act (plan §8) — it creates the app group ' +
+        'app.json, cwd = the tree). Registration is the privileged act — it creates the app group ' +
         'workspaces can attach to. After the row: reload (register + reload is the sync point that mounts). ' +
         'duplicate_slug names the recovery in its answer — no tree is touched.',
       inputSchema: { slug: AppSlugSchema.describe('the app, by its slug') },
@@ -518,7 +460,7 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
     'status',
     {
       description:
-        'The apps picture (§6): every app joined across its row (registered), the app host (mounted, and ' +
+        'The apps picture: every app joined across its row (registered), the app host (mounted, and ' +
         'the serving REASON when not — the host names what is missing), and the tree (built, and build-stale: ' +
         'sources newer than the build). Also lists the unregistered trees present at the apps root (manifest ' +
         'but no row — scaffolded, not yet registered). Pass a slug to scope to one app.',
@@ -533,7 +475,7 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
     'add_action',
     {
       description:
-        'THE action generator (§1 — route + MCP tool + UI stub + test stub + the AGENTS.md ' +
+        'THE action generator (route + MCP tool + UI stub + test stub + the AGENTS.md ' +
         "action section, all from one table entry): append one entry to the app's route table " +
         '(src/routes.ts — a working echo stub with a `text` input field, GET/POST as asked) and write ' +
         'every other face from it in lockstep — src/lib/<name>.ts (the Result family), ' +
@@ -581,7 +523,7 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
     {
       description:
         "Invoke one app action through the app host — the root agent's use path (the same Result JSON " +
-        "the app's UI and its own MCP tools answer, §0's one vocabulary). The request is the one the " +
+        "the app's UI and its own MCP tools answer, one vocabulary). The request is the one the " +
         "table entry names; params are checked leniently against the emitted input schema and the app's " +
         'own handler is the authority — its failure JSON (ok:false, errorCode) comes back verbatim as a ' +
         'NORMAL result. Only a transport failure (host unreachable, apps surface off) is isError.',
@@ -600,12 +542,9 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
   return server;
 }
 
-// ---------- the entry ----------
+// ---------- entry ----------
 
-/** Resolve the env (apps root + both sockets) and serve over stdio.
- *  A bad env value (a non-absolute path) is stderr + exit 1 — the
- *  stop-the-boot stance every entry shares. Returns when the transport
- *  closes (the client closing stdin — how pi stops stdio servers). */
+/** A bad env value is reported on stderr with exit 1. */
 export async function main(): Promise<void> {
   let appsRoot: string;
   let internalSocketPath: string | null;
@@ -628,10 +567,7 @@ export async function main(): Promise<void> {
   await server.connect(new StdioServerTransport());
 }
 
-// The self-exec guard in the CommonJS build's terms (the compiled
-// `import.meta.url === argv[1]` idiom — the server build emits CJS; see
-// server/mcp.ts's note). This file is both the importable module (units,
-// the e2e loop) and a runnable entry (the pi template's mcp.json).
+// The CJS build's self-exec guard: this file is both a module and an entry.
 if (require.main === module) {
   main().catch(err => {
     console.error(`cybermole-apps mcp: ${(err as Error).stack ?? err}`);

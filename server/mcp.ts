@@ -1,34 +1,9 @@
-// mcp.ts — the jobs MCP server (docs/plans/jobs-agent-plan.md §6): a stdio MCP
-// server whose tools are 1:1 with the internal jobs API's verbs
-// (server/internal-api.ts, plan §3–§4) plus apps_list, exposing the jobs
-// surface to pi sessions as tools instead of CLI round-trips. The CLI
-// (plan §5, task/jobs-cli) stays the substrate; this is the in-session
-// convenience — which is why the tools carry the API's answers verbatim
-// and add no logic of their own.
+// Jobs MCP server (stdio): tools 1:1 with the internal API's verbs, returning
+// its response bodies verbatim. A domain failure (`run_not_active`, …) is a
+// normal tool result the model should read; isError is reserved for
+// transport failures (socket unreachable or disabled).
 //
-// Tool results are the internal API's response bodies VERBATIM as text
-// content — the same wire JSON the browser routes and the CLI read (plan
-// §4: "the same Result JSON"): successes are the data shape, failures are
-// `{ error, code, … }` where `code` is the closed error code of the
-// src/types/result.ts family (`invalid_schedule`, `job_not_found`,
-// `run_not_active`, …). No second vocabulary is minted here — the API's
-// failure codes ARE the tools'. An API failure is a normal tool result,
-// not an MCP error: the model must read it (a kill answered
-// `run_not_active` is information, not a tool malfunction). The only
-// isError results are TRANSPORT failures — the socket unreachable, or
-// the listener off (CYBERMOLE_SOCK empty, plan §3) — which are no answer at
-// all, never a domain code.
-//
-// stdout is the protocol channel: this process logs NOTHING (no logger —
-// componentLogger's winston console transport writes to stdout and would
-// corrupt the stream); the one boot-time diagnostic (a bad CYBERMOLE_SOCK)
-// goes to stderr.
-//
-// Importable standalone (tests, a future in-process wiring) and runnable
-// as an entry: `node dist-server/server/mcp.js` — the pi template's
-// mcp.json registers exactly that (runtime/pi-agent-dir/mcp.json), and the `cybermole-cli mcp`
-// subcommand (task/jobs-cli, merged by the orchestrator) execs the same
-// main().
+// stdout is the protocol channel, so nothing logs to it.
 import * as http from 'node:http';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -43,38 +18,23 @@ import {
   JobValidateSchema,
 } from '../src/schemas/jobs';
 
-// ---------- the internal API socket client (plan §6) ----------
+// ---------- internal API socket client ----------
 
-/** One request to the internal API: method + request path (params already
- *  interpolated, percent-encoded) and, for the body verbs, a JSON string.
- *  Minimal and local for now: task/jobs-cli (the parallel branch) builds
- *  the shared socket-client layer for the CLI verbs and this server; the
- *  orchestrator may unify the two at merge. */
 export interface InternalApiCall {
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   path: string;
-  /** A PRESENT body is sent with a Content-Length header, always. The
-   *  internal API refuses a body without a declared length with 411
-   *  (§3/§4's body policy — the same stance as the public JSON API);
-   *  never letting node stream it chunked is this client's side of that
-   *  contract. */
+  /** Always sent with Content-Length: the internal API answers 411 to chunked bodies. */
   body?: string;
 }
 
-/** The internal API's answer: the wire body verbatim (JSON, except the log
- *  route's plain text) plus the status and headers it came with. */
 export interface InternalApiAnswer {
   status: number;
   body: string;
   headers: http.IncomingHttpHeaders;
 }
 
-/** One HTTP request over the internal API's unix socket. Rejects on
- *  transport failure (ECONNREFUSED/ENOENT: no server answering on the
- *  file; a reset mid-response) — the caller turns that into the tool's
- *  isError result. `agent: false`: a one-shot socket per request, so the
- *  process holds nothing open between calls and exits the moment the
- *  client closes stdin (how pi stops stdio servers). */
+/** Rejects on transport failure. `agent: false` keeps nothing open between
+ *  calls, so the process exits as soon as pi closes stdin. */
 export function requestInternalApi(
   socketPath: string,
   call: InternalApiCall,
@@ -108,10 +68,6 @@ export function requestInternalApi(
 
 // ---------- the tools ----------
 
-/** Every tool's shared ending: the API's body verbatim, or the transport's
- *  own failure as the one isError shape. A 2xx answer and a domain
- *  failure both come back as plain text content — the body (its `code`
- *  field) is the vocabulary. */
 async function answerToolResult(
   socketPath: string | null,
   call: InternalApiCall,
@@ -135,7 +91,7 @@ async function answerToolResult(
     answer = await requestInternalApi(socketPath, call);
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
-    const why = code !== undefined ? `(${code})` : `: ${(err as Error).message}`; // a reset mid-response — no errno
+    const why = code !== undefined ? `(${code})` : `: ${(err as Error).message}`; // a mid-response reset has no errno
     return {
       content: [
         {
@@ -148,32 +104,17 @@ async function answerToolResult(
       isError: true,
     };
   }
-  // The API's answer, byte for byte — JSON for every verb except the log
-  // route's tail, which is the tool's text content as-is.
   return { content: [{ type: 'text', text: answer.body }] };
 }
 
-/** The runs' identity, as jobs_runs reports it (a JSON number) and as it
- *  rides the routes' path params (a digit string): both spellings
- *  accepted, the digit-string arm exactly the API's FiredAtSchema — the
- *  same rule text, and a non-digit still reaches the API's own
- *  invalid_fired_at answer when it is a number that is not an epoch-ms
- *  integer (a float, say). */
+/** jobs_runs reports a number; the API's path param is a digit string. Accept both. */
 const firedAtSchema = z
   .union([z.number(), FiredAtSchema])
   .describe('the run, by fired_at — the epoch-ms id jobs_runs reported');
 
-/** The job name, exactly as jobs_list reported it (the API's own
- *  JobNameSchema: letters, digits, - and _; run sessions reserve cybermole-…). */
 const nameSchema = JobNameSchema.describe('the job name, as jobs_list reported it');
 
-/** Build the stdio MCP server. socketPath is the resolved internal API
- *  socket (src/lib/platform/env.ts readInternalApiSocket — imported, not
- *  duplicated: the $CYBERMOLE_SOCK → /run/cybermole/cybermole.sock → <state
- *  dir>/cybermole.sock discovery is §5's rule and the server's, one logic)
- *  — or null when the listener is off, in which case every tool call
- *  answers the clear "disabled" error instead of the server dying
- *  (§3: the operator's knob, not the session's). */
+/** socketPath null (listener off): every tool answers a "disabled" error. */
 export function createJobsMcpServer(deps: { socketPath: string | null }): McpServer {
   const { socketPath } = deps;
   const call = (c: InternalApiCall): Promise<CallToolResult> => answerToolResult(socketPath, c);
@@ -231,7 +172,7 @@ export function createJobsMcpServer(deps: { socketPath: string | null }): McpSer
       call({
         method: 'POST',
         path: '/jobs',
-        // JSON.stringify drops the undefined appId — the API treats it as untagged.
+        // JSON.stringify drops an undefined appId: untagged.
         body: JSON.stringify({
           name: args.name,
           schedule: args.schedule,
@@ -370,16 +311,9 @@ export function createJobsMcpServer(deps: { socketPath: string | null }): McpSer
   return server;
 }
 
-// ---------- the entry ----------
+// ---------- entry ----------
 
-/** Resolve the internal API socket and serve the tools over stdio.
- *  CYBERMOLE_SOCK's rules are env.ts's (§3): unset = the shape default,
- *  empty = the listener off (serve on — every call answers the disabled
- *  error), a non-absolute value = operator wiring mistake, reported to
- *  stderr with exit 1 — the same stop-the-boot stance the web server
- *  takes on that one. Returns when the transport closes (the client
- *  closing stdin — how pi stops stdio servers); the process then exits
- *  on its own: request sockets are one-shot, nothing else is held. */
+/** A bad CYBERMOLE_SOCK is reported on stderr with exit 1. */
 export async function main(): Promise<void> {
   let socketPath: string | null;
   try {
@@ -393,10 +327,7 @@ export async function main(): Promise<void> {
   await server.connect(new StdioServerTransport());
 }
 
-// The self-exec guard, in the CommonJS build's terms — the compiled
-// `import.meta.url === argv[1]` idiom (the server build emits CJS; the
-// repo's equivalent is jobs.ts's __dirname note). This file is both the
-// importable module and a runnable entry.
+// The CJS build's self-exec guard: this file is both a module and an entry.
 if (require.main === module) {
   main().catch(err => {
     console.error(`cybermole-jobs mcp: ${(err as Error).stack ?? err}`);

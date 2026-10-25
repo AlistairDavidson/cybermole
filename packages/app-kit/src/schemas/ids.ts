@@ -1,10 +1,5 @@
-// ids.ts — validating schemas that brand untrusted IDs (request bodies,
-// path params, WS frames). The regex and the brand live together: a value
-// that passes is the branded type. Node-free — browser code imports these
-// too (docs/conventions/CODE_STYLE.md §5).
-// Moved from src/schemas/ids.ts by task/app-kit (docs/plans/apps-plan.md §5)
-// — unchanged apart from the move (the relative imports land inside the
-// kit).
+// Schemas that validate and brand untrusted IDs (bodies, path params, WS
+// frames): a value that passes is the branded type. Node-free.
 import { z } from 'zod';
 import {
   asAppId,

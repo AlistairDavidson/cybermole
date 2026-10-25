@@ -1,9 +1,5 @@
-// responses.test.mjs — src/lib/web/responses.service.ts: every error code
-// of every family maps to its status and the body the browser reads
-// (firstIssueText moved to the kit — task/app-kit; the rest are the
-// console's domain mappers). The
-// wire statuses are the ones server/main.ts answered before the API moved
-// into Astro routes (the e2e suite asserts them too).
+// responses.service.ts: every error code of every family maps to its status
+// and body. The e2e suite asserts the same statuses.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { firstIssueText } from '../../dist-server/packages/app-kit/src/web/responses.service.js';
@@ -57,11 +53,11 @@ test('jobFailureResponse: every jobs code → status, with the { error, detail }
     ['run_active', 409],
     ['tmux_error', 500],
     ['database_error', 500],
-    // task/ws-jobs (plan §9): the runs families ride the same mapper.
+    // the runs families share the mapper
     ['run_not_found', 404],
     ['log_missing', 404],
     ['read_error', 500],
-    // task/jobs-socket (plan §4): the kill family's own code.
+    // the kill family's own code
     ['run_not_active', 409],
   ];
   for (const [code, status] of cases) {
@@ -73,7 +69,7 @@ test('jobFailureResponse: every jobs code → status, with the { error, detail }
     assert.equal(body.code, code);
     assert.ok('detail' in body, code);
   }
-  // run_active points at the live session; tmux_error carries tmux's reason as the detail
+  // run_active points at the live session; tmux_error's detail is tmux's reason
   assert.equal(
     (
       await jobFailureResponse(
@@ -86,8 +82,7 @@ test('jobFailureResponse: every jobs code → status, with the { error, detail }
     await jobFailureResponse(failure('run_job', 'tmux_error', { errorMessage: 'boom' })).json(),
     { error: 'could not open run session', detail: 'boom', code: 'tmux_error' },
   );
-  // task/jobs-socket (plan §4): the kill verb's tmux_error must not read
-  // as a run-OPEN failure — the family discriminates the top line.
+  // The kill's tmux_error must not read as a run-open failure.
   assert.deepEqual(
     await jobFailureResponse(failure('kill_run', 'tmux_error', { errorMessage: 'boom' })).json(),
     { error: 'could not kill the run session', detail: 'boom', code: 'tmux_error' },
@@ -100,8 +95,7 @@ test('jobFailureResponse: every jobs code → status, with the { error, detail }
     code: 'invalid_job_name',
   });
 
-  // task/ws-jobs (plan §9): the :fired_at param guard and the log tail
-  // response — text/plain, no-store, truncation disclosed only when cut.
+  // The fired_at guard, and the log tail: text/plain, no-store, truncation flagged only when cut.
   const badAt = invalidFiredAtResponse();
   assert.equal(badAt.status, 400);
   assert.deepEqual(await badAt.json(), {
@@ -190,7 +184,7 @@ test('firstIssueText: "field: message", the bare message at the root, a fallback
   assert.equal(firstIssueText({}), 'bad request');
 });
 
-// ---------- workspaces-plan §6: apps / workspaces / terminals (task/ws-schema) ----------
+// ---------- apps / workspaces / terminals ----------
 
 test('appFailureResponse: every apps code → status, { error, code } body', async () => {
   const cases = [
@@ -237,7 +231,7 @@ test('workspaceFailureResponse: every workspaces code → status', async () => {
 test('terminalFailureResponse: every terminals code → status; a spawn failure carries its row', async () => {
   const cases = [
     ['new_terminal', 'workspace_not_found', 404],
-    ['new_terminal', 'server_not_running', 503], // the spawn's guard — reachable since task/ws-terminal
+    ['new_terminal', 'server_not_running', 503], // the spawn's never-fork guard
     ['new_terminal', 'tmux_error', 500],
     ['new_terminal', 'database_error', 500],
     ['close_terminal', 'terminal_not_found', 404],
@@ -252,9 +246,7 @@ test('terminalFailureResponse: every terminals code → status; a spawn failure 
     assert.equal(body.code, code, code);
     assert.equal(body.terminal, undefined, `${code}: no row on this failure`);
   }
-  // The §4 contract: a spawn-failed create still returns its row (a dead
-  // tab, live:false) on the 503/500 body — the UI renders the tab and the
-  // first attach retries the spawn.
+  // A spawn-failed create still returns its row (live:false) so the UI can show the tab.
   const row = {
     id: '123e4567-e89b-42d3-a456-426614174000',
     workspaceId: '99999999-9999-4999-8999-999999999999',

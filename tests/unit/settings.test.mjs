@@ -1,7 +1,5 @@
-// settings.test.mjs — runPiUpdate's PiUpdateResult (src/lib/platform/settings.ts):
-// one case per error code (npm_missing, npm_check_failed, busy, npm_failed)
-// plus success, and the wire body /api/update-pi answers with
-// (updateResultBody). npm is a fake on PATH — never the real one.
+// runPiUpdate: one case per error code plus success, and the /api/update-pi
+// wire body. npm is a fake on PATH.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -19,9 +17,8 @@ function fakeAppRoot(installed) {
   return { root, manifest };
 }
 
-/** A fake npm: `--version` answers per FAKE_NPM_VERSION_EXIT; `install`
- *  sleeps FAKE_NPM_SLEEP, then bumps the manifest to FAKE_NPM_INSTALLS_TO
- *  and exits FAKE_NPM_EXIT. */
+/** `--version` exits FAKE_NPM_VERSION_EXIT; `install` sleeps FAKE_NPM_SLEEP,
+ *  bumps the manifest to FAKE_NPM_INSTALLS_TO, and exits FAKE_NPM_EXIT. */
 function withFakeNpm(t, env) {
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-npmbin-'));
   fs.writeFileSync(

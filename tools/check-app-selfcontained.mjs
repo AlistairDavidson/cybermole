@@ -1,19 +1,11 @@
 #!/usr/bin/env node
-// check-app-selfcontained.mjs — THE apps-plan §5 build gate (settled on
-// the fixture app by branch 1): every non-relative import reachable from
-// a built app's dist/server/entry.mjs must be a node builtin — the
-// module graph self-contained apart from node:, so serve-time (the app
-// host importing the entry) never resolves through a node_modules
-// symlink an app's extra install could disturb.
-//
-// Walks the REAL module graph (entry + its relative-import closure,
-// including chunks), ignoring comments (bundlers keep JSDoc @example
-// imports in output — those are not imports), and flags every bare
-// specifier that is not node:-prefixed or a bare node builtin
-// ('buffer', 'fs', … resolve identically to their node: spelling).
+// Build gate for apps: every non-relative import reachable from
+// dist/server/entry.mjs must be a node builtin, so the app host never
+// resolves through a node_modules symlink at serve time. Walks the real
+// module graph, ignoring comments (bundlers keep JSDoc @example imports).
 //
 // Usage: node tools/check-app-selfcontained.mjs <dist/server/entry.mjs>
-// Exit 0: self-contained. Exit 1: offenders listed (specifier + file).
+// Exit 0: self-contained. Exit 1: offenders listed.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as module from 'node:module';
@@ -26,16 +18,12 @@ if (entry === undefined) {
 }
 const root = path.resolve(entry);
 
-/** Strip block comments and line comments — build output keeps JSDoc
- *  examples whose `from '...'` lines are not real imports. */
 function stripComments(src) {
   return src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
 }
 
-/** Every import specifier in a module's code: static (…from 'x', import
- *  'x', export … from 'x') and literal dynamic (import('x')). Computed
- *  specifiers (from `${…}` / import(`${…}`)) carry no literal — skipped
- *  (the `${import.meta.url}` self-references build output uses). */
+/** Static and literal dynamic imports. Computed specifiers (`${import.meta.url}`
+ *  self-references) carry no literal and are skipped. */
 function importSpecifiers(src) {
   const code = stripComments(src);
   const out = new Set();
@@ -86,8 +74,7 @@ function walk(file) {
         });
         continue;
       }
-      // a directory import would resolve via package.json/index — build
-      // output always names files, so treat a directory as an offender.
+      // Build output always names files; a directory import is an offender.
       walk(fs.statSync(resolved).isDirectory() ? path.join(resolved, 'index.js') : resolved);
       continue;
     }

@@ -1,17 +1,10 @@
-// editor.ts — the same-origin editor proxy's policy surface
-// (docs/guides/editor-webapp.md, docs/plans/editor-spike.md). The proxy itself —
-// streaming HTTP + raw WS piping — lives in server/main.ts next to the
-// terminal's; everything that is a POLICY lives here so tests cover it
-// without booting the server: which paths belong to the editor, the
-// header set editor HTML carries, its body cap, and per-token tunnel
-// tracking (logout / "log out everywhere" must cut editor shells too —
-// the integrated terminal makes the editor another shell as uid 2000).
+// Policy for the same-origin editor proxy (the transport is in server/main.ts).
+// The editor's integrated terminal is a shell, so logout must cut its tunnels.
 
 import type { SessionToken } from '@cybermole/app-kit';
 import { UPLOAD_MAX_BODY_BYTES } from '../../schemas/uploads';
 
-/** Response/request headers that must not be copied verbatim across a
- *  proxy hop: Node (re)generates them for the leg it owns. */
+/** Node regenerates these for the leg it owns. */
 export const EDITOR_HOP_BY_HOP_HEADERS = [
   'connection',
   'keep-alive',
@@ -19,17 +12,11 @@ export const EDITOR_HOP_BY_HOP_HEADERS = [
   'upgrade',
 ] as const;
 
-/** Request headers as Node's http hands them to a proxy. */
 export type IncomingHeaders = Record<string, string | string[] | undefined>;
 
-/** Headers for the upstream WebSocket handshake: the client's, minus
- *  hop-by-hop, PLUS the upgrade pair an outgoing http.request needs before
- *  any server will answer 101 — without `Connection: Upgrade` the upstream
- *  sees a plain GET and never upgrades (nginx's `proxy_set_header
- *  Upgrade/Connection` does the same; the bug this function exists to
- *  prevent). The client's `Upgrade` value is kept when present, else
- *  'websocket'. Everything else — Host (load-bearing: the editor embeds it
- *  as remoteAuthority), Sec-WebSocket-Key/Version, cookies — passes through. */
+/** Strip hop-by-hop, then re-add the upgrade pair: without
+ *  `Connection: Upgrade` the upstream sees a plain GET and never answers
+ *  101. Host must pass through: the editor embeds it as remoteAuthority. */
 export function editorUpgradeHeaders(incoming: IncomingHeaders): IncomingHeaders {
   const headers: IncomingHeaders = { ...incoming };
   // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- scrubbing the hop-by-hop header set
@@ -42,23 +29,17 @@ export function editorUpgradeHeaders(incoming: IncomingHeaders): IncomingHeaders
   return headers;
 }
 
-/** The editor webapp's upstream (readEditorUpstream in env.ts builds it
- *  from CYBERMOLE_EDITOR_UPSTREAM), or null when unset = editor off. */
+/** null when CYBERMOLE_EDITOR_UPSTREAM is unset (editor off). */
 export interface EditorUpstream {
-  /** origin only, e.g. http://editor:3000 — never carries a path (the
-   *  proxy forwards request paths verbatim under the app's base) */
+  /** Origin only; request paths are forwarded verbatim. */
   origin: string;
 }
-/** Does this request path belong to the editor proxy? `${BASE}/editor`
- *  and everything below it; `/editorial` must NOT match. */
+/** `${BASE}/editor` and below; `/editorial` must not match. */
 export function isEditorHttpPath(base: string, url: string): boolean {
   return url === basePath(base) || url.startsWith(basePath(base) + '/');
 }
 
-/** The editor's WebSocket upgrades: the browser dials
- *  `${BASE}/editor/stable-<commit>?reconnectionToken=…` (pinned by the
- *  spike — same-origin under the base path; microsoft/vscode#208278's
- *  subpath breakage does not apply), so a prefix match, not equality. */
+/** The browser dials `${BASE}/editor/stable-<commit>?reconnectionToken=…`. */
 export function isEditorUpgradePath(base: string, url: string): boolean {
   return url.startsWith(basePath(base) + '/');
 }
@@ -68,21 +49,10 @@ function basePath(base: string): string {
 }
 
 /**
- * The header set editor HTML answers with. hardenResponse (server/main.ts)
- * only fills ABSENT headers, so setting these on the proxied response
- * before writeHead wins over the global SECURITY_HEADERS:
- * - `X-Frame-Options: SAMEORIGIN` overrides the global DENY — the console
- *   frames the editor in an iframe on the same origin.
- * - A CSP that fits the VS Code web workbench (pinned by the spike against
- *   a real browser; docs/plans/editor-spike.md): blob/data workers and images,
- *   same-origin frames (the web-worker extension host iframe), and inline
- *   script/style for the boot HTML. connect-src deliberately does NOT
- *   include the extension marketplace (open-vsx.org): across four full
- *   workbench sessions the browser never fetched it directly — gallery
- *   queries ride the remote tunnel (the editor container's own egress) —
- *   and the two advisory fetches that ARE browser-side (extension-control
- *   and announcements, both raw.githubusercontent.com) degrade gracefully
- *   when refused. Flip them in here if host verification disagrees.
+ * Set before writeHead, so they win over hardenResponse's defaults.
+ * SAMEORIGIN: the console frames the editor. The CSP fits the VS Code web
+ * workbench; marketplace queries go through the editor container, not the
+ * browser, so connect-src leaves them out.
  */
 export function editorSecurityHeaders(): Record<string, string> {
   return {
@@ -94,58 +64,26 @@ export function editorSecurityHeaders(): Record<string, string> {
   };
 }
 
-/** The largest body an editor request may carry. The workbench's saves
- *  travel its WebSocket, but its HTTP POSTs (uploads dropped onto the
- *  workbench, among others) are sized like a large editor save, not the
- *  JSON API's 10 KiB — the upload route's cap, the same one the adapter's
- *  global bodySizeLimit uses. */
+/** Editor HTTP POSTs (e.g. dropped uploads) are sized like uploads, not the JSON API's 10 KiB. */
 export const EDITOR_MAX_BODY_BYTES = UPLOAD_MAX_BODY_BYTES;
 
-/** The largest editor HTML response the proxy will buffer to rewrite —
- *  the workbench boot document is a few KiB; anything bigger than this
- *  isn't it, and streams through untouched like every other editor body. */
+/** The boot document is a few KiB; anything larger streams through untouched. */
 export const EDITOR_HTML_REWRITE_MAX_BYTES = 262_144;
 
-/** The configuration defaults the proxy injects into the workbench boot
- *  document, making the editor follow the BROWSER's color scheme
- *  (task/theme-browser). Background, all verified against the vendored
- *  reh-web build (docs/guides/editor-webapp.md pins it):
- *
- *  - The workbench client parses only folder/workspace/ew URL params —
- *    a ?theme= param (vscode.dev's wrapper feature) does nothing here.
- *  - Window-scope settings like workbench.colorTheme live BROWSER-side
- *    (IndexedDB) in a web workbench, so provisioning settings.json in
- *    the editor home volume can't set them either.
- *  - The boot document carries its construction options in a
- *    vscode-workbench-web-configuration meta tag, and its
- *    configurationDefaults are honored — verified end to end against a
- *    real booting workbench: with autoDetectColorScheme defaulted on, the
- *    workbench opens dark/light matching the browser's scheme at boot,
- *    and (its installPreferredSchemeListener armed by the same default)
- *    often re-themes live on a flip too. That live follow was NOT
- *    reliable in testing (it rides a theme-file fetch and can lag by
- *    seconds), so the console RELOADS the editor pane on flips
- *    (terminal-tabs.ts) — deterministic, and task-sanctioned; the
- *    workbench's own live follow, when it wins the race, lands the same
- *    theme either way.
- *
- *  They are DEFAULTS: a user who picks their own theme in the workbench
- *  overrides colorTheme in their browser-side settings, and can turn the
- *  detection off entirely — the provision is a default, not a policy. */
+/** Injected into the workbench boot document so the editor follows the
+ *  browser's color scheme. A ?theme= param or settings.json can't do it:
+ *  the web workbench keeps window settings in IndexedDB, but honors
+ *  configurationDefaults from its boot meta tag. Live re-theming on a
+ *  scheme flip is unreliable, so the console reloads the pane instead.
+ *  Users can still override these in the workbench. */
 export const EDITOR_THEME_CONFIGURATION_DEFAULTS: Record<string, unknown> = {
   'window.autoDetectColorScheme': true,
-  // This build's flagship themes — the ids exist in the vendored
-  // theme-defaults extension ("Dark 2026"/"Light 2026", the renamed
-  // successors of "Default Dark/Light Modern").
+  // Ids from this build's theme-defaults extension.
   'workbench.preferredDarkColorTheme': 'Dark 2026',
   'workbench.preferredLightColorTheme': 'Light 2026',
 };
 
-/** The workbench boot document's construction-options channel: the meta
- *  tag the reh-web server writes. `data-settings` carries JSON with the
- *  HTML attribute escapes (&quot; / &amp;) — exactly the escaping the
- *  server applies, so the round-trip is lossless for the JSON we parse
- *  and re-stringify. */
+/** data-settings is HTML-attribute-escaped JSON. */
 const WORKBENCH_CONFIG_META =
   /(<meta\s+id="vscode-workbench-web-configuration"\s+data-settings=")([^"]*)(")/;
 
@@ -154,7 +92,7 @@ const decodeAttribute = (value: string): string =>
     .replaceAll('&quot;', '"')
     .replaceAll('&lt;', '<')
     .replaceAll('&gt;', '>')
-    .replaceAll('&amp;', '&'); // LAST: &amp; must not re-decode the entities above
+    .replaceAll('&amp;', '&'); // last, or it would re-decode the entities above
 const encodeAttribute = (value: string): string =>
   value
     .replaceAll('&', '&amp;')
@@ -162,13 +100,8 @@ const encodeAttribute = (value: string): string =>
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;');
 
-/** Inject EDITOR_THEME_CONFIGURATION_DEFAULTS into a workbench boot
- *  document's construction options (see the constant for the why). Pure
- *  string work, on purpose: the boot document is tiny, and the proxy
- *  buffers exactly this much. Anything unexpected — no meta tag (an
- *  upstream error page, or a shape change in a future pin), invalid
- *  JSON — degrades to the input UNTOUCHED: the editor still boots, it
- *  just stops following the browser's scheme, the pre-task behavior. */
+/** Anything unexpected (no meta tag, bad JSON) returns the input untouched:
+ *  the editor still boots, just without following the scheme. */
 export function injectWorkbenchThemeDefaults(html: string): string {
   const match = WORKBENCH_CONFIG_META.exec(html);
   const encoded = match?.[2];
@@ -193,31 +126,23 @@ export function injectWorkbenchThemeDefaults(html: string): string {
   );
 }
 
-/** Editor body-cap entry: 413 over the cap, and — unlike every other
- *  non-upload route — NEVER 411: a length-less (chunked) body is
- *  accepted, streamed to the upstream, and guarded by the stall watch
- *  instead of a whole-body deadline. */
+/** Unlike other non-upload routes, never 411: chunked bodies are accepted
+ *  and stall-guarded instead. */
 export function editorBodyCapStatus(req: {
   method?: string | undefined;
   headers: Record<string, string | string[] | undefined>;
 }): 413 | null {
   if (req.method === 'GET' || req.method === 'HEAD') return null;
   const declared = req.headers['content-length'];
-  if (declared === undefined) return null; // chunked: accepted, stall-guarded
+  if (declared === undefined) return null;
   return Number(declared) <= EDITOR_MAX_BODY_BYTES ? null : 413;
 }
 
-/** The surface logout/shutdown needs from a proxied editor WebSocket:
- *  cut both sides. Idempotent — closeToken may race a socket's own end. */
+/** Idempotent: closeToken may race a socket's own end. */
 export interface EditorTunnelHandle {
   close(): void;
 }
 
-/** Live editor tunnels per session token. POST /logout, log-out-
- *  everywhere and shutdown must end the editor shells a token
- *  authenticated — not merely stop future requests — inside the same
- *  30-second guarantee the terminals keep (main.ts calls closeToken /
- *  closeAll from those paths). */
 export class EditorTunnelTracker {
   private readonly byToken = new Map<SessionToken, Set<EditorTunnelHandle>>();
 
@@ -237,7 +162,6 @@ export class EditorTunnelTracker {
     if (set.size === 0) this.byToken.delete(token);
   }
 
-  /** Every tunnel authenticated with `token` — logout / token expiry. */
   closeToken(token: SessionToken): void {
     const set = this.byToken.get(token);
     if (!set) return;
@@ -245,13 +169,11 @@ export class EditorTunnelTracker {
     for (const handle of set) handle.close();
   }
 
-  /** Every tunnel, whichever token it used — log out everywhere, shutdown. */
   closeAll(): void {
     for (const set of this.byToken.values()) for (const handle of set) handle.close();
     this.byToken.clear();
   }
 
-  /** Live tunnels (test/diagnostic surface). */
   count(): number {
     let n = 0;
     for (const set of this.byToken.values()) n += set.size;

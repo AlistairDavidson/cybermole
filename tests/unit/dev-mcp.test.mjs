@@ -1,12 +1,7 @@
-// dev-mcp.test.mjs — the dev test-MCP's own units (docs/plans/dev-test-mcp-plan.md
-// §7): the pure parsers against checked-in fixture blobs (a real captured
-// Playwright JSON report and an ESLint JSON report under fixtures/), the
-// envelope/trim edge cases, the anchor/tail fallbacks, and smoke runs of
-// quiet-reporter.mjs itself (passing, failing, file-crash and name-pattern
-// shapes) through the same child-process spawn run_unit_tests uses. The
-// stdio server (tools/dev-mcp/server.mjs) stays registration glue — thin
-// enough not to need its own harness, unlike server/mcp.ts's verbatim-proxy
-// contract (mcp.test.mjs).
+// The dev MCP's parsers against checked-in fixtures (real Playwright and
+// ESLint reports), trim and fallback edge cases, and smoke runs of
+// quiet-reporter.mjs spawned as run_unit_tests spawns it. The stdio server
+// itself is thin glue with no harness of its own.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -30,7 +25,7 @@ const REPO = fileURLToPath(new URL('../..', import.meta.url));
 const fixture = name => fs.readFileSync(path.join(REPO, 'tests/fixtures/dev-mcp', name), 'utf8');
 const REPORTER = path.join(REPO, 'tools/dev-mcp/quiet-reporter.mjs');
 
-// ---------- trimOutput / tailLines (the bounded-output contract, §1.5) ----------
+// ---------- trimOutput / tailLines ----------
 
 test('trimOutput: under the cap passes through; over it keeps head + tail around the marker', () => {
   assert.equal(trimOutput('short'), 'short');
@@ -40,7 +35,7 @@ test('trimOutput: under the cap passes through; over it keeps head + tail around
   assert.match(out, /…\[\d+ chars omitted\]…/);
   const marker = out.match(/…\[(\d+) chars omitted\]…/);
   const markerText = `…[${marker[1]} chars omitted]…`;
-  // out = head + '\n' + marker + '\n' + tail, so kept + omitted = original
+  // out = head + marker + tail, so kept + omitted = original
   const kept = out.length - markerText.length - 2;
   assert.equal(kept + Number(marker[1]), text.length);
   assert.ok(out.startsWith('a'));
@@ -57,7 +52,7 @@ test('tailLines: the last non-empty lines', () => {
   assert.equal(tailLines('', 5), '');
 });
 
-// ---------- anchorQuiet (astro check / tsc / astro build text, §4) ----------
+// ---------- anchorQuiet ----------
 
 test('anchorQuiet: astro check success — boot noise dropped, result summary kept', () => {
   const out = anchorQuiet(
@@ -129,8 +124,7 @@ test('parseEslintJson: null on non-reports, zero counts on an empty report', () 
   assert.deepEqual(empty.failures, []);
 });
 
-// ---------- parsePlaywrightJson (fixture: a real captured report — 1 pass,
-// 1 nested failure under a describe, 1 skip, the chromium project) ----------
+// ---------- parsePlaywrightJson (fixture: 1 pass, 1 nested failure, 1 skip) ----------
 
 test('parsePlaywrightJson: stats counts, suite-path titles, file:line, trimmed error text', () => {
   const parsed = parsePlaywrightJson(fixture('playwright-report.json'), '/repo');
@@ -211,7 +205,7 @@ test('parsePlaywrightJson: root-level errors ride globalErrors; null on non-repo
   assert.equal(parsePlaywrightJson('{"suites": []}'), null); // no stats
 });
 
-// ---------- the machine line ----------
+// ---------- machine line ----------
 
 test('extractUnitSummary / stripMachineLines: the last @@devmcp line is the structure, the rest is prose', () => {
   const text = [
@@ -231,11 +225,9 @@ test('extractUnitSummary / stripMachineLines: the last @@devmcp line is the stru
   assert.match(stripMachineLines(text), /# tests 5/);
 });
 
-// ---------- quiet-reporter smoke runs (the §7 spawn harness) ----------
+// ---------- quiet-reporter smoke runs ----------
 
-/** Spawn the runner the way run_unit_tests does — including the
- *  NODE_TEST_CONTEXT sanitization the server's children get — and resolve
- *  {code, stdout, stderr}. */
+/** As run_unit_tests spawns it, NODE_TEST_CONTEXT stripped. */
 function runReporter(args) {
   return new Promise(resolve => {
     const env = { ...process.env };
@@ -266,7 +258,7 @@ test('quiet-reporter: a passing file is a handful of lines with counts, exit 0',
   assert.equal(summary.success, true);
   assert.deepEqual(summary.counts, { pass: 2, fail: 0, skipped: 1, todo: 0, cancelled: 0 });
   assert.equal(summary.failures, undefined);
-  // the quiet contract: the text (minus the machine line) is tiny
+  // quiet: the text minus the machine line is tiny
   const text = stripMachineLines(r.stdout).trim();
   assert.ok(text.split('\n').length <= 2, `expected a couple of lines, got:\n${text}`);
   assert.match(text, /# tests 3 \| pass 2/);

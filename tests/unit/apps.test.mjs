@@ -1,7 +1,4 @@
-// apps.test.mjs — the app domain (src/lib/apps/apps.ts, workspaces-plan §3):
-// every Result family at every error code, plus the slug rules it hangs
-// on (src/schemas/patterns.ts: normalizeSlug, APP_SLUG_RE). Runs against
-// the compiled dist-server (npm run test:unit).
+// apps.ts: every Result family at every error code, plus the slug rules.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -32,8 +29,7 @@ function freshDb() {
   );
 }
 
-/** A db that cannot open: a path under a regular file (mkdir of its parent
- *  fails inside db()) — every read/write becomes database_error. */
+/** Its parent is a regular file, so every read and write is database_error. */
 function brokenDb() {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-apps-')), 'not-a-dir');
   fs.writeFileSync(file, '');
@@ -143,7 +139,7 @@ test('save_app: derives the slug, allocates order in steps of 10, stamps the cre
   assert.equal(second.data.slug, 'another');
 });
 
-test('save_app: optional cwd (task/app-cwd) — stored + returned; empty/whitespace = unset', async () => {
+test('save_app: optional cwd — stored + returned; empty/whitespace = unset', async () => {
   const db = freshDb();
   const a = apps(db);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-app-cwd-'));
@@ -152,7 +148,7 @@ test('save_app: optional cwd (task/app-cwd) — stored + returned; empty/whitesp
   assert.equal(made.data.cwd, dir);
   const row = appRow(db, 'placed');
   assert.equal(row.cwd, dir);
-  // empty or whitespace-only reads as unset — the dialog's empty wa-input
+  // empty or whitespace reads as unset (an empty wa-input)
   for (const empty of ['', '   ']) {
     const unset = await a.saveApp(`no-dir-${empty.length}`, empty);
     assert.equal(unset.ok, true, unset.errorMessage);
@@ -205,7 +201,7 @@ test('save_app: database_error — unwritable db, or the username read failing',
   assert.match(noUser.errorMessage, /credential/);
 });
 
-// ---------- rename (the save_app family's second entry point) ----------
+// ---------- rename (save_app's second entry point) ----------
 
 test('rename: changes the display name, never the slug; absent fields are a no-op read-back', async () => {
   const db = freshDb();
@@ -234,7 +230,7 @@ test('rename: invalid_name on an empty name; app_not_found on a slug that does n
   assert.equal((await a.renameApp('missing', 'y')).resultType, 'save_app');
 });
 
-test('rename: the cwd patch — a string sets it (validated), absent keeps, null clears back to unset (task/app-cwd)', async () => {
+test('rename: the cwd patch — a string sets it (validated), absent keeps, null clears back to unset', async () => {
   const db = freshDb();
   const a = apps(db);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-app-cwd-'));
@@ -245,7 +241,7 @@ test('rename: the cwd patch — a string sets it (validated), absent keeps, null
   assert.equal(set.ok, true, set.errorMessage);
   assert.equal(set.data.cwd, dir);
   assert.equal(appRow(db, slug).cwd, dir);
-  // absent keeps — also alongside a name change
+  // absent keeps, also alongside a name change
   const kept = await a.renameApp(slug, 'Renamed', undefined);
   assert.equal(kept.ok, true, kept.errorMessage);
   assert.equal(kept.data.name, 'Renamed');
@@ -255,7 +251,7 @@ test('rename: the cwd patch — a string sets it (validated), absent keeps, null
   assert.equal(cleared.ok, true, cleared.errorMessage);
   assert.equal(cleared.data.cwd, null);
   assert.equal(appRow(db, slug).cwd, null);
-  // a string is validated with the workspace cwd's own rule
+  // a string gets the workspace cwd rule
   const file = path.join(os.tmpdir(), `cybermole-app-file-${process.pid}`);
   fs.writeFileSync(file, '');
   for (const bad of ['relative/path', '/definitely/not/here', file, '  ']) {
@@ -293,7 +289,7 @@ test("delete_app: cascades workspaces and terminals, un-tags jobs, best-effort-k
   const t2 = (await w.newTerminal(ws.id, undefined)).data;
   const consoleWs = (await w.saveWorkspace({ name: 'console one' })).data;
   const consoleTerm = (await w.newTerminal(consoleWs.id, undefined)).data;
-  // a job tagged with the app (raw: the tag picker is task/ws-jobs)
+  // a job tagged with the app
   db.run(
     qb.insertInto('jobs').values({
       name: 'nightly',
@@ -304,8 +300,7 @@ test("delete_app: cascades workspaces and terminals, un-tags jobs, best-effort-k
     }),
   );
 
-  // the auto-opened tabs exist from the creates (task/defaults-settings):
-  // captured BEFORE the delete — the cascade removes the app's one
+  // the auto-opened tabs, captured before the delete
   const appAuto = db.get(qb.selectFrom('terminals').select('id').where('workspace_id', '=', ws.id));
   const consoleAuto = db.get(
     qb.selectFrom('terminals').select('id').where('workspace_id', '=', consoleWs.id),
@@ -315,9 +310,8 @@ test("delete_app: cascades workspaces and terminals, un-tags jobs, best-effort-k
   assert.equal(deleted.ok, true, deleted.errorMessage);
   assert.equal(deleted.resultType, 'delete_app');
   assert.deepEqual(deleted.data, { id: app.id });
-  // the cascade: app gone, its workspace and terminals with it (the
-  // console workspace keeps BOTH its tabs — its auto-opened agent tab and
-  // the + button one)
+  // The cascade takes the app's workspace and terminals; the console
+  // workspace keeps both its tabs.
   assert.equal(appRow(db, 'gone'), undefined);
   assert.deepEqual(
     rows(db, 'workspaces').map(r => r.id),
@@ -329,15 +323,13 @@ test("delete_app: cascades workspaces and terminals, un-tags jobs, best-effort-k
       .sort(),
     [consoleAuto.id, consoleTerm.id].sort(),
   );
-  // jobs are un-tagged, never deleted (spread: node:sqlite rows carry a
-  // null prototype, which deepEqual treats as a different object)
+  // Jobs are un-tagged, never deleted. (Spread: node:sqlite rows have a null
+  // prototype, which deepEqual treats as different.)
   const job = db.get(
     qb.selectFrom('jobs').select(['name', 'app_id']).where('name', '=', 'nightly'),
   );
   assert.deepEqual({ ...job }, { name: 'nightly', app_id: null });
-  // exactly the deleted terminals' derived session names were killed —
-  // the app's workspace terminals INCLUDING its auto-opened agent tab
-  // (task/defaults-settings); the other workspaces' were not
+  // Exactly the deleted terminals' sessions were killed, the auto-opened tab included.
   assert.deepEqual(
     killed.sort(),
     [
@@ -376,7 +368,7 @@ test('delete_app: database_error on an unwritable db — and a failed kill never
   assert.equal(appRow(db, 'doomed'), undefined);
 });
 
-// ---------- listApps (task/ws-jobs plan §9 + task/ws-console plan §5 — one read) ----------
+// ---------- listApps ----------
 
 test('list_apps: every app, sort_order asc (+ created_at tiebreak); empty; database_error on a broken db', async () => {
   const db = freshDb();
@@ -387,7 +379,7 @@ test('list_apps: every app, sort_order asc (+ created_at tiebreak); empty; datab
   const listed = a.listApps();
   assert.equal(listed.ok, true, listed.errorMessage);
   assert.equal(listed.resultType, 'list_apps');
-  // save_app allocates order by insertion; the read is by (order, created_at).
+  // ordered by (order, created_at)
   assert.deepEqual(
     listed.data.apps.map(x => [x.id, x.name, x.slug, x.cwd, x.order]),
     [
@@ -397,7 +389,7 @@ test('list_apps: every app, sort_order asc (+ created_at tiebreak); empty; datab
     ],
   );
   for (const app of listed.data.apps) assert.match(app.id, UUID_RE);
-  // the app cwd rides the read (task/app-cwd: the dialog's start-path hint)
+  // the read carries the app cwd
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-app-cwd-'));
   const e = (await a.saveApp('with dir', dir)).data;
   assert.deepEqual(a.listApps().data.apps.at(-1), {

@@ -1,10 +1,7 @@
-// db.test.mjs — the schema v6 upgrade (src/lib/platform/db.ts, workspaces-plan §2):
-// a fresh file (user_version 0) gets the new shape at CREATE; a v5-shaped
-// file opens as v6 with the ALTERs applied and its data intact — and its
-// pi-session `sessions` overlay DROPPED (task/ws-console, plan §11); a
-// newer file refuses; and the foreign_keys pragma the cascade story rests
-// on is actually ON. Reopening never re-runs an ALTER (they are guarded by
-// table_info, not the version number).
+// The state db's schema upgrade: a fresh file gets the current shape, a
+// v5-shaped file opens as v6 with ALTERs applied and data intact (and the
+// old `sessions` table dropped), a newer file refuses, and foreign_keys is
+// on. Reopening never re-runs an ALTER.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
@@ -32,8 +29,7 @@ const userVersion = file => {
   return v;
 };
 
-/** The pre-v6 SCHEMA, verbatim shape: jobs without app_id, job_runs
- *  without the run-log columns — what a v5 db on disk looks like. */
+/** What a v5 db looks like: jobs without app_id, job_runs without the run-log columns. */
 const V5_SCHEMA = `
   CREATE TABLE IF NOT EXISTS credential (
     id         INTEGER PRIMARY KEY CHECK (id = 1),
@@ -78,20 +74,20 @@ test('a fresh file (user_version 0) gets the v6 shape at CREATE — no ALTER eve
   for (const t of ['apps', 'workspaces', 'terminals']) {
     assert.ok(columns(db, t).length > 0, t);
   }
-  assert.ok(columns(db, 'apps').includes('cwd')); // task/app-cwd: at CREATE
+  assert.ok(columns(db, 'apps').includes('cwd')); // at CREATE
   assert.ok(columns(db, 'jobs').includes('app_id'));
   for (const c of ['log', 'exit_code', 'finished_at']) {
     assert.ok(columns(db, 'job_runs').includes(c), c);
   }
-  // the pi-session overlay is never created (plan §11)
+  // the old sessions table is never created
   assert.ok(
     db
       .db()
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sessions'")
       .get() == null,
   );
-  // reopening runs the same guards and skips every ALTER (ADD COLUMN twice
-  // would throw "duplicate column name") — and the DROP re-runs harmlessly
+  // Reopening skips every ALTER (ADD COLUMN twice would throw); the DROP
+  // re-runs harmlessly.
   const reopened = new StateDb(file);
   reopened.db();
   assert.equal(userVersion(file), 6);
@@ -116,13 +112,11 @@ test('a v5-shaped file upgrades to v6 with the ALTERs applied and its data intac
   const db = new StateDb(file);
   db.db();
   assert.equal(userVersion(file), 6);
-  // the ALTERs landed
   assert.ok(columns(db, 'jobs').includes('app_id'));
   for (const c of ['log', 'exit_code', 'finished_at']) {
     assert.ok(columns(db, 'job_runs').includes(c), c);
   }
-  // the v5 data survived, and the new columns read as NULL (spread: node:sqlite
-  // rows carry a null prototype, which deepEqual treats as a different object)
+  // v5 data survived and the new columns read NULL (spread: null-prototype rows)
   assert.deepEqual(
     {
       ...db.get(
@@ -152,8 +146,7 @@ test('a v5-shaped file upgrades to v6 with the ALTERs applied and its data intac
     },
   );
   assert.equal(db.getSetting('k'), '"v"');
-  // the pi-session overlay is GONE (plan §11): the DROP ran at open, runs
-  // again on every reopen, and user_version stays 6 — no bookkeeping.
+  // sessions is dropped at every open, and user_version stays 6.
   const tableExists = name =>
     db.db().prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !=
     null;
@@ -161,7 +154,7 @@ test('a v5-shaped file upgrades to v6 with the ALTERs applied and its data intac
   assert.equal(userVersion(file), 6);
   new StateDb(file).db(); // reopen: the DROP is idempotent
   assert.equal(tableExists('sessions'), false);
-  // and the upgraded file takes the new tables' rows (FKs resolve)
+  // the upgraded file takes rows in the new tables (FKs resolve)
   db.run(
     qb.insertInto('apps').values({
       id: '123e4567-e89b-42d3-a456-426614174000',
@@ -190,11 +183,9 @@ test('a v5-shaped file upgrades to v6 with the ALTERs applied and its data intac
   assert.ok(db.get(qb.selectFrom('workspaces').select('id')));
 });
 
-test('a v6 file whose apps table predates apps.cwd (task/app-cwd) gains the column at open, data intact, version unmoved', () => {
+test('a v6 file whose apps table predates apps.cwd gains the column at open, data intact, version unmoved', () => {
   const file = freshFile('cybermole-db-v6-no-app-cwd-');
-  // The pre-task/app-cwd v6 shape, hand-built: every other table can come
-  // from SCHEMA at open (CREATE IF NOT EXISTS) — the apps table must exist
-  // WITHOUT cwd so the ALTER path is what adds it.
+  // A v6 db from before apps.cwd: apps must exist without cwd so the ALTER adds it.
   const raw = new DatabaseSync(file);
   raw.exec(`
     CREATE TABLE IF NOT EXISTS apps (
@@ -220,8 +211,7 @@ test('a v6 file whose apps table predates apps.cwd (task/app-cwd) gains the colu
   const db = new StateDb(file);
   db.db(); // open + migrate: addColumnIfMissing applies the cwd ALTER
   assert.ok(columns(db, 'apps').includes('cwd'));
-  // the pre-existing row survived, the new column reads NULL (spread: the
-  // null prototype rows again)
+  // the existing row survived; the new column reads NULL
   assert.deepEqual(
     {
       ...db.get(
@@ -231,7 +221,7 @@ test('a v6 file whose apps table predates apps.cwd (task/app-cwd) gains the colu
     { name: 'alpha app', slug: 'alpha-app', cwd: null },
   );
   assert.equal(userVersion(file), 6); // no version bump — the column check, not the number
-  // reopening skips the ALTER (ADD COLUMN twice would throw "duplicate column name")
+  // reopening skips the ALTER
   const reopened = new StateDb(file);
   reopened.db();
   assert.ok(columns(reopened, 'apps').includes('cwd'));

@@ -2,24 +2,14 @@
 import Base from '../layouts/Base.astro';
 import JobsApp from '../components/JobsApp/JobsApp.astro';
 import { assertCybermoleLocals } from '../lib/web/locals';
-// Server-rendered (docs/conventions/CODE_STYLE.md §7): the job list arrives as HTML
-// from the scheduler server/main.ts passes in locals; <jobs-app> enhances
-// it (actions, dialogs, a 15 s refresh from /partials/jobs-list). A page
-// without the services is a broken invariant, not a state to render
-// around — assertCybermoleLocals throws (in dev, browse the `npm run
-// dev:server` process: `astro dev`'s own render has none). A failed
-// listing renders the empty state's message; the poll keeps trying.
+// A failed listing renders the empty state's message; the poll keeps trying.
 const { cybermole } = assertCybermoleLocals(Astro.locals);
 const listed = await cybermole.scheduler.listJobs();
 const jobs = listed.ok ? listed.data.jobs : null;
-// The dialog's app-tag picker options (plan §9) — the same render that
-// lists the jobs, no second fetch. A failed read keeps the page alive:
-// the picker just offers no apps until a good render comes through the
-// partial refresh.
+// A failed app read just leaves the tag picker empty until a refresh.
 const appsListed = cybermole.apps.listApps();
 const apps = appsListed.ok ? appsListed.data.apps : [];
-// console.error on purpose, not src/lib/platform/logger.ts: frontmatter is
-// Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
+// console.error: winston stays out of the Vite bundle.
 if (!listed.ok) console.error(`jobs page: ${listed.errorMessage}`);
 if (!appsListed.ok) console.error(`jobs page: ${appsListed.errorMessage}`);
 ---

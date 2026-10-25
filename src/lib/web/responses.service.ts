@@ -1,16 +1,7 @@
-// responses.service.ts — Results → HTTP Responses (the relevant half of
-// soothing-booking's responses service, plus cybermole's domain mappers).
-// The ONLY place an error code becomes a status (docs/conventions/CODE_STYLE.md §3):
-// every mapper is an exhaustive switch, so a new code is a type error
-// here until it gets a status. Failure bodies are
-// `{ error: <human message>, code, … }` — `error` stays the text the
-// browser shows (console toasts, /jobs, /settings read it).
-// Type-only imports from the domain modules: safe for the Astro bundle.
-//
-// task/app-kit (docs/plans/apps-plan.md §5): the GENERIC half of this mapping
-// (jsonResponse, successResponse, firstIssueText, validationFailureResponse)
-// moved to @cybermole/app-kit's web/responses.service.ts; this file keeps
-// the console's domain mappers and imports the generic pieces from the kit.
+// Results → HTTP Responses: the only place an error code becomes a status.
+// Every mapper is an exhaustive switch, so a new code is a type error here.
+// Failure bodies are `{ error, code, … }`, where `error` is the text the UI
+// shows. Type-only domain imports keep this safe for the Astro bundle.
 import {
   jsonResponse,
   validationFailureResponse,
@@ -97,7 +88,6 @@ export type JobFailure =
   | GetJobFailure
   | KillRunFailure;
 
-/** Jobs failures → status + the { error, detail } body /jobs reads. */
 export function jobFailureResponse(f: JobFailure): Response {
   const body = (error: string, detail: string | null = null) => ({
     error,
@@ -119,14 +109,9 @@ export function jobFailureResponse(f: JobFailure): Response {
         body(f.errorMessage ?? 'previous run is still active', f.data?.session ?? null),
         409,
       );
-    // task/jobs-socket (plan §4): the internal API's kill verb — the
-    // named run is not the job's live one (already ended, or a newer
-    // run is the live one). Same 409 as run_active: retryable by
-    // re-reading the runs list.
+    // Retryable by re-reading the runs list, like run_active.
     case 'run_not_active':
       return jsonResponse(body(f.errorMessage ?? 'the run is not running'), 409);
-    // task/jobs-socket (plan §4): the kill verb — the run-open text would
-    // be wrong for a failed kill; the family discriminates the top line.
     case 'tmux_error':
       return jsonResponse(
         body(
@@ -146,19 +131,15 @@ export function jobFailureResponse(f: JobFailure): Response {
   }
 }
 
-/** GET /jobs?app=<slug> over the internal socket (task/jobs-socket,
- *  plan §4): the filter names an app that does not exist. Same body
- *  family and status the jobs routes give app_not_found. */
+/** The ?app=<slug> filter names no app. */
 export function appFilterNotFoundResponse(): Response {
   return jsonResponse({ error: 'no such app', detail: null, code: 'app_not_found' }, 404);
 }
 
-/** A job name from the path that is not a valid JobName. */
 export function invalidJobNameResponse(): Response {
   return jsonResponse({ error: 'invalid job name', detail: null, code: 'invalid_job_name' }, 400);
 }
 
-/** A :fired_at path param that is not an integer epoch-ms value. */
 export function invalidFiredAtResponse(): Response {
   return jsonResponse(
     { error: 'invalid fired_at (integer epoch ms)', detail: null, code: 'invalid_fired_at' },
@@ -166,9 +147,7 @@ export function invalidFiredAtResponse(): Response {
   );
 }
 
-/** GET /api/jobs/:name/runs/:fired_at/log's success: the tail as
- *  text/plain (the fetch caller reads .text(); truncation disclosed via
- *  a header — the body itself is just the log). */
+/** text/plain; truncation is flagged in a header so the body is just the log. */
 export function runLogResponse(data: RunLogData): Response {
   return new Response(data.text, {
     status: 200,
@@ -180,19 +159,8 @@ export function runLogResponse(data: RunLogData): Response {
   });
 }
 
-// task/ws-schema (docs/plans/workspaces-plan.md §6): the apps / workspaces /
-// terminals families → statuses. server_not_running and tmux_error on the
-// terminal family cannot fire until the spawn lands (task/ws-terminal)
-// but are mapped now — the union is closed.
-
 export type AppFailure = SaveAppFailure | DeleteAppFailure | ListAppsFailure;
 
-/** Apps failures → status. duplicate_slug is the derived slug's collision
- *  (409); a slug that no longer resolves is 404; a bad cwd is the
- *  caller's (400 — task/app-cwd, the workspace cwd's own code).
- *  task/jobs-mcp (plan §6): ListAppsFailure joins the union for the
- *  internal API's GET /apps — its one code (database_error) is mapped by
- *  the case below, so the apps_list tool reads the family's own body. */
 export function appFailureResponse(f: AppFailure): Response {
   switch (f.errorCode) {
     case 'invalid_name':
@@ -213,15 +181,12 @@ export function appFailureResponse(f: AppFailure): Response {
   }
 }
 
-/** A slug from the path that is not an AppSlug. */
 export function invalidAppSlugResponse(): Response {
   return jsonResponse({ error: 'invalid app slug', code: 'invalid_app_slug' }, 400);
 }
 
 export type WorkspaceFailure = SaveWorkspaceFailure | DeleteWorkspaceFailure;
 
-/** Workspace failures → status: a bad name/cwd is the caller's (400), a
- *  missing parent app or workspace is 404. */
 export function workspaceFailureResponse(f: WorkspaceFailure): Response {
   switch (f.errorCode) {
     case 'invalid_name':
@@ -238,22 +203,16 @@ export function workspaceFailureResponse(f: WorkspaceFailure): Response {
   }
 }
 
-/** A workspace id from the path that is not one of ours (uuid v4). */
 export function invalidWorkspaceIdResponse(): Response {
   return jsonResponse({ error: 'invalid workspace id', code: 'invalid_workspace_id' }, 400);
 }
 
 export type TerminalFailure = NewTerminalFailure | CloseTerminalFailure | RenameTerminalFailure;
 
-/** Terminal failures → status. server_not_running is the never-fork
- *  guard's refusal (retryable once the workspace side is back — the WS
- *  attach path surfaces the same message). A spawn-failed create
- *  still carries its row (plan §4: live:false, a dead tab) — the body
- *  includes it so the UI can show the tab. */
+/** server_not_running is retryable once the workspace side is back. A
+ *  spawn-failed create still carries its row, so the UI can show the tab. */
 export function terminalFailureResponse(f: TerminalFailure): Response {
-  // Only the new_terminal family ever sets data on a failure (the
-  // row-created-despite-spawn-failure contract); narrowing keeps the
-  // close/rename failures' bodies unchanged.
+  // Only new_terminal failures carry data.
   const terminal = f.resultType === 'new_terminal' && f.data ? { terminal: f.data } : {};
   switch (f.errorCode) {
     case 'workspace_not_found':
@@ -280,14 +239,11 @@ export function terminalFailureResponse(f: TerminalFailure): Response {
   }
 }
 
-/** A terminal id from the path that is not one of ours (uuid v4). */
 export function invalidTerminalIdResponse(): Response {
   return jsonResponse({ error: 'invalid terminal id', code: 'invalid_terminal_id' }, 400);
 }
 
-/** /api/files failures (upload and download): no storage configured is
- *  the operator's to fix (503); a failed read or write is the storage
- *  server's (502 — it's the upstream that failed, not this request). */
+/** Unconfigured storage is 503; a storage-server failure is 502 (upstream). */
 export function objectStoreFailureResponse(
   f: StoreUploadFailure | FetchObjectFailure | StatObjectFailure,
 ): Response {
@@ -300,7 +256,7 @@ export function objectStoreFailureResponse(
     case 'object_not_found':
       return jsonResponse({ error: 'no such file', code: f.errorCode }, 404);
     case 'range_not_satisfiable': {
-      // RFC 9110 §15.5.17: say how big the file is, so a client can recover.
+      // RFC 9110 §15.5.17: report the size so a client can recover.
       const size = f.data?.objectSize ?? null;
       return jsonResponse({ error: 'range not satisfiable', code: f.errorCode }, 416, {
         'Accept-Ranges': 'bytes',
@@ -317,17 +273,13 @@ export function objectStoreFailureResponse(
   }
 }
 
-/** A file key from the path that is not one POST /api/files mints. */
 export function invalidObjectKeyResponse(): Response {
   return jsonResponse({ error: 'invalid file key', code: 'invalid_object_key' }, 400);
 }
 
-/** Headers for a download (GET) or its HEAD. User content on the app's
- *  own origin, so it is never rendered here: always an attachment, a type
- *  outside the upload allowlist becomes application/octet-stream, and its
- *  own CSP (kept over the server's default — server/main.ts only fills in
- *  absent headers) sandboxes it with nothing allowed should anything open
- *  it anyway. Accept-Ranges: a broken download resumes (Range, If-Range). */
+/** User content on our own origin is never rendered: always an attachment,
+ *  octet-stream outside the upload allowlist, and a sandboxing CSP (which
+ *  wins, since main.ts only fills absent headers). */
 function downloadHeaders(info: ObjectInfo): Record<string, string> {
   const allowed: readonly string[] = UPLOAD_ALLOWED_MIME_TYPES;
   const headers: Record<string, string> = {
@@ -349,15 +301,13 @@ function downloadHeaders(info: ObjectInfo): Record<string, string> {
   return headers;
 }
 
-/** GET /api/files/<key>: the stored bytes, streamed through — 206 with
- *  Content-Range when a byte range was asked for and applied. */
+/** 206 with Content-Range when a range was applied. */
 export function fileDownloadResponse(object: FetchedObject): Response {
   const headers = downloadHeaders(object);
   if (object.contentRange !== null) headers['Content-Range'] = object.contentRange;
   return new Response(object.body, { status: object.contentRange === null ? 200 : 206, headers });
 }
 
-/** HEAD /api/files/<key>: the download's headers, no body. */
 export function fileHeadResponse(info: ObjectInfo): Response {
   return new Response(null, { status: 200, headers: downloadHeaders(info) });
 }
@@ -375,7 +325,6 @@ export function piUpdateStatus(f: PiUpdateFailure): number {
   }
 }
 
-/** The wire shape POST /api/update-pi answers with (and /settings reads). */
 export function updateResultBody(r: PiUpdateResult): UpdateResult {
   const data = r.data ?? { dryRun: false, command: '', before: null, after: null, output: '' };
   return r.ok
@@ -387,25 +336,17 @@ export function piUpdateResponse(r: PiUpdateResult): Response {
   return jsonResponse(updateResultBody(r), r.ok ? 200 : piUpdateStatus(r));
 }
 
-/** GET /api/state failures (the console's poll ignores any non-OK answer
- *  and retries on its next tick). */
 export function consoleStateFailureResponse(f: ConsoleStateFailure): Response {
-  // One-member union, like databaseUpdateFailureResponse below: a second
-  // code fails to compile here.
+  // One-member union (here and below): a second code fails to compile.
   const code: 'database_error' = f.errorCode;
   return jsonResponse({ error: f.errorMessage ?? 'database error', code }, 500);
 }
 
-/** GET /api/settings failures (/settings shows "could not load settings"). */
 export function settingsStateFailureResponse(f: SettingsStateFailure): Response {
-  const code: 'database_error' = f.errorCode; // one-member union, as above
+  const code: 'database_error' = f.errorCode;
   return jsonResponse({ error: f.errorMessage ?? 'database error', code }, 500);
 }
 
-/** The terminal-defaults families' failures (task/defaults-settings): the
- *  read behind GET /api/settings + /settings, and the POST save. Both are
- *  one-member unions — a second code fails to compile here, like the
- *  settings_state family above. */
 export function terminalDefaultsFailureResponse(
   f: TerminalDefaultsFailure | SaveTerminalDefaultsFailure,
 ): Response {
@@ -413,10 +354,7 @@ export function terminalDefaultsFailureResponse(
   return jsonResponse({ error: f.errorMessage ?? 'database error', code }, 500);
 }
 
-/** A failed state-db write: 500 with the caller's user-facing message. */
 export function databaseUpdateFailureResponse(f: DatabaseUpdateFailure, error: string): Response {
-  // The family's only code today; a second one fails to compile here
-  // (a one-member union can't narrow to never in a switch).
   const code: 'database_error' = f.errorCode;
   return jsonResponse({ error, code }, 500);
 }

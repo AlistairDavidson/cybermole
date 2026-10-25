@@ -1,5 +1,3 @@
-// POST /api/auto-update-pi — the /settings toggle: persist the setting and
-// rewire the periodic check (src/lib/platform/auto-update.ts).
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../lib/web/locals';
 import { parseAndValidateAPIRequest } from '../../lib/web/parsing.service';

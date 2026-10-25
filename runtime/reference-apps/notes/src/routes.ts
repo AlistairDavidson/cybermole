@@ -1,17 +1,10 @@
-// THE route table — this app's single source of truth (apps-plan §2/§5):
-// every action is ONE entry here, and the kit's binder gives it every
-// face at once — the HTTP route (src/pages/api/[...path].ts), the typed
-// client the UI uses (src/islands), the MCP shim's tools and
-// dist/route-table.json (describe/call) — same Result JSON everywhere.
-// The entries were appended by the add_action tool and then edited into
-// the real vocabulary (note_create/note_list/note_get grew path-param and
-// body shapes; note_edit flipped to PATCH); `npm run check` stays the
-// gate.
+// The route table: each action is one entry, and the kit binds it to the
+// HTTP route, the islands' typed client, the MCP shim and
+// dist/route-table.json. These entries started as add_action stubs.
 //
-// The schemas judge SHAPE only (string / array of strings / coerced
-// number); everything a user can get wrong — empty titles, bounds, tag
-// rules — is judged by the action's own family, so every face answers
-// the same closed error codes (apps-plan §0).
+// The schemas judge shape only; everything a user can get wrong (empty
+// titles, bounds, tag rules) is judged by the action's own family, so every
+// face answers the same error codes.
 import { z } from 'zod';
 import { defineRoute, type RouteTable } from '@cybermole/app-kit/route-table';
 import { pingResult } from './lib/ping';

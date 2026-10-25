@@ -1,33 +1,18 @@
-// apps-route-table.ts — the describe/call half of the cybermole-apps MCP
-// and the app MCP shim's shared table reader (task/app-actions,
-// docs/plans/apps-plan.md §6): dist/route-table.json — the build's emitted
-// table (the kit's route-table-emit, written by the tree's astro config)
-// — read, leniently validated against, and turned into THE request the
-// entry itself names. §3's rule verbatim: "a route-table entry already
-// names method + path, so the shim, `call` and sibling clients issue
-// that very request against the host socket — there is no parallel RPC
-// to invent or let drift".
+// Reads an app's emitted dist/route-table.json and turns `{action, params}`
+// into the exact request the entry names (shared by `call` and the app MCP
+// shim, so there's no parallel RPC to drift).
 //
-// Validation is LENIENT by design: the emitted input is JSON-schema-ish
-// (the kit's documented zod subset), and the app's own handler stays the
-// authority — the preflight enforces only what cannot be a false
-// rejection (params is an object; required fields are present). Types,
-// formats and bounds are the app's to judge, at serve time, through its
-// own zod schemas. The SHIM's tool schemas go one step further (typed,
-// from the emitted schema) because an MCP client wants real constraints
-// — built coercively, so a string "7" still passes where the app would
-// coerce it.
+// Validation is lenient: the app's own handler is the authority, so the
+// preflight only checks what can't be a false rejection (params is an
+// object, required fields are present). The shim's tool schemas are typed
+// but coercive, never stricter than the app.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
 
-/** JSON schema, as far as the kit's emitted subset goes (the binder's
- *  JsonSchema — restated locally: server-compiled code imports the kit
- *  through its root specifier only). */
+/** Restated locally: server code imports the kit only through its root specifier. */
 export type TableJsonSchema = Record<string, unknown>;
 
-/** One dist/route-table.json entry — the emitted table's shape
- *  (serializeRouteTable: name, method, path, description, input). */
 export interface SerializedAction {
   name: string;
   method: string;
@@ -46,9 +31,7 @@ export type ReadRouteTable =
       errorMessage: string;
     };
 
-/** Read one tree's emitted table. A missing dist/route-table.json is a
- *  DOMAIN answer naming the build (the emission rides the build script —
- *  an unbuilt app simply has no table yet), never a transport story. */
+/** No table means the app isn't built: a domain answer, not a transport error. */
 export function readRouteTable(tree: string): ReadRouteTable {
   const tablePath = path.join(tree, 'dist', 'route-table.json');
   if (!fs.existsSync(tree)) {
@@ -94,25 +77,20 @@ export function readRouteTable(tree: string): ReadRouteTable {
   return { ok: true, table, tablePath, tree };
 }
 
-/** Find one action by its table name (the tool name — the flat identity
- *  across every face). */
 export function findAction(table: SerializedAction[], action: string): SerializedAction | null {
   return table.find(e => e.name === action) ?? null;
 }
 
-// ---------- lenient validation (call's preflight) ----------
+// ---------- lenient validation ----------
 
 const isRequired = (input: TableJsonSchema, name: string): boolean =>
   Array.isArray(input.required) && input.required.includes(name);
 
-/** A presence-only field check: accepts ANY value (the app judges types
- *  and bounds), rejects only a missing key. */
+/** Accepts any value; rejects only a missing key. */
 const presence = (name: string): z.ZodType =>
   z.any().refine(v => v !== undefined, { message: `${name} is required` });
 
-/** The lenient preflight schema for one emitted input: every required
- *  property must be PRESENT; nothing else is judged. `call` uses this —
- *  the app's own handler is the authority. */
+/** Required properties must be present; nothing else is judged. */
 export function lenientPreflight(input: TableJsonSchema): z.ZodType {
   const properties = (input.properties ?? {}) as Record<string, unknown>;
   const shape: Record<string, z.ZodType> = {};
@@ -122,8 +100,7 @@ export function lenientPreflight(input: TableJsonSchema): z.ZodType {
   return z.looseObject(shape);
 }
 
-/** zod issues → the per-field record the house validation bodies carry
- *  (first issue per field, "" for the root — parseZod's shape). */
+/** First issue per field, "" for the root (parseZod's shape). */
 export function zodIssuesToRecord(error: z.ZodError): Record<string, string> {
   const issues: Record<string, string> = {};
   for (const issue of error.issues) {
@@ -133,16 +110,15 @@ export function zodIssuesToRecord(error: z.ZodError): Record<string, string> {
   return issues;
 }
 
-// ---------- the request the entry names (shared by call and the shim) ----------
+// ---------- request planning ----------
 
 export interface PlannedRequest {
   method: string;
-  /** the full path against the host socket: the app's baked base
-   *  ('/apps/<slug>') + the entry path with :params interpolated */
+  /** '/apps/<slug>' + the entry path with :params filled in */
   pathname: string;
-  /** the search string ('' when none) — GET-family input */
+  /** '' when none */
   search: string;
-  /** the JSON body string (non-GET input); undefined for GET */
+  /** JSON; undefined for GET */
   body: string | undefined;
 }
 
@@ -152,11 +128,8 @@ export type Planned =
 
 const PATH_PARAM_RE = /:([A-Za-z0-9_]+)/g;
 
-/** Turn `{slug, action, params}` into the HTTP request the table entry
- *  names (plan §3's no-drift rule): path params interpolated, remaining
- *  params as the query (GET) or the JSON body (everything else). The
- *  lenient preflight runs first — a failure answers locally, the app
- *  never sees it. */
+/** Path params are interpolated; the rest go in the query (GET) or a JSON
+ *  body. A preflight failure answers locally without calling the app. */
 export function planActionRequest(
   slug: string,
   entry: SerializedAction,
@@ -187,8 +160,7 @@ export function planActionRequest(
     const key = match[1]!;
     const value = params[key];
     if (value === undefined) {
-      // The preflight already caught this when the schema named it; a
-      // :param the emitted schema missed still cannot be interpolated.
+      // A :param the emitted schema didn't name can't be interpolated.
       return {
         ok: false,
         errorMessage: `missing path param ${key} for ${entry.name}`,
@@ -215,15 +187,9 @@ export function planActionRequest(
   };
 }
 
-// ---------- the typed shape (the shim's tool inputSchema) ----------
+// ---------- typed shape (the shim's inputSchema) ----------
 
-/** A string that also passes as a number/boolean is stringified (query
- *  params arrive as strings at the app anyway); a number accepts its
- *  string spelling (the app coerces query/param input); a boolean
- *  accepts 'true'/'false'. Coercive on purpose: the SHIM must never be
- *  stricter than the app it fronts. */
-/** zod's literal domain (z.literal's parameter), as the emitted JSON
- *  schema carries it — the kit emits string/number/boolean/null consts. */
+/** The kit emits string/number/boolean/null consts. */
 type LiteralValue = string | number | boolean | null;
 
 function typedZodFrom(node: TableJsonSchema): z.ZodType {
@@ -277,13 +243,12 @@ function typedZodFrom(node: TableJsonSchema): z.ZodType {
       return z.looseObject(shape);
     }
     default:
-      return z.any(); // unknown construct: permissive, never a wrong rejection
+      return z.any(); // unknown construct: permissive
   }
 }
 
-/** The shim's MCP tool inputSchema for one emitted input: a zod shape
- *  (one entry per flattened field), typed as far as the emitted schema
- *  goes and coercive where the app coerces. */
+/** Typed as far as the emitted schema goes; numbers and booleans also
+ *  accept their string spellings, as the app coerces them. */
 export function shapeFromJsonSchema(input: TableJsonSchema): Record<string, z.ZodType> {
   const properties = (input.properties ?? {}) as Record<string, TableJsonSchema>;
   const shape: Record<string, z.ZodType> = {};

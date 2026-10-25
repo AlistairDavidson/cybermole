@@ -7,24 +7,15 @@ import { assertCybermoleLocals } from "../lib/web/locals";
 
 interface Props {
   title: string;
-  /** Renders the global header bar above the page (every signed-in
-   *  page) and marks that section's link aria-current="page". Omitted on
-   *  /login (not signed in yet) and the offline shell. */
+  /** Renders the header bar with that section marked current. Omitted on /login and the offline shell. */
   header?: "console" | "jobs" | "logs" | "settings";
 }
 
 const { title, header } = Astro.props;
-// task/logs-page: the header's logs link exists only when a Grafana is
-// configured (cfg.grafanaExploreUrl). The services are present on every
-// page that renders the header — its page's assertCybermoleLocals already
-// ran in the frontmatter before this layout renders — so gate through the
-// same assert rather than a soft optional read: a miss here is a broken
-// invariant, not a state to render a link-less header around.
+// The logs link only exists when Grafana is configured. Every page with a
+// header has already asserted its locals, so a miss here is a bug.
 const logs = header !== undefined && assertCybermoleLocals(Astro.locals).cybermole.cfg.grafanaExploreUrl !== null;
-// The two surfaces the browser chrome (theme-color metas below) takes
-// from each mode's --wa-color-surface-default — console.css owns the
-// values (the one sanctioned home of hex); these mirror them so the
-// browser UI can't ship a color the app doesn't render.
+// Mirror console.css's --wa-color-surface-default per mode, for the browser chrome.
 const THEME_COLOR_DARK = "#11131a";
 const THEME_COLOR_LIGHT = "#e1e2e7";
 ---
@@ -34,19 +25,9 @@ const THEME_COLOR_LIGHT = "#e1e2e7";
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- Global light/dark follows the BROWSER, not a hardcoded dark. The
-         render-blocking classic script below (public/theme-boot.js, served
-         pre-auth like sw.js) sets exactly one of wa-dark/wa-light on the
-         root element from matchMedia BEFORE first paint — the class is what
-         console.css's two brand token sets, color-scheme and every
-         mode-aware consumer key off. Its 'change' listener flips the classes
-         live; agent-terminal re-themes live panes and the editor pane
-         reloads (they observe the class, not this script). It is an
-         external FILE, not a literal inline script, because the server's
-         CSP is `script-src 'self'` with no 'unsafe-inline' — an inline
-         script would be refused. No-JS fallback: no class means Web
-         Awesome's default light tokens — the app is JS-dependent anyway;
-         only login works without it, rendered light. -->
+    <!-- Sets wa-dark/wa-light from matchMedia before first paint, and flips
+         them live. An external file because the CSP has no 'unsafe-inline'.
+         Without JS, Web Awesome's default light tokens apply. -->
     <script is:inline src={`${BASE}/theme-boot.js`}></script>
     <title>{title}</title>
     <link rel="icon" href={`${BASE}/icons/icon.svg`} type="image/svg+xml" />
@@ -57,9 +38,6 @@ const THEME_COLOR_LIGHT = "#e1e2e7";
       sizes="192x192"
     />
     <link rel="manifest" href={`${BASE}/manifest.webmanifest`} />
-    <!-- Both modes' surfaces, one meta each: the browser picks by the same
-         prefers-color-scheme the script above follows, so the chrome around
-         the app always matches the page under it. -->
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content={THEME_COLOR_DARK} />
     <meta name="theme-color" media="(prefers-color-scheme: light)" content={THEME_COLOR_LIGHT} />
     <link rel="apple-touch-icon" href={`${BASE}/icons/icon-maskable-192.png`} />
@@ -74,13 +52,10 @@ const THEME_COLOR_LIGHT = "#e1e2e7";
   <body class={header ? "app-chrome" : undefined}>
     {header && <AppHeader current={header} logs={logs} />}
     <slot />
-    <!-- App-wide toast stack (update notifications from the script below). -->
     <wa-toast placement="top-end"></wa-toast>
     <script>
-      // Client halves of the SSR'd wa-* elements in this layout (AGENTS.md:
-      // SSR ≠ client). Support modules MUST precede the wa-* imports —
-      // ES module side-effect order guarantees the polyfill runs before
-      // any component module defines, regardless of chunking.
+      // Client halves of the SSR'd wa-* (AGENTS.md). The astro-lit support
+      // modules must come first so the polyfill runs before any component defines.
       import "@awesome.me/astro-lit/dsd-polyfill.js";
       import "@awesome.me/astro-lit/hydration-support.js";
       import "../icons";
@@ -88,17 +63,13 @@ const THEME_COLOR_LIGHT = "#e1e2e7";
       import "@awesome.me/webawesome/dist/components/button/button.js";
       import { BASE } from "../base";
 
-      // PWA: register the offline-shell service worker (public/sw.js).
-      // Secure contexts only — https, or loopback http which browsers
-      // treat as secure.
+      // Service workers need a secure context (https, or loopback http).
       if ("serviceWorker" in navigator && window.isSecureContext) {
         let hadController = Boolean(navigator.serviceWorker.controller);
         let announced = false;
 
-        // A new worker took this page over — a deploy, picked up by a
-        // navigation or the hourly check below. The FIRST install also
-        // claims the page (sw.js skipWaiting + clients.claim); that's not
-        // an update, so no toast for it.
+      // A new worker took over (a deploy). The first install also claims the
+      // page, which isn't an update, so no toast for that.
         navigator.serviceWorker.addEventListener("controllerchange", () => {
           if (!hadController) {
             hadController = true;
@@ -107,15 +78,12 @@ const THEME_COLOR_LIGHT = "#e1e2e7";
           if (announced) return;
           announced = true;
           const toast = document.querySelector("wa-toast");
-          if (!toast || typeof toast.create !== "function") return; // not upgraded
-          // duration 0: stays until dismissed. Terminal work must not be
-          // interrupted by an auto-reload; the button reloads on demand,
-          // and the next navigation applies the update anyway.
+          if (!toast || typeof toast.create !== "function") return; // not upgraded yet
+          // Stays until dismissed: never auto-reload over terminal work.
           const reload = document.createElement("wa-button");
           reload.size = "s";
           reload.textContent = "Reload";
           reload.addEventListener("click", () => location.reload());
-          // create() resolves to the toast item once it is shown.
           void toast.create("A new version of cybermole is ready.", {
             duration: 0,
             variant: "neutral",
@@ -127,11 +95,9 @@ const THEME_COLOR_LIGHT = "#e1e2e7";
           navigator.serviceWorker
             .register(`${BASE}/sw.js`)
             .then(async (reg) => {
-              // Warm the cache with what this page already loaded: assets
-              // fetched before the worker took control never crossed its
-              // fetch handler, so without this offline only works from the
-              // second visit on. The re-fetches hit the SW's cache, not the
-              // network.
+              // Assets fetched before the worker took control never went
+              // through it; re-fetch them (from its cache) so offline works
+              // from the first visit.
               const sw = navigator.serviceWorker;
               if (!sw.controller) {
                 await new Promise((resolve) =>
@@ -148,9 +114,8 @@ const THEME_COLOR_LIGHT = "#e1e2e7";
                   fetch(entry.name, { cache: "no-store" }).catch(() => {});
                 }
               }
-              // Long-lived installed apps can go days without a navigation,
-              // and the browser only re-checks sw.js on its own every ~24h:
-              // poll hourly so deploys land without user action.
+              // Installed apps can go days without a navigation, and browsers
+              // re-check sw.js only every ~24h, so poll hourly.
               setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000);
             })
             .catch(() => {});
@@ -159,11 +124,6 @@ const THEME_COLOR_LIGHT = "#e1e2e7";
     </script>
   </body>
 </html>
-<!-- This layout's client <script> imports wa-* components itself, with
-     the astro-lit support modules first — the same pattern as the page
-     and component scripts (login.astro, ConsoleApp.astro,
-     AgentTerminal.astro), so definition order is safe across all of
-     them. -->
 
 <style is:global>
   @import "../styles/console.css";

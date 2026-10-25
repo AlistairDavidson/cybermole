@@ -1,9 +1,5 @@
-// result.ts — the Result contract for anything that can fail (from
-// soothing-booking; docs/conventions/CODE_STYLE.md §1). Success and failure share a
-// `resultType` discriminator per family; failures carry a closed
-// `errorCode` union.
-// Moved from src/types/result.ts by task/app-kit (docs/plans/apps-plan.md §5)
-// — unchanged apart from the move.
+// Results for anything that can fail: a `resultType` discriminator per
+// family, and a closed `errorCode` union on failures.
 
 export type ResultSuccess<ResultType extends string, DataType extends object> = {
   ok: true;
@@ -14,8 +10,7 @@ export type ResultSuccess<ResultType extends string, DataType extends object> = 
   errorMessage?: undefined;
 };
 
-// "never" trick forces distribution to a union, so the type system knows which errors
-// are returned for given function
+// Distributing over ErrorCodeType makes failures a union, one member per code.
 export type ResultFailure<
   ResultType extends string,
   DataType extends object,

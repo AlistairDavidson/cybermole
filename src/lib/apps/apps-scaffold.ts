@@ -1,13 +1,7 @@
-// apps-scaffold.ts — the scaffold half of the cybermole-apps MCP
-// (task/app-scaffold, docs/plans/apps-plan.md §6): create a real app tree at
-// the apps root from the image's app-starter template — slug derived like
-// the console's (normalizeSlug), base '/apps/<slug>' baked, node_modules
-// as per-package symlinks (§5), a git repo whose first commit is the
-// scaffold (agent undo is git clean — one history to roll back to), and
-// the operator's AGENTS.md seeded from runtime/app-agents/ (§7). This
-// module OWNS the tree-writing; the MCP owns the sockets and the tool
-// shapes. All fs through this one boundary (CODE_STYLE §2): a failure is
-// a Result, never a throw.
+// Scaffolds an app tree from the app-starter template: slug derived from the
+// name, base '/apps/<slug>' baked in, node_modules as per-package symlinks
+// into the install, AGENTS.md seeded, and a git repo whose first commit is
+// the scaffold (so agent undo is `git clean`). Never throws.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { normalizeSlug, type ResultFailure, type ResultSuccess } from '@cybermole/app-kit';
@@ -19,16 +13,13 @@ export interface ScaffoldAppInput {
 }
 
 export type ScaffoldAppData = {
-  /** the derived, stable mount identity (apps-plan §2) */
+  /** stable once created */
   slug: string;
-  /** the tree's absolute path */
+  /** absolute */
   tree: string;
-  /** node_modules per-package links were created (the setup script ran green) */
   linked: boolean;
-  /** the git repo was initialized and the scaffold committed */
   committed: boolean;
-  /** the build loop's next steps, in order (§1) — the answer carries them
-   *  so the model does not have to remember them */
+  /** the loop's next steps, so the model needn't remember them */
   next: string[];
 };
 export type ScaffoldAppErrorCode =
@@ -48,22 +39,15 @@ export type ScaffoldAppFailure = ResultFailure<
 export type ScaffoldAppResult = ScaffoldAppSuccess | ScaffoldAppFailure;
 
 export interface ScaffoldDeps {
-  /** the apps root (env.ts readAppsRoot) */
   appsRoot: string;
-  /** the app-starter template dir shipped in the image */
   templateDir: string;
-  /** runtime/app-agents/AGENTS.md — the operator-manual template (§7) */
   agentTemplateFile: string;
-  /** the cybermole install root (its node_modules is what the links
-   *  point into; its dist-server carries the app MCP shim) */
+  /** node_modules links point into it; its dist-server has the app MCP shim */
   installRoot: string;
-  /** the child runner (injectable; apps-child.runChild is the real one) */
   run: RunChildFn;
 }
 
-/** The values every __APP_*__ / __INSTALL_ROOT__ marker in the template
- *  substitutes to. The markers appear only in text files the template
- *  owns; the walk below substitutes exactly these, nothing else. */
+/** Values for the template's __APP_*__ / __INSTALL_ROOT__ markers. */
 export function templateValues(
   input: ScaffoldAppInput & { slug: string },
   installRoot: string,
@@ -86,19 +70,15 @@ const fail = (errorCode: ScaffoldAppErrorCode, errorMessage: string): ScaffoldAp
   errorMessage,
 });
 
-/** Copy the template and substitute: every text file under the tree gets
- *  the marker values replaced verbatim (a file without markers passes
- *  through byte-identical; the vendored renderer never carries them).
- *  app.json is then COMPOSED (not substituted): JSON needs real quoting,
- *  and an absent description becomes null there — the honest manifest. */
+/** Text files get markers replaced verbatim. app.json is composed rather
+ *  than substituted, since JSON needs real quoting. */
 function writeTree(
   deps: ScaffoldDeps,
   tree: string,
   input: ScaffoldAppInput & { slug: string },
 ): void {
   fs.cpSync(deps.templateDir, tree, { recursive: true });
-  // npm pack drops a .gitignore nested this deep in the install even when
-  // `files` names it, so the template ships it undotted
+  // npm pack drops a deeply nested .gitignore, so the template ships it undotted
   if (fs.existsSync(path.join(tree, 'gitignore'))) {
     fs.renameSync(path.join(tree, 'gitignore'), path.join(tree, '.gitignore'));
   }
@@ -131,10 +111,7 @@ function writeTree(
   );
 }
 
-/** Seed the tree's AGENTS.md from runtime/app-agents/AGENTS.md with the
- *  same marker substitution — the root-agents only-where-absent policy
- *  does not apply here: the scaffold OWNS this file's birth (branch 5's
- *  add_action regenerates its actions section; §7). */
+/** Written unconditionally: the scaffold owns this file's creation. */
 function writeAgentsMd(
   deps: ScaffoldDeps,
   tree: string,
@@ -148,10 +125,7 @@ function writeAgentsMd(
   fs.writeFileSync(path.join(tree, 'AGENTS.md'), text);
 }
 
-/** Scaffold one app tree. Never throws: every failure is a Result. The
- *  git identity is scaffold-local (-c flags — no global config assumed;
- *  the agent's own commits later use whatever identity the tree's owner
- *  configures). */
+/** Git identity is passed with -c, so no global config is assumed. */
 export async function scaffoldApp(
   deps: ScaffoldDeps,
   input: ScaffoldAppInput,
@@ -202,8 +176,7 @@ export async function scaffoldApp(
     return fail('write_failed', `could not write the tree at ${tree}: ${(err as Error).message}`);
   }
 
-  // The per-package node_modules links — the template's own script, run in
-  // the tree (the app can re-run it after an image upgrade; §5).
+  // The template's own script, which the app can re-run after an upgrade.
   try {
     const run = await deps.run('node', ['scripts/setup-node-modules.mjs'], {
       cwd: tree,
@@ -232,7 +205,6 @@ export async function scaffoldApp(
     return { ...fail('links_failed', `the setup script failed: ${(err as Error).message}`), data };
   }
 
-  // The git repo: init + the scaffold commit (agent undo is git clean).
   try {
     const git = (args: string[]): Promise<ChildRun> =>
       deps.run('git', args, { cwd: tree, timeoutMs: 60_000 });

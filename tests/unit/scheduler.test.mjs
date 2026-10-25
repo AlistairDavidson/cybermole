@@ -1,15 +1,7 @@
-// scheduler.test.mjs — the Scheduler's Result families (src/lib/jobs/jobs.ts):
-// one case per error code of saveJob / deleteJob / runJob / listJobs (the
-// form-shape rules saveJob used to check are JobSaveSchema's now —
-// api.test.mjs), and
-// the 40-char job-name regression (runs of long names used to be refused by
-// tmux's 40-char session-name cap), and the tick's run-lifecycle logging
-// (fires, skips a live run, logs its finish) against a fake tmux — the
-// last needs no real tmux: a stand-in script on the child's PATH answers
-// the three commands src/lib/terminals/tmux.ts issues. tmux runs against a private
-// ABSOLUTE-path socket set before the import (tmux.ts binds SOCKET at module
-// load), so nothing here can touch a real cybermole socket — and with no
-// server behind it, opening a run fails with the never-fork guard.
+// The Scheduler's Result families, one case per error code, long job names,
+// and the tick's run-lifecycle logging against a fake tmux. tmux points at a
+// private absolute socket set before the import, so nothing here touches a
+// real one, and with no server behind it a run fails the never-fork guard.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
@@ -25,7 +17,7 @@ const { Scheduler } = await import('../../dist-server/src/lib/jobs/jobs.js');
 const { StateDb } = await import('../../dist-server/src/lib/platform/db.js');
 const { JobSaveSchema } = await import('../../dist-server/src/schemas/jobs.js');
 
-/** saveJob takes what POST /api/jobs parsed with JobSaveSchema. */
+/** What POST /api/jobs parsed with JobSaveSchema. */
 const parsed = input => JobSaveSchema.parse(input);
 
 const haveTmux = (() => {
@@ -47,7 +39,7 @@ function freshScheduler() {
   });
 }
 
-/** A Scheduler whose state db can never open (its parent is a file). */
+/** Its state db can never open (the parent is a file). */
 function brokenScheduler() {
   const file = path.join(fs.mkdtempSync(path.join(dir, 'broken-')), 'not-a-dir');
   fs.writeFileSync(file, '');
@@ -79,8 +71,7 @@ test('saveJob: invalid_schedule (not 5-field cron), database_error', async () =>
   }
   const failed = await brokenScheduler().saveJob(parsed(GOOD));
   assert.equal(failed.errorCode, 'database_error');
-  // saveJob reads the row first now (job_created vs job_updated, plan
-  // §7's events), so a broken db fails on that read.
+  // saveJob reads the row first (created vs updated), so it fails on that read.
   assert.match(failed.errorMessage, /^could not read job: /);
 });
 
@@ -124,7 +115,7 @@ test('runJob: job_not_found; tmux_error (no server behind the socket) still spen
   assert.equal(refused.errorCode, 'tmux_error');
   assert.match(refused.errorMessage, /workspace tmux server not running/);
   assert.equal(fs.existsSync(SOCKET), false, 'the never-fork guard must not start a server');
-  // Recorded first: a failed spawn still counts as the fire.
+  // Recorded first: a failed spawn still spends the fire.
   const listed = await s.listJobs();
   assert.ok(listed.data.jobs[0].last, 'the failed run was recorded');
 });
@@ -134,8 +125,7 @@ test('runJob: database_error when the job cannot be read, or its fire cannot be 
   assert.equal(unread.errorCode, 'database_error');
   assert.match(unread.errorMessage, /^could not read job: /);
 
-  // Reads work, the run bookkeeping write doesn't: the fire is refused
-  // before any spawn (a tmux attempt would answer tmux_error instead).
+  // Reads work but the run write doesn't: refused before any spawn.
   const db = new StateDb(path.join(fs.mkdtempSync(path.join(dir, 'db-')), 'cybermole.db'));
   const s = new Scheduler(db, {
     cwd: dir,
@@ -185,21 +175,17 @@ test(
   },
 );
 
-// ---------- the tick's run lifecycle, against a fake tmux (child) ----------
+// ---------- tick lifecycle, fake tmux, in a child ----------
 //
-// The scheduler's own logger lines (fires, finishes) are asserted in a
-// child process (same reason as logger.test.mjs: capturing this process's
-// stdout would fight node:test's own protocol). The child runs with a
-// stand-in tmux FIRST on its PATH: $FAKE_TMUX_DIR/up marks the tmux server
-// up, $FAKE_TMUX_DIR/sessions lists live session names (new-session appends
-// to it), which is everything list-sessions/has-session/new-session need.
+// In a child so its stdout can be captured without fighting node:test's
+// protocol. Fake tmux: $FAKE_TMUX_DIR/up marks the server up,
+// $FAKE_TMUX_DIR/sessions lists live sessions (new-session appends).
 
 const FAKE_TMUX = `#!/bin/sh
 # Stand-in tmux (written by scheduler.test.mjs): up/sessions files in
 # $FAKE_TMUX_DIR steer it; speaks the commands src/lib/terminals/tmux.ts issues.
-# list-sessions answers the pipe-field -F format tmux.ts actually sends
-# (task/ws-jobs made that matter: the live set drives the finish
-# observation) — the human default format would parse as NO sessions.
+# list-sessions answers the -F format tmux.ts sends; the human default
+# format would parse as no sessions.
 dir="$FAKE_TMUX_DIR"; sessions="$dir/sessions"
 # Created here, not by the test: a missing file would make the read
 # redirection below a fatal error in sh and read as a dead server.
@@ -248,14 +234,12 @@ const s = new Scheduler(db, {
   logDir: path.join(dir, 'job-logs'),
   logMaxBytes: 20 * 1024 * 1024,
 });
-// No process.exit in here: it can truncate the pipe-buffered console
-// output mid-write; exitCode + natural exit lets the lines drain.
+// No process.exit: it can truncate buffered output; exitCode lets it drain.
 (async () => {
   const parse = (o) => JobSaveSchema.parse(o);
   const saved = await s.saveJob(parse({ name: 'nightly', schedule: '* * * * *', command: 'true' }));
   if (!saved.ok) { console.log('CHILD-FAIL saveJob: ' + saved.errorMessage); process.exitCode = 1; return; }
-  // A fire ten minutes ago: the every-minute boundary since is overdue,
-  // so the first tick fires it as a catch-up (deterministically > 2 ticks late).
+  // A fire ten minutes ago: the first tick fires a catch-up (>2 ticks late).
   db.db().prepare('INSERT INTO job_runs (job, fired_at, origin) VALUES (?, ?, ?)')
     .run('nightly', Date.now() - 10 * 60_000, 'schedule');
   fs.writeFileSync(path.join(dir, 'up'), '');      // the workspace tmux server answers
@@ -269,9 +253,8 @@ const s = new Scheduler(db, {
   await s.tick();                                  // live again: skipped + re-armed
   fs.writeFileSync(sessions, '');
   await s.tick();                                  // -> second run finished
-  // The origins of every recorded fire: the seeded 'schedule' row, the
-  // tick's catch-up, the manual run-now — a re-fire while the run was
-  // live would add a fourth.
+  // The seeded row, the catch-up and the manual run; a re-fire while live
+  // would add a fourth.
   console.log('CHILD-RUNS ' + db.db().prepare('SELECT origin FROM job_runs').all()
     .map(r => r.origin).sort().join(','));
 })().catch(e => { console.log('CHILD-FAIL ' + (e && e.stack || e)); process.exitCode = 1; });
@@ -286,8 +269,7 @@ test(
     fs.writeFileSync(fakeTmux, FAKE_TMUX, { mode: 0o755 });
     const child = path.join(fakeDir, 'runs.js');
     fs.writeFileSync(child, RUNS_CHILD);
-    // CYBERMOLE_LOKI_URL/'' — empty counts as unset (compose sets it that way
-    // on a plain `up`): the child's logger is the console-only shape.
+    // Empty counts as unset (compose sets it that way): console-only logging.
     const env = {
       ...process.env,
       PATH: `${fakeDir}:${process.env.PATH}`,
@@ -308,10 +290,8 @@ test(
       /info +\[scheduler\] job nightly fired \(catchup\) — opening run session cybermole-nightly/,
       'the overdue fire is logged',
     );
-    // The run session now opens the plan §9 wrapper, not the bare
-    // command: the exact argv is pinned by jobs.test.mjs; here just the
-    // shape — an outer /bin/sh -c whose script tees to a log file, with
-    // the user command riding as $1 (never string-embedded).
+    // The session runs the wrapper (its argv is pinned in jobs.test.mjs): an
+    // outer sh -c with the command as $1, never embedded.
     assert.match(
       out,
       /info +\[tmux\] tmux session cybermole-nightly started \{"command":"\/bin\/sh -c mkdir -p \\"\$\(dirname/,

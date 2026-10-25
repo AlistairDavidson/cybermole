@@ -1,13 +1,7 @@
-// fake-s3.mjs — a tiny in-memory S3 for the tests: only the calls
-// src/lib/platform/storage.ts makes (path-style HeadBucket, CreateBucket,
-// PutObject, the multipart upload calls, GetObject with one byte range,
-// HeadObject), plus a test-side read-back under /__fake/ (underscores
-// can't start a bucket name, so it never collides). Not an S3
-// implementation: the signature is checked for the right access key, not
-// verified; no listing.
-//
-// Imported by the unit tests (startFakeS3), and run as a process by the
-// e2e suite's webServer list (playwright.config.ts):
+// A tiny in-memory S3 with only the calls storage.ts makes, plus a test
+// read-back under /__fake/ (no bucket name can start with "_"). The
+// signature's access key is checked, not verified. Used by the unit tests
+// (startFakeS3) and run by the e2e webServer list:
 //   node tests/support/fake-s3.mjs <port> <accessKey>
 import * as http from 'node:http';
 import { pathToFileURL } from 'node:url';
@@ -61,9 +55,8 @@ export function startFakeS3({ port = 0, accessKey }) {
   /** @type {Map<string, FakeMultipart>} */
   const multipart = new Map();
   const stats = { creates: 0, aborted: 0, completed: 0, heads: 0, ranges: [] };
-  // Test-set misbehaviour: the next N object/part puts fail 500; gets fail
-  // 500; HeadBucket answers this status; CreateBucket creates but answers
-  // BucketAlreadyOwnedByYou (a lost race); CreateBucket is refused.
+  // Injected faults: failing puts and gets, a HeadBucket status, a
+  // CreateBucket that answers BucketAlreadyOwnedByYou (a lost race), or a refused one.
   const faults = {
     failPuts: 0,
     failGets: false,

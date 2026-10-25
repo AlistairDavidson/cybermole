@@ -1,8 +1,5 @@
-// VERBATIM copy of @awesome.me/astro-lit's server-shim.js except the
-// define-patch at the bottom (see there), with the 'lit-element' import
-// resolution-aliased at build (→ this tree's node_modules links, so it
-// inlines). If a future @awesome.me/astro-lit ships a bundleable
-// renderer, this copy can go.
+// Vendored copy of @awesome.me/astro-lit's server-shim.js, except the
+// define-patch at the bottom. 'lit-element' is aliased at build so it inlines.
 import { customElements as litCE, HTMLElement as litShimHTMLElement } from '@lit-labs/ssr-dom-shim';
 
 // Something at build time injects document.currentScript = undefined instead of
@@ -27,23 +24,16 @@ if (globalThis.HTMLElement) {
 // Lit will try to respect other global DOM shims.
 globalThis.customElements = litCE;
 
-// Reload tolerance (THIS file's one divergence from upstream): the app
-// host re-imports a rebuilt app under a cache-busted URL, and the new
-// module instances re-run their module-level customElements.define calls
-// against this process's ONE registry — a duplicate name would throw and
-// make every rebuild+reload of a wa-* app fail. Patch once (a re-imported
-// shim must not wrap the previous instance's wrapper) and make the patch
-// idempotent: re-defining an already-registered name (the shared stack,
-// rebuilt byte-identically) keeps the registered definition and is a
-// no-op.
+// The one divergence from upstream: the app host re-imports a rebuilt app,
+// re-running its customElements.define calls against the one registry, and a
+// duplicate name would throw. Patch once, and make re-defining a registered
+// name a no-op.
 const PATCHED = Symbol.for('@awesome.me/astro-lit/server-shim:define-patched');
 if (customElements.define[PATCHED] !== true) {
   const litCeDefine = customElements.define;
   const patched = function (tagName, Ctr) {
-    // Keep track of the tagName on the class itself so that we can
-    // transform JSX custom element class definition to a DSD string on
-    // the server, because there is no way to get the tagName from a CE
-    // class otherwise (upstream's reason for this patch).
+    // Upstream's reason for patching: there's no other way to get a CE
+    // class's tagName when rendering it to a DSD string.
     Ctr[Symbol.for('tagName')] = tagName;
     if (customElements.get(tagName) !== undefined) return;
     return litCeDefine.call(this, tagName, Ctr);

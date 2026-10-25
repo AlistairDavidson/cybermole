@@ -1,13 +1,8 @@
 ---
-// SettingsView.astro — the /settings dashboard, rendered from the server's
-// SettingsState (docs/conventions/CODE_STYLE.md §7: server-rendered first). Rendered by
-// the page (src/pages/settings.astro) and by the partial <settings-app>
-// refreshes from (src/pages/partials/settings.astro). Regions marked
-// data-refresh hold plain HTML only — no wa-* elements — so the element
-// can swap them by id without re-hydrating components. `state` is null
-// only for a failed settings_state read (the page and the partial render
-// inside the cybermole server or not at all): the configuration card then
-// carries the reason; the status lines show unknown (…).
+// The /settings dashboard, rendered by the page and by the partial that
+// <settings-app> refreshes from. data-refresh regions hold plain HTML only
+// (no wa-*), so they can be swapped by id without re-hydrating. `state` is
+// null only when the settings read failed.
 import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
@@ -22,8 +17,7 @@ import type { SettingsState } from '../../lib/platform/types';
 
 interface Props {
   state: SettingsState | null;
-  /** why `state` is null — a failed settings_state read (the
-   *  configuration card shows it). */
+  /** why `state` is null */
   error?: string | null;
 }
 const { state, error = null } = Astro.props;
@@ -43,20 +37,13 @@ const rows: Array<[string, string]> = state ? [
 ] : [];
 const au = state?.piAutoUpdate ?? null;
 const iso = (at: number): string => new Date(at).toISOString();
-// Boolean attributes on wa-*: astro-lit renders `x={false}` as x="false"
-// and `x={undefined}` as x="undefined" — PRESENT attributes, i.e. true.
-// Spread the attribute in only when it is on.
+// astro-lit renders `x={false}` and `x={undefined}` as present attributes
+// (i.e. true), so spread boolean attributes in only when on.
 const flag = (name: string, on: boolean): Record<string, true> => (on ? { [name]: true } : {});
 const npmMissing = !state || !state.npmAvailable;
-// Native constraints matching the schema the form validates with in the
-// browser (validation-enhancer-zod — settings-app.ts); the server parses
-// POST /api/settings with the same schema.
 const defaultsValidation = zodSchemaToHTMLAttributes(terminalDefaultsBody);
-// The status line under the form (a data-refresh region — plain text, so
-// the partial swap needs no rehydration): which side of the chain each
-// effective value came from. The same region carries the effective values
-// for <settings-app>'s client-side prefill (wa-input's value is a property,
-// not an attribute — the server-rendered field can't carry it).
+// Which source each effective value came from. Also carries the values for
+// the client-side prefill, since wa-input's value is a property, not an attribute.
 const td = state?.terminalDefaults ?? null;
 const source = (overridden: boolean): string => (overridden ? 'override saved' : 'default');
 ---
@@ -82,16 +69,9 @@ const source = (overridden: boolean): string => (overridden ? 'override saved' :
       <strong class="card-title">terminal defaults</strong>
       <span class="hint">what new terminals run — saved values apply to the next tab, no restart</span>
     </div>
-    <!-- task/defaults-settings: the writable section. The fields prefill
-         with the EFFECTIVE values (resolved db ?? env ?? built-in — what a
-         new tab would actually run, never the raw db value), so a save
-         writes both as typed (pinning a shown default to the db is the
-         accepted cost of the form never lying); an EMPTIED field saves as
-         a clear (the schema normalizes '' to null — the per-field reset;
-         the reset button does both at once). The form is deliberately
-         OUTSIDE the data-refresh regions (wa-* would need rehydrating on
-         swap); <settings-app> re-fills the fields from the region's data
-         below. -->
+    <!-- Fields prefill with the effective values, so a save writes both as
+         shown; an emptied field clears its override. The form sits outside
+         the data-refresh regions since its wa-* would need re-hydrating. -->
     <validation-enhancer-zod>
       <form id="terminal-defaults-form" class="wa-stack wa-gap-s" novalidate>
         <WaField
@@ -109,9 +89,8 @@ const source = (overridden: boolean): string => (overridden ? 'override saved' :
           {...defaultsValidation.shellCommand}
         />
         <div class="wa-cluster wa-gap-2xs">
-          <!-- type=button + onclick→requestSubmit (the jobs-dialog pattern):
-               wa-button is form-associated, and a default-action submit here
-               would race the validated requestSubmit below. -->
+          <!-- type=button: a form-associated default submit would race the
+               validated requestSubmit. -->
           <wa-button id="save-terminal-defaults" type="button" variant="brand" size="s">
             <wa-icon slot="start" name="floppy-disk"></wa-icon>
             save
@@ -179,8 +158,7 @@ const source = (overridden: boolean): string => (overridden ? 'override saved' :
       <p id="npm-missing" data-refresh class={state && !state.npmAvailable ? 'hint' : 'hint hidden'}>
         npm was not found on the server's PATH — updating from here needs npm in the server's environment.
       </p>
-      <!-- Flags the element applies to the controls (the switch and the
-           update button) after a refresh — plain data, no wa-* inside. -->
+      <!-- Flags applied to the controls after a refresh. -->
       <span id="pi-flags" data-refresh hidden
         data-npm-available={state?.npmAvailable ? 'true' : 'false'}
         data-auto-enabled={au?.enabled ? 'true' : 'false'}></span>

@@ -1,5 +1,4 @@
-// DELETE /api/jobs/<name> — drop a job's definition and run history. A
-// live run's tmux session is deliberately left alone (kill it from Live).
+// DELETE leaves a live run's tmux session alone.
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../../lib/web/locals';
 import { invalidJobNameResponse, jobFailureResponse } from '../../../lib/web/responses.service';

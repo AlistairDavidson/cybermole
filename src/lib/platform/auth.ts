@@ -1,14 +1,8 @@
-// auth.ts — single-user login: username + password,
-// salted scrypt hash in the state db (src/lib/platform/db.ts), session tokens
-// persisted there too — as sha256 hashes only (auth_sessions), so a
-// restart doesn't sign everyone out and a copied db holds no usable
-// token. Expiry is two clocks: a sliding idle window renewed on every
-// authed request, plus an absolute cap from login — so a token dies after
-// 7 days unused OR 30 days after it was issued, whichever comes first,
-// even under constant use. No account machinery. Fails closed until a
-// credential row exists (set it with `npm run set-password`), and fails
-// closed on any db read error. Changing the password (setCredential)
-// revokes every session.
+// Single-user login: a salted scrypt hash and sha256-hashed session tokens in
+// the state db, so restarts keep sessions and a copied db holds no usable
+// token. A token dies after 7 days idle or 30 days from login, whichever
+// comes first. Fails closed with no credential or on any db error. Changing
+// the password revokes every session.
 import * as crypto from 'node:crypto';
 import { qb, type StateDb } from './db';
 import {
@@ -24,9 +18,7 @@ import {
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
 const SESSION_TTL_MS = 7 * 24 * 3600 * 1000; // sliding: idle expiry
 const SESSION_ABSOLUTE_MS = 30 * 24 * 3600 * 1000; // hard cap from login
-/** valid() writes a renewed expiry only when it moves at least this far,
- *  so the 15 s polls and every asset GET don't each cost a db write. The
- *  idle window is therefore precise to within this (60 s of 7 days). */
+/** Renewal writes are throttled to this, so the 15 s polls don't each write. */
 const RENEW_WRITE_MS = 60 * 1000;
 
 interface Cred {
@@ -35,24 +27,20 @@ interface Cred {
   hash: string;
 }
 
-/** Session lifetimes, injectable for the unit tests (tests/unit).
- *  Production always uses the constants above — no env knobs. */
+/** Injectable for unit tests; production uses the constants. */
 export interface SessionTtls {
-  /** sliding window: renewed on every authed request */
   idleMs?: number;
-  /** absolute cap from login — bounds a stolen token under constant use */
   absoluteMs?: number;
-  /** renewal-write throttle (RENEW_WRITE_MS); tests pass 0 for exact slides */
+  /** tests pass 0 for exact slides */
   renewWriteMs?: number;
 }
 
-/** One auth_sessions row (src/lib/platform/db.ts). */
 interface SessionRow {
-  /** login time (ms epoch) — the absolute clock's origin */
+  /** login time, ms epoch */
   created_at: number;
-  /** sliding expiry (ms epoch) */
+  /** sliding expiry, ms epoch */
   expires_at: number;
-  /** when a Set-Cookie last (re)armed the browser's Max-Age */
+  /** last Set-Cookie that re-armed the browser's Max-Age */
   cookie_at: number;
 }
 
@@ -64,10 +52,7 @@ export type NewSessionFailure = ResultFailure<
   NewSessionErrorCode
 >;
 
-/** no_session: no cookie, an unknown token, or one dead on either clock
- *  (401 / signed-out). database_error: the session store could not be
- *  read — the caller fails closed WITHOUT claiming the session ended (503
- *  on HTTP and WS upgrades; the WS liveness sweep re-checks next tick). */
+/** database_error: fail closed without claiming the session ended (503, not 401). */
 export type SessionCheckErrorCode = 'no_session' | 'database_error';
 export type SessionCheckData = { token: SessionToken };
 export type SessionCheckSuccess = ResultSuccess<'session_check', SessionCheckData>;
@@ -78,10 +63,8 @@ export type SessionCheckFailure = ResultFailure<
 >;
 export type SessionCheckResult = SessionCheckSuccess | SessionCheckFailure;
 
-/** invalid_credentials: wrong username or password, or no credential set
- *  yet — answered alike (401, which fail2ban counts). database_error: the
- *  credential could not be read (503 — never a 401, so a db hiccup can't
- *  count toward a ban). */
+/** invalid_credentials also covers "no credential set". database_error is
+ *  a 503, never a 401, so a db hiccup can't count toward a fail2ban ban. */
 export type VerifyLoginErrorCode = 'invalid_credentials' | 'database_error';
 export type VerifyLoginData = { username: string };
 export type VerifyLoginSuccess = ResultSuccess<'verify_login', VerifyLoginData>;
@@ -109,7 +92,7 @@ const sessionStoreFailure = (errorMessage: string) =>
 const sessionFound = (token: SessionToken) =>
   ({ ok: true, resultType: 'session_check', data: { token } }) satisfies SessionCheckSuccess;
 
-/** What the db stores for a token: the raw token never touches disk. */
+/** The raw token never touches disk. */
 function tokenHash(token: SessionToken): string {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
@@ -128,7 +111,6 @@ export class Auth {
     this.renewWriteMs = ttls.renewWriteMs ?? RENEW_WRITE_MS;
   }
 
-  /** Is a credential set? (database_read: value true/false.) */
   configured() {
     const cred = this.readCred();
     if (!cred.ok) return cred;
@@ -139,10 +121,7 @@ export class Auth {
     } satisfies DatabaseReadSuccess<boolean>;
   }
 
-  /** The credential row's username — created_by/updated_by for the
-   *  app/workspace/terminal rows (single-user login; value null when no
-   *  credential is set). Read per call, like readCred: a credential
-   *  written after boot is picked up with no restart. */
+  /** For created_by/updated_by; null when no credential is set. */
   username() {
     const cred = this.readCred();
     if (!cred.ok) return cred;
@@ -153,18 +132,14 @@ export class Auth {
     } satisfies DatabaseReadSuccess<string | null>;
   }
 
-  /** Current credential row (value null when unset or malformed). Read
-   *  per attempt, exactly like the old cred file: a credential written
-   *  after boot (set-password, test fixtures) is picked up with no
-   *  restart. An unreadable db is a database_error, not "unset" — callers
-   *  fail closed without calling it a wrong password. */
+  /** Read per attempt, so a credential set after boot works without a
+   *  restart. An unreadable db is database_error, not "unset". */
   private readCred() {
     return databaseRead('could not read the credential', (): Cred | null => {
       const row = this.state.get(
         qb.selectFrom('credential').select(['username', 'salt', 'hash']).where('id', '=', 1),
       );
-      // The columns are TEXT NOT NULL, but sqlite will still keep a blob
-      // in one (a hand-edited db): that reads as malformed, i.e. unset.
+      // A hand-edited db can hold a blob despite TEXT NOT NULL: treat as unset.
       if (
         !row ||
         typeof row.username !== 'string' ||
@@ -176,10 +151,8 @@ export class Auth {
     });
   }
 
-  /** Async scrypt: the hash runs on the libuv threadpool, so login attempts
-   *  never stall the event loop (and every attached terminal with it). The
-   *  hash runs even when the username is wrong — skipping it would make a
-   *  wrong username measurably faster than a wrong password. */
+  /** Async scrypt keeps the event loop free. The hash runs even for a wrong
+   *  username so timing doesn't reveal which was wrong. */
   async verify(username: string, password: string) {
     const data = { username };
     const read = this.readCred();
@@ -215,13 +188,11 @@ export class Auth {
     return { ok: true, resultType: 'verify_login', data } satisfies VerifyLoginSuccess;
   }
 
-  /** Mint a token for a fresh login and persist its hash; purges rows
-   *  dead on either clock while at it (the table stays bounded). */
+  /** Also purges dead rows so the table stays bounded. */
   newSession() {
     const token = asSessionToken(crypto.randomBytes(32).toString('hex'));
     const now = Date.now();
     const saved = databaseUpdate('could not start a session', () => {
-      // dead() in SQL: idle-expired, or created_at + absoluteMs <= now.
       this.state.run(
         qb
           .deleteFrom('auth_sessions')
@@ -249,9 +220,7 @@ export class Auth {
     return { ok: true, resultType: 'new_session', data: { token } } satisfies NewSessionSuccess;
   }
 
-  /** The token's row (value null when unknown). An unreadable session
-   *  store is a database_error — never read as "unknown", which would
-   *  sign people out over a db hiccup. */
+  /** An unreadable store is database_error, never "unknown" (which would sign people out). */
   private row(token: SessionToken) {
     return databaseRead(
       'could not read the session',
@@ -265,12 +234,11 @@ export class Auth {
     );
   }
 
-  /** Expired on either clock — idle, or past the absolute cap from login. */
   private dead(s: SessionRow, now: number): boolean {
     return s.expires_at < now || s.created_at + this.absoluteMs <= now;
   }
 
-  /** Validate a token; sliding renewal on use, bounded by the absolute cap. */
+  /** Slides the idle expiry, bounded by the absolute cap. */
   valid(token: SessionToken | undefined) {
     if (!token) return noSession();
     const found = this.row(token);
@@ -278,15 +246,13 @@ export class Auth {
     const s = found.data.value;
     if (!s) return noSession();
     const now = Date.now();
-    // The purge is best-effort: a dead token is rejected either way.
     if (this.dead(s, now)) {
       this.drop(token);
       return noSession();
     }
     const exp = now + this.idleMs;
     if (exp - s.expires_at >= this.renewWriteMs) {
-      // A failed renewal write only means the token keeps its previous
-      // expiry (it was valid a moment ago); the next request retries.
+      // A failed renewal just keeps the previous expiry; the next request retries.
       databaseUpdate('could not renew the session', () =>
         this.state.run(
           qb
@@ -299,8 +265,7 @@ export class Auth {
     return sessionFound(token);
   }
 
-  /** Sign one token out. A failed delete is reported: the caller must
-   *  not claim the session ended. */
+  /** A failed delete is reported: the caller must not claim the session ended. */
   drop(token: SessionToken | undefined) {
     return databaseUpdate('could not end the session', () =>
       token
@@ -309,13 +274,8 @@ export class Auth {
     );
   }
 
-  /** Validity peek WITHOUT renewal — for liveness sweeps on established
-   *  WS terminals. WS traffic must never slide a token (only authed HTTP
-   *  does, via valid()), so this never extends life; it only reports it.
-   *  A terminal whose token died on either clock — idle, the absolute
-   *  cap, or a logout — is closed by the server's sweep instead of
-   *  riding the WS keepalive forever. Pure peek: a read, never a write
-   *  (the next authed HTTP touch or newSession purge does the deleting). */
+  /** Like valid() but never renews: WS traffic must not slide a token.
+   *  Read-only; used by the WS liveness sweeps. */
   alive(token: SessionToken | undefined) {
     if (!token) return noSession();
     const found = this.row(token);
@@ -325,32 +285,20 @@ export class Auth {
     return sessionFound(token);
   }
 
-  /** 'Log out everywhere': every token dies (their sockets are closed by
-   *  the server route, which owns the connection tracking). */
   dropAll() {
     return databaseUpdate('could not end the sessions', () =>
       this.state.run(qb.deleteFrom('auth_sessions')),
     );
   }
 
-  /** Set-Cookie re-arming the browser cookie's Max-Age, or null when not
-   *  due. The server renews a token on every request but the browser's
-   *  cookie is otherwise fixed at login, so the two clocks drift apart:
-   *  actively used, the browser would forget the cookie after `idleMs`
-   *  while the token lives on. Refreshing on every authed response would
-   *  put a Set-Cookie on nearly everything; instead the /api/state poll
-   *  (every open tab, 15 s) calls this and we only re-arm once half the
-   *  idle window passed since the last Set-Cookie — at most one extra
-   *  header per few days per token, and the cookie can never lag the
-   *  server's sliding window by more than that half.
-   *
-   *  Precondition: only called from /api/state, which sits behind
-   *  auth.valid()'s renewal — the token was just touched. A dead or
-   *  unknown token answers null (no header) rather than a stale one. */
+  /** A Set-Cookie re-arming the browser's Max-Age, or null when not due.
+   *  The server slides the token but the cookie's Max-Age is fixed at
+   *  login, so without this the browser would drop an actively used
+   *  cookie. Called from the /api/state poll; re-arms once half the idle
+   *  window has passed since the last one. */
   cookieRefresh(token: SessionToken | undefined, path = '/'): string | null {
     if (!token) return null;
-    // Can't fail by design: the re-arm is opportunistic, so any failure
-    // (unknown token, unreadable store) just sends no header this poll.
+    // Opportunistic: any failure just sends no header this poll.
     const found = this.row(token);
     if (!found.ok) return null;
     const s = found.data.value;
@@ -358,8 +306,6 @@ export class Auth {
     const now = Date.now();
     if (this.dead(s, now)) return null;
     if (now - s.cookie_at < this.idleMs / 2) return null;
-    // Re-arm only once the new cookie_at is recorded; a failed write sends
-    // no header now and the next poll retries.
     const recorded = databaseUpdate('could not record the cookie refresh', () =>
       this.state.run(
         qb
@@ -378,9 +324,7 @@ export class Auth {
     );
   }
 
-  /** The session token a request carries (its cybermole_session cookie), as
-   *  the brand the session APIs take — the one place a cookie value
-   *  becomes a SessionToken. Whether it is VALID is valid()'s call. */
+  /** The one place a cookie value becomes a SessionToken (not necessarily valid). */
   static sessionToken(cookieHeader: string | undefined): SessionToken | undefined {
     const raw = Auth.parseCookies(cookieHeader).cybermole_session;
     return raw === undefined ? undefined : asSessionToken(raw);
@@ -397,7 +341,7 @@ export class Auth {
   }
 }
 
-/** Tiny per-IP fixed-window limiter. Counters live in memory. */
+/** Per-IP fixed-window limiter, in memory. */
 export class RateLimiter {
   private buckets = new Map<string, { count: number; reset: number }>();
   constructor(
@@ -409,7 +353,7 @@ export class RateLimiter {
     const now = Date.now();
     let b = this.buckets.get(ip);
     if (!b || now > b.reset) {
-      if (b) this.buckets.delete(ip); // re-insert: Map order stays oldest-window-first
+      if (b) this.buckets.delete(ip); // re-insert keeps Map order oldest-first
       b = { count: 0, reset: now + this.windowMs };
       this.buckets.set(ip, b);
       if (this.buckets.size > this.cap) this.evict(now);
@@ -418,8 +362,8 @@ export class RateLimiter {
     b.count++;
     return true;
   }
-  /** Memory cap: drop expired windows, then the oldest ones. Never a bulk
-   *  clear — that would hand every limited IP a fresh budget. */
+  /** Drop expired windows, then the oldest. Never a bulk clear: that would
+   *  give every limited IP a fresh budget. */
   private evict(now: number): void {
     for (const [ip, b] of this.buckets) {
       if (this.buckets.size <= this.cap) return;
@@ -432,12 +376,8 @@ export class RateLimiter {
   }
 }
 
-/** Credential writer used by set-password (and the e2e fixtures). A new
- *  credential revokes every login session in the same transaction —
- *  whoever held the old password is signed out; open terminals close on
- *  the server's next liveness sweep (≤ 30 s). A db failure is a
- *  database_error (the set-password CLI prints it and exits non-zero);
- *  nothing is half-written. */
+/** Revokes every session in the same transaction; open terminals close on
+ *  the next liveness sweep (≤ 30 s). */
 export function setCredential(state: StateDb, username: string, password: string) {
   const salt = crypto.randomBytes(16);
   const hash = crypto.scryptSync(password, salt, SCRYPT.keylen, SCRYPT);
@@ -468,14 +408,13 @@ export function setCredential(state: StateDb, username: string, password: string
       db.exec('COMMIT');
       return written;
     } catch (err) {
-      // Some sqlite errors already ended the transaction; a failing
-      // ROLLBACK then must not mask the error that matters.
+      // Some sqlite errors already ended the transaction; don't let ROLLBACK mask the real error.
       try {
         db.exec('ROLLBACK');
       } catch {
         /* no transaction left */
       }
-      throw err; // to databaseUpdate's boundary catch, as database_error
+      throw err;
     }
   });
 }

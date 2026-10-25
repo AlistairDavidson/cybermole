@@ -1,15 +1,9 @@
-// app-header.ts — <app-header>: the global bar on every signed-in page
-// (AppHeader.astro SSRs it via Base.astro). The section links are real
-// anchors (wa-button with href) and need no JavaScript; the one wired
-// control is sign-out — POST /logout (the verb lives in server/main.ts:
-// session cookie clearing + socket tracking), then follow to /login.
+// <app-header>: the global bar. Links are plain anchors; only sign-out is wired.
 import { BASE } from '../../base';
 import { signedInFetch, type SignedInFetchFailure } from '../signed-in-fetch';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
-/** Minimal typing for <wa-toast>.create() — Base.astro renders the
- *  app-wide stack the failure toast goes to. */
 type WaToast = HTMLElement & {
   create(message: string, options?: Record<string, unknown>): Promise<unknown>;
 };
@@ -31,8 +25,7 @@ export class AppHeader extends HTMLElement {
     location.href = `${BASE}/login`;
   }
 
-  /** A request that got no answer. Signed out needs no toast: the page is
-   *  already on its way to /login. */
+  /** Signed out needs no toast: the page is already heading to /login. */
   private notAnswered(failure: SignedInFetchFailure): void {
     switch (failure.errorCode) {
       case 'signed_out':

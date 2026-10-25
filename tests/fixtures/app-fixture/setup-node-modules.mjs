@@ -1,17 +1,8 @@
 #!/usr/bin/env node
-// setup-node-modules.mjs — create the fixture's node_modules as
-// PER-PACKAGE SYMLINKS into the repo's node_modules (apps-plan §5's
-// resolution shape): the core stack resolves from the image's tree (same
-// versions, zero registry), and an app that later needs an extra
-// installs just that extra ALONGSIDE the links — the core links are
-// untouched. A whole-dir link would be the wrong shape: installing an
-// extra would replace it and orphan the core stack.
-//
-// Node resolves each link to its real path before looking up transitive
-// deps, so astro's vite/rollup/etc. resolve through the repo's
-// node_modules — nothing more is needed. Re-runnable (refreshes links);
-// refuses to overwrite a REAL directory or file sitting where a link
-// belongs (an install that materialized one — see README).
+// Links the fixture's node_modules per package into the repo's, so an app
+// can install extras alongside without orphaning the core (as a whole-dir
+// link would). Transitive deps resolve through the links' real paths.
+// Re-runnable; refuses to overwrite a real directory or file.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,10 +10,8 @@ import { fileURLToPath } from 'node:url';
 const fixtureRoot = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(fixtureRoot, '..', '..', '..');
 
-// The core stack the fixture imports (keep in lockstep with
-// package.json's dependencies — the app's own declaration). The two
-// @lit-labs shims back the vendored SSR renderer (astro.config's alias
-// block) — part of the stack's closure, same resolution shape.
+// Keep in lockstep with package.json's dependencies. The @lit-labs shims
+// back the vendored SSR renderer.
 const PACKAGES = [
   'astro',
   'zod',
@@ -33,7 +22,6 @@ const PACKAGES = [
   '@awesome.me/astro-lit',
   '@awesome.me/webawesome',
 ];
-// The build entry the npm scripts use (astro's bin, via the repo's .bin).
 const BINS = ['astro'];
 
 let failures = 0;
@@ -55,7 +43,7 @@ const place = (name) => {
     return;
   }
   if (existing) fs.rmSync(link); // refresh (retarget after a move)
-  // 'junction' type: Windows needs it; POSIX ignores the type entirely
+  // 'junction' matters on Windows only
   fs.symlinkSync(path.relative(path.dirname(link), target), link, 'junction');
   console.log(`linked ${path.relative(fixtureRoot, link)} -> ${path.relative(fixtureRoot, target)}`);
 };

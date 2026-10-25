@@ -1,11 +1,7 @@
-// app-kit-db.test.mjs — the kit's generic node:sqlite helper
-// (packages/app-kit/src/db/sqlite.ts, extracted from src/lib/platform/db.ts by
-// task/app-kit): a fresh file gets schema+version at open, migrate runs
-// every open (idempotently), a newer file refuses with the caller's label,
-// freshMode lands on the file, FKs are on, and the createQb/SqliteDb pair
-// round-trips rows through the databaseRead/databaseUpdate boundary. The
-// cybermole-state half of the split stays covered by db.test.mjs (the v6
-// upgrade story, unchanged paths).
+// The kit's sqlite helper: schema and version at open, migrate on every open,
+// a newer file refused with the caller's label, freshMode, FKs on, and rows
+// round-tripping through the databaseRead/Update boundary. The state db's
+// own upgrade story is in db.test.mjs.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
@@ -19,7 +15,6 @@ import {
   databaseUpdate,
 } from '../../dist-server/packages/app-kit/src/db/sqlite.js';
 
-// untyped in plain JS — the compiled kit's own types carry the generics
 const qb = createQb();
 
 const SCHEMA = `
@@ -56,9 +51,9 @@ test('a fresh file: schema + version at open, migrate runs, freshMode lands', ()
   assert.equal(userVersion(file), 3);
   assert.equal(migrations, 1);
   assert.equal(fs.statSync(file).mode & 0o777, 0o600);
-  // foreign_keys is ON (never a Node default to rely on)
+  // foreign_keys is on (never relying on Node's default)
   assert.equal(db.db().prepare('PRAGMA foreign_keys').get().foreign_keys, 1);
-  // reopen: idempotent — migrate again, no version move, no throw
+  // reopen is idempotent: migrate runs, the version doesn't move
   new SqliteDb(file, { schema: SCHEMA, migrate: () => migrations++, version: 3 }).db();
   assert.equal(migrations, 2);
   assert.equal(userVersion(file), 3);
@@ -74,7 +69,7 @@ test('a newer file refuses to open, with the caller label in the message', () =>
     () => new SqliteDb(file, { schema: SCHEMA, version: 2, label: 'app db' }).db(),
     /app db .* is schema v9 — newer than this build understands/,
   );
-  // and without a label the generic subject
+  // without a label, the generic subject
   assert.throws(
     () => new SqliteDb(file, { schema: SCHEMA, version: 2 }).db(),
     /database .* is schema v9/,
@@ -95,13 +90,13 @@ test('createQb + SqliteDb: typed round-trip through the boundary Results', async
     db.all(qb.selectFrom('notes').select(['id', 'body'])),
   );
   assert.equal(read.ok, true);
-  // node:sqlite rows carry a null prototype; spread each for deepEqual
+  // node:sqlite rows have a null prototype; spread for deepEqual
   assert.deepEqual(
     read.data.value.map(r => ({ ...r })),
     [{ id: 1, body: 'first' }],
   );
 
-  // the boundary catches a sqlite error as database_error (a bad column)
+  // a sqlite error (bad column) becomes database_error
   const failed = databaseRead('could not read', () =>
     db.all(qb.selectFrom('notes').select('nope')),
   );
@@ -110,29 +105,25 @@ test('createQb + SqliteDb: typed round-trip through the boundary Results', async
   assert.match(failed.errorMessage, /could not read: /);
 });
 
-// The replaced-file latch (task/app-web): the app host's boot discovery
-// legitimately opens the state db at server boot — before the e2e
-// global-setup resets the workspace — so the connection can latch onto a
-// file the reset then replaces. SqliteDb adopts the new file by inode at
-// the next query; a file merely deleted (no replacement) keeps serving
-// the open inode instead of silently adopting a fresh empty one.
+// A connection opened before a file is replaced (e2e's workspace reset)
+// adopts the new file by inode at the next query; a deleted file with no
+// replacement keeps serving the open inode.
 test('a replaced db file is adopted at the next query; a deleted one is not', async () => {
   const file = freshFile('kit-db-replaced-');
   const db = new SqliteDb(file, { schema: SCHEMA, version: 1 });
-  // Prime BOTH halves of the cache: the connection and a prepared statement.
+  // Prime both caches: the connection and a prepared statement.
   db.run(qb.insertInto('notes').values({ id: 1, body: 'original' }));
   assert.equal(db.get(qb.selectFrom('notes').select('body').where('id', '=', 1))?.body, 'original');
 
-  // The reset: a second file is built elsewhere and swapped in (like the
-  // e2e's workspace reset) with a row the old file never had.
+  // Swap in a file built elsewhere, with a row the old one never had.
   const swap = path.join(path.dirname(file), 'swap.db');
   const seeder = new SqliteDb(swap, { schema: SCHEMA, version: 1 });
   seeder.run(qb.insertInto('notes').values({ id: 1, body: 'replacement' }));
   fs.rmSync(file);
   fs.copyFileSync(swap, file);
 
-  // The next query sees the NEW file — the old inode would read 'original'
-  // and fail every write readonly — and writes land on it.
+  // The next query sees the new file (the old inode would read 'original'
+  // and fail writes readonly), and writes land on it.
   assert.equal(
     db.get(qb.selectFrom('notes').select('body').where('id', '=', 1))?.body,
     'replacement',
@@ -143,9 +134,7 @@ test('a replaced db file is adopted at the next query; a deleted one is not', as
   assert.equal(wrote.ok, true);
   assert.equal(db.all(qb.selectFrom('notes').select('id')).length, 2);
 
-  // A deleted file (no replacement): the open connection keeps serving —
-  // reads still answer from the inode it holds; nothing resets to a fresh
-  // empty db behind the caller's back.
+  // Deleted with no replacement: reads still come from the held inode.
   fs.rmSync(file);
   assert.equal(db.get(qb.selectFrom('notes').select('body').where('id', '=', 2))?.body, 'second');
 });

@@ -1,28 +1,13 @@
 #!/usr/bin/env node
-// job-log-appender.ts — plan §8 (docs/plans/jobs-agent-plan.md): the write-time
-// cap on job run logs. The run wrapper (runCommandArgv, src/lib/jobs/jobs.ts)
-// pipes the job's output through this instead of tee:
-//
-//     node job-log-appender.js <logPath> <maxBytes>
-//
-// A capped TEE, not a sink: stdin passes through to stdout (the tmux
-// pane — the console's live run view — must keep showing the output) and
-// is appended to <logPath> until <maxBytes> bytes are written; past the cap
-// further bytes — while stdin KEEPS BEING DRAINED until the job closes
-// it. Never exit before stdin ends: closing the read end early would
-// SIGPIPE the job mid-run, killing it or corrupting the exit code the
-// wrapper captures inside the pipeline (post-run truncation was rejected
-// for the same reason — a chatty or runaway job must not be able to fill
-// the disk while it runs). Plain node, zero deps: it runs as a child of
-// the wrapper, inside the WORKSPACE container's tmux session — both
-// containers of the split ship the same image, so the web side's
-// module-relative path (jobs.ts) is valid where this executes.
+// Capped tee for job run logs: stdin passes through to stdout (the tmux pane
+// the console shows) and is appended to <logPath> up to <maxBytes>, then one
+// marker line. It keeps draining stdin past the cap and never exits early:
+// closing the pipe would SIGPIPE the job and corrupt its captured exit code.
+// Zero deps: it runs inside the workspace container's tmux session.
 import * as fs from 'node:fs';
 
 const USAGE = 'usage: node job-log-appender.js <logPath> <maxBytes>';
 
-/** One line, written once past the cap, so a reader knows the log is a
- *  prefix — and where it stopped. */
 const markerLine = (atBytes: number): Buffer =>
   Buffer.from(`[truncated at ${atBytes} bytes]\n`, 'utf8');
 
@@ -44,9 +29,7 @@ function main(): void {
   const argsOk = logPath !== undefined && maxRaw !== undefined && /^\d+$/.test(maxRaw);
   const maxBytes = argsOk ? Number(maxRaw) : 0;
 
-  // An unopenable log degrades exactly like a failed tee did pre-§8:
-  // the run goes on (output lost, exit file still written by the
-  // wrapper) — so this still never exits before stdin ends.
+  // An unopenable log loses output but the run goes on, so still drain stdin.
   let fd: number | null = null;
   if (!argsOk) {
     process.stderr.write(`job-log-appender: bad arguments — ${USAGE}\n`);
@@ -65,30 +48,23 @@ function main(): void {
   let written = 0;
   let marked = false;
   process.stdin.on('data', (chunk: Buffer) => {
-    // Passthrough FIRST, always, capped or not: this is a capped tee, not
-    // a sink. The pane the tmux session displays (the console's live run
-    // view, /?run=) is this process's stdout — the file cap must never
-    // blank it. A stdout write failure (dead pane) is ignored: the run
-    // goes on, only the file side matters then.
+    // Passthrough first, always: the cap must never blank the pane. A dead
+    // pane's write failure is ignored.
     writeAll(1, chunk);
-    if (fd === null || marked || chunk.length === 0) return; // drain only
+    if (fd === null || marked || chunk.length === 0) return;
     const room = maxBytes - written;
     if (room <= 0) {
-      // Already at the cap and more arrived: mark once, then discard. A
-      // failed marker write (ENOSPC) stops touching the file for good —
-      // never retry it into a partial, garbled marker on a later chunk.
+      // A failed marker write stops touching the file, rather than retry into a garbled marker.
       if (writeAll(fd, markerLine(maxBytes))) marked = true;
       else fd = null;
       return;
     }
     const keep = chunk.subarray(0, room);
     if (!writeAll(fd, keep)) {
-      fd = null; // write failure: no marker, just stop touching the file
+      fd = null;
       return;
     }
     written += keep.length;
-    // A chunk that straddles the cap marks here; a failed marker write
-    // (ENOSPC) stops touching the file for good — same policy as above.
     if (chunk.length > room) {
       if (writeAll(fd, markerLine(maxBytes))) marked = true;
       else fd = null;

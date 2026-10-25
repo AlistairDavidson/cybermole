@@ -1,20 +1,9 @@
-// workspace-sidebar.ts — <workspace-sidebar>: the sidebar AS the app
-// switcher (plan §8): workspaces grouped by app — the Console group
-// (appId null) first, then each app by sort_order — workspace rows (name +
-// live-terminal-count badge), a filter on workspace name, `+ workspace` in
-// each group header, `+ app` at the bottom.
-// Emits: select-workspace {id}, new-workspace {appId}, new-app,
-// delete-workspace {id, name}, delete-app {slug, name} (all bubbling to
-// <console-app>, which owns the dialogs and the API calls).
-// The whole tree re-renders via innerHTML on the 15s state poll (the
-// session-sidebar discipline): the filter input's value/focus/caret is
-// captured before the swap and re-applied after, and no stateful wa-*
-// component lives in here — the filter, badges and row buttons are
-// stateless, re-created by the poll like every other row.
-// Group collapse rides the same discipline: state lives OUTSIDE the DOM
-// (localStorage, one key per app slug), is applied during render so a
-// poll never flickers rows open, and the toggle is a real <button>
-// flipping the DOM in place to what the next render would produce.
+// <workspace-sidebar>: workspaces grouped by app (the console group first),
+// a name filter, and create/delete buttons; everything is emitted to
+// <console-app>. It re-renders via innerHTML on the 15 s poll, so the
+// filter's value, focus and caret are carried across, and no stateful wa-*
+// lives in here. Group collapse state lives in localStorage and is applied
+// at render, so a poll never flickers groups open.
 import type { AppServingState, ConsoleState, WorkspaceState } from '../lib/platform/types';
 import type { WorkspaceId } from '@cybermole/app-kit';
 import { BASE } from '../base';
@@ -24,14 +13,12 @@ import '@awesome.me/webawesome/dist/components/badge/badge.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import { esc } from './html';
 
-/** <wa-input> surface used by this component (it's form-associated). */
 interface WaInputLike extends HTMLElement {
   value: string;
   focus(options?: FocusOptions): void;
   setSelectionRange(start: number, end: number): void;
 }
 
-/** Caret offset inside a <wa-input>'s native input (null if unavailable). */
 function caretOf(el: WaInputLike): number | null {
   const native =
     (el as unknown as { input?: HTMLInputElement }).input ??
@@ -40,24 +27,16 @@ function caretOf(el: WaInputLike): number | null {
   return native ? native.selectionStart : null;
 }
 
-// ---- nav group collapse (task/collapsible-apps) ----
+// ---- group collapse ----
 
-/** localStorage key holding a JSON object of collapsed groups —
- *  `{ "<slug>": true }` — so collapse survives reloads. Keyed by the
- *  app's stable slug; the Console group (appId null) gets the fixed key
- *  below. The in-memory set is the render-time source of truth (a poll
- *  re-render reads it, so collapsed groups never flicker open). */
+/** `{ "<slug>": true }` per collapsed group. */
 const NAV_COLLAPSED_KEY = 'cybermole:nav-collapsed';
-/** The Console group's fixed collapse key (apps use their slug). NB: an
- *  app named "Console" slugs to 'console' too — same collision its
- *  data-group already has on main; both groups then collapse in tandem. */
+/** An app named "Console" shares this key, so the two collapse together. */
 const CONSOLE_GROUP_KEY = 'console';
 
 let collapsedGroups: Set<string> | null = null;
 
-/** Collapsed group keys, read from localStorage once. A corrupt value
- *  reads as empty; a throwaway localStorage (private mode) just means no
- *  remembered collapses — collapsing still works for the session. */
+/** Read once. A corrupt value or unusable storage just means nothing is remembered. */
 function navCollapsed(): Set<string> {
   if (collapsedGroups) return collapsedGroups;
   let stored: unknown = null;
@@ -71,7 +50,6 @@ function navCollapsed(): Set<string> {
   return collapsedGroups;
 }
 
-/** Write a group's collapse through to the set + localStorage. */
 function setGroupCollapsed(key: string, collapsed: boolean): void {
   const groups = navCollapsed();
   if (collapsed) groups.add(key);
@@ -83,7 +61,7 @@ function setGroupCollapsed(key: string, collapsed: boolean): void {
     });
     localStorage.setItem(NAV_COLLAPSED_KEY, JSON.stringify(stored));
   } catch {
-    /* storage unavailable — the session still collapses */
+    /* storage unavailable */
   }
 }
 
@@ -95,7 +73,6 @@ export class WorkspaceSidebar extends HTMLElement {
   render(st: ConsoleState, selected: WorkspaceId | null): void {
     this.selected = selected;
     this.state = st;
-    // Preserve in-progress typing + focus across the 15s poll re-render.
     const prevSearch = this.querySelector('#workspace-search') as WaInputLike | null;
     if (prevSearch) this.search = prevSearch.value;
     const searchFocused = prevSearch !== null && document.activeElement === prevSearch;
@@ -114,9 +91,8 @@ export class WorkspaceSidebar extends HTMLElement {
     if (searchInput) {
       searchInput.value = this.search;
       if (searchFocused) {
-        // Restore focus/caret only after <wa-input>'s first render: its
-        // .focus()/.setSelectionRange() forward to the native input inside
-        // the shadow root, which Lit builds on a microtask.
+        // After wa-input's first render: its focus/selection forward to an
+        // inner input Lit builds on a microtask.
         requestAnimationFrame(() => {
           searchInput.focus();
           if (searchCaret !== null) searchInput.setSelectionRange(searchCaret, searchCaret);
@@ -139,7 +115,6 @@ export class WorkspaceSidebar extends HTMLElement {
     this.wireRows();
   }
 
-  /** One console group (appId null) + one per app, in order. */
   private groups(): string {
     const st = this.state;
     if (!st) return '';
@@ -163,9 +138,6 @@ export class WorkspaceSidebar extends HTMLElement {
     return groups.join('');
   }
 
-  /** A group section: header (collapse chevron, name + `+ workspace` +
-   *  app delete when an app) + its workspace rows (name, live-terminal
-   *  count badge, delete). */
   private group(
     key: string,
     name: string,
@@ -174,19 +146,13 @@ export class WorkspaceSidebar extends HTMLElement {
   ): string {
     const visible = workspaces.filter(w => this.matchesSearch(w));
     if (this.search.trim() && visible.length === 0) return ''; // a filter hides empty groups
-    // Filter interaction: a non-empty filter forces groups open at render
-    // (matches must be visible whatever is collapsed) and never writes the
-    // stored state — clearing the filter restores each group's collapse.
-    // The toggle itself always persists what it shows, so collapsing while
-    // filtering sticks once the filter clears.
+    // A filter forces groups open without touching stored state, so
+    // clearing it restores each group's collapse.
     const collapsed = this.search.trim() === '' && navCollapsed().has(key);
     const rowsId = `ws-group-rows-${key}`;
     const hide = collapsed ? ' hidden' : '';
-    // task/app-web (apps-plan §4): the app group's open link — /apps/<slug>/
-    // in a new tab (the editor tab's target=_blank pattern). A plain <a>
-    // with an icon (no stateful wa-* — the poll discipline): serving=false
-    // (a dead host, or a registered-but-unbuilt tree) only demotes it —
-    // dimmed + the servingReason as its tooltip, still honest to click.
+    // A plain <a> (no stateful wa-*). Not serving only dims it, with the
+    // reason as tooltip; it's still clickable.
     const open = app
       ? `<a class="open-app-btn${app.serving ? '' : ' not-serving'}" ` +
         `href="${BASE}/apps/${esc(app.slug)}/" target="_blank" rel="noopener" ` +
@@ -201,10 +167,7 @@ export class WorkspaceSidebar extends HTMLElement {
     const rows = visible.length
       ? `<ul class="ws-group-rows" id="${rowsId}"${hide}>${visible.map(w => this.row(w)).join('')}</ul>`
       : `<p class="ws-group-rows group-empty" id="${rowsId}"${hide}>no workspaces yet</p>`;
-    // HOOK(task/app-cwd × task/collapsible-apps, resolved at merge): the
-    // app's cwd rides the header's title tooltip (the group's start dir is
-    // discoverable without opening the dialog), on top of the collapse
-    // chevron + actions.
+    // The app's cwd shows in the header's tooltip.
     const title = app
       ? app.cwd
         ? `${app.name} — workspaces start at ${app.cwd}`
@@ -252,15 +215,13 @@ export class WorkspaceSidebar extends HTMLElement {
     );
   }
 
-  /** The plan's locked filter shape (§1/§8): workspace NAME only — a cwd
-   *  match would light up every workspace sharing a root (/tmp/…). */
+  /** Name only: a cwd match would light up every workspace sharing a root. */
   private matchesSearch(w: WorkspaceState): boolean {
     const q = this.search.trim().toLowerCase();
     return !q || w.name.toLowerCase().includes(q);
   }
 
-  /** Re-render just the groups + rewire (keeps the search box's
-   *  focus/caret untouched while typing — only the poll swaps the input). */
+  /** Leaves the filter input alone, so focus and caret survive typing. */
   private updateList(): void {
     const nav = this.querySelector('.nav');
     if (!nav) return;
@@ -269,9 +230,7 @@ export class WorkspaceSidebar extends HTMLElement {
     this.wireRows();
   }
 
-  /** Row + group-header actions — everything the innerHTML re-renders
-   *  (render() AND updateList(): a filter keystroke rebuilds the groups,
-   *  whose headers carry the + workspace buttons). */
+  /** Called after both render() and updateList(). */
   private wireRows(): void {
     this.querySelectorAll<HTMLElement>('[data-toggle-group]').forEach(el => {
       el.onclick = e => {
@@ -279,10 +238,7 @@ export class WorkspaceSidebar extends HTMLElement {
         const key = el.dataset.toggleGroup ?? '';
         const collapsed = !navCollapsed().has(key);
         setGroupCollapsed(key, collapsed);
-        // Flip in place — the exact DOM the next poll render would emit —
-        // so the toggle is instant and keeps focus on the button (no
-        // re-render to lose it to). The chevron rotation follows
-        // aria-expanded in CSS.
+        // Flip in place, exactly as the next render would, so focus stays on the button.
         el.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
         const rows = el.closest('.ws-group')?.querySelector('.ws-group-rows');
         if (collapsed) rows?.setAttribute('hidden', '');
@@ -313,7 +269,7 @@ export class WorkspaceSidebar extends HTMLElement {
     });
     this.querySelectorAll<HTMLElement>('[data-del-ws]').forEach(el => {
       el.onclick = e => {
-        e.stopPropagation(); // the row itself selects; the button deletes
+        e.stopPropagation(); // the row selects; the button deletes
         const w = (this.state?.workspaces ?? []).find(x => x.id === el.dataset.delWs);
         if (w)
           this.dispatchEvent(

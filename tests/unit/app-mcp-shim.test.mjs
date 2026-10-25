@@ -1,14 +1,8 @@
-// app-mcp-shim.test.mjs — task/app-actions (docs/plans/apps-plan.md §6/§10)
-// units: the app's own MCP (server/app-mcp-shim.ts), as a REAL child over
-// stdio (the mcp.test/apps-mcp.test shape) against a stub apps socket:
-// the table→tool translation (a fixture dist/route-table.json → the MCP
-// tool list, names prefix-free, input schemas from the emitted input),
-// the tool call → THE HTTP request the entry names (method, baked base,
-// path interpolation, GET query vs POST body), the app's Result JSON
-// verbatim (domain failures normal results), the lenient preflight
-// (invalid params answered locally, the app never called), and the only
-// isError shapes (the host unreachable, the apps surface off). Plus the
-// boot stops: a missing slug, an unbuilt tree — stderr + exit 1.
+// The per-app MCP shim as a real stdio child against a stub apps socket:
+// table → tools (prefix-free names, emitted schemas), each call → the
+// request its entry names, the app's JSON verbatim, the lenient preflight,
+// the only isError shapes (host unreachable, apps off), and the boot stops
+// (no slug, no build: exit 1).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -26,9 +20,8 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-app-shim-'));
 
 const SLUG = 'shim-app';
 
-/** The fixture emitted table — the two shapes that matter: a GET with a
- *  required query field, and a POST with a path param + body fields
- *  (params+query+body flattened, the binder's emitted shape). */
+/** A GET with a required query field, and a POST with a path param and body
+ *  fields (flattened, as the binder emits them). */
 const TABLE = [
   {
     name: 'ping',
@@ -72,22 +65,20 @@ const TABLE = [
   },
 ];
 
-/** The fixture tree: just the emitted table (that + the env are the
- *  shim's whole world). */
+/** Just the emitted table: that and the env are the shim's world. */
 const appsRoot = path.join(dir, 'apps');
 const tree = path.join(appsRoot, SLUG);
 fs.mkdirSync(path.join(tree, 'dist'), { recursive: true });
 fs.writeFileSync(path.join(tree, 'app.json'), JSON.stringify({ name: 'Shim App' }));
 fs.writeFileSync(path.join(tree, 'dist', 'route-table.json'), JSON.stringify(TABLE, null, 2));
-// a tree with no build — the boot-stop case below reads it.
+// a tree with no build, for the boot-stop case
 fs.mkdirSync(path.join(appsRoot, 'unbuilt-app'), { recursive: true });
 fs.writeFileSync(
   path.join(appsRoot, 'unbuilt-app', 'app.json'),
   JSON.stringify({ name: 'Unbuilt' }),
 );
 
-/** The stub app host: records every request, answers canned JSON per
- *  method+URL (Result JSON bodies, verbatim). */
+/** Records every request, answers canned JSON per method+URL. */
 const seen = [];
 const answerFor = (method, url) => {
   if (method === 'GET' && url === '/apps/shim-app/api/ping?name=unit')
@@ -126,9 +117,8 @@ const host = await new Promise(resolve => {
   server.listen(hostSocket, () => resolve(server));
 });
 
-/** Boot one shim child with this env, spoken to as an MCP client.
- *  Every boot is tracked — a test that throws mid-way still gets its
- *  child closed in after() (a leaked stdio child hangs the run). */
+/** Tracked so a test that throws still gets its child closed (a leaked
+ *  stdio child hangs the run). */
 const clients = [];
 const boot = async env => {
   const client = new Client({ name: 'shim-unit', version: '0' });
@@ -198,14 +188,12 @@ test('a tool call is THE request the entry names — GET query, POST path+body; 
 
 test("domain answers stay normal results: the app's failure JSON verbatim; invalid params answered locally, the app never called", async () => {
   const client = await boot({ CYBERMOLE_APPS_ROOT: appsRoot, CYBERMOLE_APPS_SOCK: hostSocket });
-  // the app's OWN 404 (a path its table has no canned answer for — the
-  // unregistered-app shape through the host) — its failure JSON verbatim.
+  // the app's own 404, verbatim
   const notFound = await call(client, 'note_create', { id: 9, text: 'x' });
   assert.equal(notFound.isError, false, notFound.text);
   assert.deepEqual(JSON.parse(notFound.text), { error: 'no such app', code: 'app_not_mounted' });
-  // the lenient preflight: an emitted schema that missed a path param's
-  // requiredness still cannot fire a broken request — the shim answers
-  // locally, the host is never asked.
+  // A schema that missed a path param's requiredness still can't send a
+  // broken request: the shim answers locally.
   const before = seen.length;
   const local = await call(client, 'loose_delete', { text: 'no id' });
   assert.equal(local.isError, false, local.text);
@@ -259,8 +247,7 @@ test('boot stops loud: a missing slug or an unbuilt tree is stderr + exit 1, not
 });
 
 test.after(() => {
-  // every booted client closed (a leaked stdio child hangs the run),
-  // then the stub host — so the file's process exits clean.
+  // close every client (a leaked child hangs the run), then the stub host
   for (const c of clients) c.close().catch(() => undefined);
   host.close();
 });

@@ -1,12 +1,7 @@
-// app-host-supervisor.test.mjs — task/app-web (apps-plan §3) units: the
-// single-user spawn rule's supervisor, with the spawn function, clocks
-// and logger all injected (no real children). Covers: the initial
-// spawn's command/args/env, child log lines re-logged level-parsed with
-// the winston prefix stripped, crash → restart with doubling backoff
-// (measured as the gaps between spawns), the stable-run reset, stop()'s
-// SIGTERM→exit handshake (idempotent, no restart after), SIGKILL after
-// the grace for a child that ignores SIGTERM, and a pending restart
-// timer cancelled by stop().
+// The app host supervisor with spawn, clocks and logger injected: spawn
+// args and env, child log lines re-logged at their level, crash restarts
+// with doubling backoff and the stable-run reset, stop()'s SIGTERM handshake,
+// SIGKILL after the grace, and stop() cancelling a pending restart.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -24,9 +19,7 @@ function fakeLogger() {
   };
 }
 
-/** A fake ChildProcess: an EventEmitter with the surface the supervisor
- *  touches. exit() is fired by the test (a real SIGTERM-ignoring child
- *  just never exits — kill only RECORDS signals; SIGKILL auto-exits). */
+/** kill only records signals (SIGKILL auto-exits); the test fires exit(). */
 function fakeChild(pid) {
   const c = new EventEmitter();
   c.pid = pid;
@@ -63,8 +56,7 @@ function harness(deps = {}) {
   return { handle, log, spawns };
 }
 
-/** stop() + the exit the real child would send on SIGTERM (the fake's
- *  kill only records signals — the test fires the exit by hand). */
+/** stop(), plus the exit a real child would send on SIGTERM. */
 async function stopWithExit(handle, spawns) {
   const stopped = handle.stop();
   spawns[spawns.length - 1].child.emit('exit', 0, 'SIGTERM');
@@ -108,7 +100,7 @@ test('child stdout/stderr lines re-logged level-parsed, the winston prefix strip
 
 test('a crashed child restarts with doubling backoff (gaps ≈ 10ms, 20ms, 40ms)', async () => {
   const { handle, spawns } = harness();
-  // Kill quickly three times; the gaps between spawns are the delays.
+  // Three quick crashes; the gaps between spawns are the delays.
   spawns[0].child.emit('exit', 1, null);
   await sleep(25);
   spawns[1].child.emit('exit', 1, null);
@@ -127,11 +119,11 @@ test('a crashed child restarts with doubling backoff (gaps ≈ 10ms, 20ms, 40ms)
 
 test('a stable run resets the backoff: after living ≥ stableMs, the next crash waits the base delay', async () => {
   const { handle, spawns } = harness({ restartDelayMs: 10, stableMs: 60 });
-  // One quick crash to double the delay (10 → 20)…
+  // One quick crash doubles the delay (10 → 20)…
   spawns[0].child.emit('exit', 1, null);
   await sleep(30);
   assert.equal(handle.starts, 2);
-  // …then a child that lives long enough to count as stable.
+  // …then a child lives long enough to count as stable.
   await sleep(70);
   spawns[1].child.emit('exit', 1, null);
   await sleep(19); // base delay 10 would fire by now; the doubled 40 would not
@@ -170,17 +162,15 @@ test('a restart scheduled before stop() is cancelled', async () => {
 });
 
 test("a failed spawn ('error', never 'exit') is a death: logged, restarted with backoff, and stop() resolves", async () => {
-  // Node emits 'error' (+'close') but NOT 'exit' when spawn() itself fails
-  // (EMFILE, ENOENT) — the supervisor must treat it like a crash, or it
-  // would never restart and a later stop() would wedge on the exit that
-  // never comes.
+  // A failed spawn emits 'error' but not 'exit'; it must count as a crash,
+  // or nothing restarts and stop() waits forever.
   const { handle, log, spawns } = harness({ restartDelayMs: 15 });
   spawns[0].child.emit('error', new Error('spawn EMFILE'));
   assert.ok(log.lines.some(([lvl, m]) => lvl === 'error' && m.includes('EMFILE')));
   assert.equal(handle.pid, null, 'the failed child is no longer current');
   await sleep(40); // the backoff restart fires (no exit event ever came)
   assert.equal(handle.starts, 2, 'the failed spawn restarted');
-  // And stop() resolves on the SECOND child's real exit — no wedge.
+  // stop() resolves on the second child's exit.
   await stopWithExit(handle, spawns);
 });
 

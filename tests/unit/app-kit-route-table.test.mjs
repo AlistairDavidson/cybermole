@@ -1,15 +1,6 @@
-// app-kit-route-table.test.mjs — the kit's route-table binder
-// (packages/app-kit/src/route-table.ts + route-table-emit.ts,
-// docs/plans/apps-plan.md §5/§10): one small table bound to every face —
-// (a) the HTTP glue (match, zod parse, handler, Result→status; unknown
-//     route 404, wrong method 405, binder-own input failures, a thrown
-//     handler, basePath stripping),
-// (b) MCP tool shapes (names, descriptions, the flattened JSON-schema
-//     input via the documented zod subset),
-// (c) the typed client (params interpolation, query, JSON body, Result
-//     passthrough, transport failures),
-// (d) serializeRouteTable + writeRouteTable (the dist/route-table.json
-//     artifact).
+// The kit's route-table binder, one small table bound to every face: (a) the
+// HTTP glue (404/405, input failures, a throwing handler, basePath), (b) MCP
+// tool shapes, (c) the typed client, (d) the emitted table.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -27,7 +18,7 @@ import {
 } from '../../dist-server/packages/app-kit/src/route-table.js';
 import { writeRouteTable } from '../../dist-server/packages/app-kit/src/route-table-emit.js';
 
-// The fixture table: a notes app's three actions, one per shape.
+// A notes app's three actions, one per shape.
 const noteCreate = defineRoute({
   name: 'note_create',
   description: 'creates one note',
@@ -101,7 +92,7 @@ const table = [noteCreate, noteGet, noteList, throwing];
 const call = (entry, input) => entry.handler(input);
 const json = async res => ({ status: res.status, body: await res.json() });
 
-// ---------- (a) the HTTP face ----------
+// ---------- (a) HTTP ----------
 
 test('handleApiRequest: success answers the Result verbatim at the entry status', async () => {
   const res = await handleApiRequest(
@@ -256,7 +247,7 @@ test('zodToJSONSchema: the documented subset — nullable, union, array, record,
   assert.deepEqual(num, { type: 'number', minimum: 0, maximum: 10 });
 });
 
-// ---------- (c) the typed client ----------
+// ---------- (c) typed client ----------
 
 test('createRouteClient: interpolates params, sends query and JSON body, returns the Result JSON', async () => {
   const calls = [];
@@ -304,7 +295,7 @@ test('createRouteClient: network failure and non-JSON answers are transport_erro
   assert.match(notJson.errorMessage, /non-JSON answer \(status 502\)/);
 });
 
-// ---------- (d) the emitted table ----------
+// ---------- (d) emitted table ----------
 
 test('serializeRouteTable: name, method, path, description, input per entry', () => {
   const serialized = serializeRouteTable(table);
@@ -334,8 +325,7 @@ test('writeRouteTable: writes pretty JSON (dir created) that round-trips', () =>
 });
 
 test('defineRoute: the fixture handlers still run directly (the table stays plain data)', async () => {
-  // the binder never wraps handlers: the entries a client or tool shape
-  // describe are callable as-is
+  // the binder never wraps handlers: entries are callable as-is
   assert.equal(
     (await call(noteGet, { params: { id: 7 }, query: undefined, body: undefined })).ok,
     true,

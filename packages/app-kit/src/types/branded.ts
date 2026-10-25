@@ -1,29 +1,23 @@
-// branded.ts — nominal types for the IDs that cross module boundaries
-// (docs/conventions/CODE_STYLE.md §4). A bare string is not accepted where one is
-// expected. Untrusted input gets its brand from the validating schemas in
-// schemas/ids.ts (the kit's); the as*() casts are for trusted sources only
-// (pi's own session files, tmux output, a token the server minted, the
-// state db).
-// Moved from src/types/branded.ts by task/app-kit (docs/plans/apps-plan.md §5)
-// — unchanged apart from the move.
+// Nominal types for IDs that cross module boundaries. Untrusted input gets
+// its brand from the schemas in schemas/ids.ts; the as*() casts are for
+// trusted sources only (tmux output, server-minted tokens, the state db).
 declare const __brand: unique symbol;
 type Brand<T, B extends string> = T & { readonly [__brand]: B };
 
-/** A tmux session name on the app's socket. */
 export type TmuxSessionName = Brand<string, 'TmuxSessionName'>;
-/** A scheduled job's (normalized) name. */
+/** normalized */
 export type JobName = Brand<string, 'JobName'>;
-/** A login session token (the cybermole_session cookie value). */
+/** the cybermole_session cookie value */
 export type SessionToken = Brand<string, 'SessionToken'>;
-/** An app row's id (uuid v4) — the workspace-grouping container (src/lib/apps.ts). */
+/** uuid v4 */
 export type AppId = Brand<string, 'AppId'>;
-/** An app's slug ([a-z0-9][a-z0-9-]{0,39}) — its stable URL identity. */
+/** stable URL identity */
 export type AppSlug = Brand<string, 'AppSlug'>;
-/** A workspace row's id (uuid v4) — a cwd + terminal tabs (src/lib/workspaces.ts). */
+/** uuid v4 */
 export type WorkspaceId = Brand<string, 'WorkspaceId'>;
-/** A terminal row's id (uuid v4) — one terminal tab = one tmux session. */
+/** uuid v4; one terminal tab = one tmux session */
 export type TerminalId = Brand<string, 'TerminalId'>;
-/** An object's key in the storage bucket (src/lib/storage.ts). */
+/** uploads/<uuid> */
 export type ObjectKey = Brand<string, 'ObjectKey'>;
 
 export function asTmuxSessionName(value: string): TmuxSessionName {

@@ -1,10 +1,7 @@
-// GET /api/files/<key> — download a file POST /api/files stored (key =
-// uploads/<uuid>, as that answered). Streams from object storage; always
-// served as an attachment (downloadHeaders in responses.service.ts has
-// the why). Resumable: a single-range Range header (with If-Range) is
-// passed through to S3 — 206 with Content-Range, 416 past the end.
-// HEAD has its own handler: Astro would otherwise run GET and drop its
-// body unread, leaving an S3 download open per HEAD.
+// GET /api/files/<key>: streams a stored file from object storage, always as
+// an attachment. A single Range (with If-Range) passes through for resumes.
+// HEAD has its own handler: Astro would otherwise run GET and leave an S3
+// download open per HEAD.
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../../lib/web/locals';
 import { parseRangeRequest } from '../../../lib/web/parsing.service';

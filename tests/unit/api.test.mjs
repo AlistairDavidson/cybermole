@@ -1,8 +1,6 @@
-// api.test.mjs — request-body schemas for the JSON endpoints
-// (src/schemas/api.ts): shape-level acceptance and the exact parse outputs
-// the handlers consume, and the 400 text a failure renders as
-// (parseZod → firstIssueText, src/lib/web). Domain rules that stay with the domain code (job-name
-// regex, cron schedules in jobs.ts) are covered by jobs.test.mjs, not here.
+// Request-body schemas: what each accepts, the parsed outputs handlers get,
+// and the 400 text a failure renders. Domain rules (cron validity) live in
+// jobs.test.mjs.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -25,7 +23,6 @@ import { JobSaveSchema } from '../../dist-server/src/schemas/jobs.js';
 import { parseZod } from '../../dist-server/src/lib/web/parsing.service.js';
 import { firstIssueText } from '../../dist-server/packages/app-kit/src/web/responses.service.js';
 
-/** The one-line 400 text a failed body renders as. */
 const issueText = (schema, v) => {
   const r = parseZod(v, schema);
   assert.equal(r.ok, false, JSON.stringify(v));
@@ -44,7 +41,7 @@ test('loginBody: string username + password, extra keys stripped', () => {
     username: 'u',
     password: 'p',
   });
-  // empty strings are strings — verify() decides those, not the schema
+  // empty strings are strings: verify() decides those
   assert.equal(ok(loginBody, { username: '', password: '' }), true);
   for (const bad of [
     {},
@@ -74,12 +71,12 @@ test('JobSaveSchema: normalizes the name, trims, and names each failing field', 
     parse(JobSaveSchema, { name: 'x'.repeat(40), schedule: 's', command: 'c' }).name,
     'x'.repeat(40),
   );
-  // the cron *validity* is saveJob's (cron-parser stays server-side)
+  // cron validity is saveJob's
   assert.equal(ok(JobSaveSchema, { name: 'n', schedule: 'daily 08:00', command: 'true' }), true);
   const cases = [
     [{ name: '!!!', schedule: 's', command: 'c' }, 'name: name is required'],
     [{ name: 'cybermole-x', schedule: 's', command: 'c' }, /^name: use letters/],
-    // too long as typed: rejected, never silently cut to 40
+    // too long as typed: rejected, never cut to 40
     [{ name: 'x'.repeat(41), schedule: 's', command: 'c' }, 'name: name is too long (max 40)'],
     [{ name: 'n', schedule: '  ', command: 'c' }, 'schedule: schedule is required'],
     [{ name: 'n', schedule: 'x'.repeat(121), command: 'c' }, /^schedule: schedule is too long/],
@@ -97,7 +94,7 @@ test('JobSaveSchema: normalizes the name, trims, and names each failing field', 
 });
 
 test('jobValidateBody: one string', () => {
-  // validate: '' passes — checkCron reports 'schedule is required' with a 200
+  // '' passes: checkCron answers 'schedule is required' with a 200
   assert.deepEqual(parse(jobValidateBody, { schedule: '' }), { schedule: '' });
   assert.equal(ok(jobValidateBody, {}), false);
   assert.equal(ok(jobValidateBody, { schedule: 5 }), false);
@@ -120,7 +117,7 @@ test('updatePiBody: dryRun defaults false; only booleans pass', () => {
   assert.deepEqual(parse(updatePiBody, {}), { dryRun: false });
   assert.deepEqual(parse(updatePiBody, { dryRun: true }), { dryRun: true });
   assert.deepEqual(parse(updatePiBody, { dryRun: false }), { dryRun: false });
-  // a truthy non-boolean used to fall through to a REAL update — now a 400
+  // a truthy non-boolean is a 400, never a real update
   for (const bad of [{ dryRun: 1 }, { dryRun: 'true' }, { dryRun: null }, { dryRun: [] }]) {
     assert.equal(ok(updatePiBody, bad), false, JSON.stringify(bad));
   }
@@ -138,7 +135,7 @@ test('a failed body renders "field: message" (the 400 text)', () => {
   assert.match(issueText(appCreateBody, { name: 5 }), /^name: /);
 });
 
-// ---------- the console dialogs' forms (task/ws-console, plan §8) ----------
+// ---------- console dialog forms ----------
 
 test('appForm: trimmed non-empty name capped at 80; optional cwd — empty passes (an empty wa-input is null, parsed as "")', () => {
   assert.deepEqual(parse(appForm, { name: '  My App! ' }), { name: 'My App!' });
@@ -155,9 +152,9 @@ test('appForm: trimmed non-empty name capped at 80; optional cwd — empty passe
   }
 });
 
-test('workspaceForm: name only (task/app-cwd — no folder setting; the dialog shows the derived start dir as a hint)', () => {
+test('workspaceForm: name only (the dialog shows the derived start dir as a hint)', () => {
   assert.deepEqual(parse(workspaceForm, { name: ' scratch ' }), { name: 'scratch' });
-  // a cwd key is stripped, never honored — the server derives the dir
+  // a cwd key is stripped: the server derives the dir
   assert.deepEqual(parse(workspaceForm, { name: 'scratch', cwd: '/workspace' }), {
     name: 'scratch',
   });
@@ -171,9 +168,9 @@ test('workspaceForm: name only (task/app-cwd — no folder setting; the dialog s
   }
 });
 
-// ---------- workspaces-plan §6 bodies (task/ws-schema) ----------
+// ---------- apps / workspaces / terminals bodies ----------
 
-test('appCreateBody: any string name (the domain slugs it); cwd optional (task/app-cwd); over-longs are named 400s', () => {
+test('appCreateBody: any string name (the domain slugs it); cwd optional; over-longs are named 400s', () => {
   assert.deepEqual(parse(appCreateBody, { name: '  My App!' }), { name: '  My App!' });
   assert.deepEqual(parse(appCreateBody, { name: '' }), { name: '' }); // emptiness is the domain's call
   assert.deepEqual(parse(appCreateBody, { name: 'x', cwd: '/srv/app' }), {
@@ -204,7 +201,7 @@ test('appPatchBody: name optional; cwd per terminalPatchBody (absent keeps, null
   assert.deepEqual(parse(appPatchBody, {}), {});
   assert.deepEqual(parse(appPatchBody, { name: 'New' }), { name: 'New' });
   assert.deepEqual(parse(appPatchBody, { cwd: '/srv/app' }), { cwd: '/srv/app' });
-  assert.deepEqual(parse(appPatchBody, { cwd: null }), { cwd: null }); // null clears (task/app-cwd)
+  assert.deepEqual(parse(appPatchBody, { cwd: null }), { cwd: null }); // null clears
   assert.equal(ok(appPatchBody, { name: 5 }), false);
   assert.equal(ok(appPatchBody, { cwd: 5 }), false);
   assert.equal(
@@ -214,10 +211,10 @@ test('appPatchBody: name optional; cwd per terminalPatchBody (absent keeps, null
   assert.equal(issueText(appPatchBody, { cwd: 'x'.repeat(4097) }), 'cwd: cwd is too long');
 });
 
-test('workspaceCreateBody: appId null/absent/uuid v4; name required; NO cwd (task/app-cwd — the server derives it, an app carries it)', () => {
+test('workspaceCreateBody: appId null/absent/uuid v4; name required; no cwd (the server derives it)', () => {
   const ID = '123e4567-e89b-42d3-a456-426614174000';
   assert.deepEqual(parse(workspaceCreateBody, { name: 'scratch' }), { name: 'scratch' });
-  // a cwd on the wire is stripped, never honored — the create derives it
+  // a cwd is stripped: the create derives it
   assert.deepEqual(parse(workspaceCreateBody, { appId: null, name: 'x', cwd: '/tmp', junk: 1 }), {
     appId: null,
     name: 'x',
@@ -258,7 +255,7 @@ test('terminalPatchBody: non-empty string, null (clear), or absent (no-op); empt
   }
 });
 
-test('JobSaveSchema now accepts an optional appId tag (stored by task/ws-jobs)', () => {
+test('JobSaveSchema now accepts an optional appId tag', () => {
   const ID = '123e4567-e89b-42d3-a456-426614174000';
   assert.deepEqual(
     parse(JobSaveSchema, { name: 'n', schedule: 's', command: 'c' }).appId,
@@ -276,8 +273,7 @@ test('JobSaveSchema now accepts an optional appId tag (stored by task/ws-jobs)',
 });
 
 test('terminalDefaultsBody: string sets, null/empty clears (validation-enhancer feeds "" for an emptied wa-input), absent keeps; too long/multiline are 400s', () => {
-  // task/defaults-settings — the /settings form's schema, shared with
-  // POST /api/settings.
+  // the /settings form's schema, shared with POST /api/settings
   assert.deepEqual(parse(terminalDefaultsBody, { shellCommand: '  zsh -l  ' }), {
     shellCommand: 'zsh -l',
   }); // trimmed, sets

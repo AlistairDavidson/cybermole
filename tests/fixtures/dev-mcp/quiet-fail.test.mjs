@@ -1,8 +1,5 @@
-// quiet-fail.test.mjs — the failing quiet-reporter smoke fixture: one
-// passing test, one failing with a distinctive assertion message, so the
-// smoke test can assert the failure entry carries the REAL error text (the
-// whole reason the reporter is a programmatic runner and not a --test-reporter
-// module, whose IPC strips Error messages).
+// One pass and one failure with a distinctive message, so the smoke test can
+// check the failure entry carries the real error text.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 

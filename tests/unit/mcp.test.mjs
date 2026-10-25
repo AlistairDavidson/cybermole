@@ -1,17 +1,9 @@
-// mcp.test.mjs — task/jobs-mcp (docs/plans/jobs-agent-plan.md §6) units: the
-// jobs MCP server as a REAL child process over stdio (node
-// dist-server/server/mcp.js, CYBERMOLE_SOCK pointed at a real internal API
-// booted in-process on a tmp socket — the internal-api.test.mjs world +
-// its fake-tmux stand-in), spoken to with the SDK's client: the
-// initialize handshake, tools/list (the full tool set, the input schemas
-// rendered from the same zod definitions the API validates with), one
-// happy call + one failure-code call per tool — asserting the tool text
-// carries the internal API's Result JSON verbatim (its `code` field is
-// the vocabulary; no second MCP result set) — and the transport failures
-// (socket gone, CYBERMOLE_SOCK empty). The Content-Length discipline is
-// asserted from the far side: every body the tools send is lengthed, so
-// no request is refused 411 — an oversized body answers the 413
-// body_too_large code that only a DECLARED over-cap length produces.
+// The jobs MCP server as a real stdio child (dist-server/server/mcp.js)
+// against an in-process internal API on a tmp socket: the handshake,
+// tools/list, a happy and a failure call per tool (tool text is the API's
+// JSON verbatim), and transport failures. Every body the tools send is
+// lengthed, so nothing gets 411; an oversized one gets the 413 only a
+// declared length produces.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -37,9 +29,7 @@ const { Apps } = await import('../../dist-server/src/lib/apps/apps.js');
 
 const MCP_CHILD = fileURLToPath(new URL('../../dist-server/server/mcp.js', import.meta.url));
 
-// The jobs-runs stand-in tmux (internal-api.test.mjs's, kill-session
-// included — the run/kill verbs need it): $dir/up marks the server up,
-// $dir/sessions lists live session names.
+// Fake tmux: $dir/up marks the server up, $dir/sessions lists live sessions.
 const FAKE_TMUX = `#!/bin/sh
 dir="$FAKE_TMUX_DIR"; sessions="$dir/sessions"
 [ -e "$sessions" ] || : > "$sessions"
@@ -71,8 +61,7 @@ esac
 `;
 fs.writeFileSync(path.join(fakeBin, 'tmux'), FAKE_TMUX, { mode: 0o755 });
 
-/** The app domain over a db (light deps: apps.ts needs no tmux for
- *  reads). */
+/** Reads need no tmux. */
 function appsFor(db) {
   return new Apps({
     db,
@@ -81,10 +70,8 @@ function appsFor(db) {
   });
 }
 
-/** One case's world: fresh db + scheduler + apps domain + the API booted
- *  on its own socket (the fake tmux server up from the start, no live
- *  sessions) + an MCP child over that socket, SDK client connected (the
- *  initialize handshake is connect()'s own work). */
+/** Fresh db, scheduler, apps domain, the API on its own socket (fake tmux
+ *  up, no sessions), and a connected MCP client. */
 async function boot() {
   const root = fs.mkdtempSync(path.join(dir, 'case-'));
   const logDir = path.join(root, 'job-logs');
@@ -106,9 +93,7 @@ async function boot() {
   return { root, logDir, db, scheduler, apps, api, socketPath, client };
 }
 
-/** An MCP child pointed at a world whose APPS db is broken (jobs verbs
- *  fine — apps_list's database_error code is the one failure its family
- *  has). */
+/** The apps db is broken; jobs verbs are fine. */
 async function bootBrokenApps() {
   const root = fs.mkdtempSync(path.join(dir, 'broken-apps-'));
   const notADir = path.join(root, 'not-a-dir');
@@ -135,9 +120,7 @@ async function bootBrokenApps() {
   return { api, socketPath, client };
 }
 
-/** One tool call: the concatenated text content plus the isError flag.
- *  A domain failure comes back a normal result (isError false) — the
- *  API's Result JSON is the answer. */
+/** A domain failure is a normal result (isError false). */
 async function call(client, name, args = {}) {
   const r = await client.callTool({ name, arguments: args });
   assert.ok(Array.isArray(r.content) && r.content.length > 0, `${name}: text content`);
@@ -145,8 +128,7 @@ async function call(client, name, args = {}) {
   return { isError: r.isError === true, text: r.content.map(b => b.text).join('') };
 }
 
-/** A call whose text must be the API's JSON answer (success or failure —
- *  the body is the assertion's either way). */
+/** The text must be the API's JSON (success or failure). */
 async function callJson(client, name, args) {
   const { isError, text } = await call(client, name, args);
   let json;
@@ -160,12 +142,12 @@ async function callJson(client, name, args) {
 
 const GOOD = { name: 'nightly', schedule: '0 4 * * *', command: 'echo hello' };
 
-// ---------- the handshake + the tool set ----------
+// ---------- handshake + tool set ----------
 
 test('initialize handshake + tools/list: the full tool set, schemas from the shared definitions', async () => {
   const w = await boot();
   try {
-    // connect() did the MCP initialize; the server's identity rode it back
+    // connect() did the initialize; the server's identity came back with it
     assert.deepEqual(w.client.getServerVersion(), {
       name: 'cybermole-jobs',
       version: '0.1.0',
@@ -183,29 +165,25 @@ test('initialize handshake + tools/list: the full tool set, schemas from the sha
       'jobs_set',
       'jobs_validate',
     ]);
-    // Every tool documents itself — the descriptions are the agent-facing
-    // docs (there is no --help round-trip here; §6: the tool IS the doc).
+    // Every tool has a description: they're the agent-facing docs.
     for (const t of tools) {
       assert.ok(typeof t.description === 'string' && t.description.length > 20, t.name);
     }
-    // The input schemas are the SAME zod definitions the internal API
-    // validates with (src/schemas/*): the wire contract an agent sees in
-    // tools/list is the rule the server enforces.
+    // Input schemas are the same zod definitions the API validates with.
     const create = tools.find(t => t.name === 'jobs_create');
     assert.deepEqual(create.inputSchema.required, ['name', 'schedule', 'command']);
     assert.equal(create.inputSchema.properties.name.maxLength, 40); // MAX_JOB_NAME
     assert.equal(create.inputSchema.properties.command.maxLength, 4000); // MAX_COMMAND
-    // jobs_list's app filter is OPTIONAL (no required array at all)
+    // the app filter is optional (no required array)
     const list = tools.find(t => t.name === 'jobs_list');
     assert.equal(list.inputSchema.required, undefined);
     assert.equal(list.inputSchema.properties.app.pattern, '^[a-z0-9][a-z0-9\\-]{0,39}$');
-    // the run id: a JSON number (jobs_runs' firedAt) or its digit-string
+    // a JSON number or a digit string
     const kill = tools.find(t => t.name === 'jobs_kill');
     assert.deepEqual(kill.inputSchema.properties.firedAt.anyOf, [
       { type: 'number' },
       { type: 'string', pattern: '^\\d{1,15}$' },
     ]);
-    // the zero-argument picker
     assert.deepEqual(tools.find(t => t.name === 'apps_list').inputSchema.properties, {});
   } finally {
     await w.client.close();
@@ -213,7 +191,7 @@ test('initialize handshake + tools/list: the full tool set, schemas from the sha
   }
 });
 
-// ---------- the read verbs ----------
+// ---------- read verbs ----------
 
 test('jobs_list + apps_list: the API JSON verbatim; the app filter and its app_not_found', async () => {
   const w = await boot();
@@ -243,7 +221,7 @@ test('jobs_list + apps_list: the API JSON verbatim; the app filter and its app_n
     assert.equal(filtered.json.jobs[0].name, 'rebuild');
     assert.equal(filtered.json.jobs[0].appName, 'Deploy Tools');
 
-    // an unknown slug is the 404 ANSWER (never an empty list, plan §4)
+    // an unknown slug is a 404, never an empty list
     const unknown = await callJson(w.client, 'jobs_list', { app: 'no-such-app' });
     assert.equal(unknown.isError, false); // the API's answer, not a tool error
     assert.equal(unknown.json.code, 'app_not_found');
@@ -265,8 +243,7 @@ test('apps_list: a broken apps db answers the family database_error code', async
     const r = await callJson(w.client, 'apps_list', {});
     assert.equal(r.isError, false);
     assert.equal(r.json.code, 'database_error');
-    // the jobs surface on the same world still answers (the failure is
-    // the apps family's, not the transport's)
+    // the jobs surface still answers: the failure is the apps family's
     const jobs = await callJson(w.client, 'jobs_list', {});
     assert.equal(jobs.isError, false);
     assert.deepEqual(jobs.json.jobs, []);
@@ -276,7 +253,7 @@ test('apps_list: a broken apps db answers the family database_error code', async
   }
 });
 
-// ---------- the write verbs ----------
+// ---------- write verbs ----------
 
 test('jobs_create: the browser save body; invalid_schedule carries the code', async () => {
   const w = await boot();
@@ -354,7 +331,7 @@ test('jobs_run_now: the session answer; run_active while the previous run lives'
     const run = await callJson(w.client, 'jobs_run_now', { name: 'nightly' });
     assert.deepEqual(run.json, { name: 'nightly', session: 'cybermole-nightly' });
 
-    // the fake tmux session is live → the 409 answer, the plan's no-pile-up rule
+    // the session is live → 409
     const busy = await callJson(w.client, 'jobs_run_now', { name: 'nightly' });
     assert.equal(busy.isError, false);
     assert.equal(busy.json.code, 'run_active');
@@ -372,7 +349,6 @@ test('jobs_runs / jobs_log / jobs_kill: the run lifecycle over the tools', async
 
     const empty = await callJson(w.client, 'jobs_runs', { name: 'nightly' });
     assert.deepEqual(empty.json, { runs: [] });
-    // the failure code path: a job that doesn't exist
     const noJob = await callJson(w.client, 'jobs_runs', { name: 'ghost' });
     assert.equal(noJob.isError, false);
     assert.equal(noJob.json.code, 'job_not_found');
@@ -384,7 +360,7 @@ test('jobs_runs / jobs_log / jobs_kill: the run lifecycle over the tools', async
     assert.equal(origin, 'manual');
     assert.equal(hasLog, false);
 
-    // the log the wrapper would have written, read back through the tool
+    // a log as the wrapper would write it, read back through the tool
     const paths = runLogPaths(w.logDir, 'nightly', firedAt);
     fs.mkdirSync(path.dirname(paths.log), { recursive: true });
     fs.writeFileSync(paths.log, 'line one\nline two\n');
@@ -395,7 +371,7 @@ test('jobs_runs / jobs_log / jobs_kill: the run lifecycle over the tools', async
     const noRun = await callJson(w.client, 'jobs_log', { name: 'nightly', firedAt: 123 });
     assert.equal(noRun.json.code, 'run_not_found');
 
-    // the firedAt as the digit STRING the routes take — same run
+    // the same run by its digit-string firedAt
     const logString = await call(w.client, 'jobs_log', {
       name: 'nightly',
       firedAt: String(firedAt),
@@ -409,7 +385,7 @@ test('jobs_runs / jobs_log / jobs_kill: the run lifecycle over the tools', async
     const noSuchRun = await callJson(w.client, 'jobs_kill', { name: 'nightly', firedAt: 123 });
     assert.equal(noSuchRun.json.code, 'run_not_found');
 
-    // a second run can start now; the runs history kept both
+    // a second run can start; the history kept both
     await callJson(w.client, 'jobs_run_now', { name: 'nightly' });
     assert.equal((await callJson(w.client, 'jobs_runs', { name: 'nightly' })).json.runs.length, 2);
   } finally {
@@ -435,17 +411,13 @@ test('jobs_validate: invalid values are answers; nothing sent is the API 400', a
     assert.ok(bad.json.schedule.error.length > 0);
     assert.equal(bad.json.command.valid, false);
 
-    // {} passes the tool's loose shape on purpose: the API's
-    // validation_failure is validate's one real failure code (the refine
-    // is the schema's ROOT-level rule — its issue rides under '')
+    // {} passes the tool's loose shape; the API's root-level refine answers
+    // validation_failure (issue under '').
     const nothing = await callJson(w.client, 'jobs_validate', {});
     assert.equal(nothing.json.code, 'validation_failure');
     assert.equal(nothing.json.issues[''], 'nothing to validate — send schedule and/or command');
 
-    // a candidate OVER the 10 KiB body cap reaches the API too (the
-    // validate inputs are raw by design — invalid values are for the
-    // API to judge): the API answers its own 413 body_too_large code,
-    // never a tool-boundary rejection
+    // An over-cap candidate reaches the API, which answers its own 413.
     const oversized = await callJson(w.client, 'jobs_validate', {
       command: 'x'.repeat(11 * 1024),
     });
@@ -457,19 +429,14 @@ test('jobs_validate: invalid values are answers; nothing sent is the API 400', a
   }
 });
 
-// ---------- the Content-Length discipline (plan §6's protocol note) ----------
+// ---------- Content-Length ----------
 
 test('the Content-Length discipline: lengthed bodies reach the cap check, never 411', async () => {
   const w = await boot();
   try {
-    // A body-carrying request WITHOUT Content-Length is refused 411 before
-    // a byte is read (internal-api.ts bodyCapStatus). Every body the MCP
-    // client sends is lengthed. A >10 KiB body answers the API's 413
-    // body_too_large — the answer ONLY a declared over-cap length can
-    // produce (asserted at the transport here, and THROUGH a tool in the
-    // jobs_validate test — its raw candidate strings are the one tool
-    // input that can exceed the cap; jobs_create/jobs_set cap their
-    // fields far below it):
+    // A body without Content-Length gets 411 before a byte is read. A >10 KiB
+    // body answering 413 proves the length was declared (validate's raw
+    // strings are the one tool input that can exceed the cap).
     const big = await requestInternalApi(w.socketPath, {
       method: 'POST',
       path: '/jobs',
@@ -482,8 +449,7 @@ test('the Content-Length discipline: lengthed bodies reach the cap check, never 
     assert.equal(big.status, 413);
     assert.equal(JSON.parse(big.body).code, 'body_too_large');
 
-    // every ordinary body-carrying tool call in this suite answers the
-    // domain codes asserted above — a 411 would have failed them all
+    // Every other body-carrying call answered its domain codes; a 411 would have failed them.
     const happy = await callJson(w.client, 'jobs_create', GOOD);
     assert.deepEqual(happy.json, { name: 'nightly', session: null });
   } finally {
@@ -492,7 +458,7 @@ test('the Content-Length discipline: lengthed bodies reach the cap check, never 
   }
 });
 
-// ---------- the transport failures (the only isError results) ----------
+// ---------- transport failures (the only isError results) ----------
 
 test('the socket gone: the tool answers an isError transport message', async () => {
   const w = await boot();
@@ -508,7 +474,7 @@ test('the socket gone: the tool answers an isError transport message', async () 
 });
 
 test('CYBERMOLE_SOCK empty: every tool answers the clear disabled error', async () => {
-  // no world needed — the server is up with the listener off (§3)
+  // the server is up with the listener off
   const client = new Client({ name: 'mcp-unit', version: '0' });
   await client.connect(
     new StdioClientTransport({
@@ -533,8 +499,7 @@ test('CYBERMOLE_SOCK empty: every tool answers the clear disabled error', async 
 });
 
 test('a bad CYBERMOLE_SOCK stops the MCP server at boot, like the web server', async () => {
-  // env.ts's absolute-path rule (§3): the same operator-wiring-mistake
-  // stance main.ts takes — stderr + exit 1, never a silent no-tools serve
+  // A non-absolute value: stderr and exit 1, never a silent no-tools server.
   const child = spawn(process.execPath, [MCP_CHILD], {
     env: { ...process.env, CYBERMOLE_SOCK: 'cybermole.sock' },
     stdio: ['ignore', 'ignore', 'pipe'],
@@ -548,14 +513,13 @@ test('a bad CYBERMOLE_SOCK stops the MCP server at boot, like the web server', a
   assert.match(stderr, /CYBERMOLE_SOCK="cybermole.sock" must be an absolute socket path/);
 });
 
-// ---------- the input contract ----------
+// ---------- input contract ----------
 
 test('the input contract: a value the shared schema rejects never leaves the client', async () => {
   const w = await boot();
   try {
-    // 'cybermole-…' is reserved for run sessions (JobNameSchema/JobSaveSchema's
-    // name rule) — the SAME definition the API validates with rejects it
-    // at the tool boundary, with the rule's own text, not a new vocabulary
+    // 'cybermole-…' is reserved for run sessions; the API's own schema
+    // rejects it at the tool boundary, with its own text.
     const r = await call(w.client, 'jobs_delete', { name: 'cybermole-x' });
     assert.equal(r.isError, true);
     assert.match(r.text, /invalid job name/);
@@ -567,7 +531,7 @@ test('the input contract: a value the shared schema rejects never leaves the cli
     });
     assert.equal(create.isError, true);
     assert.match(create.text, /use letters, digits, - and _/);
-    // and nothing landed in the API's store
+    // nothing landed in the store
     assert.deepEqual((await callJson(w.client, 'jobs_list', {})).json.jobs, []);
   } finally {
     await w.client.close();

@@ -1,10 +1,7 @@
-// THE route table — this app's single source of truth (apps-plan §2/§5):
-// every action is ONE entry here, and the kit's binder gives it every
-// face at once — the HTTP route (src/pages/api/[...path].ts), the typed
-// client the UI uses (src/islands), the MCP shim's tools and
-// dist/route-table.json (describe/call) — same Result JSON everywhere.
-// Add an action by adding an entry (and its logic under src/lib, its UI,
-// its test); `npm run check` stays the gate.
+// The route table: each action is one entry, and the kit binds it to the
+// HTTP route, the islands' typed client, the MCP shim and
+// dist/route-table.json. Add an action by adding an entry (plus its logic
+// under src/lib, its UI and its test); `npm run check` is the gate.
 import { z } from 'zod';
 import { defineRoute, type RouteTable } from '@cybermole/app-kit/route-table';
 import { pingResult } from './lib/ping';

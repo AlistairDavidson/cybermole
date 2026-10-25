@@ -1,8 +1,4 @@
-// The note_edit action's logic — the merge half of the notes family,
-// grown from the add_action stub (and hand-flipped to PATCH — add_action
-// generates GET/POST; the finished table owns its methods). Any of
-// title/body/tags, merged into the note; what is not provided stands.
-// Runtime-kit-free (types only) and node-free — plain-node testable.
+// note_edit: merge any of title/body/tags into a note; unprovided fields stand.
 import type { ResultFailure, ResultSuccess } from '@cybermole/app-kit';
 import { BODY_MAX, TITLE_MAX, rowToNote, storeOp, validateTags, type Note, type NotesStore } from './notes-core.ts';
 
@@ -31,10 +27,8 @@ const fail = (errorCode: NoteEditErrorCode, errorMessage: string): NoteEditFailu
   errorMessage,
 });
 
-/** Edit one note: validate each PROVIDED field, merge, stamp updatedAt.
- *  An edit may not blank the title (clear the body with "" if you want
- *  it empty — an empty-string title is the one edit that makes no
- *  sense); an empty patch is refused rather than silently no-opping. */
+/** The title can't be blanked (clear the body with "" instead), and an
+ *  empty patch is refused rather than silently doing nothing. */
 export function noteEditResult(store: NotesStore, id: number, patch: NoteEditPatch): NoteEditResult {
   const current = storeOp('could not read the note', () => store.findById(id));
   if (!current.ok) return fail('database_error', current.why);

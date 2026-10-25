@@ -1,11 +1,6 @@
-// terminal-defaults.test.mjs — the resolution chains (task/defaults-settings,
-// src/lib/terminals/terminal-defaults.ts): db override → env → built-in for both the
-// shell and the agent command, the whitespace split, and the save family's
-// every error code (database_error). The env side is pinned by importing
-// AFTER process.env is set (node:test runs each file in its own process —
-// RAW_ENV is computed once, at env.ts's module load), and the agent's
-// built-in pi fallback is the pure defaultAgentCommand (env.ts — the fs
-// probe injected, like internalSocketDefault). Runs against dist-server.
+// The command resolution chains (db override → env → built-in), the
+// whitespace split, and the save family's error code. process.env is set
+// before the import, since RAW_ENV is read at env.ts's load.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -40,12 +35,12 @@ function brokenDb() {
   return new StateDb(path.join(file, 'cybermole.db'));
 }
 
-// ---------- the pure chain ----------
+// ---------- pure chain ----------
 
 test('resolveCommand: a stored override wins, else the env value', () => {
   assert.equal(resolveCommand(null, ENV_SHELL), ENV_SHELL);
   assert.equal(resolveCommand('/db/override', ENV_SHELL), '/db/override');
-  // the env value is the chain's tail — it already carries the built-in
+  // the env value is the tail and already carries the built-in
   assert.equal(resolveCommand(null, 'pi'), 'pi');
 });
 
@@ -67,12 +62,12 @@ test('splitCommandLine: the spawner semantics, identical to the old CYBERMOLE_CO
 test("defaultAgentCommand (env.ts): the vendored pi binary when the install has one, else 'pi' on PATH", () => {
   assert.equal(defaultAgentCommand('/app/node_modules/.bin/pi', true), '/app/node_modules/.bin/pi');
   assert.equal(defaultAgentCommand('/app/node_modules/.bin/pi', false), 'pi');
-  // this repo vendors pi, so the shipped built-in is the absolute PI_BIN
+  // this repo vendors pi, so the built-in is the absolute PI_BIN
   if (fs.existsSync(PI_BIN))
     assert.equal(defaultAgentCommand(PI_BIN, fs.existsSync(PI_BIN)), PI_BIN);
 });
 
-// ---------- the db-backed chain (env pinned above) ----------
+// ---------- db-backed chain ----------
 
 test('terminalDefaults / resolved*: unset db → the env values, no overrides flagged', () => {
   const db = freshDb();
@@ -103,7 +98,7 @@ test('resolved*: a db override wins over the env value (the whole point)', async
 
 test('saveTerminalDefaults: null clears back to the env chain, absent keeps, the answer is the effective pair', async () => {
   const db = freshDb();
-  // absent keeps: a one-field save leaves the other untouched
+  // absent keeps
   const onlyAgent = saveTerminalDefaults(db, { agentCommand: '/db/agent' });
   assert.equal(onlyAgent.ok, true);
   assert.deepEqual(onlyAgent.data, {
@@ -112,7 +107,7 @@ test('saveTerminalDefaults: null clears back to the env chain, absent keeps, the
     agentOverridden: true,
     shellOverridden: false,
   });
-  // null clears: the override row is GONE (unset), not an empty string
+  // null deletes the row, rather than storing ''
   saveTerminalDefaults(db, { shellCommand: '/db/shell' });
   const cleared = saveTerminalDefaults(db, { shellCommand: null });
   assert.deepEqual(cleared.data, {
@@ -121,7 +116,7 @@ test('saveTerminalDefaults: null clears back to the env chain, absent keeps, the
     agentOverridden: true,
     shellOverridden: false,
   });
-  // clearing an unset override is a no-op that still succeeds
+  // clearing an unset override still succeeds
   assert.equal(saveTerminalDefaults(db, { shellCommand: null }).ok, true);
 });
 
@@ -140,7 +135,7 @@ test('a corrupt settings row reads as unset (data we wrote, never a db failure)'
   });
 });
 
-// ---------- the families' every error code ----------
+// ---------- error codes ----------
 
 test('terminal_defaults / save_terminal_defaults: database_error on an unreadable db', async () => {
   assert.equal(terminalDefaults(brokenDb()).errorCode, 'database_error');

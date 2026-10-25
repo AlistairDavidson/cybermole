@@ -1,19 +1,9 @@
 #!/usr/bin/env node
-// set-password.ts — set/replace the single login credential.
-// Interactive:
-//   npm run set-password   (or: node dist-server/server/set-password.js)
-// Piped:  printf 'user\npass\npass\n' | node dist-server/server/set-password.js
-// Seed:   printf 'user\npass\npass\n' | node dist-server/server/set-password.js --if-unset
-//   — dev's first-boot credential (compose seeds test/test): same piped
-//   input, but a no-op (exit 0, silent) when a credential row already
-//   exists, so a password the user set later survives every container
-//   recreate. The ≥8-char minimum deliberately does NOT apply in this one
-//   mode: the guard exists to catch a human's typo at a prompt, while the
-//   seeder's input is a reviewed literal in compose.yaml — and login
-//   itself (auth.ts verify) enforces no length at all.
-// Logging: plain console.* on purpose (no src/lib/platform/logger.ts) — this is a
-// one-shot CLI for a human at a terminal; wiring it to the winston logger
-// would timestamp/format an interactive prompt's own output.
+// Set or replace the single login credential (interactive or piped:
+// printf 'user\npass\npass\n' | node dist-server/server/set-password.js).
+// --if-unset: no-op when a credential exists (dev's first-boot seed). It skips
+// the 8-char minimum, which only guards human typos; login enforces none.
+// Plain console.* on purpose: this is interactive CLI output.
 import * as readline from 'node:readline';
 import { Auth, setCredential } from '../src/lib/platform/auth';
 import { StateDb } from '../src/lib/platform/db';
@@ -21,8 +11,7 @@ import { ENV } from '../src/lib/platform/env';
 
 const stateDb = new StateDb(ENV.CYBERMOLE_DB_FILE);
 
-// Interactive prompt (TTY): prompt printed BEFORE muting output (else the
-// prompt itself is swallowed and it looks hung — fixed 2026-09-30).
+// Print the prompt before muting output, or the prompt is swallowed too.
 function askInteractive(
   out: NodeJS.WriteStream,
   rl: readline.Interface,
@@ -48,8 +37,7 @@ function askInteractive(
   });
 }
 
-// Piped mode: read all stdin lines up front (sequential rl.question() races
-// when a pipe delivers every line in one chunk).
+// Read all lines up front: sequential rl.question() races when a pipe delivers them in one chunk.
 function readPiped(): Promise<string[]> {
   return new Promise(resolve => {
     const lines: string[] = [];
@@ -70,10 +58,7 @@ function readPiped(): Promise<string[]> {
 }
 
 void (async (): Promise<void> => {
-  // The seed mode (see the header): checked before the input validation
-  // below — an existing credential is a no-op whatever came in on stdin,
-  // and a db that can't be READ is an error, never "unset" (fail-closed,
-  // the same line auth.ts draws).
+  // An unreadable db is an error, never "unset".
   const ifUnset = process.argv.includes('--if-unset');
   let username: string, pw: string, pw2: string;
   if (process.stdin.isTTY) {

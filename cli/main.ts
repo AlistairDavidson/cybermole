@@ -1,19 +1,11 @@
 #!/usr/bin/env node
-// main.ts — the `cybermole-cli` bin (task/jobs-cli, docs/plans/jobs-agent-plan.md §5):
-// the agent/human-facing surface over the server's internal jobs API.
-// A thin dispatcher — group → verb → the socket client layer — plus the
-// top-level help; the verb logic and its documentation live in jobs.ts.
-// The bin sits beside `cybermole` (the server) and `cybermole-set-password` in
-// package.json and ships in the same image, so it runs in BOTH
-// containers of the split — the workspace side is its whole point.
-// Runs with zero new runtime deps (node:http over the unix socket).
+// The `cybermole-cli` bin: dispatches to verb groups (jobs.ts) over the
+// internal API. Ships in the same image as the server, so it runs on both
+// sides of the split; the workspace side is the point.
 import { consoleOutput, type Output } from './output';
 import { jobsGroupHelp, runJobsCommand } from './jobs';
-// plan §6: `cybermole-cli mcp` runs the stdio jobs MCP server (server/mcp.ts).
-// Imported, never re-executed: mcp.ts's self-guard runs only when IT is
-// argv[1] — the runtime/pi-agent-dir/ template registers the same server via the absolute
-// `node /opt/cybermole/dist-server/server/mcp.js` form (PATH-independent);
-// this subcommand is the dev-shape convenience.
+// `cybermole-cli mcp` runs the jobs MCP server in-process (the pi template
+// registers mcp.js directly; this is the dev convenience).
 import { main as runMcpServer } from '../server/mcp';
 
 const TOP_HELP = `cybermole-cli — the cybermole command line
@@ -56,10 +48,7 @@ Examples:
   cybermole-cli jobs log nightly 1736395200000
   cybermole-cli jobs kill nightly 1736395200000`;
 
-/** Run one command line (argv without node/bin). Never throws — every
- *  failure is a printed message and an exit code. Importable (unit
- *  tests drive verbs in-process); the bin entry point is the guard
- *  below. */
+/** argv without node/bin. Never throws. */
 export async function runCli(argv: string[], io: Output): Promise<number> {
   const [group, ...rest] = argv;
   if (group === undefined || group === '-h' || group === '--help') {
@@ -74,8 +63,7 @@ export async function runCli(argv: string[], io: Output): Promise<number> {
     return runJobsCommand(rest, io);
   }
   if (group === 'mcp') {
-    // The MCP server runs over stdio until its client disconnects;
-    // runMcpServer never throws (its own catch sets process.exitCode).
+    // Runs over stdio until the client disconnects; never throws.
     await runMcpServer();
     return process.exitCode === 1 ? 1 : 0;
   }
@@ -87,8 +75,7 @@ export async function runCli(argv: string[], io: Output): Promise<number> {
   return 2;
 }
 
-// The bin entry: run only when executed, so importing this module (unit
-// tests, the MCP subcommand of plan §6) never triggers a command.
+// Only when executed, so importing (unit tests) never runs a command.
 if (require.main === module) {
   runCli(process.argv.slice(2), consoleOutput())
     .then(exitCode => {

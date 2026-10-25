@@ -1,8 +1,5 @@
-// internal-api-client.test.mjs — task/app-host units for the shared
-// HTTP-over-unix-socket client (src/lib/platform/internal-api-client.ts): real
-// verbs against a bootInternalApi fixture (internal-api.test.mjs's
-// pattern), plus the transport-failure and timeout contracts every
-// consumer (the app host's discovery, later mcp.ts) relies on.
+// The shared HTTP-over-unix-socket client: real verbs against an internal API
+// fixture, plus the transport-failure and timeout contracts.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as http from 'node:http';
@@ -21,8 +18,7 @@ const { Apps } = await import('../../dist-server/src/lib/apps/apps.js');
 const { requestInternalApi } =
   await import('../../dist-server/src/lib/platform/internal-api-client.js');
 
-/** The lightest internal-API fixture the verbs need: a db, a scheduler
- *  (jobs verbs) and the apps domain over it. */
+/** A db, a scheduler and the apps domain: enough for the verbs. */
 async function boot() {
   const root = fs.mkdtempSync(path.join(dir, 'case-'));
   const db = new StateDb(path.join(root, 'cybermole.db'));
@@ -98,8 +94,7 @@ test('transport failure: nothing answering on the socket rejects (ENOENT/ECONNRE
       return code === 'ENOENT' || code === 'ECONNREFUSED';
     },
   );
-  // a stale socket FILE (a dead server's leftover) is the boot race the
-  // app host's retry loop rides over — same rejection shape
+  // a stale socket file (the app host's boot race): the same rejection
   const stale = path.join(fs.mkdtempSync(path.join(dir, 'stale-')), 'cybermole.sock');
   fs.writeFileSync(stale, '');
   await assert.rejects(requestInternalApi(stale, { method: 'GET', path: '/apps' }), err =>

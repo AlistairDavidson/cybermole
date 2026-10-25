@@ -1,10 +1,6 @@
-// sw-bypass.test.mjs — public/sw.js's fetch handler must SKIP editor/
-// exactly like api/ and partials/ (plan §8): the editor's asset paths are
-// unhashed, so stale-while-revalidate would serve MIXED-VERSION workbench
-// assets after an editor upgrade, authed editor content would stay cached
-// beyond logout, and the offline shell would render inside the iframe.
-// Loads the real service worker file in a vm with stubbed self/caches and
-// drives its registered fetch listener directly.
+// sw.js must bypass editor/ like api/ and partials/: unhashed editor assets
+// would mix versions after an upgrade, and authed content would outlive
+// logout. Loads the real file in a vm and drives its fetch listener.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -20,7 +16,6 @@ const SW_PATH = path.join(
   'sw.js',
 );
 
-/** The registered listeners of sw.js run in a sandboxed realm. */
 function loadServiceWorker(scopeUrl) {
   const listeners = {};
   const cache = { put: async () => {} };
@@ -51,8 +46,7 @@ function loadServiceWorker(scopeUrl) {
   return listeners;
 }
 
-/** Fire the fetch event for a request; true iff any listener claimed it
- *  with respondWith (false = bypassed: straight to the network). */
+/** true if a listener called respondWith; false means bypassed. */
 async function swHandles(listeners, url, method = 'GET') {
   const claims = [];
   const event = {
@@ -69,7 +63,7 @@ async function swHandles(listeners, url, method = 'GET') {
 
 test('sw.js: editor/ is never served from the cache (mixed-version assets, authed content, offline shell)', async () => {
   const sw = loadServiceWorker('http://127.0.0.1:4000/');
-  // the workbench HTML and its unhashed assets, under the app's base
+  // the workbench HTML and its assets, under the base
   assert.equal(await swHandles(sw, 'http://127.0.0.1:4000/editor/'), false, 'workbench HTML');
   assert.equal(
     await swHandles(sw, 'http://127.0.0.1:4000/editor/?folder=%2Fworkspace'),
@@ -91,7 +85,7 @@ test('sw.js: editor/ is never served from the cache (mixed-version assets, authe
     ),
     false,
   );
-  // the bypass holds under a CYBERMOLE_BASE mount too
+  // under a CYBERMOLE_BASE mount too
   const swBase = loadServiceWorker('http://127.0.0.1:4000/foo/');
   assert.equal(
     await swHandles(
@@ -104,7 +98,7 @@ test('sw.js: editor/ is never served from the cache (mixed-version assets, authe
 
 test('sw.js: the other paths keep their established behavior', async () => {
   const sw = loadServiceWorker('http://127.0.0.1:4000/');
-  // still bypassed: live data routes
+  // live data routes are bypassed
   assert.equal(await swHandles(sw, 'http://127.0.0.1:4000/api/state'), false);
   assert.equal(await swHandles(sw, 'http://127.0.0.1:4000/partials/jobs-list'), false);
   assert.equal(
@@ -112,11 +106,11 @@ test('sw.js: the other paths keep their established behavior', async () => {
     false,
     'path outside bypass shape but api/',
   );
-  // still handled: hashed assets (cache-first) and navigations (network-first)
+  // hashed assets (cache-first) and navigations (network-first) are handled
   assert.equal(await swHandles(sw, 'http://127.0.0.1:4000/_astro/chunk-abc123.js'), true);
   assert.equal(await swHandles(sw, 'http://127.0.0.1:4000/jobs', 'GET'), true, 'navigate');
-  // non-GET never touches the handler's cache paths
+  // non-GET never reaches the cache paths
   assert.equal(await swHandles(sw, 'http://127.0.0.1:4000/editor/stable-8072/x', 'POST'), false);
-  // a cross-origin request is not ours to handle
+  // cross-origin isn't ours
   assert.equal(await swHandles(sw, 'https://open-vsx.org/vscode/gallery'), false);
 });

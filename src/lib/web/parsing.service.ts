@@ -1,10 +1,5 @@
-// parsing.service.ts — request parsing + zod validation as Results (from
-// soothing-booking's src/services/web/parsing.service.ts, with its
-// failure-to-errors fallthrough and ValidationResult alias fixed). API
-// routes call parseAndValidateAPIRequest; failures map to responses with
-// failureResponse (responses.service.ts). Imports `zod`, not `astro/zod`:
-// this module is also compiled by the plain-tsc server build (and unit-
-// tested there).
+// Request parsing and zod validation as Results. Imports `zod`, not
+// `astro/zod`: the plain-tsc server build compiles this too.
 import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { Busboy, type BusboyFileStream, type BusboyInstance } from '@fastify/busboy';
@@ -45,7 +40,6 @@ export type FileUploadErrorCode =
 export type FileUploadFailure = ResultFailure<'file_upload', ParsedUpload, FileUploadErrorCode>;
 export type FileUploadResult = FileUploadSuccess | FileUploadFailure;
 
-/** Basic Request Parsers **/
 export async function parseAPIRequest<DataType extends object>(request: Request) {
   const contentType = request.headers.get('content-type') ?? '';
 
@@ -119,8 +113,6 @@ export async function parseForm<DataType extends object>(request: Request) {
   }
 }
 
-/** Request parsers with Zod validation */
-
 export async function parseAndValidateFormPost<DataType extends object>(
   request: Request,
   schema: ZodType<DataType>,
@@ -155,8 +147,7 @@ export type ParseAndValidateAPIRequestResult<DataType extends object> = Awaited<
   ReturnType<typeof parseAndValidateAPIRequest<DataType>>
 >;
 
-/** Validate a value against a schema: per-field issues (first issue per
- *  field, keyed by its dotted path; "" for the root) on failure. */
+/** First issue per field, keyed by dotted path ("" for the root). */
 export function parseZod<DataType extends object>(data: unknown, schema: z.ZodType<DataType>) {
   const zodSafeParseResult = schema.safeParse(data);
 
@@ -183,8 +174,6 @@ export function parseZod<DataType extends object>(data: unknown, schema: z.ZodTy
     data: zodSafeParseResult.data,
   } satisfies ValidationSuccess<DataType>;
 }
-
-/** File upload parser */
 
 export interface FileUploadOptions {
   fieldName?: string;
@@ -228,9 +217,7 @@ function unsupportedFileType(allowedMimeTypes: readonly string[]) {
   } satisfies FileUploadFailure;
 }
 
-/** Buffered: the whole body in memory (request.formData()), then the
- *  file as a Buffer — for small files alongside other form logic. Large
- *  files go through streamFileUpload below. */
+/** Buffers the whole body; large files go through streamFileUpload. */
 export async function parseFileUpload(request: Request, options: FileUploadOptions) {
   const contentType = request.headers.get('content-type') ?? '';
   const is_multipart = contentType.includes('multipart/form-data');
@@ -282,36 +269,28 @@ export async function parseFileUpload(request: Request, options: FileUploadOptio
   } satisfies FileUploadSuccess;
 }
 
-/** One file, streamed: the parser hands it to a sink as it arrives, so
- *  memory stays flat whatever the size. */
+/** Streamed to a sink as it arrives, so memory stays flat. */
 export interface FileUploadStream {
-  /** the client's file name (a part with an empty one is no file) */
+  /** an empty name means no file */
   name: string;
-  /** the declared type, already checked against allowedMimeTypes */
+  /** already checked against allowedMimeTypes */
   contentType: string;
-  /** the file's bytes. Ends cleanly only if the whole file arrived within
-   *  maxSize; a cut-short or oversized upload destroys it with an error,
-   *  so a sink never stores a truncated file as if it were complete. */
+  /** Ends cleanly only if the whole file arrived within maxSize; otherwise
+   *  it's destroyed with an error, so a sink never stores a truncated file. */
   stream: Readable;
 }
 
-/** Where a streamed file goes (object storage, in POST /api/files). It
- *  must settle once the stream ends or errors, and catch its own failures:
- *  it is called at a boundary. */
+/** Must settle once the stream ends or errors, and catch its own failures. */
 export type FileUploadSink<SinkResult extends { ok: boolean }> = (
   file: FileUploadStream,
 ) => Promise<SinkResult>;
 
-/** Parse a multipart upload as it streams in (busboy) and pipe its file
- *  part — field `fieldName`, the first one — into `sink`. The declared type
- *  is checked before the sink sees a byte; the size while it streams.
- *  Answers the sink's result, or a FileUploadFailure for the upload itself
- *  — which wins over the sink's own failure it caused (an oversized file
- *  makes the sink's write fail; the answer is still file_too_large).
+/** Streams the first `fieldName` part into `sink`, checking the type before
+ *  any bytes and the size as they arrive. An upload failure wins over the
+ *  sink failure it caused (oversized → file_too_large).
  *
- *  On a failure the rest of the body is read and discarded rather than the
- *  request torn down: cancelling it would reset the connection, and the
- *  client would see a network error instead of the answer. */
+ *  On failure the rest of the body is drained, not torn down: a reset
+ *  connection would show the client a network error instead of the answer. */
 export function streamFileUpload<SinkResult extends { ok: boolean }>(
   request: Request,
   options: FileUploadOptions,
@@ -342,12 +321,11 @@ export function streamFileUpload<SinkResult extends { ok: boolean }>(
   try {
     parser = Busboy({
       headers: { 'content-type': contentType },
-      // Other parts are skipped, not stored: a few small fields and file
-      // parts at most, so an upload is the file plus a small envelope.
+      // Other parts are drained, not stored.
       limits: { fileSize: options.maxSize, files: 10, fields: 10, fieldSize: 64 * 1024, parts: 30 },
     });
   } catch {
-    return Promise.resolve(invalidBody); // no boundary, or not a multipart type busboy knows
+    return Promise.resolve(invalidBody); // no boundary, or an unknown multipart type
   }
   const fieldName = options.fieldName ?? 'file';
   const source = Readable.fromWeb(request.body as unknown as NodeReadableStream<Uint8Array>);
@@ -367,13 +345,12 @@ export function streamFileUpload<SinkResult extends { ok: boolean }>(
         // A sink still reading sees an error, never a clean end.
         if (file && !file.readableEnded) file.destroy(new Error('upload failed'));
         source.unpipe(parser);
-        source.resume(); // discard the rest (see above)
+        source.resume(); // drain the rest
       }
       resolve(result);
     };
-    /** The upload itself failed. With a sink running, answer once it has
-     *  wound down (it aborts its write) — unless it already finished with
-     *  the whole file, which then stands. */
+    /** With a sink running, answer once it winds down, unless it already
+     *  stored the whole file. */
     const fail = (failure: FileUploadFailure) => {
       uploadFailure ??= failure;
       if (file && !file.readableEnded) file.destroy(new Error(failure.errorCode));
@@ -382,14 +359,10 @@ export function streamFileUpload<SinkResult extends { ok: boolean }>(
     };
 
     parser.on('file', (field, stream, filename, _encoding, mimeType) => {
-      // Every part stream gets an error listener: busboy errors the current
-      // part on a malformed body, and settle() destroys the file with one —
-      // unheard (a drained part, a sink that gave up before reading) that
-      // is an uncaught exception, i.e. the process. The outcome travels in
-      // the result instead.
+      // settle() destroys the part with an error; unheard, that would be an
+      // uncaught exception. The outcome travels in the result instead.
       stream.on('error', () => {});
-      // Not the file part: another field, a second file, or an empty
-      // file input (filename ""). Drained, so parsing continues.
+      // Another field, a second file, or an empty file input: drain it.
       if (settled || stored || field !== fieldName || filename === '') {
         stream.resume();
         return;
@@ -400,17 +373,17 @@ export function streamFileUpload<SinkResult extends { ok: boolean }>(
         return;
       }
       file = stream;
-      // busboy truncates at fileSize and then ENDS the stream normally:
-      // destroying it here is what keeps the sink from storing the cut-off file.
+      // busboy truncates at fileSize and ends normally; destroying the
+      // stream keeps the sink from storing the cut-off file.
       stream.once('limit', () => fail(fileTooLarge(options.maxSize)));
       stored = sink({ name: filename, contentType: mimeType, stream });
       stored.then(result => {
         if (uploadFailure) settle(uploadFailure);
         else if (!result.ok)
-          settle(result); // the sink gave up first (e.g. storage down)
+          settle(result); // e.g. storage down
         else if (parsed) settle(result);
-        else sinkSucceeded = result; // wait for the parser to finish the body
-      }, reject); // a sink that throws is a bug: surface it (a 500), don't hang the request
+        else sinkSucceeded = result; // wait for the parser to finish
+      }, reject); // a throwing sink is a bug: surface it as a 500
     });
     parser.on('finish', () => {
       parsed = true;
@@ -418,17 +391,14 @@ export function streamFileUpload<SinkResult extends { ok: boolean }>(
       else if (sinkSucceeded) settle(sinkSucceeded);
     });
     parser.on('error', () => fail(invalidBody));
-    // The body itself failed: client gone, or past the adapter's bodySizeLimit.
+    // Client gone, or past the adapter's bodySizeLimit.
     source.on('error', () => fail(invalidBody));
     source.pipe(parser);
   });
 }
 
-/** A download's Range header (+ If-Range) as storage takes it, or null for
- *  the whole file. One byte range only: multiple ranges, other units and
- *  malformed or backwards specs are ignored — RFC 9110 §14.2 lets a server
- *  serve the full representation instead. Whether the range fits the file
- *  is storage's to say (a 416). */
+/** One byte range only; anything else is ignored and the full file served
+ *  (RFC 9110 §14.2 allows it). Storage decides whether it fits (416). */
 export function parseRangeRequest(headers: Headers): ObjectRange | null {
   const raw = headers.get('range');
   if (raw === null) return null;
@@ -441,9 +411,7 @@ export function parseRangeRequest(headers: Headers): ObjectRange | null {
   return { bytes: `bytes=${first ?? ''}-${last ?? ''}`, ifRange: headers.get('if-range') };
 }
 
-/** A form post's failure as what a page renders: a form-level message
- *  and per-field issues. Exhaustive over the codes a form post can fail
- *  with — a new code is a type error here. */
+/** Exhaustive over the form-post failure codes. */
 export function parseAndValidateFailureToErrors<DataType extends object>(
   parseAndValidateFailure: ParseAndValidateFormPostFailure<DataType>,
 ) {

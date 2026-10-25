@@ -1,8 +1,5 @@
-// /api/settings — the dashboard's data. GET answers the effective config
-// (paths and versions only; no credential or hash contents ever leave).
-// POST saves the terminal defaults (task/defaults-settings): the writable
-// half of the page — a string sets the db override, null clears it back
-// to the default chain, absent keeps.
+// GET: the effective config (paths and versions, never credentials). POST:
+// save terminal defaults (a string sets, null clears, absent keeps).
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../lib/web/locals';
 import { parseAndValidateAPIRequest } from '../../lib/web/parsing.service';

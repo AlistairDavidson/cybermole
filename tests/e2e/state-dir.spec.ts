@@ -1,10 +1,7 @@
-// state-dir.spec.ts — default state layout (DESIGN_REVIEW §3.3): with only
-// CYBERMOLE_HOME (and a port) set, everything cybermole persists lands under
-// $CYBERMOLE_HOME/.local/state/cybermole — set-password writes cybermole.db there,
-// the server seeds pi-agent/ from the repo runtime/pi-agent-dir/ template — while
-// CYBERMOLE_STATE_DIR and the per-path overrides still win. Runs the compiled
-// dist-server via child_process (like global-setup), not imports, so it
-// covers the built artifact an operator actually runs.
+// With only CYBERMOLE_HOME set, everything persists under
+// $CYBERMOLE_HOME/.local/state/cybermole (the db, the seeded pi-agent/),
+// while CYBERMOLE_STATE_DIR and per-path overrides still win. Runs the
+// compiled dist-server, the artifact an operator runs.
 import { spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -14,14 +11,10 @@ import { expect, test } from '@playwright/test';
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const INPUT = 'tester\ncorrect-horse-9\ncorrect-horse-9\n';
-/** compose's dev seed input: user/pass/pass piped to --if-unset (the dev
- *  service's printf — test/test, under the ≥8 minimum the interactive and
- *  plain piped modes keep). */
+/** The dev seed's input (test/test is under the 8-char minimum on purpose). */
 const SEED_INPUT = 'test\ntest\ntest\n';
 
-/** Child env with the CYBERMOLE_ / PI_CODING_AGENT_ overrides stripped: the
- *  defaults under test must not see this machine's (or the suite's
- *  webServer's) explicit values. */
+/** The machine's and suite's CYBERMOLE_ / PI_CODING_AGENT_ settings must not leak in. */
 function bareEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) {
@@ -31,8 +24,7 @@ function bareEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
   return { ...env, ...extra };
 }
 
-/** run set-password with exactly the given CYBERMOLE_* vars (port 0: never a
- *  real listener; set-password only parses the env, it never binds). */
+/** Port 0: set-password only parses the env, never binds. */
 function setPassword(env: Record<string, string>, args: string[] = [], input = INPUT) {
   return spawnSync('node', ['dist-server/server/set-password.js', ...args], {
     cwd: ROOT,
@@ -53,13 +45,9 @@ test('set-password with only CYBERMOLE_HOME defaults the db into ~/.local/state/
   expect(row?.username).toBe('tester');
 });
 
-/** Boot the compiled server with exactly the given CYBERMOLE_* vars and
- *  wait for its listening log (seedAgentDir() runs synchronously before
- *  listen — by the time the boot log prints, the runtime dir exists and is
- *  seeded), then stop it and AWAIT the exit: the graceful-shutdown handler
- *  (session-lifecycle) drains sockets before exiting, so a fire-and-forget
- *  kill could wedge the suite's worker teardown. Port 0 + the spec's own
- *  tmux socket: never collides with the suite's :3470. */
+/** Waits for the listening log (seeding runs before listen), then stops
+ *  it and awaits the exit: the graceful drain could otherwise wedge the
+ *  worker's teardown. */
 async function bootServer(env: Record<string, string>): Promise<void> {
   const child = spawn('node', ['dist-server/server/main.js'], {
     cwd: ROOT,
@@ -67,8 +55,7 @@ async function bootServer(env: Record<string, string>): Promise<void> {
       CYBERMOLE_PORT: '0',
       CYBERMOLE_HOST: '127.0.0.1',
       CYBERMOLE_TMUX_SOCKET: 'cybermole-state-itest',
-      // task/app-web: no apps surface here — keeps the single-user spawn
-      // rule from starting a supervised app host beside each boot.
+      // no apps surface here
       CYBERMOLE_APPS_SOCK: '',
       ...env,
     }),
@@ -102,7 +89,7 @@ async function bootServer(env: Record<string, string>): Promise<void> {
   }
 }
 
-/** Assert dir was seeded byte-identical from the repo's runtime/pi-agent-dir/ template. */
+/** Byte-identical to runtime/pi-agent-dir/. */
 function expectSeededFromTemplate(dir: string): void {
   const walk = (d: string): string[] =>
     fs.readdirSync(d, { withFileTypes: true }).flatMap(e => {
@@ -156,10 +143,8 @@ test('CYBERMOLE_STATE_DIR moves the layout; CYBERMOLE_DB_FILE still outranks it'
 });
 
 test('--if-unset seeds a fresh state dir once, never over an existing credential', () => {
-  // The dev profile's boot command, through the built artifact: the seed
-  // lands in CYBERMOLE_STATE_DIR (under the ≥8 minimum — the mode's
-  // deliberate exception), and a later human password survives the seed
-  // re-running on every recreate.
+  // The dev profile's seed: lands in CYBERMOLE_STATE_DIR despite the short
+  // password, and a later human password survives the seed re-running.
   const state = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-state-dir-'));
   const db = path.join(state, 'cybermole.db');
   const username = () =>

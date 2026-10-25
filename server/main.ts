@@ -1,9 +1,5 @@
 #!/usr/bin/env node
-// main.ts — cybermole server.
-// One process: serves the Astro SSR build (pages via the middleware handler,
-// hashed assets statically), the REST API, and the WS→node-pty→tmux
-// terminal. Loopback by default; put it behind a TLS reverse proxy
-// (deploy/nginx/cybermole.conf). Config: CYBERMOLE_* env (README table).
+// cybermole server: Astro SSR, the REST API, and the WS→node-pty→tmux terminal.
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -73,18 +69,14 @@ import {
 } from '@cybermole/app-kit';
 import { UPLOAD_MAX_BODY_BYTES } from '../src/schemas/uploads';
 
-// Operational logging (src/lib/platform/logger.ts): console always; a winston-loki
-// push transport when CYBERMOLE_LOKI_URL is set. Component children give every
-// line its [component] console prefix / loki label. set-password.ts keeps
-// plain console.* — CLI output for a human at a terminal, no server.
+// set-password.ts keeps plain console.* — it's CLI output, not server logs.
 const bootLog = componentLogger('boot');
 const httpLog = componentLogger('http');
 const authLog = componentLogger('auth');
 const wsLog = componentLogger('ws');
 const shutdownLog = componentLogger('shutdown');
 
-// URL base path ('/' or '/foo', no trailing slash). Must match the base
-// the pages were built with (astro.config.mjs reads the same env at build).
+// '/' or '/foo', no trailing slash. Must match the base astro.config.mjs built with.
 function normalizeBase(raw: string): string {
   let b = (raw || '/').trim();
   if (!b.startsWith('/')) b = '/' + b;
@@ -94,13 +86,8 @@ function normalizeBase(raw: string): string {
 
 const home = ENV.CYBERMOLE_HOME;
 
-// Controlled pi config. `runtime/pi-agent-dir/` in the repo is the versioned template
-// (settings.json, mcp.json, skills/, extensions/, …); the runtime agent dir
-// below is what spawned pi actually uses (PI_CODING_AGENT_DIR) — seeded
-// from the template at boot, so sessions never read or write ~/.pi/agent.
-// NB: PI_CODING_AGENT_DIR in the *server's* environment is deliberately NOT
-// a fallback — on an operator's box that's their real agent dir, and seeding
-// it would overwrite their config.
+// The server's own PI_CODING_AGENT_DIR is deliberately not a fallback: on an
+// operator's box that's their real agent dir, and seeding would clobber it.
 const agentDir = ENV.CYBERMOLE_AGENT_DIR;
 if (PI_AGENT_DIR && !RAW_ENV.CYBERMOLE_AGENT_DIR) {
   bootLog.warn(
@@ -109,10 +96,6 @@ if (PI_AGENT_DIR && !RAW_ENV.CYBERMOLE_AGENT_DIR) {
   );
 }
 const agentTemplate = path.join(APP_ROOT, 'runtime', 'pi-agent-dir');
-// jobs-agent-plan §9: the one-file template for the workspace-root
-// AGENTS.md (the root agent's standing instructions), seeded into the
-// DEFAULT workspace cwd (the workspace root — /workspace in the split)
-// by the same boot halves as the pi template.
 const rootAgentsTemplate = path.join(APP_ROOT, 'runtime', 'workspace-root', 'AGENTS.md');
 
 const CFG: ServerConfig = {
@@ -126,22 +109,14 @@ const CFG: ServerConfig = {
   astroEntry: ENV.CYBERMOLE_ASTRO_ENTRY,
   newSessionCwd: ENV.CYBERMOLE_NEW_SESSION_CWD,
   jobLogDir: ENV.CYBERMOLE_JOB_LOG_DIR,
-  // task/defaults-settings: the terminal commands resolve per spawn (db
-  //  override ?? env ?? built-in — src/lib/terminals/terminal-defaults.ts), not
-  //  here: a /settings save must apply without a restart.
+  // Terminal commands resolve per spawn (terminal-defaults.ts) so /settings applies without a restart.
   trustProxy: Math.max(0, ENV.CYBERMOLE_TRUST_PROXY),
   editorUpstream: readEditorUpstream(),
-  // task/logs-page: the Explore URL the /logs page frames, built (and
-  // boot-validated) from CYBERMOLE_GRAFANA_URL at startup.
   grafanaExploreUrl: grafanaExploreUrlFromEnv(),
 };
 
-/** Seed the runtime agent dir from the versioned template, only where the
- *  runtime dir doesn't already have the file: existing files always win, so
- *  config pi itself writes (settings.json) or the operator customises is
- *  never clobbered — the template is first-boot defaults, and template files
- *  added by upgrades still land. State only pi writes (auth.json, sessions/,
- *  caches, …) is never in the template and is left alone. */
+/** Copy template files into the runtime agent dir where absent. Existing
+ *  files always win, so pi's own writes and operator edits survive. */
 function seedAgentDir(): void {
   try {
     fs.mkdirSync(CFG.agentDir, { recursive: true });
@@ -161,10 +136,6 @@ function seedAgentDir(): void {
     bootLog.warn(`could not seed pi agent dir (${CFG.agentDir}): ${(err as Error).message}`);
   }
 }
-//
-// jobs-agent-plan §9: the workspace-root AGENTS.md is seeded by the same
-// halves — only-where-absent, <default workspace cwd>/AGENTS.md, so app
-// checkouts under the root see it by upward walk.
 function seedRootAgents(): void {
   const seeded = seedRootAgentsFile(CFG.newSessionCwd, rootAgentsTemplate);
   if (seeded.ok) {
@@ -173,17 +144,13 @@ function seedRootAgents(): void {
         `workspace root: seeded AGENTS.md at ${seeded.data.target} ` +
           "(the root agent's standing instructions — only where absent)",
       );
-    return; // an existing file won — the policy, not a problem
+    return;
   }
   bootLog.warn(`could not seed the workspace-root AGENTS.md: ${seeded.errorMessage}`);
 }
-// Privilege split (DESIGN_REVIEW §1.1): with an absolute-path
-// CYBERMOLE_TMUX_SOCKET the tmux server — and every pi session — runs as
-// ANOTHER uid (the workspace half). The runtime agent dir belongs to
-// that uid, so seeding happens workspace-side at its boot
-// (docker-workspace-entrypoint.sh): web-side cp's would leave node-owned
-// 0644 files pi can't write next to its config. Single-user shapes
-// (relative socket name) keep seeding here.
+// With an absolute tmux socket, pi runs as the workspace uid, which owns the
+// agent dir; seeding happens workspace-side (docker-workspace-entrypoint.sh)
+// so files aren't left owned by this uid.
 if (tmux.forksServer(tmux.SOCKET)) {
   seedAgentDir();
   seedRootAgents();
@@ -194,10 +161,8 @@ if (tmux.forksServer(tmux.SOCKET)) {
       `ownership, live on the workspace side`,
   );
 
-// Environment for processes spawned inside tmux sessions (pi). Delivered
-// per-session via `tmux new-session -e` — deterministic no matter when the
-// tmux server (and its inherited env) was started — and set on the tmux
-// client calls too, so a freshly started server inherits the same values.
+// Env for processes inside tmux sessions, passed per session (`new-session -e`)
+// so it doesn't depend on what env the tmux server started with.
 const sessionEnv: Record<string, string> = {
   HOME: CFG.home,
   PI_CODING_AGENT_DIR: CFG.agentDir,
@@ -209,32 +174,20 @@ if (PI_SESSION_DIR) {
 /** Route path under the configured base ('/login' → '/foo/login'). */
 const route = (p: string): string => (CFG.base === '/' ? p : CFG.base + p);
 
-// cybermole's own persisted state: one sqlite db (login credential, login
-// sessions, the apps/workspaces/terminals tree, jobs) at CFG.dbFile,
-// opened lazily on first use (src/lib/platform/db.ts).
 const stateDb = new StateDb(CFG.dbFile);
 const auth: AuthType = new Auth(stateDb);
-// In-process job scheduler (src/lib/jobs/jobs.ts): definitions + run
-// bookkeeping live in the state db; fires open tmux sessions on the app's
-// socket under the same job-session conventions as interactive sessions.
 const scheduler = new jobs.Scheduler(stateDb, {
   cwd: CFG.newSessionCwd,
   env: sessionEnv,
   logDir: CFG.jobLogDir,
-  // task/job-log-caps (plan §8): the run wrapper's write-time log cap.
   logMaxBytes: ENV.CYBERMOLE_JOB_LOG_MAX,
 });
 scheduler.start();
-// pi auto-update (src/lib/platform/auto-update.ts): when the persisted setting is
-// ON, one check shortly after boot and then daily — always within the
-// declared range, never a restart. start() only arms the deferred boot
-// probe: it reads the setting lazily (the state db opens lazily — see
-// db.ts — so nothing db-shaped happens eagerly at boot; with the default
-// OFF nothing npm-shaped is ever scheduled).
+// Reads its setting lazily: the state db opens lazily, and with auto-update
+// off nothing is ever scheduled.
 const autoUpdater = new AutoUpdater({ db: stateDb, appRoot: APP_ROOT });
 autoUpdater.start();
-// Object storage (src/lib/platform/storage.ts): any S3-compatible server, or none —
-// uploads then answer 503. Nothing connects until the first upload.
+// Nothing connects until the first upload; unconfigured, uploads answer 503.
 const objectStore = new ObjectStore(readObjectStoreConfig());
 bootLog.info(
   objectStore.describe() === null
@@ -252,17 +205,9 @@ bootLog.info(
     : `logs: framing Grafana Explore (${CFG.grafanaExploreUrl})`,
 );
 
-// ---------- apps surface (task/app-web, apps-plan §3/§4) ----------
-// CYBERMOLE_APPS_SOCK (env.ts readAppsSocket) decides BOTH the shape and
-// the ownership, the CYBERMOLE_TMUX_SOCKET precedent's rule: UNSET = the
-// single-user shape — the web server OWNS the app host: it spawns
-// `node dist-server/server/app-host.js` as a supervised child at the
-// default socket path, same uid, same env (the child resolves the same
-// defaults from the inherited environment); SET = the split (compose,
-// e2e) — the operator/workspace entrypoint owns the process and the web
-// server is ONLY a client on the socket, never spawns; EMPTY = the apps
-// surface is off — /apps/* answers the Result-JSON 404 and every app
-// row reports serving:false with the off reason.
+// ---------- apps surface ----------
+// CYBERMOLE_APPS_SOCK unset: this server spawns and supervises the app host.
+// Set: someone else owns the host and this is only a client. Empty: apps off.
 const APPS_SOCK = readAppsSocket();
 let appHostSupervisor: AppHostSupervisorHandle | null = null;
 if (APPS_SOCK === null) {
@@ -283,24 +228,12 @@ if (APPS_SOCK === null) {
     `apps: single-user shape — spawning + supervising the app host (default socket ${APPS_SOCK})`,
   );
 }
-// task/app-web (apps-plan §4): /api/state's serving ping over the
-// resolved apps socket (bounded + cached — src/lib/apps/apps-serving.ts);
-// null socketPath = the off surface, answered serving:false forever.
 const appsServing = new AppsServing({ socketPath: APPS_SOCK });
-// task/ws-terminal (plan §4): a terminal tab's spawn/respawn — one
-// guarded new-session with the sessionEnv, shared by the workspaces
-// domain (through createServices) and the WS attach path's respawn. The
-// COMMAND comes per call (task/defaults-settings): the workspaces domain
-// resolves it for the tab's slot — shell for a regular tab, agent for a
-// new workspace's auto-opened first — and the respawn below does the
-// same, so a db override set on /settings applies mid-flight.
 const spawnTerminalSession = (name: TmuxSessionName, cwd: string, command: string[]) =>
   tmux.newSession(name, cwd, command, sessionEnv);
 
-// Everything stateful the Astro side (API routes, pages) may use, built
-// once here and passed to the Astro handler in locals — never imported
-// there (a Vite-bundled second copy would carry its own state; see
-// src/lib/platform/services.ts).
+// Built once here and handed to Astro via locals, never imported there: a
+// Vite-bundled second copy would carry its own state.
 const services = createServices({
   cfg: CFG,
   stateDb,
@@ -308,37 +241,17 @@ const services = createServices({
   scheduler,
   autoUpdater,
   objectStore,
-  // task/ws-schema: the apps/workspaces domains' best-effort terminal
-  // session kill (deletes/closes — src/lib/terminals/tmux.ts killSession).
   killSession: tmux.killSession,
-  // task/ws-terminal (plan §4): the terminal spawn dep (see
-  // spawnTerminalSession above).
   spawnSession: spawnTerminalSession,
-  // task/ws-console (plan §5): /api/state's live diff source.
   liveSessionNames: tmux.liveSessionNames,
-  // task/app-web (apps-plan §4): the serving join's host ping.
   appsServing,
 });
-// The scheduler's single shutdown hook. The SIGTERM/SIGINT handler is a
-// sibling task (task/session-lifecycle, merged separately); at merge time
-// it calls shutdownScheduler() — wired here so teardown has exactly one
-// spot. Uncalled until then on purpose: the default signal exit tears the
-// process (and the tick interval) down anyway.
 const shutdownScheduler = (): void => scheduler.stop();
 
-// ---------- internal API (task/jobs-socket, plan §3/§4) ----------
-// A second HTTP listener, on a unix domain socket, serving the WORKSPACE
-// side (agents) the same jobs service functions the browser routes use —
-// same Result JSON, no cookie/CSRF/rate-limit layer (the socket's file
-// mode is the gate; docs/plans/jobs-agent-plan.md §2–§4). CYBERMOLE_SOCK: unset =
-// the shape default (/run/cybermole/cybermole.sock when that shared dir exists,
-// else <state dir>/cybermole.sock); empty = off; a non-absolute value stops
-// the boot (env.ts, like the S3 vars). A stale socket file is removed and
-// rebound. A LIVE socket (another instance owns it — two servers sharing
-// one state dir on a dev box, tests) DEGRADES: this instance serves on,
-// without the listener, behind a loud boot line — the web app must not
-// die over an auxiliary IPC listener. Anything else that fails here
-// still fails the boot.
+// ---------- internal API ----------
+// Unix-socket listener serving the workspace side (agents) the jobs/apps
+// services, gated by the socket's file mode instead of cookies. If another
+// live instance owns the socket, keep serving without it rather than die.
 const INTERNAL_SOCK = readInternalApiSocket();
 let internalApi: InternalApiHandle | null = null;
 if (INTERNAL_SOCK === null) {
@@ -359,14 +272,12 @@ if (INTERNAL_SOCK === null) {
         return;
       }
       bootLog.error(`internal API failed to start on ${INTERNAL_SOCK}: ${(err as Error).message}`);
-      process.exit(1); // a boot failure, not a degraded mode: fail loudly
+      process.exit(1);
     });
 }
 const loginLimiter = new RateLimiter(10, 15 * 60 * 1000);
 const wsLimiter = new RateLimiter(Math.max(1, ENV.CYBERMOLE_WS_UPGRADES_PER_MIN), 60 * 1000);
-// Password hashes in flight at once. Each scrypt holds 16 MiB and a libuv
-// threadpool thread (4 by default, shared with fs) — past this, logins get
-// 503 instead of queueing without bound.
+// Concurrent scrypt verifies (16 MiB + a libuv thread each); past this, 503.
 const MAX_LOGIN_VERIFY = 4;
 let loginVerifying = 0;
 
@@ -391,7 +302,6 @@ function send(
   res.end(body);
 }
 function sendClientFile(res: http.ServerResponse, rel: string, cache: boolean): void {
-  // rel is from a fixed route table or validated against traversal below.
   const file = path.normalize(path.join(CFG.clientDir, rel));
   if (!file.startsWith(CFG.clientDir + path.sep) && file !== CFG.clientDir) {
     send(res, 404, 'not found');
@@ -437,15 +347,11 @@ function readBody(
       cb(new Error('not an object'));
       return;
     }
-    cb(null, body as Record<string, unknown>); // outside the try: a throwing handler must not be re-called
+    cb(null, body as Record<string, unknown>); // outside the try: a throwing cb must not be re-called
   });
 }
-/** Client IP for the rate limiters. X-Forwarded-For is client-controlled
- *  except for the entries our own proxies appended (nginx's
- *  $proxy_add_x_forwarded_for and ALB both append), so with
- *  CYBERMOLE_TRUST_PROXY=N the client is the Nth entry from the right — never
- *  the leftmost, which anyone can set to get a fresh bucket per request.
- *  N=0 (default): the header is ignored and the socket peer is the client. */
+/** Client IP for the rate limiters. With CYBERMOLE_TRUST_PROXY=N it's the Nth
+ *  X-Forwarded-For entry from the right; the leftmost is client-controlled. */
 function ipOf(req: http.IncomingMessage): string {
   const peer = req.socket.remoteAddress ?? '?';
   if (CFG.trustProxy === 0) return peer;
@@ -457,16 +363,10 @@ function ipOf(req: http.IncomingMessage): string {
   if (hops.length === 0) return peer; // reached us without passing the proxy
   return hops[Math.max(0, hops.length - CFG.trustProxy)]!;
 }
-// ---------- origin check (DESIGN_REVIEW §1.2) ----------
-// SameSite=Strict doesn't stop sibling subdomains (same site, not same
-// origin) opening the terminal WS with the cookie attached, and no Origin
-// check existed on the JSON POSTs. The expected origin is derived per
-// request: Host + X-Forwarded-Proto, the latter honoured only behind a
-// trusted proxy (the same right-most-untrusted-hop selection ipOf() uses
-// for X-Forwarded-For — direct connections assume plain http).
+// ---------- origin check ----------
+// SameSite=Strict doesn't stop sibling subdomains (same site, different
+// origin), so non-GETs and WS upgrades check Origin against Host + trusted XFP.
 
-/** Request scheme per CYBERMOLE_TRUST_PROXY: the Nth X-Forwarded-Proto entry
- *  from the right when proxies are trusted, else http. */
 function protoOf(req: http.IncomingMessage): string {
   if (CFG.trustProxy === 0) return 'http';
   const xfp = req.headers['x-forwarded-proto'];
@@ -478,11 +378,8 @@ function protoOf(req: http.IncomingMessage): string {
   return hops[Math.max(0, hops.length - CFG.trustProxy)]!;
 }
 
-/** Origin normalised for comparison: lowercase scheme+host, default ports
- *  (http:80, https:443) stripped — https://x:443 ≡ https://x. Origin never
- *  carries a path, so only scheme+host+port are compared (CYBERMOLE_BASE
- *  mounts don't affect it). Null for anything unparseable (including the
- *  literal "null" some browsers send from sandboxed frames). */
+/** Lowercased scheme+host with default ports stripped; null if unparseable
+ *  (including the literal "null" sandboxed frames send). */
 function normalizeOrigin(origin: string): string | null {
   let u: URL;
   try {
@@ -496,8 +393,6 @@ function normalizeOrigin(origin: string): string | null {
   return `${u.protocol}//${host.endsWith(defPort) ? host.slice(0, -defPort.length) : host}`;
 }
 
-/** The origin this request may claim, from Host (+ trusted XFP). Null when
- *  there is no Host header to derive it from. */
 function expectedOrigin(req: http.IncomingMessage): string | null {
   const host = req.headers.host;
   if (!host) return null;
@@ -507,8 +402,7 @@ function expectedOrigin(req: http.IncomingMessage): string | null {
   return `${proto}://${h.endsWith(defPort) ? h.slice(0, -defPort.length) : h}`;
 }
 
-/** Origin gate for non-GET requests: absent Origin (curl, API clients)
- *  passes; a present Origin must match the expected origin exactly. */
+/** Absent Origin (curl, API clients) passes; a present one must match. */
 function originOk(req: http.IncomingMessage): boolean {
   const origin = req.headers.origin;
   if (origin === undefined || origin === '') return true;
@@ -516,21 +410,14 @@ function originOk(req: http.IncomingMessage): boolean {
   return expected !== null && normalizeOrigin(origin) === expected;
 }
 
-// Request-body caps for everything Astro serves. The adapter's
-// bodySizeLimit (astro.config.mjs) is global, so it is set to the largest
-// body any route takes — an upload; every other route keeps the JSON
-// API's 10 KiB here, before Astro reads a byte. A body that declares no
-// length (chunked) is refused outside the upload route — browsers send a
-// Content-Length for every body this app's pages post — and on it, the
-// adapter's limit stops the stream mid-read.
+// The adapter's bodySizeLimit is global, so it's set for uploads; every other
+// route is capped at 10 KiB here. Chunked bodies are refused off the upload route.
 const API_BODY_MAX_BYTES = 10 * 1024;
-const UPLOAD_ROUTE = '/api/files'; // src/pages/api/files/index.ts
+const UPLOAD_ROUTE = '/api/files';
 
 const isUpload = (req: http.IncomingMessage, url: string): boolean =>
   req.method === 'POST' && url === route(UPLOAD_ROUTE);
 
-/** 413 (declared length over the route's cap), 411 (no length, off the
- *  upload route) or null (within the cap). */
 function bodyCapStatus(req: http.IncomingMessage, url: string): 411 | 413 | null {
   if (req.method === 'GET' || req.method === 'HEAD') return null;
   const upload = isUpload(req, url);
@@ -542,25 +429,18 @@ function bodyCapStatus(req: http.IncomingMessage, url: string): 411 | 413 | null
   return Number(declared) <= (upload ? UPLOAD_MAX_BODY_BYTES : API_BODY_MAX_BYTES) ? null : 413;
 }
 
-// Request-body deadlines. Node's own requestTimeout is one whole-request
-// cap for every route (300 s by default) — it would cut a multi-GB upload
-// off at five minutes — so it is off (by http.createServer below) and
-// replaced here. Every request must still arrive whole within
-// BODY_DEADLINE_MS, the same 300 s: a slow-drip body, signed in or not,
-// is cut off as before (counted until the body is in, not until the
-// response — a 401 sent early doesn't free a dripping socket). Only a
-// signed-in upload trades the deadline for a stall timeout: no bytes for
-// UPLOAD_STALL_MS and the connection goes.
+// Node's requestTimeout would cut long uploads, so it's off and replaced:
+// every body must arrive within BODY_DEADLINE_MS, except a signed-in upload,
+// which instead dies after UPLOAD_STALL_MS without bytes.
 const BODY_DEADLINE_MS = 300_000;
 const UPLOAD_STALL_MS = 120_000;
 
-/** Arm the whole-request deadline; the returned function disarms it. */
 function armBodyDeadline(req: http.IncomingMessage): () => void {
   const { socket } = req;
   const timer = setTimeout(() => {
     if (!req.complete) socket.destroy();
   }, BODY_DEADLINE_MS).unref();
-  // Listeners come off with the timer: a keep-alive socket serves many requests.
+  // Keep-alive sockets serve many requests: detach listeners with the timer.
   const disarm = (): void => {
     clearTimeout(timer);
     req.off('end', disarm);
@@ -571,9 +451,7 @@ function armBodyDeadline(req: http.IncomingMessage): () => void {
   return disarm;
 }
 
-/** A signed-in upload: no total deadline, but the socket must keep
- *  delivering bytes (bytesRead moving) until the body is in. Backpressure
- *  from a stalled storage server also stops the bytes — that's a stall too. */
+/** Backpressure from a stalled storage server stops bytes too — that counts as a stall. */
 function guardUploadStall(req: http.IncomingMessage): void {
   const { socket } = req;
   let seen = socket.bytesRead;
@@ -600,18 +478,14 @@ function guardUploadStall(req: http.IncomingMessage): void {
   socket.once('close', stop);
 }
 
-/** Is this path inside the app's base ('/foo' and '/foo/…', or anything for '/')? */
 function underBase(url: string): boolean {
   return CFG.base === '/' || url === CFG.base || url.startsWith(CFG.base + '/');
 }
-/** Header that clears the browser's session cookie (logout, log out everywhere). */
 const clearSessionCookie = (): string =>
   `cybermole_session=; HttpOnly; Secure; SameSite=Strict; Path=${CFG.base}; Max-Age=0`;
 
 // ---------- Astro SSR (middleware) ----------
-// The Astro build emits an ESM handler (dist/server/entry.mjs); loaded once
-// via dynamic import (the compiled server here is CJS). Page routes render
-// through it; the `next` fallback covers unknown paths (404).
+// dist/server/entry.mjs is ESM; this server compiles to CJS, hence the dynamic import.
 type AstroHandler = (
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -628,9 +502,7 @@ astroReady.catch(err =>
   ),
 );
 
-/** Render through Astro. `locals` (the services + the request's session
- *  token) only on the authenticated path — src/middleware.ts fails closed
- *  for the API and partials without them. */
+/** locals only on the authenticated path; middleware.ts fails closed without them. */
 function renderAstro(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -644,13 +516,9 @@ function renderAstro(
     });
 }
 
-// ---------- security headers (DESIGN_REVIEW §1.2) ----------
-// Sent by the app itself on every response — host installs (no nginx) and
-// container installs get the same posture. Astro pages bundle their
-// scripts as external modules (script-src 'self', no 'unsafe-inline');
-// xterm and Lit inject <style> at runtime, hence style 'unsafe-inline';
-// the terminal WS is same-origin (ws/wss of the page's origin — 'self'
-// covers both in current browsers, wss: is listed for older Safari).
+// ---------- security headers ----------
+// xterm and Lit inject <style> at runtime, hence 'unsafe-inline' styles;
+// wss: is for older Safari, where 'self' doesn't cover it.
 const SECURITY_HEADERS: Record<string, string> = {
   'Content-Security-Policy':
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
@@ -660,21 +528,15 @@ const SECURITY_HEADERS: Record<string, string> = {
   'Referrer-Policy': 'same-origin',
 };
 
-/** Same headers as a raw HTTP/1.1 response block (upgrade rejections are
- *  written straight to the socket — there is no ServerResponse). */
+/** For upgrade rejections, written straight to the socket. */
 function securityHeaderBlock(): string {
   return Object.entries(SECURITY_HEADERS)
     .map(([n, v]) => `${n}: ${v}\r\n`)
     .join('');
 }
 
-/** Arm `res` so the security headers ride on every response the process
- *  sends, whichever path writes it: send()/sendClientFile(),
- *  the 302, and the Astro SSR handler (which calls writeHead/setHeader on
- *  the same object). Injection happens at writeHead *and* end — whichever
- *  fires first — and is idempotent, so a handler that already set one of
- *  these (or passes its own in writeHead's headers object, which wins per
- *  Node's merge rules) keeps control of it. */
+/** Apply the security headers on writeHead or end, whichever comes first,
+ *  without overriding any a handler set itself. */
 function hardenResponse(res: http.ServerResponse): void {
   const apply = (): void => {
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
@@ -693,23 +555,17 @@ function hardenResponse(res: http.ServerResponse): void {
   }) as typeof res.end;
 }
 
-// ---------- editor reverse proxy (task/ws-editor, docs/guides/editor-webapp.md) ----------
-// Same-origin `${BASE}/editor/*` → CYBERMOLE_EDITOR_UPSTREAM (HTTP + WS),
-// behind the origin check and the session gate like every other
-// authenticated route — the console frames it in an iframe, so auth is
-// the existing session cookie and no cross-origin anything applies.
-// The decision surface (path matching, header set, body cap, tunnel
-// tracking, the upgrade header pair) lives in src/lib/terminals/editor.ts; this is
-// the transport.
+// ---------- editor reverse proxy ----------
+// ${BASE}/editor/* → CYBERMOLE_EDITOR_UPSTREAM (HTTP + WS), behind the usual
+// session gate. Decisions live in src/lib/terminals/editor.ts.
 
 function proxyEditorRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   upstream: EditorUpstream,
 ): void {
-  // The original Host header is forwarded UNCHANGED: the editor embeds it
-  // in the workbench HTML as `remoteAuthority` (spike-verified), which is
-  // how the browser learns to dial its WebSocket back through this proxy.
+  // Host is forwarded unchanged: the editor embeds it as `remoteAuthority`,
+  // which is how the browser finds its WebSocket back through this proxy.
   const headers = { ...req.headers };
   // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- scrubbing the hop-by-hop header set
   for (const hop of EDITOR_HOP_BY_HOP_HEADERS) delete headers[hop];
@@ -722,33 +578,23 @@ function proxyEditorRequest(
     }
     // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- scrubbing the hop-by-hop header set
     for (const hop of EDITOR_HOP_BY_HOP_HEADERS) delete out[hop];
-    // Editor HTML carries its own header set (framing + the VS Code web
-    // CSP, pinned by the spike): handler-set headers win — hardenResponse
-    // only fills absent ones. Assets keep the global set.
+    // Editor HTML gets its own header set (framing + VS Code CSP).
     if ((out['content-type'] ?? '').startsWith('text/html')) {
       for (const [name, value] of Object.entries(editorSecurityHeaders())) out[name] = value;
-      // The ONE buffered editor body (task/theme-browser): the boot
-      // document is a few KiB, and it is the only body the proxy rewrites
-      // — injecting the color-scheme configurationDefaults (src/lib/
-      // editor.ts, verified end to end against the vendored build). The
-      // upstream serves it CHUNKED (no content-length — verified), so the
-      // cap is enforced by watching the byte count: over the cap this
-      // stops being the boot document (a future pin, an error page), the
-      // buffered bytes flush through UNREWRITTEN and the rest streams —
-      // never buffered, never lost. A content-encoding (a compressed body)
-      // would make a text rewrite corrupt — stream it through untouched.
+      // The boot document is the one rewritten body (theme defaults). It
+      // arrives chunked, so cap by bytes seen: past the cap it isn't the
+      // boot document, so flush unmodified and stream the rest. Compressed
+      // bodies can't be text-rewritten and stream straight through.
       if (!('content-encoding' in out)) {
         const chunks: Buffer[] = [];
         let buffered = 0;
         let overflowed = false;
         upstreamRes.on('data', (chunk: Buffer) => {
-          if (overflowed) return; // already streaming from below
+          if (overflowed) return;
           chunks.push(chunk);
           buffered += chunk.length;
           if (buffered > EDITOR_HTML_REWRITE_MAX_BYTES) {
-            // Not the boot document: flush what's buffered — the crossing
-            // chunk INCLUDED — and stream the rest (content-length, if any,
-            // is still exact: every byte passes through unchanged).
+            // Flush including the crossing chunk; bytes are unchanged, so content-length stays exact.
             overflowed = true;
             res.writeHead(upstreamRes.statusCode ?? 502, out);
             res.write(Buffer.concat(chunks));
@@ -757,7 +603,7 @@ function proxyEditorRequest(
           }
         });
         upstreamRes.on('end', () => {
-          if (overflowed) return; // the streaming path owns the response
+          if (overflowed) return;
           const body = injectWorkbenchThemeDefaults(Buffer.concat(chunks).toString('utf8'));
           out['content-length'] = String(Buffer.byteLength(body));
           res.writeHead(upstreamRes.statusCode ?? 502, out);
@@ -767,7 +613,7 @@ function proxyEditorRequest(
       }
     }
     res.writeHead(upstreamRes.statusCode ?? 502, out);
-    // STREAMED, never buffered — the workbench bundles are tens of MB.
+    // Streamed: workbench bundles are tens of MB.
     upstreamRes.pipe(res);
   });
   proxied.setTimeout(120_000, () => proxied.destroy(new Error('editor upstream idle')));
@@ -779,17 +625,11 @@ function proxyEditorRequest(
   req.pipe(proxied);
 }
 
-// Live editor tunnels per token: the integrated terminal makes the editor
-// another shell as uid 2000, so logout / "log out everywhere" / shutdown
-// must cut it within the same 30-s guarantee the terminals keep. Main.ts's
-// logout paths call closeToken/closeAll; each tunnel also runs its own
-// expiry sweep (below) — WS traffic never slides a token (auth.alive), so
-// an idle-expired or absolutely-capped one takes its shells with it.
+// The editor's integrated terminal is a shell, so logout/shutdown must cut its
+// tunnels like terminal sockets, and each tunnel sweeps for token expiry.
 const editorTunnels = new EditorTunnelTracker();
 
-/** Raw WebSocket proxy: bytes through, no frame handling, no pty — never
- *  the terminal wss/attach path. Gates (shuttingDown, Origin, session)
- *  have already run when this is called. */
+/** Raw byte tunnel to the upstream; gates have already run. */
 function upgradeEditorSocket(
   req: http.IncomingMessage,
   socket: import('node:stream').Duplex,
@@ -800,11 +640,9 @@ function upgradeEditorSocket(
   if (!upstream) {
     socket.destroy();
     return;
-  } // raced a reconfigure: fail closed
-  // editorUpgradeHeaders strips hop-by-hop AND re-adds the upgrade pair —
-  // without Connection: Upgrade / Upgrade: websocket the upstream sees a
-  // plain GET and never answers 101 (the header list alone would strip
-  // them; nginx's proxy_set_header does this same dance).
+  }
+  // Re-adds Connection/Upgrade after the hop-by-hop strip, else the
+  // upstream sees a plain GET and never answers 101.
   const headers = editorUpgradeHeaders(req.headers);
   const target = new URL(req.url ?? '/', upstream.origin);
   const proxied = http.request(target, { method: 'GET', headers });
@@ -813,8 +651,7 @@ function upgradeEditorSocket(
     wsLog.error('editor ws upgrade failed', { error: err });
     socket.destroy();
   });
-  // A plain (non-101) answer to an upgrade: forward the status, then end —
-  // the browser treats anything but 101 as a failed upgrade.
+  // Non-101 answer: forward the status and end.
   proxied.on('response', upstreamRes => {
     socket.write(
       `HTTP/1.1 ${upstreamRes.statusCode ?? 502} ${upstreamRes.statusMessage ?? ''}\r
@@ -823,7 +660,6 @@ function upgradeEditorSocket(
     socket.destroy();
   });
   proxied.on('upgrade', (upstreamRes, upstreamSocket, upstreamHead) => {
-    // The upstream's handshake, verbatim (Sec-WebSocket-Accept et al).
     socket.write(
       'HTTP/1.1 101 Switching Protocols\r\n' +
         Object.entries(upstreamRes.headers)
@@ -838,19 +674,17 @@ function upgradeEditorSocket(
       },
     };
     editorTunnels.track(token, tunnel);
-    // Token-expiry sweep, the terminal keepalive's analogue: WS traffic
-    // never renews a token, so an expired one ends its editor shells too.
+    // WS traffic never renews a token, so expiry must be checked here.
     const sweep = setInterval(() => {
       const alive = auth.alive(token);
       if (alive.ok) return;
       if (alive.errorCode === 'no_session') editorTunnels.closeToken(token);
-      // database_error: re-check next tick — never sign a shell out over a
-      // db hiccup (the terminal keepalive takes the same stance).
+      // database_error: re-check next tick rather than cut a shell over a db hiccup.
     }, PING_INTERVAL_MS).unref();
     const done = (): void => {
       clearInterval(sweep);
       editorTunnels.untrack(token, tunnel);
-      tunnel.close(); // one side ended: end the other
+      tunnel.close();
     };
     socket.on('close', done);
     upstreamSocket.on('close', done);
@@ -866,22 +700,15 @@ function upgradeEditorSocket(
 }
 
 // ---------- HTTP ----------
-// One access-log line per request at the node-server level: method, path,
-// status, duration — emitted on 'finish', so a request is logged once,
-// after the response is out. WS upgrades bypass this (no response); the
-// ws connect/attach/close lines below cover them. The 15 s /api/state
-// poll every open tab runs, plus hashed-asset/PWA hits, log at debug —
-// silent on the console transport (level http) but pushed to loki, where
-// volume is cheap; everything else is an `http`-level line.
+// High-volume paths (the 15 s /api/state poll, assets, editor, apps) log at
+// debug: silent on the console, still pushed to loki.
 const quietAccessPath = (p: string): boolean =>
   p === route('/api/state') ||
   p.startsWith(route('/_astro/')) ||
   p === route('/sw.js') ||
   p === route('/manifest.webmanifest') ||
   p.startsWith(route('/icons/')) ||
-  // an IDE's worth of asset traffic at http level would bury the console
   p.startsWith(route('/editor/')) ||
-  // task/app-web: an app page's hashed assets + API chatter ditto
   p.startsWith(route('/apps/'));
 
 function logAccess(req: http.IncomingMessage, res: http.ServerResponse): void {
@@ -894,9 +721,7 @@ function logAccess(req: http.IncomingMessage, res: http.ServerResponse): void {
   });
 }
 
-// Last-resort guard: a synchronous throw in a route must cost one 500, not
-// the process (and, in the container, every tmux session with it). Inputs
-// are validated in the routes; this only catches what slips through.
+// A synchronous throw in a route costs one 500, not the process (and every tmux session with it).
 const server = http.createServer((req, res) => {
   hardenResponse(res);
   logAccess(req, res);
@@ -908,17 +733,14 @@ const server = http.createServer((req, res) => {
     else res.destroy();
   }
 });
-// Off: armBodyDeadline()/guardUploadStall() replace it per request.
-// (headersTimeout — 60 s to send the headers — stays Node's.)
+// Replaced per request by armBodyDeadline()/guardUploadStall().
 server.requestTimeout = 0;
 
 function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
   const url = (req.url ?? '').split('?')[0]!;
   const disarmBodyDeadline = armBodyDeadline(req);
 
-  // Every non-GET must be same-origin when it claims any origin at all
-  // (curl & co send no Origin header and pass). Checked before routing —
-  // a mismatched Origin must not touch the login limiter or anything else.
+  // Before routing: a mismatched Origin must not even touch the login limiter.
   if (req.method !== 'GET' && !originOk(req)) {
     send(res, 403, 'cross-origin request rejected');
     return;
@@ -939,7 +761,7 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
       const parsed = loginBody.safeParse(body);
       if (!parsed.success) {
         authLog.info('login failed: invalid credentials (malformed body)', { ip });
-        send(res, 401, 'invalid credentials'); // nginx logs it; fail2ban watches
+        send(res, 401, 'invalid credentials'); // fail2ban watches 401s
         return;
       }
       const { username, password } = parsed.data;
@@ -958,8 +780,7 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
                 authLog.info('login failed: invalid credentials', { username, ip });
                 send(res, 401, 'invalid credentials');
                 return;
-              // Not a 401: fail2ban counts those, and a db hiccup is no
-              // failed login. The login page reads 503 as "try again".
+              // Not a 401: fail2ban counts those. The login page reads 503 as "try again".
               case 'database_error':
                 authLog.error(`login verify db error: ${verified.errorMessage}`);
                 send(res, 503, 'busy, try again', { 'Retry-After': '1' });
@@ -992,16 +813,13 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
   if (req.method === 'POST' && url === route('/logout')) {
     const token = Auth.sessionToken(req.headers.cookie);
     const dropped = auth.drop(token);
-    // Logout must end the terminals AND the editor shells this token
-    // authenticated, not just future requests: they get 'signed-out' and
-    // don't reconnect.
+    // End live terminals and editor shells too, not just future requests.
     if (token) {
       closeTokenSockets(token, { type: 'signed-out' });
       editorTunnels.closeToken(token);
       eventsRelay.closeToken(token, { type: 'signed-out' });
     }
-    // A failed delete means the token is still valid server-side: say so
-    // (the browser's cookie is cleared either way).
+    // The token is still valid server-side; say so (the cookie is cleared regardless).
     if (!dropped.ok) {
       authLog.error(`logout failed: ${dropped.errorMessage}`);
       send(res, 500, 'could not end the session', { 'Set-Cookie': clearSessionCookie() });
@@ -1012,10 +830,7 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     return;
   }
 
-  // PWA files from public/ (service worker, manifest, icons, theme boot
-  // script): served with or without a session — the login page links the
-  // manifest, registers the worker and loads the theme script before any
-  // auth can exist, and none of them carry data.
+  // PWA files carry no data and are needed before login exists.
   if (req.method === 'GET' && url.startsWith(CFG.base)) {
     const rel = url.slice(CFG.base.length).replace(/^\//, '');
     if (
@@ -1029,12 +844,9 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     }
   }
 
-  // Everything below requires a valid session...
   const session = auth.valid(Auth.sessionToken(req.headers.cookie));
   if (!session.ok) {
-    // ...except the PWA offline shell (static, session-free — the service
-    // worker precaches it at install time, pre-auth), the hashed assets,
-    // and the login page itself. Every data/terminal route stays 401.
+    // The offline shell (precached by the service worker pre-auth) and hashed assets are session-free.
     if (req.method === 'GET' && url === route('/offline')) {
       renderAstro(req, res);
       return;
@@ -1046,9 +858,7 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     switch (session.errorCode) {
       case 'no_session':
         break;
-      // Unreadable session store: fail closed, but don't claim the
-      // session ended — no login page, no 401 (the console would bounce
-      // to /login and a terminal would read it as signed out).
+      // Fail closed, but not as "signed out": no login page, no 401.
       case 'database_error':
         authLog.error(`session store unavailable: ${session.errorMessage}`);
         send(res, 503, 'session store unavailable, try again', { 'Retry-After': '5' });
@@ -1056,17 +866,9 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
       default:
         session satisfies never;
     }
-    // Any other page GET under the base (/, /jobs, /settings, a typo'd
-    // path, …) renders the login page in place — the address bar keeps
-    // the URL, so signing in reloads straight into the page that was asked
-    // for. No per-page allowlist to forget when a page is added. Data
-    // routes are never pages: the API, the server-rendered partials
-    // (fragments an element swaps in) and the proxied editor answer 401
-    // instead. The proxied /apps/* namespace is deliberately NOT excluded:
-    // its paths mix an app's pages and API under one prefix the web side
-    // cannot split, so GETs get the page treatment (the login render) and
-    // only non-GETs are data routes — never app bytes reach an
-    // unauthenticated reader either way (task/app-web).
+    // Page GETs render the login page in place, so signing in reloads the
+    // requested URL. API, partials and the editor answer 401. /apps/* GETs
+    // get the page treatment since app pages and APIs share that prefix.
     if (
       req.method === 'GET' &&
       underBase(url) &&
@@ -1082,9 +884,7 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     return;
   }
 
-  // 'Log out everywhere' (/settings): every token dies and every
-  // terminal ends — suspected-cookie-theft recovery in one click. This
-  // browser's cookie is cleared too.
+  // Log out everywhere: every token and every terminal ends.
   if (req.method === 'POST' && url === route('/api/logout-all')) {
     const dropped = auth.dropAll();
     closeAllSockets({ type: 'signed-out' });
@@ -1100,11 +900,7 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     return;
   }
 
-  // task/ws-editor: the same-origin editor proxy — authenticated GET/HEAD
-  // streams straight through; editor bodies keep a large cap (sized to a
-  // big editor save), ACCEPT length-less (chunked) bodies, and trade the
-  // 5-minute whole-body deadline for the upload route's stall guard. The
-  // origin check already ran at the top of handle().
+  // Editor bodies may be chunked and large (saves), so they get the stall guard instead of the deadline.
   if (isEditorHttpPath(CFG.base, url)) {
     if (!CFG.editorUpstream) {
       send(res, 404, 'not found');
@@ -1121,13 +917,7 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     return;
   }
 
-  // task/app-web (apps-plan §4): the /apps/* proxy — authenticated
-  // pages + API, never session-free. The session gate above already ran
-  // (an unauthenticated page GET rendered the login page in place; a
-  // non-GET answered 401), and the origin check ran before routing.
-  // HTTP only — WS rides a later branch of the epic (§12). Decision
-  // rules + transport: src/lib/apps/apps-proxy.ts (off → 404 namespace,
-  // unknown slug → 404 before the host, host down → 502 fast).
+  // Unauthenticated GETs already got the login page and non-GETs a 401.
   if (isAppsHttpPath(CFG.base, url)) {
     handleAppsRequest(
       {
@@ -1144,8 +934,6 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     return;
   }
 
-  // Authenticated: hashed assets served statically; /login is pointless
-  // when signed in (redirect).
   if (req.method === 'GET') {
     if (url.startsWith(route('/_astro/'))) {
       sendClientFile(res, url.slice(CFG.base.length), true);
@@ -1157,16 +945,12 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     }
   }
 
-  // Everything else under the base — pages, the JSON API (src/pages/api)
-  // and partials — renders through Astro, with the services and this
-  // request's token in locals. The origin and session checks above have
-  // already run; this is the only place locals are passed.
+  // The only place locals are passed.
   if (!underBase(url)) {
     send(res, 404, 'not found');
     return;
   }
-  // Astro throws on an undecodable path (a bad %-escape such as
-  // /api/jobs/%E0) — a client error, answered here.
+  // Astro throws on a bad %-escape; answer it as a client error.
   try {
     decodeURI(url);
   } catch {
@@ -1192,20 +976,11 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
 // ---------- WebSocket → node-pty → tmux attach ----------
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 
-// task/jobs-page (plan §7): /ws/events — the jobs pages' live
-// subscription to the domain-event bus. The scheduler's service layer
-// (src/lib/jobs/jobs.ts) emits at its choke points (whoever acted — the
-// browser routes, the internal socket API of plan §4, the tick,
-// run-now); this relay forwards each event to every authenticated
-// browser socket. The gate is checkEventsUpgrade (src/lib/platform/events-ws.ts),
-// the same checks the terminal's branch below applies inline.
+// Browser subscriptions to the jobs domain-event bus.
 const eventsRelay = new EventsRelay({ alive: token => auth.alive(token), log: wsLog });
 eventsRelay.start();
 
-// Live sockets per session token, fed by the upgrade handler (which has
-// already validated it): POST /logout, log-out-everywhere and shutdown
-// must end the terminals a token authenticated — not merely stop future
-// requests — and shutdown must be able to reach every client.
+// Logout and shutdown must end the terminals a token opened.
 const socketsByToken = new Map<SessionToken, Set<WebSocket>>();
 
 function trackSocket(token: SessionToken, ws: WebSocket): void {
@@ -1223,9 +998,8 @@ function untrackSocket(token: SessionToken, ws: WebSocket): void {
   if (set.size === 0) socketsByToken.delete(token);
 }
 
-/** Close with a hard fallback: a peer that never answers the close frame
- *  (dead client, or a script holding a stolen token) is terminated — a
- *  logout/shutdown can't leave a live terminal behind on a limp socket. */
+/** A peer that never answers the close frame is terminated, so a
+ *  logout can't leave a terminal alive on a limp socket. */
 function closeSoon(ws: WebSocket): void {
   try {
     ws.close();
@@ -1263,19 +1037,12 @@ function closeAllSockets(final: ServerMsg): void {
   socketsByToken.clear();
 }
 
-// Graceful shutdown state (sequence at the bottom, by server.listen).
 let shuttingDown = false;
 
 server.on('upgrade', (req, socket, head) => {
   const url = (req.url ?? '').split('?')[0]!;
-  // task/ws-editor: the editor's WebSockets first — a PREFIX branch before
-  // the terminal's equality check: the browser dials
-  // `${BASE}/editor/stable-<commit>?reconnectionToken=…` (two per window,
-  // Management + ExtensionHost — spike-pinned). Same gates as the terminal
-  // except the ws rate limiter: VS Code opens several sockets per window,
-  // so 30/min/IP would throttle two tabs. The socket itself is a raw byte
-  // tunnel to the upstream — never the terminal's wss/attach path (no pty) —
-  // tracked per token so logout cuts editor shells too.
+  // Editor upgrades skip the WS rate limiter: VS Code opens several sockets
+  // per window, so 30/min/IP would throttle two tabs.
   if (isEditorUpgradePath(CFG.base, url)) {
     if (shuttingDown) {
       socket.destroy();
@@ -1286,8 +1053,6 @@ server.on('upgrade', (req, socket, head) => {
       socket.destroy();
       return;
     }
-    // Browser-only, same as the terminal: an upgrade must carry a matching
-    // Origin (the console's iframe is same-origin and always sends one).
     const ip = ipOf(req);
     const origin = req.headers.origin;
     if (!origin || !originOk(req)) {
@@ -1319,10 +1084,7 @@ server.on('upgrade', (req, socket, head) => {
     return;
   }
   if (url === route('/ws/events')) {
-    // task/jobs-page (plan §7): the events WS — same gates as the
-    // terminal (shutdown, the shared rate limiter, Origin, the session
-    // cookie), decided by checkEventsUpgrade so the logic is unit-
-    // testable; the terminal's branch below keeps its inline twin.
+    // Same gates as the terminal below, factored out for unit tests.
     const gate = checkEventsUpgrade(req, ipOf(req), {
       shuttingDown: () => shuttingDown,
       allow: ip2 => wsLimiter.allow(ip2),
@@ -1349,17 +1111,14 @@ server.on('upgrade', (req, socket, head) => {
   if (shuttingDown) {
     socket.destroy();
     return;
-  } // stopping: no new terminals
+  }
   const ip = ipOf(req);
   if (!wsLimiter.allow(ip)) {
     wsLog.warn('ws upgrade rate-limited (30 per min per IP)', { ip });
     socket.destroy();
     return;
   }
-  // The terminal is browser-only: an upgrade must carry a matching Origin
-  // (no curl/websocat clients, no cross-site WebSocket hijacking from a
-  // sibling subdomain). Unlike plain HTTP there is no Origin-free path —
-  // a missing header is destroyed, not waved through.
+  // Unlike HTTP, a missing Origin is rejected: the terminal is browser-only.
   const origin = req.headers.origin;
   if (!origin || !originOk(req)) {
     wsLog.warn('ws upgrade rejected: missing or mismatched Origin', { ip });
@@ -1375,7 +1134,7 @@ server.on('upgrade', (req, socket, head) => {
         wsLog.info('ws upgrade rejected: no valid session', { ip });
         status = '401 Unauthorized';
         break;
-      // Fail closed without calling it signed out (same as HTTP's 503).
+      // Fail closed without calling it signed out.
       case 'database_error':
         authLog.error(`session store unavailable: ${session.errorMessage}`);
         status = '503 Service Unavailable';
@@ -1402,41 +1161,23 @@ function wsSend(ws: WebSocket, msg: ServerMsg): void {
   if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
 }
 
-// parseClientMsg (the client-frame gate) lives in src/schemas/frames.ts;
-// ClientMsg (the union it yields) is re-exported by src/lib/platform/types.ts.
-
-// Keepalive: a ping per connection this often. Idle-timeout proxies (ALB
-// defaults to 60s; nginx's proxy_read_timeout) count it as traffic, so a
-// terminal sitting at pi's prompt isn't cut; a ping unanswered by the next
-// tick means the peer is gone — terminate, and the pty is reaped.
+// Keepalive ping: keeps idle-timeout proxies (ALB's 60 s) from cutting a quiet
+// terminal, and a ping unanswered by the next tick means the peer is gone.
 const PING_INTERVAL_MS = 30_000;
 
 function attach(ws: WebSocket, token: SessionToken): void {
   wsLog.debug('ws connected');
   trackSocket(token, ws);
   let p: Pty | null = null;
-  // The tmux session this socket successfully attached to (null until
-  // then): the attached/detached lifecycle pair logs at info, while the
-  // socket opening itself stays at debug — a socket opens on every tab
-  // load and reconnect, and most of them do attach, but a failed one
-  // (no such session, the never-fork guard) shouldn't bury the console.
+  // Set once attached: attach/detach log at info, socket open at debug.
   let attachedTo: TmuxSessionName | null = null;
-  // Attach in flight: the spawn is one async step deeper than it used to
-  // be (the never-fork guard runs before the pty spawn), so a second
-  // {attach} frame in that window must not start a second spawn — `!p`
-  // alone can't see it yet. Cleared on the error paths so a failed attach
-  // is retryable on the same socket.
+  // Guards the async gap before `p` is set against a second {attach}.
   let starting = false;
-  // The client sends {attach} and {resize} back-to-back on open, but the
-  // pty only exists after an async tmux lookup — remember the requested
-  // size and spawn at it, or the session opens at 80x24 inside a larger
-  // browser terminal ("terminal not fitting on open").
+  // {resize} usually arrives before the pty exists; spawn at that size, not 80x24.
   let size = { cols: 80, rows: 24 };
 
   async function spawnTmux(target: TmuxSessionName): Promise<void> {
-    // Never-fork gate, same as the create paths: attach is a forking
-    // tmux command too — on an absolute socket it must not run against a
-    // missing/stale socket (that forks a server as the web uid).
+    // On an absolute socket, attach must not fork a tmux server as this uid.
     const server = await tmux.requireServer();
     if (!server.ok) {
       starting = false;
@@ -1463,15 +1204,8 @@ function attach(ws: WebSocket, token: SessionToken): void {
       wsSend(ws, { type: 'error', message: 'spawn failed: ' + (e as Error).message });
       return;
     }
-    // Scrollback backfill: capture the pane's HISTORY and send it as one
-    // 'backfill' frame BEFORE any 'output' flows — the client writes it
-    // into its fresh buffer and pushes the viewport down so the attach
-    // redraw lands below it (agent-terminal.ts). Until the capture
-    // resolves, the pty's output is buffered, never dropped: it carries
-    // the redraw. capture-pane is a non-forking client command — it
-    // errors on a down server instead of starting one, so it rides after
-    // the attach's own never-fork gate above without one of its own
-    // (tmux.ts capturePaneHistory).
+    // Hold pty output until the scrollback backfill is sent: the client
+    // writes history first, and the held output carries the attach redraw.
     const held: string[] = [];
     let flushing = false;
     x.onData(d => {
@@ -1490,8 +1224,7 @@ function attach(ws: WebSocket, token: SessionToken): void {
     try {
       history = await tmux.capturePaneHistory(target);
     } catch (err) {
-      // capturePaneHistory can't fail by design; this is the belt under
-      // the suspenders — a capture failure must never break the attach.
+      // Must never break the attach.
       wsLog.warn('backfill capture threw', { target, error: err });
     }
     if (history !== null) {
@@ -1505,8 +1238,7 @@ function attach(ws: WebSocket, token: SessionToken): void {
 
   async function onMessage(msg: ClientMsg): Promise<void> {
     if (msg.type === 'input') {
-      // Written whole: the client splits big pastes into consecutive input
-      // frames (agent-terminal.ts), and maxPayload bounds any one frame.
+      // Big pastes arrive pre-split by the client; maxPayload bounds each frame.
       if (p) p.write(msg.data);
     } else if (msg.type === 'resize') {
       const c = Math.min(Math.max(Math.trunc(msg.cols) || 80, 10), 500);
@@ -1526,14 +1258,8 @@ function attach(ws: WebSocket, token: SessionToken): void {
         wsSend(ws, { type: 'error', message });
       };
       if (msg.mode === 'terminal') {
-        // task/ws-terminal (plan §4/§7): the restart-survival path. The
-        // id is the terminal ROW's uuid — the state db owns the identity,
-        // the tmux session name is derived (t-<uuid>). tmux alive = the
-        // content survives (web restart, the common case); tmux dead =
-        // the structure survives and this attach RESPAWNS a fresh
-        // command at the workspace cwd. The respawn rides the same
-        // guarded new-session the create route uses, so the never-fork
-        // guard covers it on absolute sockets.
+        // tmux alive: reattach. tmux dead: respawn the tab's command at the
+        // workspace cwd (the db row outlives the session).
         const id = TerminalIdSchema.safeParse(msg.id);
         if (!id.success) {
           failed('bad terminal id');
@@ -1550,12 +1276,7 @@ function attach(ws: WebSocket, token: SessionToken): void {
         }
         const name = tmux.terminalSessionName(id.data);
         if (!(await tmux.hasSession(name))) {
-          // The respawn re-runs the command the tab's SLOT runs
-          // (task/defaults-settings): the workspace's auto-opened tab
-          // (recognised by created_at equality with the workspace —
-          // terminalForAttach's `agent`) runs the agent command, every
-          // other tab a shell — resolved at respawn time like at create
-          // time, so a saved /settings override reaches respawns too.
+          // The workspace's auto-opened tab respawns the agent; others a shell.
           const command = found.data.agent
             ? resolvedAgentCommand(stateDb)
             : resolvedShellCommand(stateDb);
@@ -1570,7 +1291,6 @@ function attach(ws: WebSocket, token: SessionToken): void {
           );
           if (!spawned.ok) {
             switch (spawned.errorCode) {
-              // the never-fork guard — say it, don't bury it
               case 'server_not_running':
                 failed(tmux.SERVER_NOT_RUNNING_MSG);
                 return;
@@ -1586,10 +1306,7 @@ function attach(ws: WebSocket, token: SessionToken): void {
         }
         await spawnTmux(name);
       } else if (msg.mode === 'run') {
-        // task/ws-terminal (plan §7): a live job run's tmux session
-        // (cybermole-<name>) — the jobs view-run path. NEVER respawns: the
-        // run IS the session, it dies with the command, and a re-run is a
-        // new session (jobs.ts), not a respawn of a dead one.
+        // A job run's session never respawns: the run dies with its command.
         const target = TmuxSessionNameSchema.safeParse(msg.target);
         if (!target.success) {
           failed('bad target');
@@ -1606,7 +1323,7 @@ function attach(ws: WebSocket, token: SessionToken): void {
 
   ws.on('message', raw => {
     const msg = parseClientMsg(Buffer.from(raw as Buffer).toString('utf8'));
-    if (!msg) return; // malformed frames are dropped, never thrown on
+    if (!msg) return;
     onMessage(msg).catch(err => wsLog.error('ws message handler error', { error: err }));
   });
 
@@ -1619,22 +1336,15 @@ function attach(ws: WebSocket, token: SessionToken): void {
       ws.terminate();
       return;
     }
-    // Liveness sweep: the expiry clocks must bind established terminals
-    // too. A socket whose token died — idle, the 30-day absolute cap, or
-    // a logout-everywhere — gets the signed-out message and closes on
-    // the next tick instead of riding the keepalive forever (a terminal
-    // is a live shell; the token dying for HTTP must end it too).
-    // Non-renewing on purpose (auth.alive): WS traffic never slides a
-    // token — only authed HTTP does, via auth.valid.
+    // Bind established terminals to token expiry too. auth.alive doesn't
+    // renew: WS traffic never slides a token.
     const live = auth.alive(token);
     if (!live.ok) {
       switch (live.errorCode) {
         case 'no_session':
           closeTokenSockets(token, { type: 'signed-out' });
           return;
-        // Unreadable session store: can't tell, so don't sign the terminal
-        // out over a db hiccup — its token was alive at the last sweep;
-        // re-check next tick (the peer-liveness ping below still runs).
+        // Don't sign a terminal out over a db hiccup; re-check next tick.
         case 'database_error':
           authLog.error(`session store unavailable: ${live.errorMessage}`);
           break;
@@ -1660,8 +1370,6 @@ function attach(ws: WebSocket, token: SessionToken): void {
         /* already gone */
       }
     }
-    // Covers both ways a terminal ends: the pty exiting (the 'exit' frame
-    // above) and the peer closing the tab.
     if (attachedTo) wsLog.info('terminal detached', { target: attachedTo });
   });
   ws.on('error', () => {
@@ -1680,11 +1388,8 @@ server.listen(CFG.port, CFG.host, () => {
     `cybermole listening on ${CFG.host}:${CFG.port} base ${CFG.base} ` +
       `(tmux socket ${tmux.SOCKET}, command "${ENV.CYBERMOLE_COMMAND}", client ${CFG.clientDir})`,
   );
-  // Best-effort vendored-pi version at boot — makes dependency drift
-  // visible. Checked against the ENV-side agent default, never the
-  // db-resolved one: reading the state db here would open it eagerly
-  // (db.ts opens lazily on purpose — the e2e webServer boots before its
-  // workspace reset).
+  // Only for the env default: resolving the db one would open the state db
+  // eagerly (the e2e webServer boots before its workspace reset).
   if (ENV.CYBERMOLE_AGENT_COMMAND === PI_BIN) {
     execFile(PI_BIN, ['--version'], { timeout: 5000 }, (err, out) =>
       bootLog.info(
@@ -1694,62 +1399,42 @@ server.listen(CFG.port, CFG.host, () => {
   }
 });
 
-// ---------- graceful shutdown (SIGTERM / SIGINT) ----------
-// Docker stop, compose, systemd — the container's init relays the signal
-// and the stop must not hang (SIGKILL waits behind stopTimeout, and every
-// attached terminal goes with it). The sequence: stop accepting new
-// connections, tell every open WS 'restart' and close it, then exit once
-// the sockets have drained. shutdownSteps is a small ordered list of
-// closures — other subsystems register into it by pushing (the in-process
-// scheduler stops its tick loop there, so no job fires mid-drain);
-// deliberately not a framework, just "later in the array runs later".
+// ---------- graceful shutdown ----------
+// Steps run in order; the deadline stops a stuck socket holding the stop.
 const SHUTDOWN_DEADLINE_MS = 5000;
 const whenClosed = new Promise<void>(resolve => server.once('close', resolve));
 const shutdownSteps: Array<() => void | Promise<void>> = [
   () => {
     shutdownScheduler();
-  }, // 0. stop firing scheduled jobs
+  },
   () => {
     autoUpdater.stop();
-  }, // 0.5 stop the auto-update loop
+  },
+  // Before the internal API: the host discovers over that socket.
   () => {
-    // task/app-web: stop the supervised app host BEFORE the internal API
-    // below — the host discovers over that socket; SIGTERM (SIGKILL after
-    // a short grace — its own drain must not hold ours), no restart.
     return appHostSupervisor?.stop();
-  }, // 0.55 supervised app host off
+  },
   () => {
-    // task/jobs-socket: stop the internal listener and unlink the socket
-    // file — the workspace side stops getting new job calls before the
-    // public surface goes dark; in-flight requests drain inside close().
     return internalApi?.close();
-  }, // 0.6 internal API off
+  },
   () => {
     server.close();
-  }, // 1. stop listening
+  },
   () => {
     closeAllSockets({ type: 'restart' });
-  }, // 2. notify + close every client
+  },
   () => {
     eventsRelay.stop({ type: 'restart' });
-  }, // 2.1 events sockets: unsubscribe + close (clients reconnect with backoff)
+  },
   () => {
     editorTunnels.closeAll();
-  }, // 2.5 editor tunnels: cut (the iframe reconnects)
+  },
   () => {
-    // Re-armed on an interval, not one-shot: a terminal's close makes the
-    // console page re-poll /api/state on its keep-alive socket — busy
-    // (not idle) at the moment of a one-shot call, then idle with nothing
-    // left to close it, so the one-shot form usually lands on the
-    // deadline with a misleading "drain unfinished". The sweep closes each
-    // straggler the moment it goes idle, so the drain usually completes
-    // clean; the deadline stays as the backstop.
+    // Keep-alive sockets go idle after the console's last re-poll; a
+    // one-shot closeIdleConnections would miss them.
     const sweep = setInterval(() => server.closeIdleConnections(), 250);
     return whenClosed.finally(() => clearInterval(sweep));
   },
-  // 3. flush the logger: loki's last batch goes out (capped in closeLogger
-  // itself — the deadline backstop in shutdown() stays authoritative); the
-  // console transport needs no flush.
   () => closeLogger(),
 ];
 
@@ -1757,7 +1442,6 @@ function shutdown(signal: string): void {
   if (shuttingDown) process.exit(0); // a second signal skips the drain
   shuttingDown = true;
   shutdownLog.info(`${signal} received — shutting down`);
-  // A stuck socket must not hold the stop past the deadline.
   const deadline = setTimeout(() => {
     shutdownLog.error(`shutdown: drain unfinished after ${SHUTDOWN_DEADLINE_MS}ms — exiting`);
     process.exit(0);
@@ -1774,8 +1458,6 @@ function shutdown(signal: string): void {
     process.exit(0);
   })();
 }
-// on(), not once(): a repeated SAME signal would have consumed its once
-// listener and taken the default exit (143) mid-drain — with on(), the
-// shuttingDown flag makes every later signal the fast exit path.
+// on(), not once(): a repeated signal must hit the fast-exit path, not the default handler.
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));

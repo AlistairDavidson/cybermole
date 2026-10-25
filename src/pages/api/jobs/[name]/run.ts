@@ -1,5 +1,4 @@
-// POST /api/jobs/<name>/run — run a job now. Refused (409) while the
-// previous run's tmux session is still alive.
+// 409 while the previous run is still alive.
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../../../lib/web/locals';
 import { invalidJobNameResponse, jobFailureResponse } from '../../../../lib/web/responses.service';

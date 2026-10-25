@@ -1,6 +1,5 @@
-// global-setup.ts — hermetic workspace for the e2e run.
-// The webServer (playwright.config.ts) boots before this runs; that's fine:
-// the server opens the state db and tmux socket lazily.
+// Hermetic workspace for the e2e run. The webServer boots first, which is
+// fine: it opens the state db and tmux socket lazily.
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -21,10 +20,8 @@ import {
   writeSharedSessionCookie,
 } from './env';
 
-/** task/app-web: the fixture app's tree + build. Built when its dist/ is
- *  missing or older than its sources (setup-node-modules.mjs when the
- *  per-package links are absent too); the §5 self-containment gate runs
- *  on every real build so a broken one can never reach the host. */
+/** Rebuilt when dist/ is missing or older than its sources; every real
+ *  build runs the self-containment gate. */
 function buildFixtureApp(): void {
   const fixture = path.resolve(__dirname, '..', 'fixtures', 'app-fixture');
   const entry = path.join(fixture, 'dist', 'server', 'entry.mjs');
@@ -65,17 +62,14 @@ export default async function globalSetup(): Promise<void> {
   fs.rmSync(WORKSPACE, { recursive: true, force: true });
   fs.mkdirSync(WORKSPACE, { recursive: true });
 
-  // Login credential in the state db (Auth reads the row per attempt;
-  // the server opens the db lazily — only after this reset).
+  // The server reads the credential row per attempt and opens the db lazily.
   const db = new StateDb(path.join(WORKSPACE, 'cybermole.db'));
   const saved = setCredential(db, USERNAME, PASSWORD);
   if (!saved.ok) throw new Error(`global-setup: ${saved.errorMessage}`);
 
-  // Deterministic command for new terminal tabs: banner + a shell we can
-  // type into. CYBERMOLE_COMMAND is whitespace-split, so it must be one
-  // path. `agent` is the marker argument the AUTO-OPENED first terminal of
-  // a new workspace runs under (CYBERMOLE_AGENT_COMMAND — a distinct
-  // banner so the agent tab is tellable from a plain one).
+  // New tabs run a banner plus a shell. CYBERMOLE_COMMAND is whitespace-split,
+  // so it must be one path; the `agent` argument gives the auto-opened agent
+  // tab a distinct banner.
   const cmd = path.join(WORKSPACE, 'cmd.sh');
   fs.writeFileSync(
     cmd,
@@ -83,14 +77,10 @@ export default async function globalSetup(): Promise<void> {
   );
   fs.chmodSync(cmd, 0o755);
 
-  // Fixture workspace tree (plan §5), written through the real domains:
-  // one app, two console workspaces, one app workspace, terminals under
-  // them. Rows only — no eager spawns; which fixture tabs read as LIVE is
-  // decided by the tmux sessions below (the live diff is tmux-derived).
-  // The create AUTO-OPENS each workspace's first terminal (task/
-  // defaults-settings — the agent slot), so `titles` names only the
-  // EXTRA tabs beyond it: scratch gets one extra (its dead-tab fixture),
-  // deploy and proj none.
+  // The fixture tree, through the real domains: one app, two console
+  // workspaces, one app workspace. Rows only; which tabs are live is decided
+  // by the tmux sessions below. Each create auto-opens the first tab, so
+  // `titles` lists only the extras (scratch's dead-tab fixture).
   const username = (): DatabaseReadResult<string | null> => ({
     ok: true,
     resultType: 'database_read',
@@ -129,9 +119,7 @@ export default async function globalSetup(): Promise<void> {
       appId === null ? { name, cwd } : { appId: asAppId(appId), name, cwd },
     );
     if (!ws.ok) throw new Error(`global-setup: ${ws.errorMessage}`);
-    // The create auto-opened the first tab (the agent slot — task/
-    // defaults-settings); read its row back so the fixture's terminal
-    // list starts with it, in tab order.
+    // Read back the auto-opened tab so the list starts with it.
     const autoRow = db.get(
       qb
         .selectFrom('terminals')
@@ -152,19 +140,13 @@ export default async function globalSetup(): Promise<void> {
   const deploy = await seeded('deploy checklist', dir('deploy'), null, []);
   const proj = await seeded('proj', dir('proj'), app.data.id, []);
 
-  // Kill any leftover test tmux server from a previous aborted run —
-  // BEFORE the live fixtures below, which must survive into the suite —
-  // and WAIT for it to be gone: between kill-server's reply and the
-  // server process actually exiting, a client that connects gets
-  // "server exited unexpectedly" (observed whenever the previous run
-  // left a loaded server behind). list-sessions is the probe — a server
-  // still answering means alive, "server exited unexpectedly" means
-  // dying, and anything else ("no server running", no socket file) is
-  // gone. It never forks a server of its own.
+  // Kill a leftover test tmux server before starting the live fixtures, and
+  // wait until it's gone: a dying server answers "server exited
+  // unexpectedly". list-sessions never forks a server of its own.
   try {
     execFileSync('tmux', ['-L', TMUX_SOCKET, 'kill-server'], { stdio: 'ignore' });
   } catch {
-    /* no server running — fine */
+    /* no server running */
   }
   const serverGone = (): boolean => {
     try {
@@ -181,17 +163,10 @@ export default async function globalSetup(): Promise<void> {
     await new Promise(resolve => setTimeout(resolve, 50));
   }
 
-  // Live fixture tabs: real tmux sessions named t-<uuid> at their
-  // workspace cwd (the derived-name contract, plan §4) running cmd.sh.
-  // scratch's second tab ('build') stays DEAD (no session) — the dead-tab
-  // story (live:false, attach respawns) is part of what the suite asserts.
-  // The first tab is the live one on purpose: it is the tab auto-selected
-  // at login, and a live auto-selection attaches without respawning.
-  // -f on the FIRST session starts the server under the app's own conf
-  // (exactly what the app's first new-session does — terminal-search made
-  // that conf load-bearing: its terminal-overrides keep attached clients
-  // in the normal buffer so scrollback survives, which the backfill tests
-  // rely on and production always runs with).
+  // Live fixtures are real t-<uuid> sessions at their workspace cwd.
+  // scratch's 'build' tab stays dead on purpose. The first tab is live
+  // because it's auto-selected at login. -f on the first session loads the
+  // app's tmux.conf, whose terminal-overrides the backfill tests rely on.
   let first = true;
   for (const [group, index] of [
     [scratch, 0],
@@ -221,15 +196,9 @@ export default async function globalSetup(): Promise<void> {
     execFileSync('npm', ['run', 'build'], { stdio: 'inherit' });
   }
 
-  // ONE sign-in for the whole run, here at setup (task/app-actions
-  // integration): the per-IP login budget is 10 attempts / 15 min and
-  // the suite's spec files (browser-theme, e2e's own + its post-logout
-  // re-logins) already sit at its edge — the three apps spec files'
-  // sign-ins tipped it over (the late re-logins ate 429s and timed out
-  // at the form). The apps specs' login() helpers read this shared
-  // cookie file first (env.ts), so they cost the run ZERO sign-ins.
-  // Best-effort: a failed seed just falls back to the first spec's own
-  // form sign-in (the pre-shared behavior).
+  // One sign-in for the whole run: the 10/15-min login budget is tight, so
+  // the apps specs reuse this cookie (env.ts). Best-effort: on failure the
+  // first spec signs in itself.
   for (let attempt = 0; attempt < 10; attempt++) {
     try {
       const res = await fetch(`http://127.0.0.1:3470/login`, {
@@ -243,7 +212,7 @@ export default async function globalSetup(): Promise<void> {
         break;
       }
     } catch {
-      /* the webServer may still be coming up — retry below */
+      /* the webServer may still be coming up */
     }
     await new Promise(resolve => setTimeout(resolve, 1000));
   }

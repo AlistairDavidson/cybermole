@@ -1,10 +1,6 @@
-// restart.spec.ts — login sessions persist (auth_sessions in the state db,
-// src/lib/platform/auth.ts): a cookie issued by one server process is still valid
-// after that process stops and a fresh one boots on the same state db,
-// and a password change (setCredential) revokes it. Non-page spec
-// (state-dir / split pattern): spawns its OWN server children on its own
-// port, so the login below spends that private process's rate-limit
-// budget, not the shared :3470 webServer's.
+// Login sessions persist in the state db: a cookie survives a server restart
+// on the same db, and a password change revokes it. Private servers, so the
+// login spends their own budget.
 import { spawn, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -18,7 +14,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const PORT = 3483;
 const BASE = `http://127.0.0.1:${PORT}`;
 
-/** Child env with the CYBERMOLE_ / PI_CODING_AGENT_ overrides stripped. */
+/** The machine's and suite's CYBERMOLE_ / PI_CODING_AGENT_ settings must not leak in. */
 function bareEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) {
@@ -36,9 +32,6 @@ async function boot(dir: string): Promise<ChildProcess> {
       CYBERMOLE_HOST: '127.0.0.1',
       CYBERMOLE_STATE_DIR: dir,
       CYBERMOLE_TMUX_SOCKET: `cybermole-restart-itest-${process.pid}`,
-      // task/app-web: this spec's servers don't exercise the apps
-      // surface — empty CYBERMOLE_APPS_SOCK keeps the single-user spawn
-      // rule from starting a supervised app host alongside each boot.
       CYBERMOLE_APPS_SOCK: '',
     }),
     stdio: ['ignore', 'pipe', 'pipe'],

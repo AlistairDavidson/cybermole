@@ -1,8 +1,4 @@
-// frames.test.mjs — the WS client-frame gate (parseClientMsg + the zod
-// schemas ClientMsg is z.infer'd from, src/schemas/frames.ts). The accepted /
-// rejected surface must match the hand-rolled parseClientMsg it replaced
-// exactly: malformed frames answer null (the caller drops them), they are
-// never thrown on.
+// The WS client-frame gate: malformed frames answer null (dropped), never thrown on.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as frames from '../../dist-server/src/schemas/frames.js';
@@ -10,7 +6,7 @@ const { parseClientMsg } = frames;
 
 test('accepts each frame shape, stripping unknown extra keys', () => {
   assert.deepEqual(parseClientMsg('{"type":"input","data":"hi"}'), { type: 'input', data: 'hi' });
-  // extra keys tolerated (stripped) — the old checks only read known fields
+  // extra keys are tolerated (stripped)
   assert.deepEqual(parseClientMsg('{"type":"input","data":"hi","junk":1}'), {
     type: 'input',
     data: 'hi',
@@ -21,18 +17,15 @@ test('accepts each frame shape, stripping unknown extra keys', () => {
     cols: 120,
     rows: 40,
   });
-  // fractional sizes are numbers — clamping is downstream business
+  // fractional sizes are numbers; clamping happens downstream
   assert.deepEqual(parseClientMsg('{"type":"resize","cols":1.5,"rows":40.5}'), {
     type: 'resize',
     cols: 1.5,
     rows: 40.5,
   });
-  // The two workspace-model modes (plan §7) are the whole attach union
-  // since task/ws-console deleted live/resume with the UI that sent them:
-  // 'terminal' carries the tab's uuid, 'run' a live job run's session
-  // name. The schemas keep both plain strings ON PURPOSE: server/main.ts
-  // brands them, so a junk id/target answers an error frame instead of
-  // the frame being silently dropped — so even a non-uuid id parses here.
+  // Attach has two modes: 'terminal' (a tab's uuid) and 'run' (a live run's
+  // session). Both stay plain strings, since main.ts brands them to answer
+  // an error frame, so even a non-uuid id parses here.
   assert.deepEqual(
     parseClientMsg(
       '{"type":"attach","mode":"terminal","id":"123e4567-e89b-42d3-a456-426614174000"}',
@@ -49,7 +42,7 @@ test('accepts each frame shape, stripping unknown extra keys', () => {
     mode: 'run',
     target: 'cybermole-nightly',
   });
-  // a stray target on terminal / id on run is ignored; mode decides
+  // a stray target on terminal, or id on run, is ignored
   assert.deepEqual(
     parseClientMsg('{"type":"attach","mode":"run","target":"cybermole-nightly","id":"x"}'),
     { type: 'attach', mode: 'run', target: 'cybermole-nightly' },
@@ -81,10 +74,10 @@ test('rejects non-objects, bad JSON, unknown types and mistyped fields — null,
     '{"type":"attach","mode":"terminal"}',
     '{"type":"attach","mode":"other","target":"t"}',
     '{"type":"attach","target":"t"}',
-    // the modes reject a missing/mistyped id or target the same way
+    // a missing or mistyped id/target
     '{"type":"attach","mode":"terminal","id":7}',
     '{"type":"attach","mode":"run","target":9}',
-    // a bare mode with no type is still junk
+    // a mode with no type is junk
     '{"mode":"terminal","id":"123e4567-e89b-42d3-a456-426614174000"}',
   ];
   for (const f of junk) {
@@ -100,10 +93,8 @@ test('input frames carry 64 KiB paste chunks (the hot path)', () => {
   assert.equal(msg && msg.type === 'input' && msg.data.length === 65536, true);
 });
 
-// ---------- task/terminal-search: the backfill server frame ----------
-// The one server→client frame the browser validates (src/schemas/frames.ts):
-// it bulk-writes into the terminal buffer, so junk is dropped, never
-// written. Same never-throws contract as the client-frame gate.
+// ---------- the backfill server frame ----------
+// The one server frame the browser validates: junk is dropped, never written.
 test('parseBackfillMsg: accepts a well-formed capture, rejects junk with null', () => {
   const { parseBackfillMsg } = frames;
   assert.equal(typeof parseBackfillMsg, 'function');
@@ -112,12 +103,12 @@ test('parseBackfillMsg: accepts a well-formed capture, rejects junk with null', 
     type: 'backfill',
     data: capture,
   });
-  // empty capture is a legal frame (the client skips the write)
+  // an empty capture is legal (the client skips the write)
   assert.deepEqual(parseBackfillMsg('{"type":"backfill","data":""}'), {
     type: 'backfill',
     data: '',
   });
-  // extra keys tolerated (stripped) — same policy as the client frames
+  // extra keys tolerated (stripped)
   assert.deepEqual(parseBackfillMsg('{"type":"backfill","data":"x","junk":1}'), {
     type: 'backfill',
     data: 'x',

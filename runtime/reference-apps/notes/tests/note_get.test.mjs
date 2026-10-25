@@ -1,4 +1,3 @@
-// The note_get action's unit tests — grown from the add_action stub.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { noteGetResult } from '../src/lib/note_get.ts';

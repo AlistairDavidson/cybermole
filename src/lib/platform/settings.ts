@@ -1,11 +1,6 @@
-// settings.ts — backs the /settings dashboard: effective-config version
-// facts and the manual pi updater behind POST /api/update-pi.
-// `npm install @earendil-works/pi-coding-agent@latest` runs in the app's
-// install dir. No restart needed: the session command is the vendored
-// node_modules/.bin/pi, exec'd fresh per session, so new sessions get the
-// new version (running ones keep theirs). Only when the server booted
-// without a vendored pi (CYBERMOLE_AGENT_COMMAND fell back to `pi` on
-// PATH) does a restart switch sessions over to it.
+// Version facts for /settings and the manual pi updater. No restart needed:
+// sessions exec the vendored node_modules/.bin/pi fresh, so new sessions get
+// the new version.
 import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -27,14 +22,12 @@ function readJson(file: string): Record<string, unknown> | null {
   }
 }
 
-/** cybermole's own package.json version (app identity on the dashboard). */
 export function appVersion(appRoot: string): string {
   const pkg = readJson(path.join(appRoot, 'package.json'));
   const v = pkg?.version;
   return typeof v === 'string' ? v : 'unknown';
 }
 
-/** pi's declared range in package.json dependencies (what the app pins). */
 export function piDeclared(appRoot: string): string {
   const pkg = readJson(path.join(appRoot, 'package.json'));
   const deps = pkg?.dependencies;
@@ -43,15 +36,13 @@ export function piDeclared(appRoot: string): string {
   return typeof range === 'string' ? range : 'unknown';
 }
 
-/** pi's installed version (node_modules manifest), null if not installed. */
 export function piInstalled(appRoot: string): string | null {
   const pkg = readJson(path.join(appRoot, 'node_modules', PI_PACKAGE, 'package.json'));
   const v = pkg?.version;
   return typeof v === 'string' ? v : null;
 }
 
-/** First executable `npm` on the server's PATH, null if there is none —
- *  the update button is unavailable (and says so) in that case. */
+/** null hides the update button. */
 export function npmPath(): string | null {
   for (const dir of (process.env.PATH ?? '').split(path.delimiter)) {
     if (!dir) continue;
@@ -66,33 +57,26 @@ export function npmPath(): string | null {
   return null;
 }
 
-// One update at a time — npm holds locks on node_modules; a second
-// concurrent run would race it. Guarded server-side, surfaced as 409.
+// npm locks node_modules, so one update at a time (a second gets 409).
 let updateBusy = false;
 
 export type PiUpdateData = {
   dryRun: boolean;
-  /** what ran / would run, for display */
   command: string;
-  /** installed pi version before (null: not installed) */
+  /** null: not installed */
   before: string | null;
-  /** installed pi version after */
   after: string | null;
-  /** captured npm output (dry-run: check output), capped */
+  /** dry-run: the check output; capped */
   output: string;
 };
-/** busy: another update holds the lock (409). npm_missing: no npm on the
- *  server PATH. npm_check_failed: the dry-run's `npm --version` failed.
- *  npm_failed: the install exited non-zero or timed out. */
+/** npm_check_failed: the dry-run's `npm --version` failed. */
 export type PiUpdateErrorCode = 'busy' | 'npm_missing' | 'npm_check_failed' | 'npm_failed';
 export type PiUpdateSuccess = ResultSuccess<'pi_update', PiUpdateData>;
 export type PiUpdateFailure = ResultFailure<'pi_update', PiUpdateData, PiUpdateErrorCode>;
 export type PiUpdateResult = PiUpdateSuccess | PiUpdateFailure;
 
-/** Run (or dry-run) a pi update. Never rejects: every outcome is a
- *  result. The install spec defaults to @latest (the manual button); the
- *  auto-updater passes the declared-range spec instead — same machinery,
- *  same busy guard, same output capture. */
+/** Never rejects. The button installs @latest; the auto-updater passes the
+ *  declared range instead, sharing the busy guard. */
 export async function runPiUpdate(
   appRoot: string,
   dryRun: boolean,
@@ -124,8 +108,7 @@ export async function runPiUpdate(
   const npmMissing = 'npm was not found on the server PATH — cannot update from here';
 
   if (dryRun) {
-    // Check-only: prove npm executes, touch nothing. Never blocked by an
-    // in-flight real update (it holds no locks).
+    // Touches nothing, so it isn't blocked by a running update.
     const npm = npmPath();
     if (!npm) return fail('npm_missing', npmMissing);
     const checked = await new Promise<{ err: Error | null; stdout: string }>(resolve =>
@@ -148,10 +131,6 @@ export async function runPiUpdate(
   if (!npm) return fail('npm_missing', npmMissing);
 
   updateBusy = true;
-  // FLEET JUNCTION (task/privilege-split): the two-container shape moves
-  // this npm install (node_modules with it) to the workspace side; the
-  // delegate site is marked in src/lib/platform/auto-update.ts, next to the
-  // auto-update call into this function.
   log.info(`pi update: running \`${command}\` in ${appRoot}`);
   const installed = await new Promise<{
     err: (Error & { killed?: boolean; code?: unknown }) | null;

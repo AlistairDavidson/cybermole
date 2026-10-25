@@ -1,21 +1,8 @@
-// apps-actions.test.mjs — task/app-actions (docs/plans/apps-plan.md §6/§10)
-// units: the action vocabulary's generator half.
-//   src/lib/apps/apps-actions.ts: the action-name rule (defined once), the
-//     light route-table parse (the AGENTS.md regeneration's source of
-//     truth), and add_action's LOCKSTEP against real scaffolded trees —
-//     every artifact written in order, idempotence (a duplicate name is a
-//     clear action_exists, never a mangled file), the diverged-tree
-//     refusal, the GET parameterization, the missing-marker robustness
-//     (fresh marked blocks, honestly noted), and the AGENTS.md block
-//     regeneration round-trip (idempotent, table-driven).
-//   src/lib/apps/apps-route-table.ts: the emitted table's reader (tree /
-//     not_built / malformed), the lenient preflight (presence-only — the
-//     app is the authority), the request planning (path params, GET
-//     query vs POST body), and the typed shape conversion (the shim's
-//     tool schemas).
-//   server/apps-mcp.ts's describe/call: table reading + request shaping
-//     against a stub apps socket — verbatim Result JSON, domain answers,
-//     transport-only isError.
+// apps-actions.ts: the name rule, the light route-table parse, AGENTS.md
+// block regeneration, and add_action against real scaffolded trees (write
+// order, refusals, GET, missing markers). apps-route-table.ts: reading the
+// emitted table, lenient preflight, request planning and typed shapes.
+// apps-mcp.ts describe/call against a stub apps socket.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as http from 'node:http';
@@ -48,7 +35,6 @@ const scaffoldDeps = root => ({
   run: runChild,
 });
 
-/** One real scaffolded world (the generator's target shape). */
 async function world(label) {
   const root = fs.mkdtempSync(path.join(dir, `${label}-`));
   const r = await scaffoldApp(scaffoldDeps(root), {
@@ -59,7 +45,7 @@ async function world(label) {
   return { root, slug: r.data.slug, tree: r.data.tree };
 }
 
-// ---------- the action-name rule ----------
+// ---------- action names ----------
 
 test('the action-name rule: normalizeSlug rules with underscores kept, capped, defined once', () => {
   assert.equal(normalizeActionName('Create Note!'), 'create-note');
@@ -76,7 +62,7 @@ test('the action-name rule: normalizeSlug rules with underscores kept, capped, d
   }
 });
 
-// ---------- the light parse ----------
+// ---------- light parse ----------
 
 test('parseRouteTableSource: the starter template parses — ping, its query field, multiline zod chains', () => {
   const source = fs.readFileSync(
@@ -159,13 +145,12 @@ export const routes: RouteTable = [
   assert.deepEqual(actions[0].fields, [
     { name: 'title', type: 'string', optional: false },
     { name: 'body', type: 'string', optional: true },
-    // best-effort by design: z.array(z.string()) reads as 'string' — the
-    // emitted dist/route-table.json is the precise shape
+    // best-effort: z.array(z.string()) reads as 'string'
     { name: 'tags', type: 'string', optional: true },
   ]);
 });
 
-// ---------- the AGENTS.md block regeneration ----------
+// ---------- AGENTS.md regeneration ----------
 
 test('the AGENTS.md block regeneration round-trips: idempotent, table-driven, markers preserved', async () => {
   const { root, slug, tree } = await world('regen');
@@ -175,8 +160,7 @@ test('the AGENTS.md block regeneration round-trips: idempotent, table-driven, ma
   );
   const agentsPath = path.join(tree, 'AGENTS.md');
   const once = fs.readFileSync(agentsPath, 'utf8');
-  // the block carries BOTH actions, ping's section regenerated in the
-  // same canonical shape as note's (the table is the source of truth).
+  // both actions, ping's regenerated in the same shape as note's
   const block = once.match(/<!-- BEGIN ACTIONS[\s\S]*?<!-- END ACTIONS -->/)[0];
   assert.match(
     block,
@@ -187,12 +171,12 @@ test('the AGENTS.md block regeneration round-trips: idempotent, table-driven, ma
     /### note\n\ncaptures a note\n- call: the `note` MCP tool[\s\S]*?`POST \/apps\/regen-probe\/api\/note`\n- input: `text` \(string, required\)/,
   );
   assert.equal(block.indexOf('### ping') < block.indexOf('### note'), true); // table order: ping first
-  // round-trip: regenerating from the same table writes the same file.
+  // idempotent: the same table writes the same file
   const routes = fs.readFileSync(path.join(tree, 'src', 'routes.ts'), 'utf8');
   const regen = regenerateAgentsActions(once, slug, parseRouteTableSource(routes));
   assert.equal(regen.appendedFresh, false);
   assert.equal(regen.text, once);
-  // the neighborhood outside the block is byte-identical to the template's.
+  // everything outside the block is byte-identical to the template
   const seeded = fs.readFileSync(path.join(tree, 'AGENTS.md'), 'utf8');
   assert.ok(seeded.includes('## Policy'));
 });
@@ -204,17 +188,17 @@ test('the AGENTS.md regeneration inserts a fresh section when the markers are go
   );
   const regen = regenerateAgentsActions(text, 'x', actions);
   assert.equal(regen.appendedFresh, true);
-  // before ## Policy, with the markers present exactly once, ping inside.
+  // before ## Policy, markers present once, ping inside
   assert.ok(regen.text.indexOf('## Actions') < regen.text.indexOf('## Policy'));
   assert.equal(regen.text.match(/<!-- BEGIN ACTIONS/g).length, 1);
   assert.match(regen.text, /### ping[\s\S]*?answers[\s\S]*?GET \/apps\/x\/api\/ping/);
-  // and with no ## Policy heading, the section appends at the end.
+  // with no ## Policy, the section appends at the end
   const tail = regenerateAgentsActions('# AGENTS.md\n', 'x', actions);
   assert.equal(tail.appendedFresh, true);
   assert.ok(tail.text.trimEnd().endsWith('<!-- END ACTIONS -->'));
 });
 
-// ---------- add_action: the lockstep ----------
+// ---------- add_action ----------
 
 test('add_action: the lockstep — every artifact written, in order, from one table entry', async () => {
   const { root, slug, tree } = await world('lockstep');
@@ -242,13 +226,13 @@ test('add_action: the lockstep — every artifact written, in order, from one ta
   assert.match(data.next.join(' | '), /build/);
   assert.match(data.next.join(' | '), /reload/);
 
-  // 1 — the domain module: ping.ts's shape (node-free, import type only).
+  // 1. the domain module: node-free, type-only imports
   const lib = fs.readFileSync(path.join(tree, 'src/lib/create-note.ts'), 'utf8');
   assert.match(lib, /export function createNoteResult\(rawText: string\)/);
   assert.match(lib, /ResultSuccess<'create-note', CreateNoteData>/);
   assert.match(lib, /import type \{ ResultFailure, ResultSuccess \} from '@cybermole\/app-kit';/);
 
-  // 2 — THE table entry: appended inside the array, import added.
+  // 2. the table entry inside the array, import added
   const routes = fs.readFileSync(path.join(tree, 'src/routes.ts'), 'utf8');
   assert.match(routes, /import \{ createNoteResult \} from '\.\/lib\/create-note';/);
   assert.match(
@@ -260,17 +244,15 @@ test('add_action: the lockstep — every artifact written, in order, from one ta
       routes.indexOf("name: 'ping'"),
   );
 
-  // 3 — the test stub, inside the tree's existing tests/*.test.mjs glob.
+  // 3. the test stub, inside the tests/*.test.mjs glob
   const testStub = fs.readFileSync(path.join(tree, 'tests/create-note.test.mjs'), 'utf8');
   assert.match(testStub, /from '\.\.\/src\/lib\/create-note\.ts'/);
   const pkg = JSON.parse(fs.readFileSync(path.join(tree, 'package.json'), 'utf8'));
   assert.match(pkg.scripts.test, /tests\/\*\.test\.mjs/); // the glob picks it up, no script edit
 
-  // 4 — the island + the page mount points inside the marked blocks.
+  // 4. the island, and the page mounts inside the markers
   const island = fs.readFileSync(path.join(tree, 'src/islands/CreateNoteIsland.tsx'), 'utf8');
-  // Bracket access, keyed by the literal name — a kebab name is not a
-  // dot-access identifier (the typed client keys methods by route name
-  // verbatim), so the generated island must compile for EVERY accepted name.
+  // Bracket access: a kebab name isn't a valid identifier.
   assert.match(island, /client\['create-note'\]\(\{ params: \{\}, body: \{ text \} \}\)/);
   const page = fs.readFileSync(path.join(tree, 'src/pages/index.astro'), 'utf8');
   const mounts = page.match(/<!-- BEGIN ACTION MOUNTS[\s\S]*?<!-- END ACTION MOUNTS -->/)[0];
@@ -278,14 +260,13 @@ test('add_action: the lockstep — every artifact written, in order, from one ta
   const islands = page.match(/\/\/ BEGIN ACTION ISLANDS[\s\S]*?\/\/ END ACTION ISLANDS/)[0];
   assert.match(islands, /mountIsland\('\.create-note-island', CreateNoteIsland, \{\}\);/);
 
-  // 5 — the manual: the block regenerated, both actions present.
+  // 5. AGENTS.md regenerated with both actions
   const block = fs
     .readFileSync(path.join(tree, 'AGENTS.md'), 'utf8')
     .match(/<!-- BEGIN ACTIONS[\s\S]*?<!-- END ACTIONS -->/)[0];
   assert.match(block, /### ping[\s\S]*### create-note/);
 
-  // the tree still parses + answers its own gate's first half cheaply:
-  // the parse of the WRITTEN table is exactly the two actions.
+  // the written table parses to exactly the two actions
   assert.deepEqual(
     parseRouteTableSource(routes).map(a => a.name),
     ['ping', 'create-note'],
@@ -310,10 +291,8 @@ test('add_action: the GET parameterization — the input lands in the query', as
 });
 
 test('add_action: the generated island compiles for every accepted name form — plain, kebab, snake', async () => {
-  // The typed client keys its methods by the route name VERBATIM, so the
-  // island must call through bracket access with the literal name. One
-  // scaffolded tree, three names, three islands — each emitting exactly
-  // the bracket form its name requires.
+  // Client methods are the route names verbatim; each island must use the
+  // bracket form its name requires.
   const { root, slug, tree } = await world('names');
   for (const name of ['echo', 'create-note', 'note_create']) {
     const r = await addAction({ appsRoot: root }, { slug, name });
@@ -326,15 +305,13 @@ test('add_action: the generated island compiles for every accepted name form —
     assert.ok(island.includes(expected), `${name}: bracket access with the literal name`);
     assert.ok(!island.includes(`client.${name}(`), `${name}: never dot access`);
   }
-  // and the tree's own table carries all three, parseable.
+  // the table carries all three
   const routes = fs.readFileSync(path.join(tree, 'src', 'routes.ts'), 'utf8');
   assert.deepEqual(
     parseRouteTableSource(routes).map(a => a.name),
     ['ping', 'echo', 'create-note', 'note_create'],
   );
-  // the compile proof: the tree's OWN typecheck (astro check + tsc) runs
-  // green over every generated island — the check gate the tool's answer
-  // names as the next verb must hold for every accepted name form.
+  // The tree's own typecheck passes over every generated island.
   const typecheck = await runChild('npm', ['run', 'typecheck'], { cwd: tree, timeoutMs: 120_000 });
   assert.equal(typecheck.code, 0, `${typecheck.stdout}\n${typecheck.stderr}`);
 });
@@ -347,8 +324,7 @@ test('add_action: a summary with newlines, backslashes and quotes stays one esca
   );
   assert.equal(r.ok, true, JSON.stringify(r));
   const routes = fs.readFileSync(path.join(tree, 'src', 'routes.ts'), 'utf8');
-  // the generated literal is ONE line: every description line is a
-  // complete single-quoted string (no raw newline inside it).
+  // the generated description is one complete single-quoted line
   const descLines = routes.split('\n').filter(l => l.includes("description: '"));
   assert.equal(descLines.length, 2); // ping + note
   for (const line of descLines) {
@@ -358,10 +334,10 @@ test('add_action: a summary with newlines, backslashes and quotes stays one esca
       'one complete, escaped single-quoted literal',
     );
   }
-  // round-trip: the parser reads the summary back as the collapsed line.
+  // the parser reads it back collapsed
   const parsed = parseRouteTableSource(routes).find(a => a.name === 'note');
   assert.equal(parsed?.description, "captures a note with 'quotes' and \\ backslashes");
-  // the manual's section carries the same one line.
+  // and the manual's section has the same line
   const block = fs
     .readFileSync(path.join(tree, 'AGENTS.md'), 'utf8')
     .match(/<!-- BEGIN ACTIONS[\s\S]*?<!-- END ACTIONS -->/)[0];
@@ -392,7 +368,7 @@ test('add_action: tree_not_found, invalid_name, and the diverged-tree refusal', 
   const badName = await addAction({ appsRoot: root }, { slug, name: '!!!' });
   assert.equal(badName.errorCode, 'invalid_name');
   assert.match(badName.errorMessage, /kebab\/snake/);
-  // a target artifact exists without its table entry: diverged, refused.
+  // an artifact without its table entry: diverged, refused
   fs.writeFileSync(path.join(tree, 'tests', 'ghost.test.mjs'), '// hand-written\n');
   const ghost = await addAction({ appsRoot: root }, { slug, name: 'ghost' });
   assert.equal(ghost.errorCode, 'artifact_exists');
@@ -405,7 +381,7 @@ test('add_action: missing page/markers — fresh marked blocks appended, the ans
   const { root, slug, tree } = await world('markers');
   const pagePath = path.join(tree, 'src/pages/index.astro');
   const agentsPath = path.join(tree, 'AGENTS.md');
-  // a page that lost its markers (hand-edited)…
+  // a page that lost its markers…
   let page = fs.readFileSync(pagePath, 'utf8');
   page = page
     .replace(/<!-- BEGIN ACTION MOUNTS[^\n]*-->\n/, '')
@@ -413,7 +389,7 @@ test('add_action: missing page/markers — fresh marked blocks appended, the ans
     .replace(/\/\/ BEGIN ACTION ISLANDS[^\n]*\n/, '')
     .replace(/\/\/ END ACTION ISLANDS\n/, '');
   fs.writeFileSync(pagePath, page);
-  // …and a manual that lost its block.
+  // …and a manual that lost its block
   const agents = fs
     .readFileSync(agentsPath, 'utf8')
     .replace(/<!-- BEGIN ACTIONS[\s\S]*?<!-- END ACTIONS -->\n\n/, '');
@@ -438,7 +414,7 @@ test('add_action: missing page/markers — fresh marked blocks appended, the ans
     /<!-- BEGIN ACTIONS[\s\S]*### ping[\s\S]*### note[\s\S]*<!-- END ACTIONS -->/,
   );
 
-  // and the next action lands INSIDE the fresh blocks (no second block).
+  // the next action lands inside the fresh blocks, not a second one
   const r2 = await addAction({ appsRoot: root }, { slug, name: 'echo' });
   assert.equal(r2.ok, true);
   assert.equal(r2.data.notes.length, 0);
@@ -447,7 +423,7 @@ test('add_action: missing page/markers — fresh marked blocks appended, the ans
   assert.match(page2, /note-island[\s\S]*echo-island/);
 });
 
-// ---------- the emitted table: reading, lenient preflight, planning ----------
+// ---------- emitted table ----------
 
 const emittedTable = [
   {
@@ -564,7 +540,7 @@ test("shapeFromJsonSchema: the shim's tool schema — typed as far as the emitte
   const ping = shapeFromJsonSchema(emittedTable[0].input);
   assert.equal(ping.name.safeParse('x').success, true);
   assert.equal(ping.name.safeParse('x'.repeat(65)).success, false); // maxLength rides
-  // unknown constructs stay permissive; optional fields accept absence.
+  // unknown constructs stay permissive; optional fields accept absence
   const weird = shapeFromJsonSchema({
     type: 'object',
     properties: { when: { type: 'string', format: 'date-time' }, flag: { type: 'boolean' } },
@@ -582,9 +558,9 @@ test("shapeFromJsonSchema: the shim's tool schema — typed as far as the emitte
   assert.equal(withFlag.flag.safeParse('false').data, false); // …and normalizes
 });
 
-// ---------- describe / call: the tool face against a stub apps socket ----------
+// ---------- describe / call ----------
 
-/** A stub apps-socket host: records every request, answers canned JSON. */
+/** Records every request, answers canned JSON. */
 function stubHost(socketPath, answerFor) {
   const seen = [];
   const server = http.createServer((req, res) => {
@@ -652,7 +628,7 @@ test("callActionTool: THE request against the apps socket, the app's Result JSON
     installRoot: REPO,
   };
 
-  // POST with a path param + body — THE request the entry names.
+  // POST with a path param and body: the request the entry names
   const post = await callActionTool(deps, {
     slug: 'notes-app',
     action: 'note_create',
@@ -670,7 +646,7 @@ test("callActionTool: THE request against the apps socket, the app's Result JSON
     body: JSON.stringify({ text: 'hi' }),
   });
 
-  // GET with a query; the app's FAILURE Result JSON is verbatim too, a normal result.
+  // GET with a query; the app's failure JSON is a normal result too
   const fail = await callActionTool(deps, {
     slug: 'notes-app',
     action: 'ping',
@@ -684,7 +660,7 @@ test("callActionTool: THE request against the apps socket, the app's Result JSON
     errorMessage: 'no',
   });
 
-  // domain answers: an unknown action, invalid params (the app not called).
+  // domain answers: unknown action, invalid params (app not called)
   const seenBefore = seen.length;
   const unknown = JSON.parse(
     (await callActionTool(deps, { slug: 'notes-app', action: 'nope' })).content[0].text,
@@ -704,7 +680,7 @@ test("callActionTool: THE request against the apps socket, the app's Result JSON
   assert.equal(invalid.issues.id, 'id is required');
   assert.equal(seen.length, seenBefore); // never sent
 
-  // transport failures are the only isError: the surface off, the host gone.
+  // isError only for transport: surface off, host gone
   const off = await callActionTool(
     { ...deps, appsSocketPath: null },
     { slug: 'notes-app', action: 'ping', params: { name: 'x' } },

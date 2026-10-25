@@ -1,8 +1,5 @@
-// GET /api/jobs/:name/runs/:fired_at/log — one run's persisted log TAIL
-// (≤ 1 MiB, the newest bytes) as text/plain (docs/plans/workspaces-plan.md
-// §6/§9). :fired_at is an integer epoch-ms value, schema-validated like
-// every other path param; the file path is built server-side from the
-// run's row — the client only ever names the run, never a path.
+// The run's newest 1 MiB of log as text/plain. The path is built from the
+// row; the client only ever names the run.
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../../../../../lib/web/locals';
 import {

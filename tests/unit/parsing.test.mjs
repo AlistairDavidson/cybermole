@@ -1,9 +1,4 @@
-// parsing.test.mjs — src/lib/web/parsing.service.ts: request parsing and
-// zod validation as Results (a node:test port of soothing-booking's
-// parsing.service tests), including the two bugs fixed there —
-// parseAndValidateFailureToErrors used to fall through its switch and
-// return no message, and ValidationResult aliased the parse types.
-// Statuses go through failureResponse (responses.service.ts).
+// parsing.service.ts: request parsing and zod validation as Results.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { z } from 'zod';

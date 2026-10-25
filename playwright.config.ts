@@ -12,10 +12,7 @@ const PORT = 3470;
 
 export default defineConfig({
   testDir: './tests/e2e',
-  // Only the Playwright specs (e2e / state-dir / restart …): the
-  // node:test units under tests/unit/ are `npm run test:unit` territory,
-  // and Playwright's default pattern (*.@(spec|test).(c|m)…js) would import
-  // them as specs and run their tests inline mid-suite.
+  // Only the specs: Playwright's default pattern would also import the node:test units.
   testMatch: '**/*.spec.ts',
   timeout: 30_000,
   // Serial: tests share one login rate-limit budget (per-IP, in-memory)
@@ -46,37 +43,22 @@ export default defineConfig({
       env: {
         CYBERMOLE_PORT: String(PORT),
         CYBERMOLE_HOST: '127.0.0.1',
-        // task/app-web: CYBERMOLE_STATE_DIR is pinned to a SIBLING of
-        // WORKSPACE purely for the apps surface — the webServer leaves
-        // CYBERMOLE_APPS_SOCK UNSET, so the server's single-user spawn
-        // rule (apps-plan §3) starts + supervises the app host itself at
-        // the state dir's default <STATE_DIR>/apps.sock. That default
-        // must NOT live inside WORKSPACE (global-setup rm -rf's it after
-        // this server boots, and the host's listener is created eagerly —
-        // the same reason CYBERMOLE_SOCK below is a sibling). The db and
-        // agent dir are explicitly pointed into WORKSPACE, so pinning the
-        // state dir moves nothing else. The host discovers apps over the
-        // internal socket below and retries until it answers (the boot
-        // race the host is built for); tests/e2e/apps.spec.ts is its consumer.
+        // A sibling of WORKSPACE: with CYBERMOLE_APPS_SOCK unset the server
+        // spawns the app host at <STATE_DIR>/apps.sock, and global-setup
+        // rm -rf's WORKSPACE after boot. The db and agent dir are pointed
+        // into WORKSPACE explicitly.
         CYBERMOLE_STATE_DIR: STATE_DIR,
-        // The suite is serial from one IP and legitimately upgrades far more
-        // than a human (every terminal test attaches/pops/reconnects) — the
-        // production default of 30/min refuses the jobs test's run attach.
+        // Serial from one IP, the suite upgrades far more than 30/min.
         CYBERMOLE_WS_UPGRADES_PER_MIN: '300',
         CYBERMOLE_DB_FILE: `${WORKSPACE}/cybermole.db`,
         CYBERMOLE_AGENT_DIR: `${WORKSPACE}/pi-agent`,
         CYBERMOLE_NEW_SESSION_CWD: WORKSPACE,
         CYBERMOLE_TMUX_SOCKET: TMUX_SOCKET,
         CYBERMOLE_COMMAND: `${WORKSPACE}/cmd.sh`,
-        // task/defaults-settings: the auto-opened first terminal of a new
-        // workspace — the same deterministic cmd.sh, with the marker
-        // argument that distinguishes its banner from a plain tab's.
+        // The `agent` argument marks the auto-opened tab's banner.
         CYBERMOLE_AGENT_COMMAND: `${WORKSPACE}/cmd.sh agent`,
         CYBERMOLE_JOB_LOG_DIR: `${WORKSPACE}/job-logs`,
-        // The internal jobs socket (jobs-agent-plan §3) — OUTSIDE WORKSPACE:
-        // global-setup rm -rf's WORKSPACE AFTER this server boots, and the
-        // listener is created eagerly (unlike the db / tmux, opened lazily).
-        // A sibling file; SIGTERM unlinks it, the stale-probe covers crashes.
+        // Outside WORKSPACE, like the state dir: the listener is created eagerly.
         CYBERMOLE_SOCK: `${WORKSPACE}.sock`,
         CYBERMOLE_S3_ENDPOINT: `http://127.0.0.1:${S3_PORT}`,
         CYBERMOLE_S3_ACCESS_KEY: S3_ACCESS_KEY,

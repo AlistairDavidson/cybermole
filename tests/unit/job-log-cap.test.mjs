@@ -1,15 +1,8 @@
-// job-log-cap.test.mjs — task/job-log-caps (docs/plans/jobs-agent-plan.md §8):
-// the write-time cap on job run logs, exercised as REAL child processes.
-// The bundled appender (src/lib/jobs/job-log-appender.ts) is spawned as the
-// wrapper spawns it — `node <appender> <logPath> <maxBytes>` — for
-// under-cap passthrough, the cap hit (the file stops at the cap with one
-// marker line while stdin KEEPS BEING DRAINED, so the writer never takes
-// an EPIPE), the exact maxBytes boundary, and the fail-soft paths. Then
-// the full wrapper argv (runCommandArgv) end-to-end through /bin/sh: a
-// chatty capped run still records its REAL exit code (no SIGPIPE), and a
-// failing short run its nonzero one. Last, the env knob: schema shape,
-// default and fail-closed boot validation (the fresh-process pattern of
-// the CYBERMOLE_LOKI_* / S3 boot checks — RAW_ENV is read at module load).
+// The job log cap, with real child processes: the appender spawned as the
+// wrapper spawns it (passthrough, the cap with one marker while stdin keeps
+// draining, the exact boundary, fail-soft paths); the full wrapper argv
+// through /bin/sh (a chatty capped run keeps its real exit code); and the
+// env knob's default and boot validation.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
@@ -27,11 +20,8 @@ const APPENDER = fileURLToPath(
 );
 const { runCommandArgv } = await import('../../dist-server/src/lib/jobs/jobs.js');
 
-/** Run the appender exactly as the wrapper does, feeding `input` and
- *  waiting for a clean exit. Small inputs only: this buffers the whole
- *  write (the backpressured paths below are the honest pipe tests).
- *  stdout is captured and returned — the appender is a capped TEE and
- *  its passthrough is the pane's live view; it must never be blanked. */
+/** Buffers the whole write, so small inputs only. stdout is returned: the
+ *  passthrough is the pane's live view and must never be blanked. */
 async function append(logPath, maxBytes, input) {
   const child = spawn(process.execPath, [APPENDER, logPath, String(maxBytes)], {
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -45,15 +35,14 @@ async function append(logPath, maxBytes, input) {
   return { code, stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr).toString() };
 }
 
-// ---------- the appender: passthrough, cap, boundary ----------
+// ---------- appender ----------
 
 test('appender: under the cap, stdin lands in the file byte-for-byte (create, then append)', async () => {
   const log = path.join(dir, 'under.log');
   const first = await append(log, 1024, 'first\n');
   assert.equal(first.code, 0);
   assert.equal(first.stderr, '');
-  // A second run over the same file appends — run log paths are unique
-  // per run, so 'a' vs truncate only matters for reuse, where 'a' is right.
+  // A second run appends; run log paths are unique, so 'a' only matters on reuse.
   const second = await append(log, 1024, 'second\n');
   assert.equal(second.code, 0);
   assert.equal(second.stdout.toString(), 'second\n', 'tee passthrough on every run');
@@ -66,9 +55,8 @@ test(
   async () => {
     const log = path.join(dir, 'cap.log');
     const cap = 4096;
-    // 1 MiB through the pipe, far past the cap — written WITH backpressure,
-    // so a reader that stopped consuming would surface as EPIPE on this
-    // side long before the end (the pipe holds ~64 KiB).
+    // 1 MiB with backpressure: a reader that stopped would surface as EPIPE
+    // long before the end (the pipe holds ~64 KiB).
     const payload = Buffer.alloc(1024 * 1024, 0x61);
     const child = spawn(process.execPath, [APPENDER, log, String(cap)], {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -128,9 +116,8 @@ test(
     assert.equal(badArg.code, 2);
     assert.match(badArg.stderr, /usage: node job-log-appender/);
 
-    // The log "path" is a directory: open fails, the run's output is lost
-    // (exactly a failed tee pre-§8) — but the appender drains stdin to the
-    // end regardless, or the job would die of a SIGPIPE mid-run.
+    // The log path is a directory: output is lost, but stdin still drains
+    // to the end or the job would die of SIGPIPE.
     const notAFile = path.join(dir, 'is-a-dir');
     fs.mkdirSync(notAFile);
     const child = spawn(process.execPath, [APPENDER, notAFile, '1024'], {
@@ -140,10 +127,8 @@ test(
     child.stdin.on('error', err => errors.push(err));
     const stderr = [];
     child.stderr.on('data', c => stderr.push(c));
-    // The appender is a tee: it passes everything through to stdout even
-    // when the log is dead — so stdout MUST be consumed here or the test
-    // deadlocks with the appender (writeSync blocks on the full pipe, the
-    // drain stops, and our stdin.write never sees 'drain' again).
+    // stdout must be consumed even with the log dead, or writeSync blocks
+    // on the full pipe and this deadlocks.
     const stdout = [];
     child.stdout.on('data', c => stdout.push(c));
     let off = 0;
@@ -166,7 +151,7 @@ test(
   },
 );
 
-// ---------- the wrapper argv end-to-end (real /bin/sh, real pipeline) ----------
+// ---------- wrapper argv end to end ----------
 
 test(
   'wrapper: a capped chatty run still records its REAL exit code — the appender never SIGPIPEs the job',
@@ -179,9 +164,7 @@ test(
     const child = spawn(argv[0], argv.slice(1), { stdio: ['ignore', 'inherit', 'inherit'] });
     const [code] = await once(child, 'exit');
 
-    // If the appender closed the pipe early, seq would die of SIGPIPE (141)
-    // before finishing — and the wrapper would record THAT instead of the
-    // command's real exit. 0 here proves the drain.
+    // An early close would kill seq with SIGPIPE (141); 0 proves the drain.
     assert.equal(fs.readFileSync(exitFile, 'utf8'), '0\n');
     assert.equal(code, 0, "the wrapper's own exit (the appender's) is 0 too");
     const file = fs.readFileSync(log);
@@ -199,17 +182,15 @@ test('wrapper: a short failing run passes through whole and records its exit cod
   await once(child, 'exit');
 
   assert.equal(fs.readFileSync(exitFile, 'utf8'), '42\n');
-  // 2>&1 is inside the pipeline: stderr lands in the log too.
+  // 2>&1 is inside the pipeline: stderr lands in the log.
   assert.equal(fs.readFileSync(log, 'utf8'), 'out\nerr\n');
 });
 
-// ---------- the env knob: schema, default, fail-closed validation ----------
+// ---------- env knob ----------
 
 const { envSchema } = await import('../../dist-server/src/lib/platform/env-schema.js');
 
-/** env.js in a fresh process (RAW_ENV is read at module load — the same
- *  pattern as the CYBERMOLE_LOKI_* boot checks in observability.test.mjs):
- *  the resolved ENV value, or the boot error. */
+/** In a fresh process (RAW_ENV is read at load): the ENV value or the boot error. */
 function bootEnv(value) {
   const clean = Object.fromEntries(
     Object.entries(process.env).filter(([k]) => k !== 'CYBERMOLE_JOB_LOG_MAX'),

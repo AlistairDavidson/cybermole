@@ -1,20 +1,9 @@
-// apps.spec.ts — task/app-web (docs/plans/apps-plan.md §4/§10) e2e: the
-// /apps/* proxy, gate and serving flag against the REAL app host.
-//
-// The host is the shared webServer's own supervised child — the config
-// leaves CYBERMOLE_APPS_SOCK unset (the single-user spawn rule starts +
-// supervises `node dist-server/server/app-host.js` at the state-dir
-// default socket, a sibling of WORKSPACE so global-setup's rm -rf can't
-// pull it out from under the listener). The fixture app is BUILT by
-// global-setup (skip-if-fresh); this spec registers its row through the
-// internal API's app verbs (the same Apps domain the console routes
-// use — §0's amendment, dogfooded here) and pokes the host's reload,
-// the single sync point. afterAll unregisters it, so the fixture tree
-// the other specs assert on (one app, "alpha app") is unchanged.
-//
-// Login budget: login() signs in ONCE for this file and reuses the
-// cookie (the shared per-IP budget is 10/15 min; the rate-limit test at
-// the end of e2e.spec.ts exhausts the rest).
+// The /apps/* proxy, gate and serving flag against the real app host: the
+// shared webServer's own supervised child (CYBERMOLE_APPS_SOCK unset). The
+// fixture app is built by global-setup; this spec registers it via the
+// internal API and reloads the host. afterAll unregisters it so the other
+// specs' fixture world (one app, "alpha app") is unchanged. One login per
+// run via the shared cookie file.
 import { expect, test } from '@playwright/test';
 import type { Cookie, Page } from '@playwright/test';
 import * as http from 'node:http';
@@ -30,7 +19,7 @@ import {
 
 const FIXTURE_TREE = path.resolve(__dirname, '..', 'fixtures', 'app-fixture');
 
-/** One HTTP request over a unix socket (the units' call() shape). */
+/** One HTTP request over a unix socket. */
 function callSocket(
   socketPath: string,
   method: 'GET' | 'POST' | 'DELETE',
@@ -74,8 +63,7 @@ function callSocket(
   });
 }
 
-/** Authed in-page JSON fetch (the shared suite idiom — Playwright's API
- *  client doesn't send the Secure session cookie over plain http). */
+/** In-page fetch, so the Secure session cookie is sent. */
 async function api(
   page: Page,
   method: string,
@@ -91,11 +79,8 @@ Promise<{ status: number; json: any }> {
   );
 }
 
-/** Lands on the signed-in console (e2e.spec.ts's helper, copied — one
- *  sign-in per file, the cookie reused after — and shared across the
- *  three apps specs via the workspace file, env.ts's helpers: each
- *  file-level sign-in was one of the 10/15-min budget's attempts, and
- *  three of them pushed the suite's late re-logins into 429s). */
+/** Signs in once per run via the shared cookie file (the apps specs share
+ *  the 10/15-min login budget). */
 let sessionCookie: Cookie | null = null;
 async function login(page: Page): Promise<void> {
   if (!sessionCookie) {
@@ -130,20 +115,13 @@ async function login(page: Page): Promise<void> {
   await page.waitForSelector('workspace-sidebar .nav');
 }
 
-/** Register the fixture app's row (through the internal API's app verb
- *  — the same Apps domain the console route uses) and poke the host's
- *  reload, the single sync point (plan §1's loop). Idempotent: a row
- *  leaked by an aborted run is unregistered first. */
+/** Register the fixture app via the internal API and reload the host.
+ *  Idempotent: a row leaked by an aborted run is unregistered first. */
 async function registerFixtureApp(): Promise<void> {
   const listed = await callSocket(INTERNAL_SOCKET, 'GET', '/apps');
   expect(listed.status, JSON.stringify(listed.json)).toBe(200);
-  // This file runs LAST of the three apps specs (alphabetical: actions,
-  // scaffold, apps) — the siblings clean up after themselves, but their
-  // specs have NO afterAll (the scheduler-split note in those files:
-  // teardown raced in-flight tests), so their rows can linger into
-  // e2e.spec's sidebar-count assertions. Sweep the siblings' leftovers
-  // here, best-effort (their trees are inert files; global-setup's
-  // per-run WORKSPACE rm retires those).
+  // Runs last of the apps specs, which have no afterAll, so their rows can
+  // linger into e2e.spec's sidebar counts: sweep them, best-effort.
   for (const leftover of listed.json.apps as Array<{ slug: string }>) {
     if (leftover.slug !== 'app-fixture' && leftover.slug !== 'alpha-app') {
       await callSocket(INTERNAL_SOCKET, 'DELETE', `/apps/${leftover.slug}`);
@@ -166,11 +144,9 @@ async function expectHostMounted(): Promise<void> {
     slug: 'app-fixture',
   });
   expect(reloaded.status, JSON.stringify(reloaded.json)).toBe(200);
-  // The reload REPORTS transitions (mounted = newly mounted this sync,
-  // reimported = cache-busted re-import of an already-mounted one) — the
-  // host's boot-retry discovery can land between this helper's row-create
-  // and this poke, moving the app between the two buckets. The assertion
-  // that matters is the post-STATE: /_admin/status lists it mounted.
+  // A boot-retry discovery can land between the row create and this
+  // reload, moving the app between mounted and reimported. What matters is
+  // the post-state: /_admin/status lists it mounted.
   expect(
     [...(reloaded.json.mounted ?? []), ...(reloaded.json.reimported ?? [])],
     JSON.stringify(reloaded.json),
@@ -188,14 +164,13 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  // Unregister + re-sync so the fixture tree the other specs assert on
-  // (one app, "alpha app") is exactly what global-setup seeded. Best
-  // effort: a dead server here means the whole suite is gone anyway.
+  // Restore global-setup's fixture world. Best-effort: a dead server means
+  // the suite is gone anyway.
   try {
     await callSocket(INTERNAL_SOCKET, 'DELETE', '/apps/app-fixture');
     await callSocket(APPS_SOCKET, 'POST', '/_admin/reload', { slug: 'app-fixture' });
   } catch {
-    /* the suite's server is gone — nothing left to clean */
+    /* the server is gone */
   }
 });
 
@@ -203,14 +178,11 @@ test('the /apps/* gate: an unauthenticated page GET renders the login page in pl
   page,
 }) => {
   await page.goto('/apps/app-fixture/');
-  // In-place login render (the console's page-gate convention): the
-  // address bar keeps the asked-for URL.
+  // Login renders in place; the address bar keeps the URL.
   await expect(page.locator('wa-input#username')).toBeVisible();
   await expect(page).toHaveURL(/\/apps\/app-fixture\/$/);
-  // GETs anywhere in the namespace are PAGES to the gate (apps mix pages
-  // and API under one prefix the web side cannot split): the same
-  // in-place login render, never app bytes. A non-GET is a data route:
-  // 401, no login HTML.
+  // App pages and APIs share the prefix, so GETs get the login page and
+  // non-GETs a 401 with no HTML; never app bytes.
   const r = await page.evaluate(async () => {
     const res = await fetch('/apps/app-fixture/api/ping?name=x');
     return { status: res.status, body: await res.text() };
@@ -235,11 +207,9 @@ test('the happy path: the fixture app serves its SSR page and Result-JSON API th
 }) => {
   await login(page);
   await page.goto('/apps/app-fixture/');
-  // The SSR page: the wa-card's header slot is light DOM inside the
-  // declarative shadow-DOM pipeline (astro-lit) — its text is the marker.
+  // The SSR page: the wa-card header slot's text is the marker.
   await expect(page.locator('wa-card h1')).toHaveText('app-fixture');
   await expect(page.locator('wa-card')).toHaveCount(1);
-  // The API route answers its Result JSON (in-page fetch — authed).
   const ping = await api(page, 'GET', '/apps/app-fixture/api/ping?name=web');
   expect(ping.status, JSON.stringify(ping.json)).toBe(200);
   expect(ping.json).toMatchObject({ ok: true, resultType: 'ping', data: { hello: 'web' } });
@@ -249,12 +219,8 @@ test('the serving flag: /api/state reports the registered app serving, the tree-
   page,
 }) => {
   await login(page);
-  // The serving flag joins the app rows with a host snapshot cached for
-  // one window (10 s — a hung host must never stall the state poll), so a
-  // poll right after mounting can read the PREVIOUS window's snapshot.
-  // Poll until the window turns over — the flag is eventually-true by
-  // design, and an instant assertion is racy against any earlier poll
-  // (another spec's /api/state read, the sidebar's 15 s poll).
+  // The serving flag rides a host snapshot cached for 10 s, so a poll right
+  // after mounting may read the previous one. Poll until it turns over.
   await expect
     .poll(
       async () => {
@@ -276,17 +242,14 @@ test('the serving flag: /api/state reports the registered app serving, the tree-
   expect(fixture, JSON.stringify(apps)).toBeDefined();
   expect(fixture?.serving).toBe(true);
   expect(fixture?.servingReason).toBeNull();
-  // "alpha app" (global-setup's tree-less grouping row) is honestly
-  // served as not-serving, with the host's skip reason.
+  // "alpha app" (a tree-less grouping row) shows not-serving, with the host's reason.
   const alpha = apps.find(a => a.slug === 'alpha-app');
   expect(alpha, JSON.stringify(apps)).toBeDefined();
   expect(alpha?.serving).toBe(false);
   expect(typeof alpha?.servingReason).toBe('string');
-  // The sidebar's app group carries the open link (dimmed only when the
-  // host is not serving the app).
+  // The sidebar's app group has the open link (dimmed when not serving).
   const open = page.locator('workspace-sidebar .ws-group[data-group="app-fixture"] .open-app-btn');
-  // The sidebar re-renders on its own 15 s poll reading the same cached
-  // serving flag — ride out the window (see the poll above).
+  // The sidebar's own poll reads the same cached flag; ride out the window.
   await expect(open).toHaveAttribute('href', '/apps/app-fixture/');
   await expect(open).not.toHaveClass(/not-serving/, { timeout: 30_000 });
   const alphaOpen = page.locator(

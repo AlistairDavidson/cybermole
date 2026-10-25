@@ -1,26 +1,15 @@
-// parsers.mjs — the pure output-shaping half of the dev test-MCP
-// (docs/plans/dev-test-mcp-plan.md §4–§5): bounded-output helpers and the
-// machine-format parsers for ESLint's and Playwright's JSON reports, plus
-// the anchor-quiet shaping for the error-only text runners (astro
-// check/tsc/astro build). No node imports, no side effects — everything
-// here is unit-tested against checked-in fixtures (tests/fixtures/dev-mcp/,
-// tests/unit/dev-mcp.test.mjs).
-//
-// Every parser answers null on anything unexpected instead of throwing:
-// the tools then fall back to the bounded raw-output tail — the anchor-miss
-// fallback in another shape (plan §1.3/§4). Where we can do better than
-// barbarus's regex anchoring we do: these runners emit machine formats
-// natively, so quiet mode is parsing, not pattern-matching.
+// Pure output shaping for the dev MCP: bounded output, parsers for ESLint's
+// and Playwright's JSON reports, and quiet filtering for the text-only
+// runners (astro check, tsc, astro build). Parsers answer null on anything
+// unexpected, and the tools fall back to the raw output tail.
 
-// §1.5: bounded output — 64 KiB cap keeping head + tail (early parse
-// errors and trailing summary are the parts that matter) around an
-// explicit omission marker.
+// 64 KiB cap, keeping head and tail (early parse errors and the trailing
+// summary are what matter).
 export const OUTPUT_LIMIT = 65536;
-// Per-failure error text cap (~2 KiB, plan §4 Playwright note).
+// Per-failure error text cap.
 export const FAILURE_ERROR_LIMIT = 2048;
 
-/** Keep head + tail of text around an explicit `…[N chars omitted]…`
- *  marker. Under the cap the text passes through unchanged. */
+/** Under the cap the text passes through unchanged. */
 export function trimOutput(text, max = OUTPUT_LIMIT) {
   const s = String(text ?? '');
   if (s.length <= max) return s;
@@ -30,7 +19,6 @@ export function trimOutput(text, max = OUTPUT_LIMIT) {
   return `${s.slice(0, head)}\n…[${omitted} chars omitted]…\n${s.slice(-tail)}`;
 }
 
-/** The last n non-empty lines of text (crash tails, stderr tails). */
 export function tailLines(text, n = 20) {
   const lines = String(text ?? '')
     .split('\n')
@@ -38,31 +26,21 @@ export function tailLines(text, n = 20) {
   return lines.slice(-n).join('\n');
 }
 
-// ---------- the anchor-quiet shaping for error-only text runners ----------
+// ---------- quiet shaping for error-only text runners ----------
 //
-// astro check / tsc / astro build print error-only text: diagnostics (if
-// any) followed by a result line. Quiet keeps error-looking lines plus the
-// trailing summary and drops the boot/progress noise; if the process died
-// without a result line the tail is what's kept — barbarus's no-banner
-// fallback, same rationale (the cause stays visible).
+// Keeps error-looking lines plus the trailing summary and drops boot noise.
+// If the process died without a result line, the tail still shows the cause.
 
-// Boot noise: the [types]/[@astrojs/node] warm-up lines every astro
-// command prints before doing anything, timestamps and all.
+// The astro warm-up lines every command prints first.
 const BOOT_NOISE_RE = /^\d\d:\d\d:\d\d \[(?:types|@astrojs\/node)\]/;
 
-/** A line that looks like a diagnostic. `- 0 errors` summary lines contain
- *  the word too — they are summaries, not errors, and sit in the kept tail
- *  anyway. tsc (`src/x.ts:12:3: error TS2345: …`) and astro check
- *  (`src/x.astro:1:1 - error …`) diagnostics match; vite failures lead
- *  with ✖. */
+/** tsc (`src/x.ts:12:3: error TS2345`), astro check (`- error`), vite (✖).
+ *  `- 0 errors` summaries match too, harmlessly: they're in the kept tail. */
 function looksLikeError(line) {
   if (/\b0 errors?\b/i.test(line)) return false;
   return /\berror\b/i.test(line) || line.includes('✖');
 }
 
-/** Anchor-quiet shaping: error lines + the last keepTail non-empty lines
- *  (the result line lives there), boot noise dropped, trailing whitespace
- *  trimmed, output bounded. */
 export function anchorQuiet(text, { keepTail = 5 } = {}) {
   const lines = String(text ?? '')
     .split('\n')
@@ -85,9 +63,7 @@ export function anchorQuiet(text, { keepTail = 5 } = {}) {
   );
 }
 
-/** Strip ANSI escapes — Playwright's JSON report embeds color codes in
- *  error messages even with stdout redirected, and they would ride the
- *  envelope straight into an agent's transcript. */
+/** Playwright's JSON embeds colour codes even with stdout redirected. */
 const ANSI_RE =
   // eslint-disable-next-line no-control-regex -- matching ANSI escapes is the point
   /[\u001B\u009B][[\]()#;?]*(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d/#&.:=?%@~_]*)*)?\u0007|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-ntqry=><~]))/g;
@@ -97,11 +73,8 @@ export function stripAnsi(text) {
 
 // ---------- ESLint (--format json) ----------
 
-/** Parse an ESLint JSON report into the shared vocabulary. counts is
- *  lint-shaped ({files, errors, warnings, fixable}); failures[] carries
- *  every error message in full with its file and position, warnings stay
- *  per-file counts (warningsByFile) — plan §3. null when the text is not
- *  an ESLint report. */
+/** Every error in full with its position; warnings as per-file counts.
+ *  null when the text isn't an ESLint report. */
 export function parseEslintJson(text, root = '') {
   let report;
   try {
@@ -142,14 +115,10 @@ export function parseEslintJson(text, root = '') {
 
 // ---------- Playwright (--reporter=json) ----------
 
-/** Parse a Playwright JSON report (the file PLAYWRIGHT_JSON_OUTPUT_NAME
- *  pointed at — never stdout, which carries the web-server's stderr).
- *  counts from `stats`; failures[] from tests whose status is not a pass:
- *  unexpected (the real failures), flaky (passed on retry — nondeterminism
- *  worth seeing), interrupted, didNotRun — each with the failing result's
- *  error message/snippet, trimmed per-failure. Root-level `errors[]`
- *  (globalSetup/web-server failures) ride globalErrors[]. null when the
- *  text is not a report — the caller falls back to the raw tail. */
+/** Reads the report file (stdout carries the web server's stderr). Failures
+ *  are any non-pass: unexpected, flaky (passed on retry), interrupted,
+ *  didNotRun. Root-level errors (globalSetup, web server) go in
+ *  globalErrors[]. null when the text isn't a report. */
 export function parsePlaywrightJson(text, root = '') {
   let report;
   try {
@@ -221,17 +190,13 @@ export function parsePlaywrightJson(text, root = '') {
   return { counts, failures, globalErrors };
 }
 
-// ---------- the unit runner's machine line ----------
+// ---------- unit runner's machine line ----------
 //
-// quiet-reporter.mjs ends its stdout with one single-line JSON object
-// (counts + failures) prefixed @@devmcp — our own format, so quiet mode
-// here is parsing, never pattern-matching (plan §1 "where no flag exists"
-// does not apply: the reporter is ours and emits the summary itself).
+// quiet-reporter.mjs ends stdout with one JSON line prefixed @@devmcp.
 
 export const MACHINE_LINE_PREFIX = '@@devmcp ';
 
-/** The last valid @@devmcp line's parsed object, or null (reporter missing
- *  or mangled — the caller falls back to returncode + raw text). */
+/** null if the reporter is missing or mangled; the caller falls back to raw text. */
 export function extractUnitSummary(text) {
   const lines = String(text ?? '').split('\n');
   for (let i = lines.length - 1; i >= 0; i--) {
@@ -240,13 +205,12 @@ export function extractUnitSummary(text) {
       const parsed = JSON.parse(lines[i].slice(MACHINE_LINE_PREFIX.length));
       if (parsed !== null && typeof parsed === 'object' && parsed.counts) return parsed;
     } catch {
-      // keep looking — a stale or partial line earlier is not the answer
+      // keep looking: an earlier stale or partial line isn't the answer
     }
   }
   return null;
 }
 
-/** The quiet text minus the machine lines (they are structure, not prose). */
 export function stripMachineLines(text) {
   return String(text ?? '')
     .split('\n')

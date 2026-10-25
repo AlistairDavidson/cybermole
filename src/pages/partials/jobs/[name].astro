@@ -1,10 +1,7 @@
 ---
-// GET /partials/jobs/<name> — the /jobs/:name detail as a fragment:
-// <job-detail> swaps it in on its 15 s refresh and on /ws/events
-// messages (plan §7). Behind the main.ts gate (signed out: 401) and
-// src/middleware.ts (no locals: 503). A failed listing answers 500 with
-// no fragment — the element keeps what it shows; a missing job answers
-// 404 with no fragment — the element returns to /jobs.
+// /jobs/:name as a fragment. A failed listing answers 500 with no fragment
+// (the element keeps what it shows); a missing job answers 404 (the element
+// returns to /jobs).
 import JobDetailBody from '../../../components/JobDetail/JobDetailBody.astro';
 import { assertCybermoleLocals } from '../../../lib/web/locals';
 import { JobNameSchema } from '@cybermole/app-kit';
@@ -20,8 +17,7 @@ let runs: JobRunView[] | null = null;
 if (parsed.success) {
   const listed = await cybermole.scheduler.listJobs();
   if (listed.ok) job = listed.data.jobs.find(j => j.name === parsed.data) ?? null;
-  // console.error on purpose, not src/lib/platform/logger.ts: frontmatter is
-  // Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
+  // console.error: winston stays out of the Vite bundle.
   else console.error(`job detail partial: ${listed.errorMessage}`);
   if (job) {
     const listedRuns = cybermole.scheduler.listRuns(parsed.data);

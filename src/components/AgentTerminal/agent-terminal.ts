@@ -1,19 +1,12 @@
-// agent-terminal.ts — <agent-terminal>: xterm.js over websocket to node-pty/tmux.
-// Light DOM (xterm injects its own styles; global CSS applies). One live
-// instance per terminal tab (plan §8): <terminal-tabs> keeps hidden tabs
-// connected (state and scrollback persist, matching how tmux detach works)
-// and calls activate() on show — the WebGL renderer loads on a tab's FIRST
-// activation only (browsers cap live WebGL contexts at ~8–16; a
-// never-activated tab must never hold one).
-// Connection life: attach() opens a socket for one target. If it drops
-// without the server ending the attach (proxy idle cut, server restart,
-// network blip), the status says so and the terminal reattaches with the
-// SAME attach frame — mode included — with backoff. The server's
-// 'exit' / 'error' / 'signed-out'
-// end an attach for good — no reconnect, so two tabs bumping each other off
-// a session (`attach -d`) can't loop, and a logged-out token stays logged
-// out. 'restart' (server shutdown) is the exception that reconnects: tmux
-// keeps the session, and the backoff lands back on it once it's back.
+// <agent-terminal>: xterm.js over a WebSocket to node-pty/tmux. Light DOM,
+// so global CSS applies. <terminal-tabs> keeps hidden tabs connected and
+// calls activate() on show; WebGL loads on first activation only, since
+// browsers cap live WebGL contexts at ~8–16.
+//
+// A drop the server didn't announce reconnects with backoff, re-sending the
+// same attach frame. 'exit', 'error' and 'signed-out' end an attach for good,
+// so two tabs bumping each other off a session (`attach -d`) can't loop.
+// 'restart' (server shutdown) reconnects.
 import { Terminal } from '@xterm/xterm';
 import type { ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -30,15 +23,13 @@ import type { TerminalId, TmuxSessionName } from '@cybermole/app-kit';
 import { parseBackfillMsg } from '../../schemas/frames';
 import { BASE } from '../../base';
 
-/** Max UTF-16 units per input frame. JSON spends at most 6 bytes on one
- *  unit (\u001b-style escapes), so a frame stays under ~384 KiB — inside
- *  the server's 1 MiB maxPayload however big the paste is. */
+/** JSON spends at most 6 bytes per UTF-16 unit, so a frame stays under
+ *  ~384 KiB, inside the server's 1 MiB maxPayload. */
 const INPUT_CHUNK = 64 * 1024;
 const RECONNECT_MIN_MS = 1000;
 const RECONNECT_MAX_MS = 15_000;
 
-/** Input split into frames of at most INPUT_CHUNK units, never between the
- *  halves of a surrogate pair (a lone half would reach the pty as U+FFFD). */
+/** Never splits a surrogate pair (a lone half reaches the pty as U+FFFD). */
 function chunkInput(data: string): string[] {
   if (data.length <= INPUT_CHUNK) return [data];
   const out: string[] = [];
@@ -52,18 +43,9 @@ function chunkInput(data: string): string[] {
   return out;
 }
 
-/** Plain-text transcript of a terminal's whole buffer — scrollback
- *  included — one line per buffer row, trailing blank rows (a fresh
- *  pane's never-written rows) trimmed. The walk behind "copy output";
- *  exported for tests.
- *
- *  Which buffer that IS depends on the attach: while a pane is attached,
- *  tmux holds the client terminal in the ALTERNATE screen (no client-side
- *  scrollback — tmux's own history lives server-side, exactly what the
- *  task/terminal-search backfill TODO is about), so this walks the
- *  visible screen; once the alt screen is left (pre-attach, an ended
- *  pane), buffer.active is the normal buffer and the walk carries its
- *  scrollback. Either way it is exactly what the user is looking at. */
+/** The active buffer as plain text, trailing blank rows trimmed. While tmux
+ *  is attached that's the alternate screen (no client-side scrollback);
+ *  otherwise the normal buffer with its scrollback. Exported for tests. */
 export function terminalPlainText(terminal: Terminal): string {
   const buffer = terminal.buffer.active;
   const lines: string[] = [];
@@ -75,11 +57,8 @@ export function terminalPlainText(terminal: Terminal): string {
   return lines.join('\n');
 }
 
-/** Every connected instance — the online/visibility reconnect wake-up is
- *  shared (one window/document listener pair for the whole page, not one
- *  per terminal tab: the singleton-era listeners would multiply with the
- *  tab count; the manager fans the event out to whoever has a pending
- *  backoff). */
+/** One page-wide online/visibility listener pair for all instances, rather
+ *  than a pair per tab. */
 const instances = new Set<AgentTerminal>();
 let sharedWakeArmed = false;
 const wakePendingReconnects = (): void => {
@@ -93,35 +72,23 @@ function armSharedWake(): void {
   document.addEventListener('visibilitychange', wakePendingReconnects);
 }
 
-// ---- find bar (the @xterm/addon-search face) ----
+// ---- find bar ----
 
-/** Query state is module-level on purpose, never in the pane's DOM: pane
- *  elements are discarded on workspace switches, and the sidebar's 15 s
- *  innerHTML poll would eat DOM state anyway (AGENTS.md). Per-target
- *  (ActiveKey) with the last query as the fallback for a target never
- *  searched — the browser's own find bar behaves the same way. */
+/** Module-level, not in the DOM: panes are discarded on workspace switches.
+ *  Per target, falling back to the last query (like the browser's find). */
 const findQueries = new Map<ActiveKey, string>();
 let lastFindQuery = '';
-/** Live-search debounce while typing (ms). */
 const FIND_DEBOUNCE_MS = 150;
 
-/** The resolved color mode — the html class Base.astro's blocking script
- *  maintains ('wa-dark' | 'wa-light', or '' without JS). The single
- *  source of truth the mode-aware code below keys its caches on. */
+/** The html class the theme-boot script sets ('wa-dark' | 'wa-light', or ''). */
 function currentColorMode(): string {
   const cls = document.documentElement.classList;
   return cls.contains('wa-dark') ? 'wa-dark' : cls.contains('wa-light') ? 'wa-light' : '';
 }
 
-/** Search-highlight colours, resolved from the app's tokens in
- *  console.css's two mode blocks — the one sanctioned home of hex. The
- *  addon paints literal #RRGGBB onto the canvas/overview ruler, so Web
- *  Awesome tokens (var() chains — a custom-property read returns the raw,
- *  unresolved stream) can't be used; the literals are read here instead.
- *  Cached per MODE: the tokens re-resolve under the other class, so the
- *  mode flip below invalidates the cache and open find bars re-run their
- *  search to repaint. null when they don't resolve: find still runs, just
- *  unhighlighted. */
+/** The addon paints literal colours onto the canvas, so CSS var() chains
+ *  won't do; the hex values are read from console.css's tokens. Cached per
+ *  mode. null when they don't resolve: find still works, unhighlighted. */
 let findDecorations: ISearchDecorationOptions | null | undefined;
 let findDecorationsMode: string | null = null;
 function resolveFindDecorations(): ISearchDecorationOptions | undefined {
@@ -147,16 +114,9 @@ function resolveFindDecorations(): ISearchDecorationOptions | undefined {
   return findDecorations ?? undefined;
 }
 
-/** Is the given element a real text field the user might be typing into
- *  (the sidebar's filter, a dialog input)? Ctrl+F is theirs, not the
- *  terminal's. The check probes shadow roots too: a wa-* form control's
- *  real input lives inside its shadow DOM, and focus can sit on the HOST
- *  (verified: after filling the sidebar filter, activeElement is the
- *  <wa-input> host, not its inner input). Exception: anything INSIDE an
- *  <agent-terminal> — most notably xterm's own hidden helper textarea,
- *  which is exactly the "terminal pane is the active context" case the
- *  find bar is FOR (the find bar's input lives in there too, where
- *  re-opening re-selects the query, like the browser's own find bar). */
+/** Ctrl+F belongs to a focused text field, not the terminal. Probes shadow
+ *  roots, since focus can sit on a wa-input host. Anything inside an
+ *  <agent-terminal> (xterm's helper textarea, the find input) doesn't count. */
 const inTextField = (el: Element | null): boolean => {
   if (el === null) return false;
   if (el.closest('agent-terminal') !== null) return false;
@@ -164,12 +124,9 @@ const inTextField = (el: Element | null): boolean => {
   return el.shadowRoot?.querySelector('input, textarea, select') != null;
 };
 
-/** One capture-phase document listener for every pane (the shared-wake
- *  pattern): Ctrl+F / Cmd+F opens the visible pane's find bar. Capture so
- *  it runs before xterm's own key handling — preventDefault stops the
- *  browser's native find (the \x06 the terminal would send is dropped by
- *  the per-terminal custom key handler instead; xterm ignores a later
- *  preventDefault). */
+/** Capture phase, to beat xterm's key handling and preventDefault the
+ *  browser's own find. (The \x06 xterm would send is dropped by each
+ *  terminal's custom key handler.) */
 let sharedFindArmed = false;
 const openFindOnCtrlF = (e: KeyboardEvent): void => {
   if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== 'f') return;
@@ -187,16 +144,10 @@ function armSharedFind(): void {
   document.addEventListener('keydown', openFindOnCtrlF, true);
 }
 
-// ---- color mode (task/theme-browser) ----
+// ---- color mode ----
 
-/** The pane's xterm theme, built from the RESOLVED mode: console.css's
- *  html.wa-dark / html.wa-light blocks carry the Tokyo Night (Day)
- * palettes as --cybermole-xterm-* literals, and this reads them back
- * through getComputedStyle — no hex in the TS, and whichever class the
- * blocking theme-boot script (Base.astro → public/theme-boot.js) set
- * decides the palette. Keys whose token doesn't resolve (console.css
- * missing) are simply absent: xterm falls
- * back to its own defaults for them, at creation and on flips alike. */
+/** Built from console.css's --cybermole-xterm-* tokens for the current mode;
+ *  keys that don't resolve fall back to xterm's defaults. */
 function resolveXtermTheme(): ITheme {
   const cs = getComputedStyle(document.documentElement);
   const pick = (name: string): string | undefined => {
@@ -230,15 +181,8 @@ function resolveXtermTheme(): ITheme {
   };
 }
 
-/** One MutationObserver for every pane (the shared-wake pattern): the
- *  blocking theme-boot script (Base.astro → public/theme-boot.js) flips
- *  html's wa-dark/wa-light classes on a prefers-color-scheme change;
- *  watching the CLASS (not matchMedia) means this runs strictly after
- *  the flip, so the computed tokens already resolve to the new mode.
- *  Every live pane gets options.theme set at runtime (xterm 6 re-runs its
- *  ThemeService and both renderers follow), and open find bars re-run so
- *  their canvas highlights repaint in the new mode's colors (the
- *  decoration cache is mode-keyed, above). */
+/** Watches html's class rather than matchMedia, so it runs after the
+ *  theme-boot script's flip, when the tokens already resolve to the new mode. */
 let sharedThemeArmed = false;
 function armSharedThemeSync(): void {
   if (sharedThemeArmed) return;
@@ -263,44 +207,25 @@ export class AgentTerminal extends HTMLElement {
   websocket?: WebSocket;
   activeKey?: ActiveKey;
   resizeObserver?: ResizeObserver;
-  /** The pane's overlay toolbar (.terminal-toolbar) — the find bar's
-   *  host; shared contract with task/terminal-transcript (see
-   *  ensureToolbar). */
   toolbar: HTMLElement | null = null;
   private findBar: HTMLElement | null = null;
   private findInput: (HTMLElement & { value: string | null; focus(): void }) | null = null;
   private findDebounce: ReturnType<typeof setTimeout> | null = null;
-  /** Has anything been written into the buffer since the last reset?
-   *  Gates the 'backfill' write: a reconnect's terminal already holds
-   *  the session (reconnect() keeps the buffer), so backfilling again
-   *  would duplicate the history. */
+  /** Gates the backfill: a reconnect keeps its buffer, so backfilling again would duplicate history. */
   private bufferPrimed = false;
-  /** tmux session the server last attached us to — set on 'attached'. */
   private attachedTarget: TmuxSessionName | null = null;
-  /** The tab uuid this pane attaches as ('terminal' mode; null on a run
-   *  pane) — the toolbar's pop-out button's identity. attach() is the
-   *  one place the mode is known, so it drives the button there. */
+  /** The tab id in 'terminal' mode (null for a run pane); drives the pop-out button. */
   private terminalId: TerminalId | null = null;
-  /** Is the current attach OVER for good (never attached, or ended by
-   *  the server's 'exit'/'error'/'signed-out')? Read by <terminal-tabs>:
-   *  a tab whose pane has ended gets a FRESH attach on its next click —
-   *  the dead-tab story (plan §4: the row is the structure; the first
-   *  attach retries the spawn). A dropped-but-reconnecting attach is NOT
-   *  ended — the pane handles its own reconnection. */
+  /** True until attached, and after 'exit'/'error'/'signed-out'. <terminal-tabs>
+   *  gives an ended pane a fresh attach on its next click. A reconnecting
+   *  pane is not ended. */
   ended = true;
-  /** The attach frame this element STARTED with (terminal id / run
-   *  target — plan §7): a reconnect re-sends it, so the
-   *  attach keeps its mode — a terminal tab whose session died mid-drop
-   *  gets the §4 respawn instead of 'no such live session', and a run
-   *  attach never morphs into a respawn. Cleared when attach() starts a
-   *  new target. */
+  /** Re-sent on reconnect so the attach keeps its mode: a terminal tab whose
+   *  session died gets respawned, and a run attach never becomes one. */
   private attachMsg: ClientMsg | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelay = RECONNECT_MIN_MS;
-  /** Back online / every tab visible again: skip the rest of a pending
-   *  backoff. Public for the shared manager above only (never
-   *  per-instance listeners — the singleton-era design multiplied them
-   *  with the tab count). */
+  /** Skip the rest of a pending backoff. Called by the shared listener. */
   readonly reconnectNow = (): void => {
     if (this.reconnectTimer === null || document.visibilityState === 'hidden') return;
     clearTimeout(this.reconnectTimer);
@@ -325,13 +250,8 @@ export class AgentTerminal extends HTMLElement {
       fontSize: 13,
       fontFamily: 'monospace',
       scrollback: 5000,
-      // @xterm/addon-search's highlight decorations ride xterm's proposed
-      // API (registerDecoration), which xterm 6 gates behind this flag —
-      // the addon throws "You must set the allowProposedApi option" on
-      // every find otherwise.
+      // The search addon's highlights need xterm's proposed API.
       allowProposedApi: true,
-      // The RESOLVED mode's palette (resolveXtermTheme above) — no hex
-      // here; console.css's --cybermole-xterm-* set owns the colors.
       theme: resolveXtermTheme(),
     });
 
@@ -345,11 +265,8 @@ export class AgentTerminal extends HTMLElement {
 
     this.terminal.open(terminalContainer);
 
-    // Ctrl+F / Cmd+F is the find bar's while the terminal has focus:
-    // xterm ignores a later preventDefault (verified — the \x06 still
-    // goes to the pty), so its documented hook drops the key at the
-    // source instead. The shared document listener (armSharedFind) still
-    // preventDefaults the BROWSER's native find and opens the bar.
+    // xterm ignores a later preventDefault (the \x06 still reaches the
+    // pty), so drop Ctrl+F here.
     this.terminal.attachCustomKeyEventHandler(e => {
       if (
         e.type === 'keydown' &&
@@ -361,14 +278,11 @@ export class AgentTerminal extends HTMLElement {
       return true;
     });
 
-    // URLs in agent output become clickable (a custom handler — e.g.
-    // copy-to-clipboard instead of navigate — can come later).
     this.terminal.loadAddon(new WebLinksAddon());
 
     this.fitNow();
 
-    // A paste arrives as one onData call of any size — sent as consecutive
-    // frames, which the server writes to the pty in order.
+    // A paste of any size arrives as one onData; send it in chunks.
     this.terminal.onData(d => {
       for (const data of chunkInput(d)) this.send({ type: 'input', data });
     });
@@ -381,8 +295,7 @@ export class AgentTerminal extends HTMLElement {
     this.ensureToolbar();
 
     this.fitNow();
-    // NB: the WebGL renderer is NOT loaded here — only on activate()
-    // (first time the tab is on screen; plan §8's context cap).
+    // WebGL loads in activate(), not here.
   }
 
   disconnectedCallback(): void {
@@ -403,11 +316,8 @@ export class AgentTerminal extends HTMLElement {
     }
   }
 
-  /** fit() guarded against a hidden (display:none) box: a hidden tab's
-   *  ResizeObserver fires at 0×0, and fitting there would collapse the
-   *  terminal to nonsense dims — skip instead; the re-show's refit() is
-   *  the moment a hidden tab's size is settled. Returns whether a real
-   *  box was fitted. */
+  /** A hidden tab's ResizeObserver fires at 0×0; fitting there would
+   *  collapse the terminal, so skip until it's shown. */
   private fitNow(): boolean {
     const box = this.querySelector('.terminal-container') as HTMLElement | null;
     if (!box || box.clientWidth === 0 || box.clientHeight === 0) return false;
@@ -431,14 +341,10 @@ export class AgentTerminal extends HTMLElement {
     (el.lastElementChild as HTMLElement).textContent = text;
   }
 
-  // ---- toolbar: transcript actions ----
+  // ---- toolbar ----
 
-  /** The pane's toolbar, overlaid top-right over .terminal-container
-   *  (console.css: position absolute, so it is never in the container's
-   *  flow — the ResizeObserver fit must keep seeing the container's true
-   *  box, AGENTS.md). Rebuilt here on every (re)connect when missing, so
-   * every pane creation path (AgentTerminal.astro, <terminal-tabs>'s
-   * innerHTML panes) gets it without duplicating markup. */
+  /** Absolutely positioned, so the ResizeObserver still sees the container's
+   *  true box. Built here so every pane creation path gets it. */
   private ensureToolbar(): void {
     if (this.querySelector('.terminal-toolbar')) return;
     const bar = document.createElement('div');
@@ -472,15 +378,9 @@ export class AgentTerminal extends HTMLElement {
           title="download the transcript — scrollback included, ANSI colors preserved">
         <wa-icon slot="start" name="download" aria-hidden="true"></wa-icon>download
       </wa-button>`;
-    // Pop-out (task/popout-toolbar): FIRST action — it MOVES the pane,
-    //  the others only read it. Rendered hidden and revealed by attach():
-    //  only a 'terminal' attach has a tab to pop out to — the run pane
-    //  (?run= job viewer) is not a workspace terminal and has no row to
-    //  bring the terminal back, so it never gets the button. The click
-    //  is dispatched, not handled here: the pane knows its id, but the
-    //  MOVE semantics (open-before-teardown, popped marks, bring-back)
-    //  belong to <terminal-tabs> (every pane's ancestor), which catches
-    //  the bubbled event and routes it to popTerminal().
+    // Pop-out is only revealed by attach() for 'terminal' mode: a run pane
+    // has no tab to come back to. The move itself belongs to <terminal-tabs>,
+    // which catches the bubbled event.
     (bar.querySelector('.tb-pop-out') as HTMLElement).addEventListener('click', () => {
       const id = this.terminalId;
       if (id === null) return;
@@ -506,8 +406,7 @@ export class AgentTerminal extends HTMLElement {
       (HTMLElement & { value: string | null; focus(): void }) | null;
     this.findInput = input;
     if (input) {
-      // wa-input emits a plain `input` event per keystroke (same as the
-      // sidebar's filter); .value is null when empty.
+      // wa-input fires `input` per keystroke; .value is null when empty.
       input.addEventListener('input', () => this.onFindInput());
       // Enter=next, Shift+Enter=prev, Esc=close + refocus the terminal.
       input.addEventListener('keydown', e => {
@@ -535,16 +434,12 @@ export class AgentTerminal extends HTMLElement {
     else this.appendChild(bar);
   }
 
-  /** The plain-text transcript (terminalPlainText above) — public so
-   *  tests (and any future plain-text export) can read it without the
-   *  clipboard. */
+  /** Public for tests. */
   transcriptText(): string {
     return this.terminal ? terminalPlainText(this.terminal) : '';
   }
 
-  /** Toast through the app's stack: <console-app>'s <wa-toast> (the
-   *  nearest) when the pane is in the console, else the layout's
-   *  (Base.astro renders one on every page). */
+  /** <console-app>'s toast when in the console, else the layout's. */
   private toast(message: string, options?: Record<string, unknown>): void {
     const host = (this.closest('console-app') ?? document).querySelector('wa-toast') as
       | (HTMLElement & { create?: (message: string, options?: Record<string, unknown>) => unknown })
@@ -552,9 +447,7 @@ export class AgentTerminal extends HTMLElement {
     if (host?.create) host.create(message, options);
   }
 
-  /** "copy output": the whole buffer as plain text onto the clipboard.
-   *  writeText rejects on a denied permission or an insecure context —
-   *  a toast, never a throw out of a click handler. */
+  /** writeText rejects when denied or insecure: toast, never throw. */
   private async copyOutput(): Promise<void> {
     try {
       await navigator.clipboard.writeText(this.transcriptText());
@@ -573,18 +466,8 @@ export class AgentTerminal extends HTMLElement {
     this.terminal?.focus();
   }
 
-  /** "download transcript": the serialize addon's ANSI artifact — the
-   *  whole buffer (scrollback included) WITH its SGR colors and cursor
-   *  state, so the file replays faithfully in any terminal (`less -R`,
-   *  cat, xterm). .ans is the primary download artifact because the
-   *  color/positioning information is exactly what a plain-text walk
-   *  (the copy button) throws away; anyone needing plain text on disk
-   *  can paste the copy. While attached, that "whole buffer" is tmux's
-   *  alternate screen (see terminalPlainText — the client-side reality
-   *  until task/terminal-search's backfill); the normal buffer and its
-   *  scrollback ride along whenever one exists. Named after the attached
-   *  session (t-<uuid>, or the run's cybermole-<name>) — the tab's identity
-   *  on both attach modes. */
+  /** The ANSI transcript (colours and cursor state preserved, so it replays
+   *  in `less -R`), named after the attached session. */
   private downloadTranscript(): void {
     const content = this.serializeXtermAddon ? this.serializeXtermAddon.serialize() : '';
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
@@ -593,8 +476,7 @@ export class AgentTerminal extends HTMLElement {
     link.href = url;
     link.download = `${this.attachedTarget ?? 'terminal'}-transcript.ans`;
     link.click();
-    // the download keeps the blob alive; the URL can't be revoked before
-    // the browser has taken it (30 s covers the largest scrollbacks)
+    // The URL can't be revoked before the browser takes it.
     setTimeout(() => URL.revokeObjectURL(url), 30_000);
     this.terminal?.focus();
   }
@@ -603,10 +485,7 @@ export class AgentTerminal extends HTMLElement {
     return this.findInput?.value ?? '';
   }
 
-  /** Ctrl+F / Cmd+F (the shared listener) or a transcript hook: reveal
-   *  the find bar with the pane's saved query (module-level state — the
-   *  query survives pane switches), selected so typing replaces it, and
-   *  a live search running. */
+  /** Reopens with the saved query selected, so typing replaces it. */
   openFind(): void {
     if (!this.terminal || !this.findBar || !this.findInput) return;
     this.findBar.classList.remove('hidden');
@@ -618,13 +497,11 @@ export class AgentTerminal extends HTMLElement {
       (this.findInput as unknown as { input?: HTMLInputElement }).input ??
       this.findInput.shadowRoot?.querySelector('input') ??
       null;
-    if (native) native.select(); // typing replaces, like the browser's find
+    if (native) native.select();
     if (saved) this.runFind(saved, false);
   }
 
-  /** Esc / close button: hide, clear the decorations, hand focus back to
-   *  the terminal (the next keystroke belongs to the shell). The query
-   *  stays saved for the next open. */
+  /** Hands focus back to the terminal; the query stays saved. */
   private closeFind(): void {
     if (this.findDebounce !== null) {
       clearTimeout(this.findDebounce);
@@ -635,9 +512,6 @@ export class AgentTerminal extends HTMLElement {
     this.terminal?.focus();
   }
 
-  /** Typing in the find bar: remember the query (module-level, per
-   *  activeKey + the global fallback) and run a debounced live search so
-   *  the highlight decorations track the text as it's typed. */
   private onFindInput(): void {
     const q = this.findQuery();
     if (this.activeKey !== undefined) findQueries.set(this.activeKey, q);
@@ -656,24 +530,17 @@ export class AgentTerminal extends HTMLElement {
       addon.clearDecorations();
       return;
     }
-    // findNext/findPrevious scroll the match into view and paint the
-    // decorations; the addon keeps its own result cursor, so repeated
-    // Enter steps through matches.
+    // The addon keeps its own result cursor, so repeated Enter steps through matches.
     if (backwards) addon.findPrevious(query, { decorations: resolveFindDecorations() });
     else addon.findNext(query, { decorations: resolveFindDecorations() });
   }
 
-  /** A color-mode flip (the shared class observer above): re-theme the
-   *  live terminal and repaint an open find bar's highlights in the new
-   *  mode's colors. */
   refreshColorMode(): void {
     if (this.terminal) this.terminal.options.theme = resolveXtermTheme();
     if (this.findBar && !this.findBar.classList.contains('hidden')) this.rerunOpenFind();
   }
 
-  /** A color-mode flip repainted the pane; re-run the open find bar's
-   *  search so its canvas highlights pick up the new mode's decoration
-   *  colors (the cached set is mode-keyed and just re-resolved). */
+  /** Repaint the open find bar's highlights in the new mode's colours. */
   private rerunOpenFind(): void {
     this.runFind(this.findQuery(), false);
   }
@@ -682,20 +549,16 @@ export class AgentTerminal extends HTMLElement {
     this.cancelReconnect();
     this.closeSocket();
     this.terminal?.reset();
-    this.bufferPrimed = false; // fresh buffer: the next backfill belongs in it
+    this.bufferPrimed = false;
     this.terminal?.focus();
     this.activeKey = key;
     this.attachedTarget = null;
     this.terminalId = mode === 'terminal' ? (target as TerminalId) : null;
-    // the pop-out button rides the toolbar, whose build (ensureToolbar,
-    // connectedCallback) runs before the mode is known — reveal it here
+    // The toolbar is built before the mode is known; reveal pop-out here.
     this.toolbar
       ?.querySelector('.tb-pop-out')
       ?.classList.toggle('hidden', this.terminalId === null);
     this.ended = true;
-    // 'terminal' carries the tab's uuid (the server derives t-<uuid>,
-    // respawning if dead — plan §4); 'run' a live job run's session name
-    // (never respawned).
     const msg: ClientMsg =
       mode === 'run' ? { type: 'attach', mode, target } : { type: 'attach', mode, id: target };
     this.attachMsg = msg;
@@ -707,13 +570,11 @@ export class AgentTerminal extends HTMLElement {
   private connect(msg: ClientMsg, label: string, key: ActiveKey): void {
     this.status(`connecting: ${label} …`, 'busy');
 
-    // Browser WebSocket only accepts ws:/wss: — and the server's upgrade
-    // handler (server/main.ts) serves ${BASE}/ws.
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const websocket = new WebSocket(`${proto}//${location.host}${BASE}/ws`);
     this.websocket = websocket;
-    let ended = false; // the server ended this attach itself — don't reconnect
-    let restarting = false; // the server announced a shutdown — DO reconnect
+    let ended = false; // the server ended this attach: don't reconnect
+    let restarting = false; // the server is shutting down: do reconnect
 
     websocket.onopen = () => {
       this.ended = false;
@@ -732,15 +593,10 @@ export class AgentTerminal extends HTMLElement {
         this.bufferPrimed = true;
         this.terminal?.write(m.data);
       }
-      // Scrollback backfill — the capture that ran on the server between
-      // 'attached' and the first 'output'. Written only into a FRESH
-      // buffer: a reconnect keeps its buffer (no reset), and backfilling
-      // again would duplicate the history. The newline pad is the dedupe:
-      // the captured history stops above the visible screen (-E -1), and
-      // rows-1 newlines push the viewport down so tmux's attach redraw —
-      // home-positioned (ESC[H) relative to the viewport top — repaints
-      // the screen BELOW the backfilled history instead of over it.
-      // (Verified end to end: each line appears exactly once.)
+      // Backfill: history captured before the first 'output'. Only into a
+      // fresh buffer (a reconnect keeps its own). The history stops above
+      // the visible screen, and rows-1 newlines push the viewport down so
+      // tmux's home-positioned attach redraw lands below it, not over it.
       else if (m.type === 'backfill') {
         const b = parseBackfillMsg(ev.data as string);
         if (!b || b.data === '' || this.bufferPrimed || !this.terminal) return;
@@ -762,20 +618,15 @@ export class AgentTerminal extends HTMLElement {
         this.ended = true;
         this.status(`detached: ${m.target}`, 'info');
       }
-      // The token this socket used was dropped (logout / log out
-      // everywhere): final — like 'exit', never reconnected.
+      // Token dropped (logout): final.
       else if (m.type === 'signed-out') {
         ended = true;
         this.ended = true;
         this.status('signed out', 'info');
         this.terminal?.write('\r\nsigned out\r\n');
       }
-      // The server is shutting down (deploy, container stop): the
-      // terminal reattaches with the usual backoff once the server is
-      // back. The session itself survives only on a host install — there
-      // tmux outlives the server; in the container the tmux server dies
-      // with it, and the reattach lands on 'no such live session' (which
-      // reads as ended, below) — the README's accepted trade.
+      // Server shutting down: reconnect with backoff. On a container
+      // install tmux dies too, so the reattach then fails as ended.
       else if (m.type === 'restart') {
         restarting = true;
         this.status('server restarting — reconnecting …', 'busy');
@@ -783,7 +634,7 @@ export class AgentTerminal extends HTMLElement {
     };
 
     websocket.onclose = () => {
-      if (this.websocket !== websocket) return; // superseded by attach() or a reconnect
+      if (this.websocket !== websocket) return; // superseded
       this.websocket = undefined;
       if (this.activeKey !== key) return;
       if (!ended) {
@@ -794,18 +645,15 @@ export class AgentTerminal extends HTMLElement {
           this.status(`could not connect: ${label}`, 'err');
         }
       }
-      // The console re-polls state on every close — which also sends an
-      // expired login back to the sign-in page instead of retrying forever.
+      // The console re-polls state on every close, which also sends an
+      // expired login back to sign-in.
       this.dispatchEvent(
         new CustomEvent('terminal-closed', { detail: key, bubbles: true, composed: true }),
       );
     };
   }
 
-  /** End this element's connection for good — a tab being torn down
-   *  (closed, or its workspace switched away), not a drop: no reconnect,
-   *  and the socket closes before the element leaves the DOM so a
-   *  discarded pane can never ride the keepalive forever. */
+  /** Tear-down, not a drop: no reconnect. */
   destroy(): void {
     this.cancelReconnect();
     this.closeSocket();
@@ -813,7 +661,7 @@ export class AgentTerminal extends HTMLElement {
 
   private closeSocket(): void {
     const ws = this.websocket;
-    this.websocket = undefined; // its onclose now sees it was superseded
+    this.websocket = undefined; // so its onclose sees it was superseded
     if (ws) {
       try {
         ws.close();
@@ -833,11 +681,7 @@ export class AgentTerminal extends HTMLElement {
     }, delay);
   }
 
-  /** Back to what this element last attached to; tmux redraws the screen
-   *  and xterm keeps its scrollback (no reset). Mode-aware (plan §7): the
-   *  re-send is the frame the attach STARTED with — a terminal tab gets
-   *  the §4 respawn when its session died mid-drop, a run attach stays a
-   *  run. */
+  /** xterm keeps its scrollback (no reset); tmux redraws the screen. */
   private reconnect(): void {
     const target = this.attachedTarget;
     const key = this.activeKey;
@@ -852,10 +696,8 @@ export class AgentTerminal extends HTMLElement {
     this.reconnectDelay = RECONNECT_MIN_MS;
   }
 
-  /** A tab's first activation / re-show (plan §8): refit to the now-real
-   *  box, re-send the size (the pty kept the pre-hide dims while the tab
-   *  was hidden — tmux only learns a new size through a client), focus,
-   *  and load the WebGL renderer on the FIRST activation only. */
+  /** Refit and re-send the size (tmux only learns a size through a client,
+   *  so the pty kept its pre-hide dims), focus, and load WebGL once. */
   activate(): void {
     this.ensureWebgl();
     this.fitNow();
@@ -863,13 +705,10 @@ export class AgentTerminal extends HTMLElement {
     this.terminal?.focus();
   }
 
-  /** WebGL renderer — the big win for pi's full-screen TUI redraws, and
-   *  the resource browsers cap hardest (~8–16 live contexts: past that
-   *  the OLDEST context is lost and that terminal corrupts). Loaded
-   *  exactly once per instance, only once the tab has been on screen — a
-   *  never-activated tab never holds one. Disposing the addon (on context
-   *  loss; or never loading it if WebGL is missing) leaves xterm on its
-   *  built-in DOM renderer. */
+  /** Big win for TUI redraws, but browsers cap live contexts (~8–16; past
+   *  that the oldest is lost and its terminal corrupts), so only for tabs
+   *  that have been on screen. On context loss it's disposed and xterm
+   *  falls back to its DOM renderer. */
   private webglTried = false;
   private ensureWebgl(): void {
     if (this.webglTried) return;

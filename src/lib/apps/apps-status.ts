@@ -1,17 +1,10 @@
-// apps-status.ts — the status half of the cybermole-apps MCP
-// (task/app-scaffold, docs/plans/apps-plan.md §6): the JOIN the status tool
-// answers — every app as one row of REGISTERED (the internal API's rows)
-// × MOUNTED (the app host's /_admin/status) × BUILD-STALE (an mtime walk:
-// sources newer than the build artifacts), plus the UNREGISTERED TREES
-// present at the apps root (manifest + build, no row — plan §2's
-// scaffolded-not-yet-registered state). This module is pure fs+data: the
-// rows and the host status arrive as inputs (the MCP fetches them over
-// the sockets; transport failures are isError results there), so the
-// join is unit-testable against synthetic trees and a stub host's answer.
+// The status tool's join: each app as registered (internal API row) ×
+// mounted (app host status) × built/stale (an mtime walk), plus trees at the
+// apps root that have no row yet. Pure fs and data; the sockets are the
+// MCP's job.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-/** One app row as GET /apps answers it (the internal API's shape). */
 export interface StatusAppRow {
   id: string;
   name: string;
@@ -19,9 +12,7 @@ export interface StatusAppRow {
   cwd: string | null;
 }
 
-/** The host status's relevant half (GET /_admin/status on the apps
- *  socket — server/app-host.ts AppHostStatus, trimmed to what the join
- *  reads). */
+/** The fields of server/app-host.ts AppHostStatus the join reads. */
 export interface StatusHostAnswer {
   booted: boolean;
   mounted: Array<{ slug: string }>;
@@ -30,36 +21,29 @@ export interface StatusHostAnswer {
 
 export interface AppStatusEntry {
   slug: string;
-  /** the manifest's name (the row's name when there is no manifest) */
+  /** the manifest's name, else the row's */
   name: string | null;
   registered: boolean;
-  /** the tree the row's cwd names, or <appsRoot>/<slug> when one exists there */
   tree: string | null;
-  /** the tree has a manifest (app.json) — a registered row without one is
-   *  a console-era grouping row, not an app */
+  /** A registered row without one is a plain console group, not an app. */
   hasManifest: boolean;
-  /** dist/server/entry.mjs exists — the build half of "row + manifest +
-   *  build is what mounts" (§3) */
+  /** dist/server/entry.mjs exists */
   built: boolean;
-  /** sources are newer than the build artifacts (null when not built) */
+  /** null when not built */
   buildStale: boolean | null;
   mounted: boolean;
-  /** why it is NOT serving, when it is not — the host's own skip reason
-   *  for registered apps, the missing piece for everything else */
+  /** null when serving */
   servingReason: string | null;
 }
 
 export type AppsStatusData = {
   appsRoot: string;
   apps: AppStatusEntry[];
-  /** trees at the apps root with NO row — §6's "unregistered trees
-   *  present" (register + reload makes them live) */
+  /** trees with app.json but no row */
   unregisteredTrees: string[];
 };
 
-/** Files whose mtimes speak for the sources (walked recursively); the
- *  build stamp is the OLDER of the entry and route-table.json — a build
- *  is fresh only when BOTH artifacts postdate every source. */
+/** A build is fresh only when both artifacts postdate every source. */
 const SOURCE_DIRS = ['src', 'public'];
 const SOURCE_FILES = ['astro.config.mjs', 'package.json', 'tsconfig.json'];
 const BUILD_ARTIFACTS = ['dist/server/entry.mjs', 'dist/route-table.json'];
@@ -88,15 +72,14 @@ function newestMtime(root: string, skipDirs: Set<string> | null): number {
       try {
         newest = Math.max(newest, fs.statSync(child).mtimeMs);
       } catch {
-        /* raced away — the walk stays total */
+        /* raced away */
       }
     }
   }
   return Math.max(newest, stat.mtimeMs);
 }
 
-/** One tree's fs facts: manifest name, built, stale. Total — a
- *  half-deleted tree answers honestly (no manifest, not built). */
+/** Never throws; a half-deleted tree reads as no manifest, not built. */
 export function inspectTree(tree: string): {
   hasManifest: boolean;
   name: string | null;
@@ -114,7 +97,7 @@ export function inspectTree(tree: string): {
       hasManifest = true;
     }
   } catch {
-    /* no manifest or unreadable — answered below */
+    /* no manifest */
   }
   const stamps = BUILD_ARTIFACTS.map(rel => {
     try {
@@ -123,7 +106,7 @@ export function inspectTree(tree: string): {
       return -1;
     }
   });
-  const built = stamps[0]! >= 0; // entry.mjs is the build's own product
+  const built = stamps[0]! >= 0; // entry.mjs
   const buildStamp = Math.min(...stamps);
   let sources = 0;
   for (const rel of SOURCE_DIRS)
@@ -132,7 +115,7 @@ export function inspectTree(tree: string): {
     try {
       sources = Math.max(sources, fs.statSync(path.join(tree, rel)).mtimeMs);
     } catch {
-      /* absent — nothing to compare */
+      /* absent */
     }
   }
   return {
@@ -143,15 +126,14 @@ export function inspectTree(tree: string): {
   };
 }
 
-/** The app trees at the apps root: directories with an app.json (the
- *  manifest is what makes a directory an app tree — §2). Sorted by slug. */
+/** Directories with an app.json, keyed by slug. */
 export function collectTrees(appsRoot: string): Map<string, string> {
   const trees = new Map<string, string>();
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(appsRoot, { withFileTypes: true });
   } catch {
-    return trees; // a missing root answers "no trees" — scaffold creates it
+    return trees;
   }
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
@@ -161,9 +143,7 @@ export function collectTrees(appsRoot: string): Map<string, string> {
   return trees;
 }
 
-/** The join (pure). Rows and trees both contribute; a row whose cwd is
- *  outside the apps root still reports against ITS tree (registration is
- *  by row, not by location). */
+/** A row whose cwd is outside the apps root still reports against its own tree. */
 export function joinAppsStatus(
   appsRoot: string,
   rows: StatusAppRow[],

@@ -1,13 +1,8 @@
 ---
-// The list page — the note_list action's UI face, rendered server-side
-// from the same domain call the API serves (one vocabulary, every face),
-// plus the editor island for capture and the starter's ping island. The
-// find form is NATIVE controls on purpose: it works without JS (the
-// page's own GET), while the islands carry the interactive halves.
-// Frontmatter imports SSR the wa-* components (astro-lit, declarative
-// shadow DOM); the client script below re-imports them so the browser
-// upgrades them — BOTH halves, always (the repo rule "SSR imports ≠
-// client imports"; @cybermole/app-kit's wa-client carries the why).
+// The list page: note_list rendered server-side, the editor island for
+// capture, and the starter's ping island. The find form uses native
+// controls so it works without JS. The wa-* imports here only SSR; the
+// client script re-imports them (see @cybermole/app-kit/wa-client).
 import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/input/input.js';
@@ -79,12 +74,9 @@ const base = import.meta.env.BASE_URL;
           ))}
         </ul>
 
-        <!-- The islands' HOSTS: this SSR'd markup is the initial content —
-             the islands (client script below) take the regions over and
-             wire the actions. Without JS the page still renders. The
-             markers are add_action's insertion points: it appends one
-             section per new action inside them (a fresh marked block if
-             they are gone). -->
+        <!-- The islands' hosts: SSR'd initial content the islands take
+             over. add_action appends one section per action inside the
+             markers below. -->
         <!-- BEGIN ACTION MOUNTS (generated — add_action appends one section per action) -->
         {!archivedView && (
           <section class="note-editor">
@@ -105,9 +97,7 @@ const base = import.meta.env.BASE_URL;
       </wa-card>
     </main>
     <script>
-      // Support modules MUST precede the wa-* imports — if the SSR'd
-      // elements define before lit hydration support installs, they
-      // render twice (@awesome.me/astro-lit README).
+      // wa-client must precede the wa-* imports, or SSR'd elements render twice.
       import '@cybermole/app-kit/wa-client';
       import '@awesome.me/webawesome/dist/components/card/card.js';
       import '@awesome.me/webawesome/dist/components/button/button.js';
@@ -116,8 +106,7 @@ const base = import.meta.env.BASE_URL;
       import '@awesome.me/webawesome/dist/components/badge/badge.js';
       import { mountIsland } from '@cybermole/app-kit/island';
 
-      // The islands' wiring — add_action's other insertion point: one
-      // import + mount per new action inside the markers.
+      // add_action appends one import + mount per action inside these markers.
       // BEGIN ACTION ISLANDS (generated — add_action appends one import + mount per action)
       import PingIsland from '../islands/PingIsland';
 

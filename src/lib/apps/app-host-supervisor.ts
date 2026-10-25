@@ -1,30 +1,11 @@
-// app-host-supervisor.ts — the SINGLE-USER spawn rule (task/app-web,
-// docs/plans/apps-plan.md §3, the CYBERMOLE_TMUX_SOCKET precedent): when
-// CYBERMOLE_APPS_SOCK is UNSET (the default single-user shape),
-// server/main.ts OWNS the app host — it spawns
-// `node dist-server/server/app-host.js` as a supervised child at the
-// default socket path, same uid and same env (the child resolves the
-// same defaults from the inherited environment; nothing is
-// re-negotiated). When the env is explicitly SET (the compose split,
-// the e2e suite) the web server is ONLY a client — never spawns: the
-// operator/workspace entrypoint owns the process, exactly the tmux
-// socket's ownership rule.
-//
-// Supervision: stdout/stderr into the logger (the child's winston lines
-// re-logged at their own level, prefix stripped), SIGTERM at shutdown
-// (SIGKILL after a grace period), and a crashed child RESTARTS with
-// backoff — a poison app never takes the host down (the host is
-// crash-tolerant at the registry level), but a crashed HOST is this
-// supervisor's business. Backoff doubles per consecutive quick death
-// and resets once a child ran stably; it never gives up.
-//
-// The spawn function, the clocks and the logger are injected deps, so
-// the whole behavior is unit-testable without real children (tests/unit/
-// app-host-supervisor.test.mjs); main.ts wires the real ones.
+// With CYBERMOLE_APPS_SOCK unset (single-user), main.ts spawns the app host
+// as a supervised child with the same uid and env; when it's set, someone
+// else owns the host. The child's log lines are re-logged at their own
+// level; a crashed host restarts with doubling backoff (reset after a
+// stable run) and the supervisor never gives up.
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 
-/** The logger surface the supervisor needs (componentLogger's shape). */
 export interface SupervisorLog {
   info(message: string): void;
   warn(message: string): void;
@@ -38,48 +19,36 @@ export type SupervisorSpawn = (
 ) => ChildProcess;
 
 export interface AppHostSupervisorDeps {
-  /** node — main.ts passes process.execPath. */
+  /** process.execPath */
   command: string;
-  /** [appHostJs] — dist-server/server/app-host.js. */
+  /** [dist-server/server/app-host.js] */
   args: readonly string[];
-  /** The web server's own env, verbatim: the child computes the same
-   *  socket defaults from it (same uid, same wiring). */
+  /** The child derives the same socket defaults from it. */
   env: NodeJS.ProcessEnv;
   log: SupervisorLog;
   spawn?: SupervisorSpawn;
-  /** First restart delay after a crash; doubles per consecutive quick
-   *  death. Default 1 s. */
+  /** Default 1 s, doubling per consecutive quick death. */
   restartDelayMs?: number;
-  /** Backoff ceiling. Default 10 s. */
+  /** Default 10 s. */
   backoffCapMs?: number;
-  /** A child that lived at least this long counts as stable — the next
-   *  crash restarts from the base delay, not the doubled one. Default
-   *  30 s. */
+  /** A child that lived this long resets the backoff. Default 30 s. */
   stableMs?: number;
-  /** How long stop() waits after SIGTERM before SIGKILL. Default 2 s
-   *  (the host's own shutdown deadline is 5 s; the web server's whole
-   *  drain must not wait for it). */
+  /** SIGTERM → SIGKILL grace. Default 2 s: the web server's drain mustn't wait on the host's own 5 s. */
   killGraceMs?: number;
-  /** Clock injectable for units. */
   now?: () => number;
 }
 
 export interface AppHostSupervisorHandle {
-  /** The running child's pid, or null (starting up / between restarts /
-   *  stopped). */
+  /** null while starting, between restarts, or stopped. */
   readonly pid: number | null;
-  /** How many times a child has been started (1 = the initial spawn). */
+  /** 1 = the initial spawn */
   readonly starts: number;
-  /** Stop supervising: no more restarts, SIGTERM to the live child,
-   *  SIGKILL after the grace period. Resolves once the child is gone
-   *  (or was never started). Idempotent. */
+  /** No more restarts; SIGTERM, then SIGKILL after the grace. Idempotent. */
   stop(): Promise<void>;
 }
 
-/** Strip a child winston line's `timestamp level [component] ` prefix —
- *  the re-logged line then looks native in the parent's console and
- *  carries the child's own level into OUR logger (loki labels included).
- *  Anything that does not match forwards verbatim at info. */
+/** Strips a child winston line's prefix so it re-logs natively at its own
+ *  level; anything else forwards at info. */
 const CHILD_LINE_RE = /^\d{4}-\d{2}-\d{2}T[^\s]+\s+(debug|info|http|warn|error)\s+\[[^\]]+\]\s?/;
 
 function forwardChildLine(log: SupervisorLog, line: string): void {
@@ -92,8 +61,7 @@ function forwardChildLine(log: SupervisorLog, line: string): void {
   log.info(line);
 }
 
-/** Pipe a child stream into the logger line by line (a trailing partial
- *  line flushes on end — a crash's last words must not be lost). */
+/** A trailing partial line flushes on end, so a crash's last words survive. */
 function pipeLines(
   stream: ChildProcess['stdout'] | ChildProcess['stderr'],
   log: SupervisorLog,
@@ -144,22 +112,18 @@ export function startAppHostSupervisor(deps: AppHostSupervisorDeps): AppHostSupe
     pipeLines(c.stderr, log);
     log.info(`app host started (pid ${c.pid ?? '?'})`);
 
-    // One death handler for both faces of dying: a crashed child emits
-    // 'exit'; a spawn that never happened (EMFILE, a missing script) emits
-    // 'error' only. Either way: a pending stop() resolves and a live
-    // supervisor arms the backoff restart.
+    // A failed spawn emits 'error' but never 'exit'; both count as a death.
     const onDeath = (code: number | null, signal: string | null): void => {
-      if (c !== child) return; // a superseded child (stop() already ran): not ours anymore
+      if (c !== child) return; // superseded child
       child = null;
       if (stopDone !== null) {
-        // stop() is waiting on exactly this death.
         stopDone();
         stopDone = null;
         return;
       }
       if (stopping) return;
       const lived = Math.max(0, now() - bornAt);
-      if (lived >= stableMs) delay = restartDelayMs; // ran stable: a fresh crash is a fresh first crash
+      if (lived >= stableMs) delay = restartDelayMs;
       log.warn(
         `app host (pid ${c.pid ?? '?'}) exited (code ${code}, signal ${signal}) after ${lived}ms — ` +
           `restarting in ${delay}ms (the /apps/* surface 502s until it is back)`,
@@ -174,10 +138,6 @@ export function startAppHostSupervisor(deps: AppHostSupervisorDeps): AppHostSupe
     };
     c.on('error', err => {
       log.error(`app host could not be spawned: ${err.message}`);
-      // A FAILED spawn emits 'error' (+'close') but never 'exit' — treat it
-      // as a death like any other (the same bookkeeping: a pending stop()
-      // resolves, a live supervisor schedules the backoff restart). The
-      // c===child guard makes the post-exit socket-error case a no-op.
       onDeath(null, null);
     });
     c.on('exit', (code, signal) => onDeath(code, signal));
@@ -207,16 +167,12 @@ export function startAppHostSupervisor(deps: AppHostSupervisorDeps): AppHostSupe
         const killTimer = setTimeout(() => {
           child?.kill('SIGKILL');
         }, killGraceMs);
-        // Deliberately NOT unref'd, unlike the restart timer: it only
-        // exists mid-stop (the restart timer is cleared above), and the
-        // shutdown's own deadline backstop dominates — while a ref'd
-        // timer here is what lets a stop() awaiting the grace stay
-        // scheduled even when nothing else is pending.
+        // Not unref'd: it lets a stop() awaiting the grace stay scheduled.
         stopDone = () => {
           clearTimeout(killTimer);
           resolve();
         };
-        child.kill('SIGTERM'); // the host closes its listener and exits (its own shutdown path)
+        child.kill('SIGTERM');
       });
       return stopPromise;
     },

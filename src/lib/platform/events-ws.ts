@@ -1,23 +1,9 @@
-// events-ws.ts — /ws/events: the browser's subscription to the domain
-// event bus (src/lib/platform/events.ts). Two halves, both unit-tested
-// (tests/unit/events-ws.test.mjs):
+// /ws/events: browsers' subscription to the domain-event bus. The upgrade
+// gate is a function so it's unit-testable; the relay forwards bus events
+// verbatim as JSON and ends sockets whose token dies.
 //
-// - checkEventsUpgrade: the cookie gate. server/main.ts applies the SAME
-//   gates as the terminal WS (shutdown, the shared ws rate limiter,
-//   Origin, the session cookie) but through this one function, so the
-//   decision logic itself is testable without booting main.ts.
-// - EventsRelay: everything after a successful upgrade. Owns its
-//   WebSocketServer, tracks sockets per session token, forwards bus
-//   events as small JSON frames ({topic:'jobs', type, job, firedAt?}),
-//   and keeps the socket alive (ping + a token liveness sweep, like the
-//   terminal's — a dead token must not ride the keepalive forever).
-//
-// Wire frames, server → client only (the client never sends):
-//   a domain event  — the bus event, verbatim JSON
-//   {type:'signed-out'} — the token died (logout / expiry): final, the
-//                     client must not reconnect
-//   {type:'restart'}    — the server is shutting down: reconnect with
-//                     backoff once it's back
+// Server → client only: domain events, then a final {type:'signed-out'}
+// (don't reconnect) or {type:'restart'} (reconnect with backoff).
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, type WebSocket } from 'ws';
@@ -25,28 +11,20 @@ import { onDomainEvent, type DomainEvent } from './events';
 import type { SessionCheckResult } from './auth';
 import type { SessionToken } from '@cybermole/app-kit';
 
-/** The gate's verdict: allow (with the authenticated token), destroy the
- *  socket silently (shutdown / rate limit / Origin — no reply, exactly
- *  like the terminal's refusals), or answer an HTTP status line first
- *  (session gate: 401 signed out, 503 store down). */
+/** 'destroy' refuses silently, like the terminal; 'status' writes an HTTP status line first. */
 export type EventsUpgradeDecision =
   | { ok: true; token: SessionToken }
   | { ok: false; reply: 'destroy'; why: string }
   | { ok: false; reply: 'status'; status: string; why: string };
 
-/** main.ts's own primitives, injected: the relay never re-derives them. */
 export interface EventsUpgradeChecks {
   shuttingDown(): boolean;
-  /** the shared WS upgrade rate limiter's allow() */
   allow(ip: string): boolean;
   originOk(req: IncomingMessage): boolean;
-  /** auth.valid(Auth.sessionToken(cookie)) — the cookie gate */
   validSession(cookie: string | undefined): SessionCheckResult;
 }
 
-/** Gate one /ws/events upgrade. Same order and semantics as the
- *  terminal's branch in server/main.ts; the `why` strings are for the
- *  log lines the caller writes on refusal. */
+/** Same order and semantics as the terminal's gate; `why` is for the caller's log line. */
 export function checkEventsUpgrade(
   req: IncomingMessage,
   ip: string,
@@ -76,17 +54,15 @@ export function checkEventsUpgrade(
   return { ok: true, token: session.data.token };
 }
 
-/** What the relay needs from main.ts: the token liveness peek
- *  (auth.alive — never renewing) and a logger for the sweep's db lines. */
+/** alive must never renew the token. */
 export interface EventsRelayDeps {
   alive(token: SessionToken): SessionCheckResult;
   log: EventsLog;
-  /** keepalive ping interval (default 30 s, like the terminal's) */
+  /** default 30 s */
   pingMs?: number;
 }
 
-/** The slice of a winston logger the relay uses (structural, so tests
- *  can pass plain functions). */
+/** Structural, so tests can pass plain functions. */
 export interface EventsLog {
   info(message: string): void;
   warn(message: string): void;
@@ -95,8 +71,7 @@ export interface EventsLog {
 
 const DEFAULT_PING_MS = 30_000;
 
-/** Close with a hard fallback (the terminal's closeSoon semantics): a
- *  peer that never answers the close frame is terminated. */
+/** A peer that never answers the close frame is terminated. */
 function closeSoon(ws: WebSocket): void {
   try {
     ws.close();
@@ -119,19 +94,17 @@ export class EventsRelay {
 
   constructor(private readonly deps: EventsRelayDeps) {}
 
-  /** Subscribe to the bus. Called once at boot; idempotent. */
+  /** Idempotent. */
   start(): void {
     if (this.unsubscribe) return;
     this.unsubscribe = onDomainEvent(event => this.broadcast(event));
   }
 
-  /** Complete an upgrade main.ts has already gated. */
+  /** The upgrade is already gated. */
   handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, token: SessionToken): void {
     this.wss.handleUpgrade(req, socket, head, ws => this.attach(ws, token));
   }
 
-  /** Forward one event to every open socket (a send failure on one socket
-   *  must not starve the others — ws buffers and errors async). */
   private broadcast(event: DomainEvent): void {
     const frame = JSON.stringify(event);
     for (const set of this.byToken.values()) {
@@ -139,7 +112,7 @@ export class EventsRelay {
         try {
           if (ws.readyState === ws.OPEN) ws.send(frame);
         } catch {
-          /* a dying socket drops the event — the poll is the safety net */
+          /* the poll is the safety net */
         }
       }
     }
@@ -152,12 +125,9 @@ export class EventsRelay {
       this.byToken.set(token, set);
     }
     set.add(ws);
-    // Keepalive, same shape as a terminal's: the ping counts as traffic
-    // for idle-timeout proxies; a peer that misses a full interval is
-    // gone; and the token itself must stay alive — WS traffic never
-    // slides it (auth.alive never renews), so a token that died on
-    // either clock — idle, the absolute cap, a logout — ends its event
-    // sockets instead of leaking job names at a signed-out browser.
+    // Like the terminal's keepalive: a missed pong means the peer is gone,
+    // and a dead token ends the socket rather than keep streaming job names
+    // to a signed-out browser.
     let alive = true;
     const keepalive = setInterval(() => {
       if (!alive) {
@@ -171,7 +141,7 @@ export class EventsRelay {
             this.closeToken(token, { type: 'signed-out' });
             return;
           case 'database_error':
-            // can't tell — recheck next sweep, like the terminal's
+            // can't tell; recheck next sweep
             this.deps.log.error(`session store unavailable: ${live.errorMessage}`);
             break;
           default:
@@ -189,7 +159,7 @@ export class EventsRelay {
       alive = true;
     });
     ws.on('message', () => {
-      /* the client never sends; ignore anything, never throw */
+      /* the client never sends */
     });
     ws.on('close', () => {
       clearInterval(keepalive);
@@ -200,8 +170,6 @@ export class EventsRelay {
     });
   }
 
-  /** Send `final`, then end every event socket authenticated with
-   *  `token` (logout, log out everywhere, a dead token's sweep). */
   closeToken(token: SessionToken, final: { type: 'signed-out' } | { type: 'restart' }): void {
     const set = this.byToken.get(token);
     if (!set) return;
@@ -212,7 +180,6 @@ export class EventsRelay {
     }
   }
 
-  /** Send `final`, then end every event socket (shutdown). */
   closeAll(final: { type: 'signed-out' } | { type: 'restart' }): void {
     for (const set of this.byToken.values()) {
       for (const ws of set) {
@@ -223,9 +190,7 @@ export class EventsRelay {
     this.byToken.clear();
   }
 
-  /** Stop the relay for good: unsubscribe from the bus and close every
-   *  socket (the shutdown path — clients reconnect once the server is
-   *  back). */
+  /** Shutdown: unsubscribe and close every socket. */
   stop(final: { type: 'signed-out' } | { type: 'restart' }): void {
     if (this.unsubscribe) {
       this.unsubscribe();

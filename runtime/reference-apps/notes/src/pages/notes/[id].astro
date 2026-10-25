@@ -1,9 +1,7 @@
 ---
-// The note page — the note_get action's UI face (the same domain call,
-// rendered server-side) carrying the editor island (note_edit +
-// note_archive). A missing note answers 404 with an honest card, the
-// family's own code named. Frontmatter imports SSR the wa-* components;
-// the client script below re-imports them — BOTH halves, always.
+// The note page: note_get rendered server-side, with the editor island. A
+// missing note answers 404. The wa-* imports here only SSR; the client
+// script re-imports them.
 import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/input/input.js';
@@ -43,11 +41,8 @@ const base = import.meta.env.BASE_URL;
                 <wa-badge>{t}</wa-badge>
               ))}
             </p>
-            <!-- The editor island's HOST: the SSR'd note rides along in
-                 data-note (the client script parses it into the island's
-                 props); the island takes the region over and wires
-                 note_edit + note_archive. Without JS the note still
-                 reads. -->
+            <!-- The editor island's host: the note rides in data-note for
+                 the island's props. Without JS the note still reads. -->
             <section class="note-editor" data-note={JSON.stringify(note)}>
               <wa-input label="title" value={note.title}></wa-input>
               <wa-textarea label="body" value={note.body}></wa-textarea>
@@ -64,9 +59,7 @@ const base = import.meta.env.BASE_URL;
       </wa-card>
     </main>
     <script>
-      // Support modules MUST precede the wa-* imports — if the SSR'd
-      // elements define before lit hydration support installs, they
-      // render twice (@awesome.me/astro-lit README).
+      // wa-client must precede the wa-* imports, or SSR'd elements render twice.
       import '@cybermole/app-kit/wa-client';
       import '@awesome.me/webawesome/dist/components/card/card.js';
       import '@awesome.me/webawesome/dist/components/button/button.js';

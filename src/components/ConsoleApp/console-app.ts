@@ -1,12 +1,6 @@
-// console-app.ts — <console-app>: orchestrates the workspace sidebar ↔
-// terminal tabs on a <wa-page> app shell (sidebar + free mobile drawer),
-// the 15 s state poll, the create/delete dialogs and toasts. Shell markup
-// is SSR'd by ConsoleApp.astro; this module registers <console-app>
-// client-side and drives it. The dialogs live here, outside the sidebar's
-// innerHTML poll; the sidebar and <terminal-tabs> stay stateless emitters
-// (select-workspace / new-workspace / new-app / delete-* / new-terminal /
-// close-terminal). Page navigation (and sign-out) lives in the global
-// <app-header>.
+// <console-app>: drives the workspace sidebar and terminal tabs, the 15 s
+// state poll, and the create/delete dialogs. The dialogs live here, outside
+// the sidebar's innerHTML re-render; the sidebar and tabs only emit events.
 import type { ConsoleState, WorkspaceState } from '../../lib/platform/types';
 import {
   asTerminalId,
@@ -22,7 +16,6 @@ import {
 } from '@cybermole/app-kit';
 import { BASE } from '../../base';
 import { signedInFetch, type SignedInFetchFailure } from '../signed-in-fetch';
-// Registers <validation-enhancer-zod> (and the base <validation-enhancer>).
 import 'validation-enhancer/zod';
 import type { ValidationEnhancerZod } from 'validation-enhancer/zod';
 import { appForm, workspaceForm } from '../../schemas/api';
@@ -37,18 +30,15 @@ import '../TerminalTabs/terminal-tabs';
 import type { WorkspaceSidebar } from '../workspace-sidebar';
 import '../workspace-sidebar';
 
-/** Minimal typing for <wa-toast>.create(). */
 type WaToast = HTMLElement & {
   create(message: string, options?: Record<string, unknown>): Promise<unknown>;
 };
 
-/** Minimal typing for <wa-dialog>. */
 type WaDialog = HTMLElement & { show(): void; open: boolean };
 
-/** wa-input surface. An empty wa-input's value is null, not ''. */
+/** An empty wa-input's value is null, not ''. */
 type WaInput = HTMLElement & { value: string | null };
 
-/** What the delete-confirmation dialog is about to remove. */
 type PendingDelete =
   | { kind: 'workspace'; id: WorkspaceId; name: string }
   | { kind: 'app'; slug: AppSlug; name: string }
@@ -58,32 +48,23 @@ export class ConsoleApp extends HTMLElement {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private state: ConsoleState | null = null;
   private selected: WorkspaceId | null = null;
-  /** The group the new-workspace dialog will create under (null = the
-   *  console group — the sidebar's or empty state's `+` that opened it). */
+  /** Where the new-workspace dialog creates (null = the console group). */
   private newWorkspaceAppId: AppId | null = null;
   private pendingDelete: PendingDelete | null = null;
-  /** Deep-link target (/?t=<terminal uuid>) — resolved on the first state
-   *  load: opens the terminal's workspace with that tab selected. Nothing
-   *  to wait for: the terminal attach mode respawns the session on demand
-   *  (plan §4), so a dead or never-spawned tab still opens. A uuid that
-   *  isn't ours degrades to a toast. */
+  /** /?t=<terminal uuid>, resolved on the first state load. A dead tab still
+   *  opens (the attach respawns it); an unknown uuid toasts. */
   private pendingTerminal: TerminalId | null = (() => {
     const v = new URLSearchParams(location.search).get('t') ?? '';
     return UUID_RE.test(v) ? asTerminalId(v) : null;
   })();
-  /** Deep-link target (/?run=<session name> — a live job run, the jobs
-   *  page's "view" link): shown as the transient run pane on the first
-   *  state load. The run mode never respawns — a dead session answers
-   *  'no such run session' in the status line. */
+  /** /?run=<session>: a live job run, shown on the first state load. */
   private pendingRun: TmuxSessionName | null = (() => {
     const v = new URLSearchParams(location.search).get('run') ?? '';
     return TMUX_SESSION_NAME_RE.test(v) ? asTmuxSessionName(v) : null;
   })();
 
   connectedCallback(): void {
-    // Event details round-trip through the sidebar's/tab bar's markup,
-    // rendered from server state — a trusted source for these ids; the
-    // ids are re-checked against the fresh state before use anyway.
+    // Ids come from server-rendered markup and are re-checked against state anyway.
     this.addEventListener('select-workspace', e => {
       const id = (e as CustomEvent<{ id?: string }>).detail.id ?? '';
       if (!UUID_RE.test(id)) return;
@@ -120,10 +101,9 @@ export class ConsoleApp extends HTMLElement {
         name: t?.title ?? d.id.slice(0, 8),
       });
     });
-    // Any pane's socket closing (server restart, a drop) → refresh dots.
+    // Any pane's socket closing → refresh the dots.
     this.addEventListener('terminal-closed', () => void this.loadState());
-    // A pop-out the browser refused (popup blocker): the pane never
-    // moved — say so, it looks like a dead button otherwise.
+    // Without this, a blocked pop-up looks like a dead button.
     this.addEventListener('pop-blocked', () =>
       this.toast('pop-up blocked — allow pop-ups to pop a tab out', {
         variant: 'danger',
@@ -132,23 +112,20 @@ export class ConsoleApp extends HTMLElement {
       }),
     );
 
-    // The dialogs' footer buttons live outside their forms (dialog footer
-    // slot): submit the form so <validation-enhancer-zod> validates first.
+    // Footer buttons sit outside their forms; requestSubmit so the enhancer validates first.
     (this.querySelector('#app-save') as HTMLElement).onclick = () =>
       (this.querySelector('#app-form') as HTMLFormElement).requestSubmit();
     (this.querySelector('#workspace-save') as HTMLElement).onclick = () =>
       (this.querySelector('#workspace-form') as HTMLFormElement).requestSubmit();
     (this.querySelector('#confirm-delete-ok') as HTMLElement).onclick = () => void this.runDelete();
-    // Valid submits only: the enhancer stops an invalid one from
-    // propagating, so this listener sits ABOVE it — a listener on the
-    // form itself would fire (target phase) before validation ran.
+    // Above the enhancer: it stops invalid submits from propagating, and a
+    // listener on the form itself would fire before validation.
     this.addEventListener('submit', e => {
       e.preventDefault();
       const form = e.target as HTMLFormElement;
       if (form.id === 'app-form') void this.createApp();
       else if (form.id === 'workspace-form') void this.createWorkspace();
     });
-    // The forms validate against the same schemas the routes parse with.
     void customElements.whenDefined('validation-enhancer-zod').then(() => {
       (
         this.querySelector('#app-dialog validation-enhancer-zod') as ValidationEnhancerZod
@@ -188,8 +165,7 @@ export class ConsoleApp extends HTMLElement {
     void (this.querySelector('wa-toast') as WaToast | null)?.create(message, options);
   }
 
-  /** A request that got no answer. Signed out needs no toast: the page is
-   *  already on its way to /login. */
+  /** Signed out needs no toast: the page is already heading to /login. */
   private notAnswered(failure: SignedInFetchFailure): void {
     switch (failure.errorCode) {
       case 'signed_out':
@@ -206,7 +182,7 @@ export class ConsoleApp extends HTMLElement {
     }
   }
 
-  /** One JSON call; the parsed body (error bodies included) comes back. */
+  /** Error bodies are parsed and returned too. */
   private async call(
     method: string,
     path: string,
@@ -244,9 +220,8 @@ export class ConsoleApp extends HTMLElement {
     if (!r.ok) return;
     const st = (await r.json()) as ConsoleState;
     this.state = st;
-    // Deep links (/?t=…, /?run=…): consumed in ONE pass, on the first
-    // state load — a ?t= hit must not leave a ?run= armed to hijack the
-    // next poll.
+    // Deep links are consumed in one pass, so a ?t= hit can't leave a ?run=
+    // armed for the next poll.
     const pendingTerminal = this.pendingTerminal;
     const pendingRun = this.pendingRun;
     this.pendingTerminal = null;
@@ -258,22 +233,14 @@ export class ConsoleApp extends HTMLElement {
         this.applySelection(pendingTerminal);
         return;
       }
-      // A well-formed uuid that is not ours: shown, and the console still
-      // lands on a workspace (the auto-select below) instead of the empty
-      // state — the deep link degrades, the page doesn't.
+      // Not ours: toast, and still land on a workspace below.
       this.toast('no such terminal', { variant: 'neutral', icon: 'circle-info', duration: 6000 });
     }
-    // A deleted-out-from-under selection clears FIRST — the auto-select
-    // below then lands on the first remaining workspace immediately, not
-    // on an empty state the next poll would un-explain.
+    // Clear a deleted selection first, then fall back to the first workspace.
     if (this.selected !== null && !this.selectedWorkspace()) this.selected = null;
-    // Nothing selected (first load, a missed deep link, or a delete that
-    // took the selection): land on the first workspace when one exists
-    // (the empty state's create prompt is for empty stores).
     if (this.selected === null && st.workspaces.length > 0) {
       this.selected = st.workspaces[0]!.id;
     }
-    // ?run=<session name>: the transient run pane (the jobs page's view).
     if (pendingRun) {
       this.applySelection();
       this.tabs()?.showRun(pendingRun);
@@ -282,9 +249,7 @@ export class ConsoleApp extends HTMLElement {
     this.applySelection();
   }
 
-  /** Drive sidebar + tabs from the current state and selection.
-   *  initialTab: the ?t= deep link's tab — passed to setWorkspace so it,
-   *  not the first tab, is the one that gets a pane. */
+  /** initialTab (the ?t= deep link) gets the pane instead of the first tab. */
   private applySelection(initialTab?: TerminalId): void {
     const st = this.state;
     if (!st) return;
@@ -293,8 +258,7 @@ export class ConsoleApp extends HTMLElement {
     const tabs = this.tabs();
     if (!tabs) return;
     if (ws) {
-      // setWorkspace on a selection CHANGE (it tears panes down); sync on
-      // a refresh of the SAME workspace (panes persist, dots flip).
+      // setWorkspace on a change (tears panes down); sync on a refresh.
       if (tabs.activeWorkspaceId() !== ws.id) tabs.setWorkspace(ws, st.editor, initialTab);
       else tabs.sync(ws);
     } else {
@@ -312,10 +276,7 @@ export class ConsoleApp extends HTMLElement {
 
   private openWorkspaceDialog(): void {
     this.resetForm('#workspace-form');
-    // No folder setting in this dialog (task/app-cwd — the app carries
-    // it): show where the workspace will start instead — the parent
-    // app's cwd when it has one, else the server default. Mirrors the
-    // server's own create-side derivation (Workspaces.saveWorkspace).
+    // Show where the workspace will start, mirroring the server's derivation.
     const note = this.querySelector('#workspace-start') as HTMLElement | null;
     const app =
       this.newWorkspaceAppId === null
@@ -329,8 +290,6 @@ export class ConsoleApp extends HTMLElement {
     this.focusField('#workspace-name');
   }
 
-  /** Clear a dialog form's fields + validation state (a re-open starts
-   *  clean — the jobs dialog's discipline). */
   private resetForm(sel: string): void {
     const form = this.querySelector(sel) as HTMLFormElement | null;
     if (!form) return;
@@ -342,16 +301,14 @@ export class ConsoleApp extends HTMLElement {
     });
   }
 
-  /** Focus after <wa-input>'s first render (its .focus() forwards to the
-   *  native input inside the shadow root, built on a microtask). */
+  /** After first render: wa-input's .focus() forwards to an inner input built on a microtask. */
   private focusField(sel: string): void {
     requestAnimationFrame(() => (this.querySelector(sel) as WaInput | null)?.focus());
   }
 
   private async createApp(): Promise<void> {
     const name = ((this.querySelector('#app-name') as WaInput | null)?.value ?? '').trim();
-    // An empty wa-input's value is null: no cwd field filled = unset —
-    // workspaces under the app start at the server default (task/app-cwd).
+    // Empty means unset: workspaces start at the server default.
     const cwd = ((this.querySelector('#app-cwd') as WaInput | null)?.value ?? '').trim();
     const done = await this.call('POST', '/api/apps', cwd === '' ? { name } : { name, cwd });
     if (!done) return;
@@ -370,8 +327,7 @@ export class ConsoleApp extends HTMLElement {
 
   private async createWorkspace(): Promise<void> {
     const name = ((this.querySelector('#workspace-name') as WaInput | null)?.value ?? '').trim();
-    // No cwd in the body (task/app-cwd): the server derives it — the
-    // parent app's cwd, else CYBERMOLE_NEW_SESSION_CWD.
+    // No cwd: the server derives it.
     const appId = this.newWorkspaceAppId;
     const done = await this.call(
       'POST',
@@ -395,9 +351,7 @@ export class ConsoleApp extends HTMLElement {
 
   // ---- terminal tabs ----
 
-  /** Open a terminal tab (the + button): POST the create, then select the
-   *  new tab. A spawn failure still carries the row (plan §4: a dead tab)
-   *  — it is selected all the same; the first attach retries the spawn. */
+  /** A failed spawn still carries the row, so it's selected anyway; the first attach retries. */
   private async createTerminal(workspaceId: WorkspaceId): Promise<void> {
     const done = await this.call('POST', `/api/workspaces/${workspaceId}/terminals`, {});
     if (!done) return;
@@ -446,10 +400,7 @@ export class ConsoleApp extends HTMLElement {
       await this.loadState();
       return;
     }
-    // A delete that took the SELECTION with it is loadState's business: its
-    // deleted-out check clears the selection and the first-workspace
-    // auto-select lands on what remains (the empty state when nothing
-    // does).
+    // If the selection was deleted, loadState clears it and picks what's left.
     await this.loadState();
   }
 }

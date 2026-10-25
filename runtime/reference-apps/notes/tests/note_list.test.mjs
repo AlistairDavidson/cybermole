@@ -1,6 +1,4 @@
-// The note_list action's unit tests — grown from the add_action stub:
-// the compiled filter the store receives (that is the action's own
-// logic), the archived flag's domain rule, and the shaped answer.
+// The compiled filter the store receives, the archived rule, and the shaped answer.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { noteListResult } from '../src/lib/note_list.ts';

@@ -1,24 +1,20 @@
-// NoteEditorIsland.tsx — THE editor island: one preact component with
-// signals for both modes — 'create' (the list page's capture form →
-// note_create) and 'edit' (the note page → note_edit + note_archive).
-// Calls go through the kit's typed client on the SAME table the API
-// route serves — one action vocabulary, every face (apps-plan §0); the
-// signal carries the last answer's line for aria-live announcement.
+// The editor island, in 'create' mode (note_create, on the list page) or
+// 'edit' mode (note_edit and note_archive, on the note page). The signal
+// holds the last answer for the aria-live line.
 import { useRef } from 'preact/hooks';
 import { signal } from '@preact/signals';
 import { createRouteClient } from '@cybermole/app-kit/route-table';
 import { routes } from '../routes';
 import type { Note } from '../lib/notes-core';
 
-/** The wa-input/wa-textarea hosts after the browser upgrades them
- *  (before that, .value is absent — the island reads them defensively). */
+/** .value is absent until the elements upgrade. */
 interface WaValueHost extends HTMLElement {
   value: string | null;
 }
 
 export interface NoteEditorProps {
   mode: 'create' | 'edit';
-  /** the note being edited (edit mode only) */
+  /** edit mode only */
   note?: Note | undefined;
 }
 
@@ -65,8 +61,7 @@ export default function NoteEditorIsland({ mode, note }: NoteEditorProps) {
     say('…');
     const r = await client.note_archive({ params: { id: note!.id } });
     if (r.ok) {
-      // Back to the list, where the note has left the default view —
-      // that is the whole story archive tells.
+      // Back to the list; the archived note has left the default view.
       window.location.href = `${import.meta.env.BASE_URL}/`;
       return;
     }

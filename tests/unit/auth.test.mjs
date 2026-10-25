@@ -1,15 +1,7 @@
-// auth.test.mjs — unit tests for the session model in src/lib/platform/auth.ts:
-// two expiry clocks (sliding idle + absolute cap from login), the
-// cookie-refresh decision, and persistence — tokens live in the state db
-// as sha256 hashes (auth_sessions), survive a restart (a new Auth on the
-// same db), and are revoked by a password change. Runs against the
-// compiled server output (`npm run test:unit` compiles first) with
-// node:test mock timers driving Date.now — TTLs (and the renewal-write
-// throttle) are constructor-injectable for exactly this. Each test gets
-// its own temp db.
-// The e2e runner never loads it: playwright.config.ts pins testMatch to
-// '**/*.spec.ts', so node:test files under tests/unit/ are test:unit
-// territory only.
+// auth.ts's session model: the idle and absolute expiry clocks, the
+// cookie-refresh decision, and persistence (hashed tokens survive a new Auth
+// on the same db; a password change revokes them). Mock timers drive
+// Date.now; TTLs are constructor-injected for this.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as crypto from 'node:crypto';
@@ -25,7 +17,6 @@ function freshDb() {
   );
 }
 
-/** newSession() answers a Result; the token is what a browser gets. */
 function login(auth) {
   const r = auth.newSession();
   assert.equal(r.ok, true, r.errorMessage);
@@ -38,16 +29,15 @@ test('alive() reports liveness but never slides — the WS sweep’s peek', t =>
   const tok = login(auth);
   assert.equal(auth.alive(tok).ok, true); // live
   assert.equal(auth.alive('nope').ok, false); // unknown
-  // Peeking all the way through the idle window must NOT renew: the
-  // token dies exactly where it would with no contact at all — the
-  // WS keepalive sweep can never extend a terminal's life.
+  // Peeking through the whole idle window must not renew: the WS sweep can
+  // never extend a terminal's life.
   t.mock.timers.setTime(999);
   assert.equal(auth.alive(tok).ok, true); // last moment of the window
   t.mock.timers.setTime(1001);
   assert.equal(auth.alive(tok).ok, false); // dead (exp < now) — no slide from alive()
-  // The peek is pure too: the row is still there (valid() cleans up).
+  // the peek doesn't delete (valid() cleans up)
   assert.equal(auth.valid(tok).ok, false);
-  // dropAll kills every token's liveness at once (log out everywhere).
+  // dropAll ends every token at once
   const a = login(auth);
   const b = login(auth);
   assert.equal(auth.dropAll().ok, true);
@@ -235,9 +225,8 @@ test('verify: success, invalid_credentials (wrong password, wrong user, no crede
 });
 
 test('an unreadable db is database_error everywhere — never read as "no session" or a wrong password', async () => {
-  // A state db that can never open: everything fails closed, but says
-  // why — so callers answer 503 instead of 401 / signed-out — and a login
-  // reports the failure instead of minting a token it can't keep.
+  // A db that can't open: everything fails closed as database_error (so
+  // callers answer 503, not 401), and a login never mints a token it can't keep.
   const file = path.join(
     fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-auth-unit-')),
     'not-a-dir',

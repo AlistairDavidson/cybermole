@@ -1,32 +1,15 @@
 ---
-// logs.astro — task/logs-page: Grafana's Explore in an iframe. The
-// `observability` compose profile ships Grafana with the Loki datasource
-// provisioned and nothing else, so Explore (its query UI) IS the log
-// surface; src/lib/platform/grafana.ts builds the URL that preselects Loki.
-// Server-rendered like every data page: the URL arrives from the services
-// gate (assertCybermoleLocals — a page without them is a broken invariant,
-// in dev browse the `npm run dev:server` process), and nothing on the page
-// needs client script — the header's client halves come from Base.
+// Grafana Explore in an iframe, with the Loki datasource preselected.
 import Base from '../layouts/Base.astro';
 import { assertCybermoleLocals } from '../lib/web/locals';
 
 const { cybermole } = assertCybermoleLocals(Astro.locals);
 const explore = cybermole.cfg.grafanaExploreUrl;
-// Feature off = 404, mirroring the editor proxy's single-switch semantics
-// (CYBERMOLE_EDITOR_UPSTREAM unset → main.ts send()s a plain 'not found'
-// 404): same status, same body text, but owned HERE — main.ts carves out
-// proxies, not page routes, and keeping the toggle next to the iframe it
-// gates means adding a page never touches the server. Like the editor's,
-// the 404 sits inside the session gate: an unauthenticated GET renders the
-// login page in place like every page, and only a signed-in request learns
-// the feature exists.
+// Unconfigured: 404, owned here rather than in main.ts. It's still behind
+// the session gate, so only signed-in requests learn the feature exists.
 if (explore === null) return new Response('not found', { status: 404 });
-// The page carries its own CSP: the global one (server/main.ts
-// SECURITY_HEADERS) has no frame-src, so the default-src 'self' fallback
-// would refuse the cross-origin Grafana — this page's whole point. Same
-// directive list plus frame-src for EXACTLY the configured Grafana origin
-// (hardenResponse only fills absent headers, so this wins; frame-ancestors
-// stays 'none' — nothing may frame cybermole itself).
+// The global CSP has no frame-src, so this page adds exactly the Grafana
+// origin (hardenResponse only fills absent headers, so this wins).
 Astro.response.headers.set(
   'Content-Security-Policy',
   `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; ` +

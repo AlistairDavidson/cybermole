@@ -2,18 +2,10 @@
 import Base from '../layouts/Base.astro';
 import SettingsView from '../components/Settings/SettingsView.astro';
 import { assertCybermoleLocals } from '../lib/web/locals';
-// Settings dashboard, server-rendered (docs/conventions/CODE_STYLE.md §7): the
-// effective config and pi status arrive as HTML from the services
-// server/main.ts passes in locals; <settings-app> (settings-app.ts) only
-// wires the actions. A page without the services is a broken invariant,
-// not a state to render around — assertCybermoleLocals throws (in dev, browse
-// the `npm run dev:server` process: `astro dev`'s own render has none).
-// A settings_state failure (db unreadable) renders its message, never
-// "off" / "never".
+// A failed settings read renders its message, never "off" / "never".
 const { cybermole } = assertCybermoleLocals(Astro.locals);
 const settings = cybermole.settingsState();
-// console.error on purpose, not src/lib/platform/logger.ts: frontmatter is
-// Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
+// console.error: winston stays out of the Vite bundle.
 if (!settings.ok) console.error(`settings page: ${settings.errorMessage}`);
 const state = settings.ok ? settings.data : null;
 const error = settings.ok ? null : settings.errorMessage;
@@ -25,15 +17,10 @@ const error = settings.ok ? null : settings.errorMessage;
 </Base>
 
 <script>
-  // Support modules MUST precede the wa-* imports — if the SSR'd elements
-  // define before lit hydration support installs, they render twice
-  // (@awesome.me/astro-lit README). Not script-position-dependent.
+  // Must precede any wa-* import, or SSR'd elements render twice.
   import '@awesome.me/astro-lit/dsd-polyfill.js';
   import '@awesome.me/astro-lit/hydration-support.js';
-  // Vendored glyph libraries must register before any wa-* component
-  // module defines — else upgraded icons fetch from the CDN first.
+  // Before any wa-* defines, or icons fetch from the CDN first.
   import '../icons';
-  // Client-side: defines the SSR'd wa-* components (upgrade + hydrate)
-  // and <settings-app>.
   import '../components/Settings/settings-app';
 </script>

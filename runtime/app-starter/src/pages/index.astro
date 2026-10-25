@@ -1,8 +1,6 @@
 ---
-// Frontmatter imports SSR the wa-* components (astro-lit, declarative
-// shadow DOM); the client script below re-imports them so the browser
-// upgrades them — BOTH halves, always (the repo rule "SSR imports ≠
-// client imports"; @cybermole/app-kit's wa-client carries the why).
+// These wa-* imports only SSR; the client script re-imports them so they
+// upgrade (see @cybermole/app-kit/wa-client).
 import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/input/input.js';
@@ -21,12 +19,9 @@ const builtAt = new Date().toISOString();
       <wa-card>
         <h1 slot="header">__APP_NAME__</h1>
         <p>__APP_DESCRIPTION__</p>
-        <!-- The islands' HOSTS: this SSR'd markup is the initial content —
-             the islands (client script below) take the regions over and
-             wire the actions. Without JS the page still renders. The
-             markers are add_action's insertion points: it appends one
-             section per new action inside them (a fresh marked block if
-             they are gone). -->
+        <!-- The islands' hosts: SSR'd initial content the islands take
+             over. add_action appends one section per action inside the
+             markers below. -->
         <!-- BEGIN ACTION MOUNTS (generated — add_action appends one section per action) -->
         <section class="ping-island">
           <wa-input label="name" value="world"></wa-input>
@@ -38,17 +33,14 @@ const builtAt = new Date().toISOString();
       </wa-card>
     </main>
     <script>
-      // Support modules MUST precede the wa-* imports — if the SSR'd
-      // elements define before lit hydration support installs, they
-      // render twice (@awesome.me/astro-lit README).
+      // wa-client must precede the wa-* imports, or SSR'd elements render twice.
       import '@cybermole/app-kit/wa-client';
       import '@awesome.me/webawesome/dist/components/card/card.js';
       import '@awesome.me/webawesome/dist/components/button/button.js';
       import '@awesome.me/webawesome/dist/components/input/input.js';
       import { mountIsland } from '@cybermole/app-kit/island';
 
-      // The islands' wiring — add_action's other insertion point: one
-      // import + mount per new action inside the markers.
+      // add_action appends one import + mount per action inside these markers.
       // BEGIN ACTION ISLANDS (generated — add_action appends one import + mount per action)
       import PingIsland from '../islands/PingIsland';
 

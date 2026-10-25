@@ -1,13 +1,7 @@
 #!/usr/bin/env node
-// tools/make-icons.mjs — generates public/icons/ (SVG source + PNG raster
-// sizes) for the PWA manifest. Dependency-free: shapes are rasterized
-// analytically (signed distance fields, 4×4 supersampling) and encoded as
-// PNGs with node:zlib. Re-run after editing: node tools/make-icons.mjs
-//
-// Design: the cybermole prompt glyph — a ">_" chevron-and-underscore — on a
-// rounded dark tile. Colors mirror the app's semantic tokens (the :root
-// overrides in src/styles/console.css; accent is Web Awesome's default
-// blue-60, the dark-theme --wa-color-focus).
+// Generates public/icons/ (SVG + PNG sizes) for the PWA manifest with no
+// dependencies: signed distance fields, 4×4 supersampling, PNGs via node:zlib.
+// Re-run after editing: node tools/make-icons.mjs
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import path from 'node:path';
@@ -17,7 +11,7 @@ const OUT_DIR = path.join('public', 'icons');
 // src/styles/console.css :root — keep in sync
 const BG = '#11131a'; // --wa-color-surface-default
 const BORDER = '#262a36'; // --wa-color-surface-border
-// Web Awesome default palette blue-60 (#3e96ff) — dark-theme --wa-color-focus
+// Web Awesome blue-60, the dark theme's --wa-color-focus
 const GLYPH = '#3e96ff';
 
 const hex = h => [
@@ -29,8 +23,7 @@ const BG_RGB = hex(BG),
   BORDER_RGB = hex(BORDER),
   GLYPH_RGB = hex(GLYPH);
 
-// Design space: 512×512. Tile is inset with a rounded-square mask (like an
-// OS launcher); the glyph is a terminal prompt: chevron ">" + underscore.
+// 512×512 design space: a ">_" prompt glyph on a rounded tile.
 const SIZE = 512;
 const STROKE = 56; // glyph stroke width (round caps/joins)
 const CHEVRON = [
@@ -79,8 +72,7 @@ function render(n, { maskable }) {
         for (const dx of SUB) {
           const x = (px + dx) / s,
             y = (py + dy) / s;
-          // maskable: full-bleed square (launcher masks the edge itself,
-          // glyph stays inside the 80% safe zone); any: rounded tile.
+          // maskable: full bleed (the launcher masks it; the glyph stays in the 80% safe zone)
           const sdTile = maskable
             ? Math.max(x, y, SIZE - x, SIZE - y) * -1
             : sdRoundRect(x, y, SIZE / 2 - TILE.inset, SIZE / 2 - TILE.inset, TILE.radius);

@@ -1,5 +1,4 @@
 ---
-// offline.astro — the PWA offline shell.
 import Base from "../layouts/Base.astro";
 import "@awesome.me/webawesome/dist/components/card/card.js";
 import "@awesome.me/webawesome/dist/components/button/button.js";
@@ -9,9 +8,7 @@ import "@awesome.me/webawesome/dist/components/button/button.js";
   <main class="offline-main wa-stack">
     <wa-card class="offline-card">
       <h1>
-        <!-- same prompt glyph as public/icons/icon.svg, inline so the shell
-             needs no icon fetches (other wa-icon glyphs are vendored and
-             served — and service-worker-precached — from public/icons/wa) -->
+        <!-- the icon.svg glyph, inline so the shell needs no fetches -->
         <svg class="offline-glyph" viewBox="0 0 512 512" aria-hidden="true">
           <path
             d="M168 172 L252 256 L168 340"

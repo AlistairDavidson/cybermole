@@ -1,14 +1,8 @@
-// jobs-runs.test.mjs — task/ws-jobs (docs/plans/workspaces-plan.md §9) units:
-// the tick's run-finish observation (exit files: success, failure,
-// missing → unknown — plus the boot-armed path that only knows the job),
-// RUN_HISTORY pruning that unlinks the doomed runs' files BEFORE the
-// rows go, listRuns/readRunLog (shape, tail cap, every error code), and
-// the app tag's save/list LEFT JOIN. Needs no real tmux: a stand-in
-// FIRST on PATH answers the commands src/lib/terminals/tmux.ts issues (execFile
-// resolves it per call; only the socket path binds at import, and that
-// is pointed into this test's temp dir before the import). A run's
-// wrapper never executes under the fake — the TEST writes the exit/log
-// files the real wrapper would, at exactly the paths runLogPaths gives.
+// The tick's run-finish observation (exit file success, failure, missing,
+// and the boot-armed case), pruning that unlinks files before rows,
+// listRuns/readRunLog, and the app tag's LEFT JOIN. A fake tmux on PATH
+// stands in, so the wrapper never runs: the test writes the exit and log
+// files it would, at runLogPaths' paths.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -27,12 +21,9 @@ const { Scheduler, runLogPaths } = await import('../../dist-server/src/lib/jobs/
 const { StateDb } = await import('../../dist-server/src/lib/platform/db.js');
 const { JobSaveSchema } = await import('../../dist-server/src/schemas/jobs.js');
 
-// The stand-in tmux (scheduler.test.mjs's, plus the -F format):
-// $FAKE_TMUX/up marks the server up, $FAKE_TMUX/sessions lists live session
-// names (new-session appends). list-sessions answers the -F formats
-// src/lib/terminals/tmux.ts actually sends — '#{session_name}' (liveSessionNames,
-// one bare name per line) and the older pipe-field shape anything
-// fancier would parse as.
+// Fake tmux: $FAKE_TMUX/up marks the server up, $FAKE_TMUX/sessions lists
+// live sessions (new-session appends); list-sessions answers the -F formats
+// tmux.ts sends.
 const FAKE_TMUX = `#!/bin/sh
 dir="$FAKE_TMUX_DIR"; sessions="$dir/sessions"
 [ -e "$sessions" ] || : > "$sessions"
@@ -68,7 +59,7 @@ esac
 fs.writeFileSync(path.join(fakeBin, 'tmux'), FAKE_TMUX, { mode: 0o755 });
 
 const parse = o => JobSaveSchema.parse(o);
-/** Never due within a test run: Dec 31 — the tick must not fire extras. */
+/** Dec 31: never due during a test, so the tick fires no extras. */
 const NOT_DUE = '0 0 31 12 *';
 
 function fresh() {
@@ -83,8 +74,6 @@ function fresh() {
   };
 }
 
-/** Seed an app row (the Apps domain's writer is out of scope here) and
- *  return its id. */
 function seedApp(db, name) {
   const id = randomUUID();
   db.db()
@@ -95,8 +84,7 @@ function seedApp(db, name) {
   return id;
 }
 
-/** A run row as the fire writes it (log path included), with real files
- *  when contents are given. */
+/** A run row as the fire writes it, with real files when contents are given. */
 function seedRun(logDir, job, firedAt, files) {
   const paths = runLogPaths(logDir, job, firedAt);
   if (files) {
@@ -116,7 +104,7 @@ const liveSessions = names =>
 
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-// ---------- the tick's finish observation ----------
+// ---------- finish observation ----------
 
 test('finish observation: exit files fill exit_code/finished_at; a missing file stays unknown', async () => {
   const { logDir, db, s } = fresh();
@@ -126,8 +114,7 @@ test('finish observation: exit files fill exit_code/finished_at; a missing file 
   tmuxUp(true);
   try {
     for (const name of ['ok', 'boom', 'nolog']) assert.equal((await s.runJob(name)).ok, true, name);
-    // What the real wrapper would have written by the time the session
-    // dies (the exit file is sequenced before the pipeline drains).
+    // What the wrapper writes before its session dies.
     const fired = job =>
       db.db().prepare('SELECT fired_at FROM job_runs WHERE job = ?').get(job).fired_at;
     seedRun(logDir, 'ok', fired('ok'), { log: 'all good\n', exit: '0\n' });
@@ -159,7 +146,7 @@ test('finish observation: exit files fill exit_code/finished_at; a missing file 
 test('finish observation: a session found already live (boot shape) resolves its newest run', async () => {
   const { logDir, db, s } = fresh();
   await s.saveJob(parse({ name: 'bootrun', schedule: NOT_DUE, command: 'true' }));
-  // The run fired while "the server was down": row on disk, session live.
+  // Fired while the server was down: the row exists, the session is live.
   const firedAt = Date.now() - 60_000;
   db.db()
     .prepare('INSERT INTO job_runs (job, fired_at, origin, log) VALUES (?, ?, ?, ?)')
@@ -182,7 +169,7 @@ test('finish observation: a session found already live (boot shape) resolves its
   }
 });
 
-// ---------- pruning unlinks before the delete ----------
+// ---------- pruning ----------
 
 test('RUN_HISTORY pruning unlinks the doomed runs’ files before deleting their rows', async () => {
   const { logDir, db, s } = fresh();
@@ -197,12 +184,11 @@ test('RUN_HISTORY pruning unlinks the doomed runs’ files before deleting their
       .run('busy', at, 'schedule', p.log);
     paths.push(p);
   }
-  // tmux down: the fire is recorded (and prunes) BEFORE the spawn fails —
-  // the spawn failure is irrelevant to the pruning under test.
+  // tmux down: the fire is recorded (and prunes) before the spawn fails.
   tmuxUp(false);
   assert.equal((await s.runJob('busy')).errorCode, 'tmux_error');
 
-  // The 21st run kept the newest 20: the OLDEST row (and it alone) went.
+  // The 21st run keeps the newest 20: only the oldest went.
   const rows = db
     .db()
     .prepare('SELECT fired_at FROM job_runs WHERE job = ? ORDER BY fired_at')
@@ -234,12 +220,11 @@ test('listRuns: newest first, exit/finish passthrough, hasLog honest about the f
   await s.saveJob(parse({ name: 'hist', schedule: NOT_DUE, command: 'true' }));
   const base = Date.now() - 60_000;
   const withFile = seedRun(logDir, 'hist', base, { log: 'a\n', exit: '0\n' });
-  // base+1: the fire recorded a log path, but the wrapper never created
-  // the file (log dir unwritable) — hasLog must say false.
+  // base+1 has a log path but no file: hasLog must be false.
   const rows = [
     { at: base, exit: 0, fin: base + 1000, log: withFile.log }, // file exists
     { at: base + 1, exit: null, fin: null, log: runLogPaths(logDir, 'hist', base + 1).log },
-    { at: base + 2, exit: 3, fin: base + 3000, log: null }, // pre-v6 shape: no log at all
+    { at: base + 2, exit: 3, fin: base + 3000, log: null }, // no log at all
   ];
   for (const r of rows) {
     db.db()
@@ -311,15 +296,15 @@ test('readRunLog: every error code — job/run/log_missing/read_error', async ()
   await s.saveJob(parse({ name: 'errs', schedule: NOT_DUE, command: 'true' }));
   const at = Date.now();
   const paths = runLogPaths(logDir, 'errs', at);
-  // A row with no log at all (pre-v6 shape).
+  // no log column at all
   db.db()
     .prepare('INSERT INTO job_runs (job, fired_at, origin) VALUES (?, ?, ?)')
     .run('errs', at, 'manual');
-  // A row whose wrapper never created the file.
+  // the wrapper never created the file
   db.db()
     .prepare('INSERT INTO job_runs (job, fired_at, origin, log) VALUES (?, ?, ?, ?)')
     .run('errs', at + 1, 'manual', paths.log);
-  // A row with a log file this process cannot read (root ignores 000).
+  // unreadable (root ignores mode 000)
   const unreadableAt = at + 2;
   const unreadable = seedRun(logDir, 'errs', unreadableAt, { log: 'secret\n' });
   db.db()
@@ -334,7 +319,7 @@ test('readRunLog: every error code — job/run/log_missing/read_error', async ()
     fs.chmodSync(unreadable.log, 0o000);
     assert.equal(s.readRunLog('errs', unreadableAt).errorCode, 'read_error');
   }
-  // database_error: a db that cannot open fails the row read.
+  // a db that can't open
   const broken = path.join(fs.mkdtempSync(path.join(dir, 'broken-')), 'x');
   fs.writeFileSync(broken, '');
   assert.equal(
@@ -347,7 +332,7 @@ test('readRunLog: every error code — job/run/log_missing/read_error', async ()
   );
 });
 
-// ---------- the app tag ----------
+// ---------- app tag ----------
 
 test('saveJob/listJobs: the optional app tag — save, JOIN name, clear, unknown app', async () => {
   const { db, s } = fresh();
@@ -360,7 +345,7 @@ test('saveJob/listJobs: the optional app tag — save, JOIN name, clear, unknown
     tagged: [id, 'Frontend'],
   });
 
-  // A valid uuid that names no app row: a closed code, not an FK crash.
+  // A uuid naming no app: a closed code, not an FK crash.
   assert.equal(
     (
       await s.saveJob(
@@ -370,7 +355,7 @@ test('saveJob/listJobs: the optional app tag — save, JOIN name, clear, unknown
     'app_not_found',
   );
 
-  // Re-saving with null clears the tag (PUT semantics).
+  // Re-saving with null clears the tag.
   await s.saveJob(parse({ name: 'tagged', schedule: NOT_DUE, command: 'true', appId: null }));
   jobs = (await s.listJobs()).data.jobs;
   assert.deepEqual(jobs.find(j => j.name === 'tagged').appId, null);

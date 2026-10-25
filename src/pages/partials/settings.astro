@@ -1,9 +1,6 @@
 ---
-// GET /partials/settings — the /settings dashboard as a fragment, for
-// <settings-app> to refresh its data regions from after a pi update.
-// Behind the main.ts gate (signed out: 401) and src/middleware.ts (no
-// locals: 503). A settings_state failure answers 500 with no fragment —
-// the element keeps what it shows (like /partials/jobs-list).
+// The /settings dashboard as a fragment. A failed read answers 500 with no
+// fragment, so the element keeps what it shows.
 import SettingsView from '../../components/Settings/SettingsView.astro';
 import { assertCybermoleLocals } from '../../lib/web/locals';
 
@@ -13,8 +10,7 @@ const { cybermole } = assertCybermoleLocals(Astro.locals);
 const settings = cybermole.settingsState();
 Astro.response.headers.set('Cache-Control', 'no-store');
 if (!settings.ok) {
-  // console.error on purpose, not src/lib/platform/logger.ts: frontmatter is
-  // Astro-bundled, and winston stays out of the Vite bundle (CODE_STYLE §6).
+  // console.error: winston stays out of the Vite bundle.
   console.error(`settings partial: ${settings.errorMessage}`);
   Astro.response.status = 500;
 }

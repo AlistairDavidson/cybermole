@@ -1,7 +1,4 @@
-// The note_create action's unit tests — grown from the add_action stub:
-// the real capture rules against the in-memory store (one test per error
-// code, not just the happy path — docs/conventions/CODE_STYLE.md §9). The sqlite half
-// is exercised end-to-end through every face.
+// One test per error code, against the in-memory store.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { noteCreateResult } from '../src/lib/note_create.ts';
@@ -27,7 +24,7 @@ test('note_create: a note is captured, normalized and answered shaped', () => {
     updatedAt: r.data.note.updatedAt,
   });
   assert.equal(typeof r.data.note.createdAt, 'number');
-  // the row the store received: tags joined in the storage format
+  // tags joined in the storage format
   const [call, inserted] = store.captured[0];
   assert.equal(call, 'insert');
   assert.equal(inserted.tags, 'standup,team');

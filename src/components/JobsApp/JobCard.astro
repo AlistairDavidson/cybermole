@@ -1,9 +1,6 @@
 ---
-// JobCard.astro — one scheduled job, server-rendered (it replaces the HTML
-// string jobs-app.ts used to build — Astro escapes every value). The
-// action buttons carry what <jobs-app> needs (data-run / data-edit /
-// data-del, and the edit button the job's fields) — the element handles
-// their clicks by delegation, so a refreshed list needs no rewiring.
+// One job card. The buttons carry their data attributes for <jobs-app>'s
+// delegated clicks, so a refreshed list needs no rewiring.
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/card/card.js';
@@ -15,7 +12,6 @@ interface Props {
 }
 const { job } = Astro.props;
 
-// Matches the server's CYBERMOLE_BASE ('' for root, else '/foo').
 const base = (import.meta.env.BASE_URL ?? '/').replace(/\/+$/, '');
 const last = job.last
   ? `${job.last}${job.lastResult === 'success' ? ' · ok' : job.lastResult === 'failed' ? ' · failed' : ''}`

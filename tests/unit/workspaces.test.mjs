@@ -1,9 +1,5 @@
-// workspaces.test.mjs — the workspace + terminal domain
-// (src/lib/terminals/workspaces.ts, workspaces-plan §3): every Result family at
-// every error code — save/update/delete workspace, new/close/rename
-// terminal, the attach lookup, the GET /api/state tree read + live diff
-// (plan §5) — including the cascade deletes and the best-effort tmux
-// kills. Runs against dist-server (npm run test:unit).
+// workspaces.ts: every Result family at every error code, the attach lookup,
+// the tree read with its live diff, cascade deletes and best-effort kills.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -48,11 +44,8 @@ function recorder() {
   return { killed, killSession: async name => (killed.push(name), true) };
 }
 
-/** Spawn-session stub (task/ws-terminal, plan §4): records (name, cwd,
- *  command) triples and succeeds — the domain's spawn dep, injected for
- *  the same reason as killSession (no tmux server in a unit run). The
- *  command triples are how the auto-open (agent slot) and the + button
- *  (shell) are told apart (task/defaults-settings). */
+/** Records (name, cwd, command); the commands tell the auto-opened agent
+ *  tab from + tabs. */
 function spawner() {
   const spawned = [];
   return {
@@ -64,7 +57,6 @@ function spawner() {
   };
 }
 
-/** A spawn dep that fails with the given tmux family code. */
 const spawnFail =
   (errorCode, errorMessage = 'tmux new-session failed: boom') =>
   async name => ({
@@ -77,9 +69,7 @@ const spawnFail =
 
 const spawnOk = async name => ({ ok: true, resultType: 'tmux_session', data: { name } });
 
-/** Command-resolver stubs (task/defaults-settings): the domain's
- *  shellCommand/agentCommand deps, resolved lines the tests can tell
- *  apart (the spawn triples above record which landed where). */
+/** Distinguishable shell/agent command lines. */
 const cmdOk = value => ({ ok: true, resultType: 'database_read', data: { value } });
 const SHELL_CMD = 'shell-cmd -l';
 const AGENT_CMD = 'agent-cmd --run';
@@ -90,8 +80,7 @@ const CMD_FAIL = {
   errorMessage: 'could not read the terminal command',
 };
 
-/** Live-name stub for the tree read's diff: a controllable set, empty by
- *  default — a down tmux server reads as "nothing live" either way. */
+/** Empty by default (a down tmux server reads the same). */
 function liveNames(set = new Set()) {
   return { names: set, liveSessionNames: async () => set };
 }
@@ -135,12 +124,11 @@ const termRows = (db, workspaceId) =>
   );
 
 async function appless(db) {
-  // an app row is only needed for the parent tests; make it through the domain
   const a = new Apps({ db, username: () => USERNAME, killSession: async () => true });
   return (await a.saveApp('parent')).data;
 }
 
-// ---------- id schemas the path params use ----------
+// ---------- id schemas ----------
 
 test('WorkspaceIdSchema / TerminalIdSchema: lowercase uuid v4 in, everything else out', () => {
   const id = '123e4567-e89b-42d3-a456-426614174000';
@@ -207,7 +195,7 @@ test('save_workspace: invalid_cwd — relative, missing, a file; absolute + exis
   assert.equal(good.data.cwd, os.tmpdir());
 });
 
-test("save_workspace: the cwd DERIVES — the parent app's cwd (task/app-cwd), else the configured default", async () => {
+test("save_workspace: the cwd DERIVES — the parent app's cwd, else the configured default", async () => {
   const db = freshDb();
   const defaultDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-ws-default-'));
   const w = domain(db, USERNAME, async () => true, defaultDir);
@@ -215,22 +203,22 @@ test("save_workspace: the cwd DERIVES — the parent app's cwd (task/app-cwd), e
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-app-cwd-'));
   const placed = (await a.saveApp('placed', dir)).data;
   const bare = (await a.saveApp('bare')).data;
-  // an app with a cwd: its workspaces start there — no cwd on the create
+  // an app with a cwd: its workspaces start there
   const underPlaced = await w.saveWorkspace({ appId: placed.id, name: 'under placed' });
   assert.equal(underPlaced.ok, true, underPlaced.errorMessage);
   assert.equal(underPlaced.data.cwd, dir);
   assert.equal(wsRow(db, underPlaced.data.id).cwd, dir);
-  // an app without one: the configured default — same as the console group
+  // without one: the configured default, as for the console group
   const underBare = await w.saveWorkspace({ appId: bare.id, name: 'under bare' });
   assert.equal(underBare.ok, true, underBare.errorMessage);
   assert.equal(underBare.data.cwd, defaultDir);
   const consoleWs = await w.saveWorkspace({ name: 'console one' });
   assert.equal(consoleWs.data.cwd, defaultDir);
-  // an explicit cwd (an internal caller — the POST body carries none) wins
+  // an explicit cwd (internal callers only) wins
   const explicit = await w.saveWorkspace({ appId: placed.id, name: 'explicit', cwd: os.tmpdir() });
   assert.equal(explicit.ok, true, explicit.errorMessage);
   assert.equal(explicit.data.cwd, os.tmpdir());
-  // the DERIVED cwd is validated: the app\'s dir may be gone since it was saved
+  // the derived cwd is validated: the app's dir may have gone
   fs.rmSync(dir, { recursive: true, force: true });
   const gone = await w.saveWorkspace({ appId: placed.id, name: 'gone' });
   assert.equal(gone.ok, false, gone.errorMessage);
@@ -254,7 +242,7 @@ test('save_workspace: database_error — unwritable db, failed username read', a
   assert.equal(noUser.errorCode, 'database_error');
 });
 
-// ---------- update_workspace (same family) ----------
+// ---------- update_workspace ----------
 
 test('update_workspace: name and cwd independently; absent fields keep; a no-op returns the row', async () => {
   const db = freshDb();
@@ -307,7 +295,7 @@ test('delete_workspace: cascades its terminals, kills their sessions best-effort
   assert.deepEqual(deleted.data, { id: doomed.id });
   assert.equal(wsRow(db, doomed.id), undefined);
   assert.deepEqual(termRows(db, doomed.id), []);
-  // the auto-opened agent tab (task/defaults-settings) dies with them too
+  // the auto-opened agent tab dies with them
   assert.deepEqual(
     killed.sort(),
     [
@@ -336,15 +324,14 @@ test('delete_workspace: workspace_not_found / database_error; a failing kill nev
   assert.equal(still.ok, true, still.errorMessage);
 });
 
-// ---------- new_terminal (spawn-wired — task/ws-terminal, plan §4) ----------
+// ---------- new_terminal ----------
 
 test('new_terminal: inserts the row (title optional, order max+10), spawns t-<uuid> at the workspace cwd, live:true', async () => {
   const db = freshDb();
   const { spawned, spawnSession } = spawner();
   const w = domain(db, USERNAME, async () => true, os.tmpdir(), spawnSession);
   const ws = (await w.saveWorkspace({ name: 'x', cwd: os.tmpdir() })).data;
-  // the create auto-opened the first tab (the agent slot) — see its own
-  // test below; here it is the baseline the new tabs stack on
+  // the auto-opened agent tab (tested below) is the baseline
   const auto = termRows(db, ws.id)[0];
   assert.deepEqual(
     spawned,
@@ -371,14 +358,13 @@ test('new_terminal: inserts the row (title optional, order max+10), spawns t-<uu
     termRows(db, ws.id).map(r => r.sort_order),
     [10, 20, 30, 40],
   );
-  // created_by stamps the credential username
   const row = db.get(
     qb.selectFrom('terminals').select('created_by').where('id', '=', third.data.id),
   );
   assert.equal(row.created_by, 'tester');
 });
 
-test('save_workspace auto-opens the first terminal with the AGENT command — and a failed spawn never fails the create (task/defaults-settings)', async () => {
+test('save_workspace auto-opens the first terminal with the AGENT command — and a failed spawn never fails the create', async () => {
   const db = freshDb();
   const { spawned, spawnSession } = spawner();
   const w = domain(db, USERNAME, async () => true, os.tmpdir(), spawnSession);
@@ -392,9 +378,8 @@ test('save_workspace auto-opens the first terminal with the AGENT command — an
     { name: terminalSessionName(rows[0].id), cwd: os.tmpdir(), command: AGENT_CMD.split(' ') },
   ]);
 
-  // The never-fork refusal at create time (the split shape, the workspace
-  // container down): the row STILL lands — a dead tab, first attach
-  // retries — and the create still answers success.
+  // The guard refusing at create time: the row still lands (a dead tab)
+  // and the create succeeds.
   const db2 = freshDb();
   const refusing = domain(
     db2,
@@ -408,9 +393,7 @@ test('save_workspace auto-opens the first terminal with the AGENT command — an
   const rows2 = termRows(db2, made2.data.id);
   assert.equal(rows2.length, 1, 'the row exists even though the spawn refused');
 
-  // A failed command READ (database_error from the resolver dep): the
-  // openTab insert is never reached — no row — but the create still
-  // succeeds (a workspace without its agent tab beats no workspace).
+  // A failed command read: no tab row, but the workspace create still succeeds.
   const db3 = freshDb();
   const noCmd = new Workspaces({
     db: db3,
@@ -430,8 +413,7 @@ test('save_workspace auto-opens the first terminal with the AGENT command — an
 test('new_terminal: the row exists even when the spawn fails — server_not_running / tmux_error carry it (live:false)', async () => {
   const db = freshDb();
   const ws = (await domain(db).saveWorkspace({ name: 'x', cwd: os.tmpdir() })).data;
-  // The never-fork guard's refusal (the split shape, no server behind
-  // the absolute socket) — the row is still created and returned.
+  // The guard's refusal: the row is still created and returned.
   const w = domain(
     db,
     USERNAME,
@@ -450,7 +432,7 @@ test('new_terminal: the row exists even when the spawn fails — server_not_runn
     [termRows(db, ws.id)[0].id, refused.data.id],
     'the auto-opened tab, then the row that EXISTS despite the failure',
   );
-  // tmux's own failure (a taken name, a bad cwd) — same contract.
+  // tmux's own failure: same contract
   const w2 = domain(db, USERNAME, async () => true, os.tmpdir(), spawnFail('tmux_error'));
   const failed = await w2.newTerminal(ws.id, 'two');
   assert.equal(failed.ok, false);
@@ -472,7 +454,7 @@ test('new_terminal: workspace_not_found / database_error (no row, no spawn)', as
   assert.equal(broken.errorCode, 'database_error');
 });
 
-// ---------- close / rename terminal ----------
+// ---------- close / rename ----------
 
 test('close_terminal: deletes the row and best-effort-kills the derived session name; terminal_not_found after', async () => {
   const db = freshDb();
@@ -484,7 +466,7 @@ test('close_terminal: deletes the row and best-effort-kills the derived session 
   assert.equal(closed.ok, true, closed.errorMessage);
   assert.equal(closed.resultType, 'close_terminal');
   assert.deepEqual(closed.data, { id: t.id });
-  // the auto-opened tab (task/defaults-settings) is the one that remains
+  // the auto-opened tab remains
   assert.equal(termRows(db, ws.id).length, 1);
   assert.deepEqual(killed, [terminalSessionName(t.id)]); // 't-<uuid>' — derived, never stored
   const again = await w.closeTerminal(t.id);
@@ -492,7 +474,7 @@ test('close_terminal: deletes the row and best-effort-kills the derived session 
   assert.equal((await domain(brokenDb()).closeTerminal(t.id)).errorCode, 'database_error');
 });
 
-test('close_terminal: a FAILING kill still deletes the row (best-effort, plan §4)', async () => {
+test('close_terminal: a FAILING kill still deletes the row (best-effort)', async () => {
   const db = freshDb();
   const w = domain(db, USERNAME, async () => false); // kill-session errors
   const ws = (await w.saveWorkspace({ name: 'x', cwd: os.tmpdir() })).data;
@@ -525,7 +507,7 @@ test('rename_terminal: sets the title, null clears it; terminal_not_found / data
   );
 });
 
-// ---------- terminalForAttach (main.ts's WS path lookup — task/ws-terminal) ----------
+// ---------- terminalForAttach ----------
 
 test("terminalForAttach: the row + its workspace's cwd + the agent-slot flag; terminal_not_found / database_error", async () => {
   const db = freshDb();
@@ -544,13 +526,11 @@ test("terminalForAttach: the row + its workspace's cwd + the agent-slot flag; te
     cwd: os.tmpdir(),
     agent: false, // a + button tab: the respawn re-runs the SHELL command
   });
-  // The auto-opened tab — the AGENT slot — is the one whose respawn
-  // re-runs the agent command (task/defaults-settings).
+  // the auto-opened tab respawns the agent command
   const autoFound = await w.terminalForAttach(auto);
   assert.equal(autoFound.data.agent, true);
   assert.equal(autoFound.data.title, null);
-  // Closing the agent tab re-flags NOTHING: the (now first) shell tab
-  // keeps respawning as a shell — created_at equality, not sort_order.
+  // Closing it flags nothing else: created_at equality, not sort_order.
   await w.closeTerminal(auto);
   assert.equal((await w.terminalForAttach(t.id)).data.agent, false);
   const missing = await w.terminalForAttach(MISSING_WS);
@@ -561,7 +541,7 @@ test("terminalForAttach: the row + its workspace's cwd + the agent-slot flag; te
   );
 });
 
-// ---------- workspaceTree (GET /api/state's half — plan §5) ----------
+// ---------- workspaceTree ----------
 
 test('workspaceTree: flat with appId, terminals in order, live from the tmux name set', async () => {
   const db = freshDb();
@@ -572,14 +552,13 @@ test('workspaceTree: flat with appId, terminals in order, live from the tmux nam
   const consoleWs = await w.saveWorkspace({ name: 'scratch' }); // appId null
   const appWs = await w.saveWorkspace({ appId: parent.id, name: 'proj' });
   const orphan = await w.saveWorkspace({ name: 'other' });
-  // each create auto-opened a first tab (task/defaults-settings)
+  // each create auto-opened a tab
   const autoConsole = termRows(db, consoleWs.data.id)[0].id;
   const t1 = await w.newTerminal(consoleWs.data.id, undefined);
   const t2 = await w.newTerminal(consoleWs.data.id, 'build');
   const t3 = await w.newTerminal(appWs.data.id, undefined);
   assert.equal(t1.ok && t2.ok && t3.ok, true);
 
-  // nothing live: every terminal reads live:false
   let tree = await w.workspaceTree();
   assert.equal(tree.ok, true, tree.errorMessage);
   assert.equal(tree.resultType, 'workspace_tree');
@@ -591,7 +570,6 @@ test('workspaceTree: flat with appId, terminals in order, live from the tmux nam
       [orphan.data.id, null],
     ],
   );
-  // flat rows carry name/cwd/order + their terminals in sort_order
   const scratch = tree.data.workspaces.find(x => x.id === consoleWs.data.id);
   assert.equal(scratch.name, 'scratch');
   assert.equal(scratch.cwd, os.tmpdir());
@@ -607,7 +585,7 @@ test('workspaceTree: flat with appId, terminals in order, live from the tmux nam
   assert.equal(scratch.terminals[1].id, t1.data.id);
   assert.equal(tree.data.workspaces.find(x => x.id === appWs.data.id).terminals.length, 2);
 
-  // the live diff: t-<uuid> present in the tmux set flips exactly that tab
+  // t-<uuid> in the tmux set flips exactly that tab
   names.add(terminalSessionName(t2.data.id));
   tree = await w.workspaceTree();
   assert.deepEqual(
@@ -615,7 +593,7 @@ test('workspaceTree: flat with appId, terminals in order, live from the tmux nam
     [false, false, true],
   );
 
-  // rows deleted out-of-band leave the tree (no orphans, no phantom tabs)
+  // rows deleted out-of-band leave no phantom tabs
   await w.closeTerminal(t1.data.id);
   tree = await w.workspaceTree();
   assert.equal(tree.data.workspaces.find(x => x.id === consoleWs.data.id).terminals.length, 2);

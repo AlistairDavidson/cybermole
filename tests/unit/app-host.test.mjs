@@ -1,15 +1,8 @@
-// app-host.test.mjs — task/app-host (docs/plans/apps-plan.md §3) units: the
-// host booted on a tmp-dir socket against a REAL internal-api fixture
-// (internal-api.test.mjs's pattern), discovering SYNTHETIC app trees —
-// tmp dirs with app.json + a stub dist (a hand-written entry.mjs
-// exporting a middleware-shaped handler is enough; no astro build runs
-// here; the real build property is gated on the fixture app via
-// tools/check-app-selfcontained.mjs). Covers: the registry (row +
-// manifest + build → mounted; anything missing skipped and reported),
-// reload mount/re-import/drop semantics (the cache-bust), per-mount
-// error isolation, /_admin/status's shape, the admin body policy, the
-// security headers, the boot-race retry and the socket lifecycle
-// (0660, stale file reclaimed, a live owner refused).
+// The app host on a tmp socket against a real internal API, discovering
+// synthetic app trees (app.json + a stub entry.mjs; no astro build). The
+// registry, reload mount/re-import/drop (the cache bust), per-mount error
+// isolation, /_admin/status, the admin body policy, security headers, the
+// boot-race retry and the socket lifecycle.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as http from 'node:http';
@@ -27,10 +20,8 @@ const { StateDb } = await import('../../dist-server/src/lib/platform/db.js');
 const { Apps } = await import('../../dist-server/src/lib/apps/apps.js');
 const { appsSocketDefault } = await import('../../dist-server/src/lib/platform/env.js');
 
-/** One test's world: the internal API (rows) + the app host pointed at
- *  it. internalApi: false boots the host FIRST (the boot-race case) —
- *  call bootInternalApi() yourself afterwards. retryDelayMs is tiny so
- *  the retry loop resolves in milliseconds, not seconds. */
+/** internalApi: false boots the host first (the boot race); call
+ *  bootInternalApi() afterwards. A tiny retryDelayMs keeps it fast. */
 async function bootWorld({ internalApi = true } = {}) {
   const root = fs.mkdtempSync(path.join(dir, 'case-'));
   const db = new StateDb(path.join(root, 'cybermole.db'));
@@ -67,10 +58,9 @@ async function bootWorld({ internalApi = true } = {}) {
   };
 }
 
-/** The stub entry.mjs — the @astrojs/node middleware `handler` shape
- *  server/main.ts loads. /boom throws, /unmatched and /next-err drive
- *  next(); everything else answers MARKER (rewritten between reloads —
- *  the cache-bust assertion). */
+/** A middleware-shaped handler. /boom throws, /unmatched and /next-err call
+ *  next(); everything else answers MARKER, rewritten between reloads to
+ *  check the cache bust. */
 function entrySource(marker) {
   return [
     `const marker = ${JSON.stringify(marker)};`,
@@ -85,9 +75,7 @@ function entrySource(marker) {
   ].join('\n');
 }
 
-/** A synthetic app tree: app.json + dist/server/entry.mjs (the stub) +
- *  dist/client assets. opts drop individual pieces (the skip cases) and
- *  override the entry/manifest content. */
+/** opts drop pieces (the skip cases) or override the entry and manifest. */
 function makeAppTree(root, slug, opts = {}) {
   const cwd = path.join(root, slug);
   fs.mkdirSync(cwd, { recursive: true });
@@ -116,7 +104,6 @@ function makeAppTree(root, slug, opts = {}) {
   return cwd;
 }
 
-/** One HTTP request over the host's socket; resolves status/headers/body. */
 function call(socketPath, method, urlPath, body) {
   return new Promise((resolve, reject) => {
     const req = http.request(
@@ -147,14 +134,14 @@ function call(socketPath, method, urlPath, body) {
   });
 }
 
-/** Call with a JSON-serializable body (or a raw string). */
+/** body: JSON-serializable, or a raw string. */
 const callJson = (socketPath, method, urlPath, body) =>
   call(socketPath, method, urlPath, JSON.stringify(body));
 
 const status = async socketPath =>
   JSON.parse((await call(socketPath, 'GET', '/_admin/status')).text);
 
-// ---------- the registry ----------
+// ---------- registry ----------
 
 test('a complete tree mounts: pages through the middleware, assets from dist/client, unknowns 404', async () => {
   const w = await bootWorld();
@@ -196,17 +183,16 @@ test('a complete tree mounts: pages through the middleware, assets from dist/cli
 test('missing pieces are skipped and reported with a reason, never mounted', async () => {
   const w = await bootWorld();
   try {
-    // a console group row — cwd null, not an app tree at all
+    // a console group row: cwd null
     await w.apps.saveApp('Group Only');
-    // a row whose cwd exists but has no app.json
+    // a cwd without app.json
     const bare = path.join(w.root, 'bare');
     fs.mkdirSync(bare);
     await w.apps.saveApp('Bare', bare);
-    // a manifest with no build behind it
+    // a manifest with no build
     const manifestOnly = makeAppTree(w.root, 'manifest-only', { dist: false });
     await w.apps.saveApp('Manifest Only', manifestOnly);
-    // a row whose cwd vanished after registration (saveApp validates the
-    // dir EXISTS — the tree is deleted afterwards, the row stays)
+    // the tree deleted after registration
     const gone = path.join(w.root, 'gone');
     fs.mkdirSync(gone);
     await w.apps.saveApp('Gone', gone);
@@ -291,7 +277,7 @@ test('GET /_admin/status: the shape — pid, uptime, sockets, mounted, skipped',
 test('a half-built tree (entry.mjs without dist/client) is skipped — never the whole surface', async () => {
   const w = await bootWorld();
   try {
-    // makeAppTree builds both halves; produce the permutation by hand
+    // makeAppTree builds both halves, so build this permutation by hand
     const healthy = makeAppTree(w.root, 'good');
     await w.apps.saveApp('Good', healthy);
     const half = makeAppTree(w.root, 'half-built', { dist: false });
@@ -303,10 +289,10 @@ test('a half-built tree (entry.mjs without dist/client) is skipped — never the
     assert.deepEqual(report.mounted, ['good']);
     assert.equal(report.skipped.length, 1);
     assert.match(report.skipped[0].reason, /dist\/client missing/);
-    // the healthy sibling serves; the half-built one 404s as unmounted
+    // the healthy sibling serves; the half-built one 404s
     assert.equal((await call(w.host.socketPath, 'GET', '/apps/good/')).status, 200);
     assert.equal((await call(w.host.socketPath, 'GET', '/apps/half-built/')).status, 404);
-    // reloads keep answering 200 (the bad tree never poisons the sync)
+    // the bad tree never poisons the sync
     const again = await callJson(w.host.socketPath, 'POST', '/_admin/reload', {});
     assert.equal(again.status, 200);
   } finally {
@@ -315,7 +301,7 @@ test('a half-built tree (entry.mjs without dist/client) is skipped — never the
   }
 });
 
-// ---------- reload: mount / re-import / drop ----------
+// ---------- reload ----------
 
 test('reload re-imports a rebuilt entry — the cache-bust', async () => {
   const w = await bootWorld();
@@ -328,8 +314,7 @@ test('reload re-imports a rebuilt entry — the cache-bust', async () => {
       'APP:app-fixture:v1',
     );
 
-    // the rebuild: same path, new content — without the cache-bust the ESM
-    // cache would keep serving v1
+    // a rebuild at the same path: without the cache bust, ESM would serve v1
     fs.writeFileSync(
       path.join(cwd, 'dist', 'server', 'entry.mjs'),
       entrySource('APP:app-fixture:v2'),
@@ -364,7 +349,7 @@ test('a scoped reload {slug} re-imports only that app; the rest carry over', asy
     const report = await w.host.reload('alpha');
     assert.deepEqual(report.reimported, ['alpha']);
     assert.equal((await call(w.host.socketPath, 'GET', '/apps/alpha/')).text, 'APP:alpha:v2');
-    // beta was NOT re-imported: still v1, still its original mount
+    // beta wasn't re-imported: still v1
     assert.equal((await call(w.host.socketPath, 'GET', '/apps/beta/')).text, 'APP:beta:v1');
     const after = await status(w.host.socketPath);
     const betaAfter = after.mounted.find(m => m.slug === 'beta');
@@ -431,11 +416,10 @@ test('a throwing handler is a 500 on that app only; next() paths 404/500; the si
     const nextErr = await call(w.host.socketPath, 'GET', '/apps/alpha/next-err');
     assert.equal(nextErr.status, 500);
 
-    // the sibling never noticed
     const sibling = await call(w.host.socketPath, 'GET', '/apps/beta/');
     assert.equal(sibling.status, 200);
     assert.equal(sibling.text, 'APP:beta:v1');
-    // and the process answers after the throws
+    // and the process still answers
     const st = await status(w.host.socketPath);
     assert.equal(st.mounted.length, 2);
   } finally {
@@ -447,17 +431,17 @@ test('a throwing handler is a 500 on that app only; next() paths 404/500; the si
 test('an entry that fails to import is skipped and reported; a failed RE-import keeps the old build serving', async () => {
   const w = await bootWorld();
   try {
-    // never mounted: the entry throws at import time
+    // the entry throws at import
     const poison = makeAppTree(w.root, 'poison', {
       entry: 'throw new Error("broken build");\nexport const handler = () => {};\n',
     });
     await w.apps.saveApp('Poison', poison);
-    // exports no handler at all
+    // no handler export
     const handlerless = makeAppTree(w.root, 'handlerless', {
       entry: 'export const notHandler = 1;\n',
     });
     await w.apps.saveApp('Handlerless', handlerless);
-    // mounts clean, then a poison rebuild must not take the working mount down
+    // a poison rebuild must not take a working mount down
     const good = makeAppTree(w.root, 'good');
     await w.apps.saveApp('Good', good);
 
@@ -478,7 +462,6 @@ test('an entry that fails to import is skipped and reported; a failed RE-import 
       rebuilt.skipped.find(s => s.slug === 'good').reason,
       /re-import failed, previous build still mounted/,
     );
-    // the previous build still serves
     assert.equal((await call(w.host.socketPath, 'GET', '/apps/good/')).text, 'APP:good:v1');
   } finally {
     await w.host.close();
@@ -587,14 +570,13 @@ test('security headers ride on every response (handler-set headers win)', async 
   }
 });
 
-// ---------- the boot race + degraded discovery ----------
+// ---------- boot race ----------
 
 test('boot retries until the internal API answers (the compose boot race)', async () => {
   const w = await bootWorld({ internalApi: false });
   try {
-    // rows exist in the db but nothing answers on the internal socket yet.
-    // The domain writes the db directly (a second Apps over the same file)
-    // — only DISCOVERY needs the API, which is exactly the race.
+    // Rows exist but nothing answers on the internal socket yet; only
+    // discovery needs the API.
     const cwd = makeAppTree(w.root, 'app-fixture');
     const apps2 = new Apps({
       db: new StateDb(path.join(w.root, 'cybermole.db')),
@@ -608,7 +590,7 @@ test('boot retries until the internal API answers (the compose boot race)', asyn
     assert.equal(st0.booted, false);
     assert.equal(st0.mounted.length, 0);
 
-    // the web server comes up late; the retry loop (25ms base) picks it up
+    // the web server comes up late; the retry loop picks it up
     await w.bootInternalApi();
     const deadline = Date.now() + 5000;
     for (;;) {
@@ -646,8 +628,6 @@ test('a later internal-API outage: reload answers 503, the registry stands', asy
   }
 });
 
-// ---------- socket lifecycle ----------
-
 test('after listen the socket is 0660; close() unlinks it; a stale file is reclaimed', async () => {
   const w = await bootWorld();
   assert.equal(fs.statSync(w.host.socketPath).mode & 0o777, 0o660);
@@ -655,7 +635,7 @@ test('after listen the socket is 0660; close() unlinks it; a stale file is recla
   await w.internalApi.close();
   assert.equal(fs.existsSync(w.host.socketPath), false);
 
-  // a dead server's leftover file: unlinked and rebound
+  // a dead server's leftover file is unlinked and rebound
   fs.writeFileSync(w.host.socketPath, '');
   const again = await startAppHost({
     socketPath: w.host.socketPath,
@@ -692,7 +672,7 @@ test('a live listener owns the socket: the typed error the supervisor reports', 
   }
 });
 
-// ---------- CYBERMOLE_APPS_SOCK resolution (src/lib/platform/env.ts) ----------
+// ---------- CYBERMOLE_APPS_SOCK resolution ----------
 
 test('appsSocketDefault: /run/cybermole when the shared dir exists, else the state dir', () => {
   assert.equal(appsSocketDefault('/state', true), '/run/cybermole/apps.sock');

@@ -1,15 +1,6 @@
-// root-agents.test.mjs — the workspace-root AGENTS.md seeding
-// (src/lib/platform/root-agents.ts, docs/plans/jobs-agent-plan.md §9): the
-// only-where-absent policy in one function, so the server boot (single
-// user — server/main.ts, next to seedAgentDir) and the split's
-// workspace entrypoint (docker-workspace-entrypoint.sh, uid 2000 — a
-// shell script, not unit-testable) run the same logic. Every Result
-// family member gets a case: seeded, already-present wins (even without
-// the template — the policy is satisfied), template_missing, and
-// seed_failed (an unwritable target). The real template ships beside
-// this test's cases: the repo's runtime/workspace-root/AGENTS.md is seeded
-// byte-identical, so template edits that break the seeding's shape
-// surface here too.
+// Workspace-root AGENTS.md seeding, only where absent: seeded, an existing
+// file wins (even without the template), template_missing, seed_failed. The
+// real template is seeded byte-identical too, so edits that break it show up.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -22,7 +13,7 @@ test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 const { seedRootAgentsFile } = await import('../../dist-server/src/lib/platform/root-agents.js');
 
-/** A stand-in template file with known content. */
+/** A stand-in template with known content. */
 const template = path.join(dir, 'template.md');
 fs.writeFileSync(template, 'the standing instructions\n');
 
@@ -56,7 +47,7 @@ test('only-where-absent: an existing AGENTS.md always wins, untouched', () => {
     fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'),
     'the operator wrote this first\n',
   );
-  // and a second run over the seeded file is the same no-op
+  // a second run over the seeded file is a no-op
   const again = seedRootAgentsFile(root, template);
   assert.equal(again.ok, true, again.errorMessage);
   assert.equal(again.data.seeded, false);
@@ -82,8 +73,7 @@ test('template_missing when the template is absent (and nothing is seeded)', () 
 });
 
 test('seed_failed on an unwritable target, with the path and cause', () => {
-  // a workspace root UNDER a regular file: mkdir fails (ENOTDIR), so the
-  // cp never happens — the caught fs failure, not a throw.
+  // The root is under a regular file, so mkdir fails (ENOTDIR): caught, not thrown.
   const notADir = path.join(dir, 'plain-file');
   fs.writeFileSync(notADir, 'x');
   const r = seedRootAgentsFile(path.join(notADir, 'root'), template);
@@ -102,9 +92,8 @@ test("the repo's own template seeds (runtime/workspace-root/AGENTS.md ships the 
   assert.equal(r.data.seeded, true);
   const seeded = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8');
   assert.equal(seeded, fs.readFileSync(repoTemplate, 'utf8'));
-  // the template's load-bearing claims (plan §9's content): the jobs
-  // convention, the fired-not-finished line, the CLI verbs, the MCP
-  // server + /reload, the trust note.
+  // the template's key content: the jobs convention, fired-not-finished,
+  // the CLI verbs, the MCP server and /reload, the trust note
   assert.match(seeded, /cybermole jobs/);
   assert.match(seeded, /Fired means started, not finished/);
   assert.match(seeded, /cybermole-cli jobs run <name>/);

@@ -1,11 +1,6 @@
-// logs.spec.ts — task/logs-page: the /logs page and its header link exist
-// ONLY when CYBERMOLE_GRAFANA_URL is configured. Non-page spec (restart /
-// state-dir / terminal-search pattern): spawns its OWN server children on
-// its own port — each with its own state dir, tmux socket and login
-// rate-limit budget — one without the var (feature off) and one with it
-// pointing at a port nothing listens on (grafana is not part of the test
-// environment; the iframe's navigation is route-aborted, so the page is
-// asserted on its own markup, never on Grafana reaching the browser).
+// /logs and its header link exist only with CYBERMOLE_GRAFANA_URL set. Two
+// private servers: one without it, one pointing at a dead port. The
+// iframe's navigation is aborted, so only the page's own markup is asserted.
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -19,7 +14,7 @@ const BASE = `http://127.0.0.1:${PORT}`;
 // Grafana-shaped and unreachable: only the URL string is under test.
 const GRAFANA = 'http://127.0.0.1:3599';
 
-/** Child env with the CYBERMOLE_ / PI_CODING_AGENT_ overrides stripped. */
+/** The machine's and suite's CYBERMOLE_ / PI_CODING_AGENT_ settings must not leak in. */
 function bareEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) {
@@ -32,15 +27,12 @@ function bareEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
 interface PrivateServer {
   child: ChildProcess;
   dir: string;
-  /** the signed-in session cookie (name=value) — planted per page context */
+  /** name=value, planted per page context */
   cookie: string;
 }
 
-/** Boot one private server (own state dir + tmux socket), set the
- *  credential through the CLI an operator runs (stdin, like
- *  terminal-search's beforeAll — the db the fresh server just opened),
- *  and sign in ONCE through the JSON login: this process's own
- *  rate-limit budget, like every private-server spec. */
+/** Own state dir and tmux socket; the credential is set through the CLI,
+ *  then one JSON login (this server's own budget). */
 async function bootServer(env: Record<string, string> = {}): Promise<PrivateServer> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-logs-'));
   const pw = spawnSync('node', ['dist-server/server/set-password.js'], {
@@ -55,9 +47,6 @@ async function bootServer(env: Record<string, string> = {}): Promise<PrivateServ
       CYBERMOLE_PORT: String(PORT),
       CYBERMOLE_HOST: '127.0.0.1',
       CYBERMOLE_STATE_DIR: dir,
-      // task/app-web: this spec's server doesn't exercise the apps surface
-      // — empty CYBERMOLE_APPS_SOCK keeps the single-user spawn rule from
-      // starting a supervised app host beside this boot.
       CYBERMOLE_APPS_SOCK: '',
       CYBERMOLE_TMUX_SOCKET: `cybermole-logs-itest-${process.pid}`,
       ...env,
@@ -101,7 +90,6 @@ async function stopServer(server: PrivateServer): Promise<void> {
   fs.rmSync(server.dir, { recursive: true, force: true });
 }
 
-/** The signed-in console in `page`'s context (this server's own cookie). */
 async function signIn(page: Page, server: PrivateServer): Promise<void> {
   const [name, value] = server.cookie.split('=');
   await page.context().addCookies([{ name: name!, value: value!, url: BASE }]);
@@ -113,11 +101,11 @@ test('CYBERMOLE_GRAFANA_URL unset: no logs link anywhere, /logs answers 404', as
   const server = await bootServer();
   try {
     await signIn(page, server);
-    // The section does not exist at all — on any page.
+    // No logs section on any page.
     await expect(page.locator('app-header wa-button[href$="/logs"]')).toHaveCount(0);
     await page.goto(`${BASE}/settings`);
     await expect(page.locator('app-header wa-button[href$="/logs"]')).toHaveCount(0);
-    // The other sections still navigate (the header itself is intact).
+    // The rest of the header still works.
     await expect(page.locator('app-header wa-button[href$="/jobs"]')).toBeVisible();
     const res = await page.goto(`${BASE}/logs`);
     expect(res?.status()).toBe(404);
@@ -130,8 +118,7 @@ test('CYBERMOLE_GRAFANA_URL unset: no logs link anywhere, /logs answers 404', as
 test('CYBERMOLE_GRAFANA_URL set: header link + /logs iframe on Grafana Explore', async ({
   page,
 }) => {
-  // Grafana is not there (and must not be): abort every request to the
-  // configured origin so the iframe's navigation never leaves the test.
+  // Abort every request to Grafana's origin, so the iframe never leaves the test.
   await page.route(`${GRAFANA}/**`, route => route.abort());
   const server = await bootServer({ CYBERMOLE_GRAFANA_URL: GRAFANA });
   try {
@@ -140,9 +127,7 @@ test('CYBERMOLE_GRAFANA_URL set: header link + /logs iframe on Grafana Explore',
     await expect(link).toBeVisible();
     await expect(link).toContainText('logs');
     await expect(link.locator('wa-icon')).toHaveAttribute('name', 'file-lines');
-    // The vendored glyph itself renders (the shared glyphs test covers /,
-    // /jobs, /settings — this page's icon is only pinned here): a missing
-    // public/icons/wa/solid/file-lines.svg would upgrade to nothing.
+    // The vendored glyph renders (this page's icon is only pinned here).
     await page.waitForFunction(
       () =>
         document
@@ -151,15 +136,14 @@ test('CYBERMOLE_GRAFANA_URL set: header link + /logs iframe on Grafana Explore',
       undefined,
       { timeout: 8000 },
     );
-    // A real anchor: click through the UI (works unupgraded too).
+    // A real anchor: click through.
     await link.click();
     await page.waitForURL(u => u.pathname === '/logs');
     const iframe = page.locator('.logs-main iframe');
     await expect(iframe).toBeVisible();
     await expect(iframe).toHaveAttribute('title', 'Grafana Explore — cybermole logs');
     await expect(iframe).toHaveAttribute('allow', 'fullscreen');
-    // The server-built Explore URL: v1 panes payload, Loki preselected
-    // (src/lib/platform/grafana.ts; shape pinned against grafana 13.2.3).
+    // The Explore URL: v1 panes payload, Loki preselected.
     const src = await iframe.getAttribute('src');
     expect(src).toBeTruthy();
     const u = new URL(src!);
@@ -171,12 +155,10 @@ test('CYBERMOLE_GRAFANA_URL set: header link + /logs iframe on Grafana Explore',
       { datasource?: string }
     >;
     expect(Object.values(panes).at(-1)?.datasource).toBe('cybermole-loki');
-    // The page's own CSP widens frame-src to exactly the configured
-    // Grafana origin (the global CSP would refuse the cross-origin frame).
+    // The page's CSP widens frame-src to exactly Grafana's origin.
     const res = await page.goto(`${BASE}/logs`);
     expect(res?.status()).toBe(200);
     expect(res?.headers()['content-security-policy']).toContain(`frame-src ${GRAFANA}`);
-    // Pages keep working with the var set — the other sections included.
     await page.goto(`${BASE}/jobs`);
     await expect(page.locator('app-header wa-button[href$="/logs"]')).toBeVisible();
     await expect(page.locator('jobs-app')).toBeVisible();

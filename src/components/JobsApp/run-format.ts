@@ -1,8 +1,6 @@
-// run-format.ts — run-history display formatters, shared by the
-// server-rendered history rows (JobDetailBody.astro frontmatter) and the
-// client-side ones (jobs-app.ts's runs dialog). Pure date/string math.
+// Shared by the server-rendered and client-side run history.
 
-/** Local "YYYY-MM-DD HH:mm:ss" — the run's identity on every surface. */
+/** Local "YYYY-MM-DD HH:mm:ss". */
 export const fmtRunTime = (ms: number): string => {
   const d = new Date(ms);
   const p = (n: number): string => String(n).padStart(2, '0');
@@ -12,7 +10,7 @@ export const fmtRunTime = (ms: number): string => {
   );
 };
 
-/** A run's duration, finish-observed minus fired (tick granularity). */
+/** Observed finish minus fire time, so tick granularity. */
 export const fmtDuration = (from: number, to: number): string => {
   const s = Math.max(0, (to - from) / 1000);
   return s < 60

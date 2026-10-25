@@ -1,6 +1,4 @@
-// /api/terminals/:id — PATCH renames the tab (title null clears it back
-// to the "term N" label), DELETE closes it (row + best-effort tmux kill,
-// §6). An id that isn't one of our uuid v4s is a 400 first.
+// PATCH renames the tab (null clears to "term N"); DELETE closes it and kills its session.
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../../lib/web/locals';
 import { parseAndValidateAPIRequest } from '../../../lib/web/parsing.service';

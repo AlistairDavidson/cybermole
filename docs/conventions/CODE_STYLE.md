@@ -1,6 +1,6 @@
 # CODE_STYLE.md
 
-Correctness conventions for cybermole. This file is about **using the type system and boundaries correctly**, not formatting: match the formatting and comment density of the code around you. Read it before touching `src/lib`, `src/schemas`, an API route, or a form. Porting old code into these conventions: `docs/conventions/REFACTOR_STYLE.md`.
+Correctness conventions for cybermole. This file is about **using the type system and boundaries correctly**, not formatting: match the formatting of the code around you, and keep comments short (see AGENTS.md). Read it before touching `src/lib`, `src/schemas`, an API route, or a form. Porting old code into these conventions: `docs/conventions/REFACTOR_STYLE.md`.
 
 ---
 

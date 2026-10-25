@@ -1,13 +1,8 @@
 ---
 import Base from '../layouts/Base.astro';
-// Frontmatter imports SSR these components (astro-lit, declarative shadow
-// DOM). They do NOT register client-side — the client script below
-// re-imports them so the browser upgrades + hydrates them (form submission,
-// value, password toggle all need the live elements).
-// (A literal script open-tag must never appear in a frontmatter comment:
-// vite's rolldown dep-scan strips only HTML comments from .astro sources,
-// then parses every script block it finds as JS — a tag here once made it
-// parse half the file as one broken module and killed `astro dev`.)
+// These only SSR; the client script re-imports them so they upgrade
+// (AGENTS.md). Never write a literal script open-tag in a frontmatter
+// comment: vite's dep-scan would parse half the file as JS.
 import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/input/input.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
@@ -17,9 +12,7 @@ import WaField from '../components/form/WaField.astro';
 import { zodSchemaToHTMLAttributes } from '../lib/web/zod.service';
 import { loginForm } from '../schemas/api';
 
-// Native constraints matching the schema the form validates with in the
-// browser (validation-enhancer-zod, below) — an empty field never costs a
-// POST (or a slot in the 10-per-15-min login budget).
+// Native constraints from the same schema, so an empty field never spends a login attempt.
 const validation = zodSchemaToHTMLAttributes(loginForm);
 ---
 <Base title="cybermole — sign in">
@@ -48,22 +41,17 @@ const validation = zodSchemaToHTMLAttributes(loginForm);
 </Base>
 
 <script>
-  // Support modules MUST precede the wa-* imports — if the SSR'd elements
-  // define before lit hydration support installs, they render twice
-  // (@awesome.me/astro-lit README). Not script-position-dependent.
+  // Must precede any wa-* import, or SSR'd elements render twice.
   import '@awesome.me/astro-lit/dsd-polyfill.js';
   import '@awesome.me/astro-lit/hydration-support.js';
-  // Vendored glyph libraries must register before any wa-* component
-  // module defines — else upgraded icons fetch from the CDN first.
+  // Before any wa-* defines, or icons fetch from the CDN first.
   import '../icons';
-  // Client-side: define the SSR'd wa-* components (upgrade + hydrate).
   import '@awesome.me/webawesome/dist/components/card/card.js';
   import '@awesome.me/webawesome/dist/components/input/input.js';
   import '@awesome.me/webawesome/dist/components/button/button.js';
   import '@awesome.me/webawesome/dist/components/callout/callout.js';
   import '@awesome.me/webawesome/dist/components/icon/icon.js';
 
-  // Registers <validation-enhancer-zod> (and the base <validation-enhancer>).
   import 'validation-enhancer/zod';
   import type { ValidationEnhancerZod } from 'validation-enhancer/zod';
   import { loginForm } from '../schemas/api';
@@ -74,9 +62,8 @@ const validation = zodSchemaToHTMLAttributes(loginForm);
     (document.getElementById(id) as unknown as { value: string | null }).value ?? '';
   void customElements.whenDefined('validation-enhancer-zod').then(() =>
     (document.querySelector('validation-enhancer-zod') as ValidationEnhancerZod).setZodSchema(loginForm));
-  // Valid submits only: the enhancer stops an invalid one from propagating,
-  // so this listener sits ABOVE it (on <main>) — a listener on the form
-  // itself would fire before validation ran.
+  // On <main>, above the enhancer: it stops invalid submits, and a listener
+  // on the form would fire before validation.
   document.querySelector('.login-main')!.addEventListener('submit', async e => {
     e.preventDefault();
     const err = document.getElementById('error')!;
@@ -87,8 +74,7 @@ const validation = zodSchemaToHTMLAttributes(loginForm);
       body: JSON.stringify({ username: value('username'), password: value('password') }),
     });
     if (res.ok) {
-      // The server renders this page in place of any signed-out page URL
-      // (/jobs, /?t=…): reload it to land where the user was going.
+      // This page renders in place of any signed-out URL; reload to land there.
       if (location.pathname === `${BASE}/login`) location.href = `${BASE}/`;
       else location.reload();
       return;

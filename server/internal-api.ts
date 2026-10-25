@@ -1,26 +1,7 @@
-// internal-api.ts — the internal jobs API (task/jobs-socket,
-// docs/plans/jobs-agent-plan.md §3–§4): a second HTTP listener on a unix
-// domain socket, served by the same Node process as the console, serving
-// the WORKSPACE side (agents) the jobs surface. JSON only; nginx / the
-// TLS proxy never see this listener (it is not a TCP port).
-//
-// The socket IS the gate (plan §2): no cookie middleware, no CSRF, no
-// rate limit — full jobs control is the workspace side's own shell
-// privilege, so there is nothing to escalate to. The file's mode after
-// listen (0660, the shared setgid group in the compose split) is the
-// only auth.
-//
-// Routes are THIN: every verb calls the same src/lib/jobs/jobs service
-// functions the cookie-gated /api/jobs routes use, and answers with the
-// SAME Result JSON — the mappers in src/lib/web/responses.service.ts
-// are reused verbatim, so a body produced here is byte-identical to the
-// browser API's. Mutations never take a parallel path (plan §4): that
-// single source of truth is what keeps every surface consistent.
-//
-// Importable without server/main.ts — unit tests boot this module alone
-// on a tmp-dir socket. CYBERMOLE_SOCK's resolution rules live in
-// src/lib/platform/env.ts (readInternalApiSocket); this module takes a resolved
-// absolute path.
+// Internal API: an HTTP listener on a unix socket serving the workspace side
+// (agents) the jobs and apps services. The socket's file mode is the only
+// auth. Routes call the same services and response mappers as the browser
+// API, so bodies are byte-identical.
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
@@ -57,42 +38,24 @@ import {
 
 const log = componentLogger('internal-api');
 
-// Same body policy as the public JSON API (server/main.ts): 10 KiB
-// covers every jobs body (MAX_COMMAND is 4000 chars), a declared length
-// over it answers 413 before a byte is read, and a length-less chunked
-// body is refused with 411 — the CLI (plan §5) sends Content-Length.
+// 10 KiB covers every jobs body (MAX_COMMAND is 4000 chars).
 const BODY_MAX_BYTES = 10 * 1024;
 
 export interface InternalApiDeps {
-  /** absolute socket path (env.ts readInternalApiSocket — never null here) */
   socketPath: string;
-  /** THE scheduler instance the browser routes share (plan §4: one
-   *  source of truth — this must be the same object main.ts hands to the
-   *  Astro handler in locals, never a second Scheduler). */
+  /** Must be the same instance main.ts hands to Astro, never a second Scheduler. */
   scheduler: Scheduler;
-  /** the app domain — GET /jobs' ?app=<slug> filter resolves the slug to
-   *  the app row's id (jobs store app_id, not slug), GET /apps lists the
-   *  rows for the picker, and (apps-plan §0's amendment, below) the
-   *  app_save/app_delete verbs mutate through the same domain the
-   *  console routes use. */
   apps: Pick<Apps, 'listApps' | 'saveApp' | 'renameApp' | 'deleteApp'>;
 }
 
 export interface InternalApiHandle {
   readonly socketPath: string;
-  /** Stop listening, let in-flight requests drain, unlink the socket
-   *  file (best-effort — a crash leaves it behind and the next boot's
-   *  stale-socket check removes it). */
+  /** Unlink is best-effort; the next boot's stale-socket check covers a crash. */
   close(): Promise<void>;
 }
 
-/** The socket file exists AND answers — another cybermole server owns it.
- *  main.ts treats this one specially (plan §3, amended in integration):
- *  the web app SERVES ON, with this listener disabled and a loud boot
- *  line — crashing the whole web server over an auxiliary IPC listener
- *  would let a second instance on the same state dir (dev box, tests)
- *  take the primary down. Anything else that fails here still fails the
- *  boot. */
+/** Another live server owns the socket. main.ts serves on without the
+ *  internal API rather than let a second instance take it down. */
 export class InternalSocketOwnedError extends Error {
   constructor(readonly socketPath: string) {
     super(
@@ -103,14 +66,10 @@ export class InternalSocketOwnedError extends Error {
   }
 }
 
-// ---------- socket lifecycle (plan §3) ----------
+// ---------- socket lifecycle ----------
 
-/** Liveness probe of an existing socket file: can anything answer on it?
- *  'stale' = nothing does (ECONNREFUSED/ENOENT — a dead server's
- *  leftover file: unlink and rebind, exactly the workspace entrypoint's
- *  stale-tmux-socket handling); 'live' = a server accepted (or the probe
- *  otherwise failed — timeout, EACCES: fail closed, never steal a
- *  socket that might be owned). */
+/** 'stale' only on ECONNREFUSED/ENOENT; anything else (timeout, EACCES)
+ *  counts as live, so a possibly-owned socket is never stolen. */
 export function probeSocketFile(socketPath: string, timeoutMs = 500): Promise<'live' | 'stale'> {
   return new Promise(resolve => {
     const socket = net.connect({ path: socketPath });
@@ -119,7 +78,7 @@ export function probeSocketFile(socketPath: string, timeoutMs = 500): Promise<'l
       socket.destroy();
       resolve(state);
     };
-    const timer = setTimeout(() => finish('live'), timeoutMs); // unreadable → assume owned
+    const timer = setTimeout(() => finish('live'), timeoutMs);
     socket.on('connect', () => finish('live'));
     socket.on('error', err => {
       const code = (err as NodeJS.ErrnoException).code;
@@ -128,20 +87,11 @@ export function probeSocketFile(socketPath: string, timeoutMs = 500): Promise<'l
   });
 }
 
-/** Boot the internal API: claim the socket (stale file → unlink, live
- *  listener → InternalSocketOwnedError), listen, then chmod the file
- *  0660 — group access is the gate in the compose split (the setgid
- *  /run/cybermole dir gives the file the shared group; on a plain host the
- *  process's own group), mirroring the workspace entrypoint's tmux-socket
- *  chmod. Resolves once the listener is up. */
+/** Claim the socket (unlink a stale file), listen, then chmod 0660: group
+ *  access is the gate (the setgid /run/cybermole dir supplies the group). */
 export async function startInternalApi(deps: InternalApiDeps): Promise<InternalApiHandle> {
-  // The socket's parent dir is created if missing: the state-dir default
-  // (~/.local/state/cybermole) is only otherwise materialized by the db / agent
-  // dir (main.ts mkdirs the agent dir), so a server booted with those pointed
-  // elsewhere — the e2e specs' spawned second servers, a dev's first run —
-  // would otherwise die on listen EACCES/ENOENT. The /run/cybermole shape is
-  // only ever chosen when that dir already exists (env.ts probes), so the
-  // recursive mkdir is a no-op there and never tries to conjure a root path.
+  // The state-dir default may not exist yet when the db and agent dir point
+  // elsewhere (e2e's spawned servers, a first run).
   fs.mkdirSync(path.dirname(deps.socketPath), { recursive: true });
   if (fs.existsSync(deps.socketPath)) {
     const state = await probeSocketFile(deps.socketPath);
@@ -154,8 +104,7 @@ export async function startInternalApi(deps: InternalApiDeps): Promise<InternalA
   const routes = createRoutes(deps);
   const server = http.createServer((req, res) => {
     logAccess(req, res);
-    // Crash guard, same stance as main.ts's: a throwing route costs one
-    // 500, never the process (and every terminal with it).
+    // A throwing route costs one 500, never the process.
     routes(req, res).catch(err => {
       log.error('request handler error', { error: err });
       if (!res.headersSent) {
@@ -173,8 +122,6 @@ export async function startInternalApi(deps: InternalApiDeps): Promise<InternalA
     server.once('error', onListenError);
     server.listen(deps.socketPath, () => {
       server.off('error', onListenError);
-      // Post-boot socket-level errors (a vanishing socket dir): logged,
-      // never an unhandled 'error' event.
       server.on('error', err => log.error('server error', { error: err }));
       resolve();
     });
@@ -201,8 +148,6 @@ export async function startInternalApi(deps: InternalApiDeps): Promise<InternalA
 
 // ---------- request plumbing ----------
 
-/** One access line per request (main.ts's logAccess, minus the quiet
- *  paths — no assets are served here). */
 function logAccess(req: http.IncomingMessage, res: http.ServerResponse): void {
   const start = Date.now();
   res.on('finish', () => {
@@ -212,8 +157,6 @@ function logAccess(req: http.IncomingMessage, res: http.ServerResponse): void {
   });
 }
 
-/** 413 (declared length over the cap), 411 (chunked, no length — the
- *  public API's stance) or null (within the cap). */
 function bodyCapStatus(req: http.IncomingMessage): 411 | 413 | null {
   if (req.method === 'GET' || req.method === 'HEAD') return null;
   const declared = req.headers['content-length'];
@@ -223,8 +166,7 @@ function bodyCapStatus(req: http.IncomingMessage): 411 | 413 | null {
   return Number(declared) <= BODY_MAX_BYTES ? null : 413;
 }
 
-/** The request body as raw bytes (possibly empty). Null when over the
- *  cap — the stream is destroyed and the caller answers 413. */
+/** Null when over the cap (the stream is destroyed). */
 function readBody(req: http.IncomingMessage): Promise<Buffer | null> {
   return new Promise(resolve => {
     let n = 0;
@@ -243,10 +185,7 @@ function readBody(req: http.IncomingMessage): Promise<Buffer | null> {
   });
 }
 
-/** A fetch-API Request for parseAndValidateAPIRequest — the exact parser
- *  the browser routes use (content-type gate, JSON parse, zod, the same
- *  failure codes). Only content-type rides over: it is the one header
- *  the parser reads. */
+/** For the shared parser; content-type is the only header it reads. */
 function toFetchRequest(req: http.IncomingMessage, body: Buffer): Request {
   const headers: Record<string, string> = {};
   const ct = req.headers['content-type'];
@@ -259,10 +198,7 @@ function toFetchRequest(req: http.IncomingMessage, body: Buffer): Request {
   });
 }
 
-/** Read the (cap-checked) body and wrap it in the fetch Request the
- *  shared parser takes. A body over the streaming cap answers a 413 the
- *  caller sends as-is (bodyCapStatus already caught the declared-length
- *  case; this is the lying-client case). */
+/** The streaming cap catches clients that lie about Content-Length. */
 async function readRequest(
   req: http.IncomingMessage,
 ): Promise<{ ok: true; request: Request } | { ok: false; response: Response }> {
@@ -279,9 +215,6 @@ async function readRequest(
   return { ok: true, request: toFetchRequest(req, body) };
 }
 
-/** Write a responses.service Response onto the node server response —
- *  status, headers and body verbatim, so bodies are byte-identical to
- *  the browser API's. */
 async function sendWebResponse(res: http.ServerResponse, r: Response): Promise<void> {
   const headers: Record<string, string> = {};
   r.headers.forEach((value, name) => {
@@ -291,15 +224,12 @@ async function sendWebResponse(res: http.ServerResponse, r: Response): Promise<v
   res.end(await r.text());
 }
 
-/** Unknown path (or a known path without a matching verb — like Astro,
- *  whose route table matches path+method): 404 with a Result body, never
- *  an HTML error page. */
+/** Matches path+method like Astro's route table: no match is a JSON 404. */
 function notFoundResponse(): Response {
   return jsonResponse({ error: 'not found', detail: null, code: 'not_found' }, 404);
 }
 
-// ---------- routes (plan §4 — thin; every call is the same service
-// function the browser route uses) ----------
+// ---------- routes ----------
 
 function createRoutes(
   deps: InternalApiDeps,
@@ -323,8 +253,7 @@ function createRoutes(
       );
     }
     const url = new URL(req.url ?? '/', 'http://internal');
-    // Astro decodes path params; do the same per segment. A bad %-escape
-    // is a client error (main.ts answers 400 for it on the public side).
+    // Decode per segment like Astro; a bad %-escape is a 400.
     const segments: string[] = [];
     for (const segment of url.pathname.split('/').filter(Boolean)) {
       try {
@@ -338,23 +267,12 @@ function createRoutes(
     }
 
     if (segments.length === 1 && segments[0] === 'apps') {
-      // GET is the picker's READ (plan §6 — the MCP's apps_list tool, the
-      // same rows the browser dialog renders). Creating, patching and
-      // unregistering apps is ALSO here now: apps-plan §0's recorded
-      // amendment to jobs-agent-plan §2 (which drew the line at app
-      // management on the workspace side) — registration IS the
-      // workspace side's power, the same trust level as job creation
-      // (the socket is the gate). POST/PATCH/DELETE below mirror the
-      // console routes 1:1 through the SAME Apps domain calls and
-      // mappers — wire JSON byte-identical to the browser API's, no
-      // second vocabulary.
+      // App registration is the workspace side's power, like job creation.
       if (req.method === 'GET') return listApps(res);
       if (req.method === 'POST') return saveApp(req, res);
       return sendWebResponse(res, notFoundResponse());
     }
     if (segments.length === 2 && segments[0] === 'apps') {
-      // The path slug passes AppSlugSchema before the domain is reached,
-      // exactly like the console's /api/apps/:slug routes.
       const slug = AppSlugSchema.safeParse(segments[1]);
       if (!slug.success) return sendWebResponse(res, invalidAppSlugResponse());
       if (req.method === 'PATCH') return patchApp(req, res, slug.data);
@@ -368,9 +286,7 @@ function createRoutes(
       return sendWebResponse(res, notFoundResponse());
     }
     if (segments.length === 2 && segments[0] === 'jobs') {
-      // The static route wins over the :name param, exactly like Astro's
-      // route table (a job literally named "validate" is not addressable
-      // — JOB_NAME_RE allows it; the browser surface has the same shadow).
+      // The static route shadows :name, as in Astro (a job named "validate" is unaddressable).
       if (segments[1] === 'validate' && req.method === 'POST') return validate(req, res);
       const name = JobNameSchema.safeParse(segments[1]);
       if (!name.success) return sendWebResponse(res, invalidJobNameResponse());
@@ -403,19 +319,12 @@ function createRoutes(
     return sendWebResponse(res, notFoundResponse());
   }
 
-  /** GET /apps — the app rows the jobs tools' tag picker needs (plan
-   *  §6: the MCP's apps_list; the browser's save dialog renders the same
-   *  rows from /api/state's apps half). */
   async function listApps(res: http.ServerResponse): Promise<void> {
     const listed = apps.listApps();
     if (!listed.ok) return sendWebResponse(res, appFailureResponse(listed));
     return sendWebResponse(res, jsonResponse(listed.data, 200));
   }
 
-  /** POST /apps — create (apps-plan §0's amendment): the browser's POST
-   *  /api/apps verb verbatim — name + optional cwd (task/app-cwd), the
-   *  same zod schema, the same Apps domain call, the same mappers, so
-   *  the wire body is byte-identical. */
   async function saveApp(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const body = await readRequest(req);
     if (!body.ok) return sendWebResponse(res, body.response);
@@ -426,8 +335,6 @@ function createRoutes(
     return sendWebResponse(res, jsonResponse(saved.data, 200));
   }
 
-  /** PATCH /apps/:slug — rename and/or set/clear the cwd (the browser's
-   *  PATCH /api/apps/:slug verb; the slug is stable once created). */
   async function patchApp(
     req: http.IncomingMessage,
     res: http.ServerResponse,
@@ -442,19 +349,14 @@ function createRoutes(
     return sendWebResponse(res, jsonResponse(saved.data, 200));
   }
 
-  /** DELETE /apps/:slug — unregister (§0's amendment): the row + the
-   *  cascade (workspaces/terminals, best-effort tmux kills), the tree
-   * untouched — the console verb's exact semantics through the same
-   * domain call. */
   async function deleteApp(res: http.ServerResponse, slug: AppSlug): Promise<void> {
     const deleted = await apps.deleteApp(slug);
     if (!deleted.ok) return sendWebResponse(res, appFailureResponse(deleted));
     return sendWebResponse(res, jsonResponse(deleted.data, 200));
   }
 
-  /** GET /jobs (?app=<slug> — filter to one app's tagged jobs; an
-   *  unknown slug is a 404, not an empty list, so an agent cannot
-   *  mistake "no such app" for "no jobs"). */
+  /** ?app=<slug>: an unknown slug is a 404, not an empty list, so "no such
+   *  app" can't be mistaken for "no jobs". */
   async function listJobs(res: http.ServerResponse, appSlug: string | null): Promise<void> {
     let appId: AppId | null | undefined; // undefined = no filter
     if (appSlug !== null) {
@@ -485,7 +387,6 @@ function createRoutes(
     return sendWebResponse(res, jsonResponse({ ...jobsListed.data, jobs }, 200));
   }
 
-  /** POST /jobs — create/update (the browser's POST /api/jobs verb). */
   async function saveJob(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const body = await readRequest(req);
     if (!body.ok) return sendWebResponse(res, body.response);
@@ -496,11 +397,8 @@ function createRoutes(
     return sendWebResponse(res, jsonResponse({ name: saved.data.name, session: null }, 200));
   }
 
-  /** POST /jobs/validate — cron + command validation (plan §4; the
-   *  browser verb is schedule-only). An invalid value is an ANSWER (200
-   *  with valid:false + error), not a failed request — the browser
-   *  verb's stance. Response: each present field's check, absent fields
-   *  null. */
+  /** Validates cron and command (the browser verb is schedule-only). An
+   *  invalid value answers 200 with valid:false, not a failed request. */
   async function validate(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const body = await readRequest(req);
     if (!body.ok) return sendWebResponse(res, body.response);
@@ -511,7 +409,7 @@ function createRoutes(
       parsed.data.command === undefined
         ? null
         : (() => {
-            // The same rule JobSaveSchema applies (schemas/jobs.ts).
+            // Same rule as JobSaveSchema.
             const checked = JobPatchSchema.shape.command.safeParse(parsed.data.command);
             return checked.success
               ? { valid: true, error: null }
@@ -520,9 +418,7 @@ function createRoutes(
     return sendWebResponse(res, jsonResponse({ schedule, command }, 200));
   }
 
-  /** PATCH /jobs/:name — set schedule/command/app: absent keeps, null
-   *  clears the app tag (read-merge-write; the save goes through the
-   *  SAME saveJob the browser's create verb uses). */
+  /** Absent fields keep their value; appId null clears the tag. */
   async function patchJob(
     req: http.IncomingMessage,
     res: http.ServerResponse,
@@ -544,21 +440,18 @@ function createRoutes(
     return sendWebResponse(res, jsonResponse({ name: saved.data.name, session: null }, 200));
   }
 
-  /** DELETE /jobs/:name. */
   async function deleteJob(res: http.ServerResponse, name: JobName): Promise<void> {
     const deleted = await scheduler.deleteJob(name);
     if (!deleted.ok) return sendWebResponse(res, jobFailureResponse(deleted));
     return sendWebResponse(res, jsonResponse({ name: deleted.data.name, session: null }, 200));
   }
 
-  /** GET /jobs/:name/runs. */
   async function listRuns(res: http.ServerResponse, name: JobName): Promise<void> {
     const listed = scheduler.listRuns(name);
     if (!listed.ok) return sendWebResponse(res, jobFailureResponse(listed));
     return sendWebResponse(res, jsonResponse(listed.data, 200));
   }
 
-  /** POST /jobs/:name/run — run now (409 while the previous run lives). */
   async function runJob(res: http.ServerResponse, name: JobName): Promise<void> {
     const run = await scheduler.runJob(name);
     if (!run.ok) return sendWebResponse(res, jobFailureResponse(run));
@@ -568,8 +461,6 @@ function createRoutes(
     );
   }
 
-  /** POST /jobs/:name/runs/:firedAt/kill — kill the live run (plan §4;
-   *  409 run_not_active when the named run is not the live one). */
   async function killRun(res: http.ServerResponse, name: JobName, firedAt: number): Promise<void> {
     const killed = await scheduler.killRun(name, firedAt);
     if (!killed.ok) return sendWebResponse(res, jobFailureResponse(killed));
@@ -579,9 +470,7 @@ function createRoutes(
     );
   }
 
-  /** GET /jobs/:name/runs/:firedAt/log — the run's log tail (≤ 1 MiB,
-   *  text/plain like the browser verb — the one non-JSON success body on
-   *  this surface; errors are Result JSON like everywhere else). */
+  /** text/plain on success; errors are Result JSON. */
   async function runLog(res: http.ServerResponse, name: JobName, firedAt: number): Promise<void> {
     const read = scheduler.readRunLog(name, firedAt);
     if (!read.ok) return sendWebResponse(res, jobFailureResponse(read));

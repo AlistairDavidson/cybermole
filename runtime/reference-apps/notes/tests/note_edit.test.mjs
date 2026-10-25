@@ -1,5 +1,3 @@
-// The note_edit action's unit tests — grown from the add_action stub:
-// the merge rules (provided fields only), the guards, the stamps.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { noteEditResult } from '../src/lib/note_edit.ts';
@@ -69,7 +67,7 @@ test('note_edit: the same field rules as create (title, body, tags)', () => {
   const badTags = noteEditResult(store, 1, { tags: ['a,b'] });
   assert.equal(badTags.ok, false);
   if (!badTags.ok) assert.equal(badTags.errorCode, 'invalid_tags');
-  // only the finds happened — nothing was ever written
+  // only finds: nothing was written
   assert.deepEqual(
     store.captured.map(c => c[0]),
     ['findById', 'findById', 'findById', 'findById'],

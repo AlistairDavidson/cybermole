@@ -1,14 +1,8 @@
-// apps-proxy.test.mjs — task/app-web (docs/plans/apps-plan.md §4) units: the
-// /apps/* proxy's decision surface and transport, exercised over REAL
-// sockets without the console — a stub "app host" on a tmp-dir unix
-// socket, and a "web side" http server whose handler is exactly the
-// branch server/main.ts mounts (handleAppsRequest). Covers: the path
-// matchers, the off-surface 404 namespace, unknown-slug 404 BEFORE any
-// socket is touched, the verbatim forward (method/path/headers/body),
-// the session cookie NOT forwarded (plan §8 — an app has exactly a
-// terminal's powers), the body cap policy, host-down 502 fast, a wedged
-// host 502 after the (injectable) idle timeout, and the unreadable-db
-// 503.
+// The /apps/* proxy over real sockets: a stub app host on a tmp socket and a
+// web-side server running handleAppsRequest as main.ts mounts it. Path
+// matchers, the off 404, unknown slugs 404ing before any socket is touched,
+// verbatim forwarding without the session cookie, the body cap, host-down
+// and wedged-host 502s, and the unreadable-db 503.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as http from 'node:http';
@@ -21,11 +15,10 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-apps-proxy-'));
 const { handleAppsRequest, isAppsHttpPath, appsSlugOf, APPS_BODY_MAX_BYTES } =
   await import('../../dist-server/src/lib/apps/apps-proxy.js');
 
-// ---------- the stub app host (what server/app-host.js stands in as) ----------
+// ---------- stub app host ----------
 
-/** An echoing app host: every /apps/fixture/* answer is a JSON echo of
- *  the request (method, path, headers, body) so the tests can assert
- *  VERBATIM forwarding. `wedged` accepts and never answers. */
+/** Echoes each request as JSON, to check verbatim forwarding. `wedged`
+ *  accepts and never answers. */
 function stubHost(socketPath) {
   const seen = { connections: 0, requests: [] };
   const server = http.createServer((req, res) => {
@@ -62,7 +55,7 @@ function stubHost(socketPath) {
   };
 }
 
-// ---------- the web side under test: handleAppsRequest as main.ts mounts it ----------
+// ---------- web side under test ----------
 
 let webServer;
 let webPort;
@@ -77,8 +70,7 @@ const bootWeb = async deps => {
 };
 const webUrl = p => `http://127.0.0.1:${webPort}${p}`;
 
-/** A raw request against the web side (fetch, plus the chunked case
- *  fetch cannot make: node http without a Content-Length sends chunked). */
+/** Plus the chunked case fetch can't make (node http with no Content-Length). */
 function rawRequest(method, p, { headers = {}, body } = {}) {
   return new Promise((resolve, reject) => {
     const req = http.request(webUrl(p), { method, headers }, res => {
@@ -146,8 +138,7 @@ test('unknown slug: 404 before ever touching the host; a bad slug is the same 40
     const r = await rawRequest('GET', '/apps/never-registered/');
     assert.equal(r.status, 404);
     assert.deepEqual(r.json, { error: 'not found', detail: null, code: 'not_found' });
-    // A %-escape mess in the slug segment is not an APP_SLUG_RE slug: the
-    // same unknown-slug 404, never a throw.
+    // A %-escape mess isn't a slug: the same 404, never a throw.
     const bad = await rawRequest('GET', '/apps/%E0%80/sub');
     assert.equal(bad.status, 404);
     assert.equal(host.seen.requests.length, 0, 'the host is never touched');
@@ -176,12 +167,10 @@ test('registered slug: forwarded verbatim — method, path, body, headers minus 
     assert.equal(posted.json.method, 'POST');
     assert.equal(posted.json.body, '{"name":"world"}');
     assert.equal(posted.json.contentType, 'application/json');
-    // plan §8: the console's session token must never become app-visible.
+    // The console's session token must never reach an app.
     assert.equal(posted.json.cookie, null, 'the session cookie is NOT forwarded');
 
-    // The exact-slug form (/apps/<slug>, no trailing slash) forwards
-    // verbatim too — the app's baked-base behavior answers it (verified
-    // against the fixture: no redirect synthesized).
+    // /apps/<slug> without the trailing slash forwards verbatim too; no redirect.
     const exact = await rawRequest('GET', '/apps/fixture');
     assert.equal(exact.status, 200);
     assert.equal(exact.json.url, '/apps/fixture');
@@ -233,8 +222,7 @@ test('body policy: 413 over the cap, 411 for a length-less chunked body — befo
     });
     assert.equal(over.status, 413);
 
-    // node http without a Content-Length sends chunked — the console's
-    // 411 stance.
+    // no Content-Length means chunked: 411
     const chunked = await new Promise((resolve, reject) => {
       const req = http.request(
         webUrl('/apps/fixture/api/x'),

@@ -1,10 +1,5 @@
-// The note_archive action's logic — the archive half of the notes family,
-// grown from the add_action stub. Archive is a FLAG, never a delete: the
-// row keeps its title, body, tags and timestamps; the default list hides
-// it and `archived=true` shows it again. Idempotent on purpose —
-// archiving an archived note stays green (the app's one
-// removal-adjacent action is deliberately the gentlest one). Runtime-
-// kit-free (types only) and node-free — plain-node testable.
+// note_archive: a flag, never a delete. The default list hides archived
+// notes; `archived=true` shows them. Idempotent.
 import type { ResultFailure, ResultSuccess } from '@cybermole/app-kit';
 import { rowToNote, storeOp, type Note, type NotesStore } from './notes-core.ts';
 
@@ -21,8 +16,6 @@ const fail = (errorCode: NoteArchiveErrorCode, errorMessage: string): NoteArchiv
   errorMessage,
 });
 
-/** Archive one note — the only removal-adjacent action the app has, and
- *  it removes nothing: `archived` flips to true, everything else stands. */
 export function noteArchiveResult(store: NotesStore, id: number): NoteArchiveResult {
   const current = storeOp('could not read the note', () => store.findById(id));
   if (!current.ok) return fail('database_error', current.why);

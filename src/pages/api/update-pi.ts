@@ -1,7 +1,5 @@
-// POST /api/update-pi — manual `npm install pi@latest` in the app dir.
-// Long-running by design (npm timeout 10 min server-side); concurrent runs
-// are refused (409, shared with auto-update's busy guard). {dryRun:true}
-// is a check-only mode: proves npm runs, installs nothing.
+// Manual `npm install pi@latest`. Runs up to 10 min; concurrent runs get 409.
+// {dryRun:true} only checks that npm runs.
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../lib/web/locals';
 import { parseAndValidateAPIRequest } from '../../lib/web/parsing.service';

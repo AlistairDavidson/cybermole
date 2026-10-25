@@ -1,24 +1,8 @@
-// apps-mcp.test.mjs — task/app-scaffold (docs/plans/apps-plan.md §6/§10) units:
-// the cybermole-apps MCP's three halves.
-//   scaffold (src/lib/apps/apps-scaffold.ts): REAL tree-writing against a tmp
-//     apps root — template copy with slug/base/name baking, the composed
-//     app.json, the .pi/mcp.json role boundary (cybermole-apps disabled +
-//     the inert shim entry), the per-package node_modules links (the
-//     template's own script, run for real), git init + the first commit,
-//     and every error code of the family.
-//   the gate (src/lib/apps/apps-gate.ts): the quiet-envelope mapping over an
-//     INJECTED runner — all-green, a failing stage (output tail + counts),
-//     a timeout, the links precheck (a bad install dies first, with the
-//     fix named), tree_not_found, run_failed — plus the TAP count parser.
-//   status (src/lib/apps/apps-status.ts): the join — rows × host answer ×
-//     synthetic trees (fresh/stale/unbuilt/absent), the host's skip
-//     reasons, the booting case, unregistered trees, non-tree dirs
-//     ignored.
-// The MCP's own tool WIRING gets one real child over stdio (the mcp.test
-// mcp shape, one boot): the tool list is the full set (scaffold's seven +
-// the action vocabulary add_action/describe/call, task/app-actions), a
-// status call answers through both stub sockets, and an empty
-// CYBERMOLE_APPS_SOCK turns reload into the clear off-surface isError.
+// The cybermole-apps MCP. Scaffold: real tree-writing into a tmp apps root
+// (baking, app.json, the .pi/mcp.json role boundary, node_modules links, the
+// first git commit, every error code). The gate: envelope mapping over an
+// injected runner, plus the TAP parser. Status: the join over synthetic
+// trees and host answers. Plus one real stdio child for the tool wiring.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as http from 'node:http';
@@ -49,7 +33,7 @@ const scaffoldDeps = root => ({
   run: runChild,
 });
 
-// ---------- scaffold: the tree, written for real ----------
+// ---------- scaffold ----------
 
 test('scaffold: writes the baked tree, links node_modules, commits — the happy path', async () => {
   const root = fs.mkdtempSync(path.join(dir, 'case-'));
@@ -62,32 +46,29 @@ test('scaffold: writes the baked tree, links node_modules, commits — the happy
   assert.equal(slug, 'smoke-probe-2');
   assert.equal(r.data.linked, true);
   assert.equal(r.data.committed, true);
-  // the manifest is COMPOSED (null description handling lives here, not
-  // in a marker): name/description/slug all present.
+  // app.json is composed, not marker-substituted
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(tree, 'app.json'), 'utf8')), {
     name: 'Smoke Probe 2',
     description: 'the unit-run tree',
     slug,
   });
-  // the base is baked into the astro config, the slug everywhere else.
+  // the base is baked into the astro config; the slug everywhere else
   const astro = fs.readFileSync(path.join(tree, 'astro.config.mjs'), 'utf8');
   assert.ok(astro.includes(`const base = '/apps/${slug}'`), 'base baked');
   assert.ok(!astro.includes('__APP_SLUG__'), 'no leftover marker');
-  // the role boundary (§6): cybermole-apps DISABLED (project-overrides-
-  // user) and the app's own shim entry under the slug — pointing at the
-  // install's dist-server, inert until branch 5 ships the binary.
+  // The role boundary: cybermole-apps disabled for the app's own sessions,
+  // and the app's shim registered under its slug.
   const mcpJson = JSON.parse(fs.readFileSync(path.join(tree, '.pi', 'mcp.json'), 'utf8'));
   assert.deepEqual(mcpJson.mcpServers['cybermole-apps'], { enabled: false });
   assert.deepEqual(mcpJson.mcpServers[slug].args, [
     path.join(REPO, 'dist-server', 'server', 'app-mcp-shim.js'),
     slug,
   ]);
-  // the operator manual is seeded with the app's identity and the
-  // example action's section (branch 5's add_action regenerates it).
+  // AGENTS.md is seeded with the app's identity and the example action.
   const agents = fs.readFileSync(path.join(tree, 'AGENTS.md'), 'utf8');
   assert.ok(agents.includes('Smoke Probe 2') && agents.includes(slug));
   assert.ok(agents.includes('### ping') && agents.includes('BEGIN ACTIONS'));
-  // the per-package links: the core stack resolves, the bins too.
+  // the core stack and bins resolve through the links
   for (const name of ['astro', 'zod', '@cybermole/app-kit', 'parse5']) {
     assert.ok(
       fs.lstatSync(path.join(tree, 'node_modules', ...name.split('/'))).isSymbolicLink(),
@@ -95,11 +76,10 @@ test('scaffold: writes the baked tree, links node_modules, commits — the happy
     );
   }
   assert.ok(fs.lstatSync(path.join(tree, 'node_modules', '.bin', 'astro')).isSymbolicLink());
-  // the install root is baked for re-runs after image upgrades.
+  // the install root is baked for re-runs
   const setup = fs.readFileSync(path.join(tree, 'scripts', 'setup-node-modules.mjs'), 'utf8');
   assert.ok(setup.includes(`'${REPO}'`), 'install root baked');
-  // git: a real repo whose first commit IS the scaffold; data/ tracked
-  // only as .gitkeep.
+  // the first commit is the scaffold; data/ only as .gitkeep
   assert.ok(fs.existsSync(path.join(tree, '.git')));
   const log = await runChild('git', ['log', '--oneline'], { cwd: tree });
   assert.equal(log.code, 0, log.stderr);
@@ -161,10 +141,9 @@ test('scaffold: git_missing — the tree and links stand, the message says what 
   assert.ok(!fs.existsSync(path.join(r.data.tree, '.git')));
 });
 
-// ---------- the gate: envelope mapping over an injected runner ----------
+// ---------- gate ----------
 
-/** A scripted runner: keyed by the npm script name (the label under
- *  test), returning canned ChildRuns; unmatched commands run for real. */
+/** Canned ChildRuns keyed by npm script; anything else runs for real. */
 const fakeRunner = scriptRuns => (command, args) => {
   if (command !== 'npm') return runChild(command, args);
   const script = args[1];
@@ -183,7 +162,7 @@ const gateWorld = async () => {
   const root = fs.mkdtempSync(path.join(dir, 'gate-'));
   const tree = path.join(root, 'gate-app');
   fs.mkdirSync(tree);
-  // a minimal real tree: the links check reads package.json's deps.
+  // the links check reads package.json's deps
   fs.writeFileSync(
     path.join(tree, 'package.json'),
     JSON.stringify({
@@ -259,7 +238,7 @@ test('check: a failing test stage — red envelope, the stage named, the output 
   ]);
   assert.deepEqual(e.counts.tests, { pass: 0, fail: 1, skipped: 0 });
   assert.deepEqual(e.counts.stages, { total: 4, passed: 2, failed: 1 });
-  // first failure stops: build never ran.
+  // the first failure stops: build never ran
   assert.equal(e.counts.stages.passed + e.counts.stages.failed, 3);
 });
 
@@ -337,10 +316,9 @@ test('check: run_failed — npm itself missing is a family failure, not an envel
   assert.match(r.errorMessage, /npm is not on PATH/);
 });
 
-// ---------- status: the join ----------
+// ---------- status ----------
 
-/** A synthetic tree: manifest + (optionally) a build, with controllable
- *  source/build mtimes. */
+/** A manifest, optionally a build, with controllable mtimes. */
 function synthTree(root, slug, { build = true, touchSrcAfterBuild = false, manifest = true } = {}) {
   const tree = path.join(root, slug);
   fs.mkdirSync(path.join(tree, 'src'), { recursive: true });
@@ -461,14 +439,14 @@ test('status: collectTrees ignores dot dirs and non-dirs', () => {
   assert.deepEqual([...collectTrees(root).keys()], ['app-a']);
 });
 
-// ---------- the env default ----------
+// ---------- env default ----------
 
 test('appsRootDefault: the workspace volume owns the default; the state dir is the fallback', () => {
   assert.equal(appsRootDefault('/state', true), '/workspace/apps');
   assert.equal(appsRootDefault('/state', false), path.join('/state', 'apps'));
 });
 
-// ---------- register's local precheck ----------
+// ---------- register precheck ----------
 
 test("registerPrecheck: the manifest's name is the registration's name; failures name the tree", async () => {
   const root = fs.mkdtempSync(path.join(dir, 'reg-'));
@@ -487,10 +465,9 @@ test("registerPrecheck: the manifest's name is the registration's name; failures
   assert.equal(badCheck.failure.errorCode, 'manifest_invalid');
 });
 
-// ---------- the MCP wiring: one real child over stdio ----------
+// ---------- MCP wiring over stdio ----------
 
-/** A tiny stub socket server answering canned JSON per path — the host
- *  stand-in the join reads. */
+/** Canned JSON per path: the host stand-in. */
 function stubSocket(socketPath, answers) {
   return new Promise(resolve => {
     const server = http.createServer((req, res) => {
@@ -548,7 +525,7 @@ test("the MCP wiring: tools/list is exactly this branch's set; status answers th
     return { isError: r.isError === true, text: r.content.map(c => c.text ?? '').join('') };
   };
 
-  // Boot one: the full surface — the tool list + a real status join.
+  // Boot one: the tool list and a real status join.
   const client = await boot();
   const tools = await client.listTools();
   assert.deepEqual(
@@ -565,7 +542,7 @@ test("the MCP wiring: tools/list is exactly this branch's set; status answers th
       'status',
       'unregister',
     ],
-    "scaffold's seven + the action vocabulary (add_action/describe/call — task/app-actions)",
+    "scaffold's seven + the action vocabulary (add_action/describe/call)",
   );
   const status = await call(client, 'status', {});
   assert.equal(status.isError, false);
@@ -576,9 +553,8 @@ test("the MCP wiring: tools/list is exactly this branch's set; status answers th
   const missing = await call(client, 'status', { slug: 'no-such-app' });
   assert.equal(missing.isError, false);
   assert.deepEqual(JSON.parse(missing.text).apps, []);
-  // register: a tree-less slug fails the LOCAL precheck (tree_not_found,
-  // a normal result); a duplicate_slug ANSWER grows the recovery text —
-  // the one deliberate deviation from verbatim (§6).
+  // A tree-less slug fails the local precheck (a normal result); a
+  // duplicate_slug answer gets the recovery text appended.
   const noTree = await call(client, 'register', { slug: 'no-such-app' });
   assert.equal(noTree.isError, false);
   assert.equal(JSON.parse(noTree.text).errorCode, 'tree_not_found');
@@ -587,9 +563,7 @@ test("the MCP wiring: tools/list is exactly this branch's set; status answers th
   const dupBody = JSON.parse(dup.text);
   assert.equal(dupBody.code, 'duplicate_slug');
   assert.match(dupBody.error, /recovery/);
-  // A non-200 from a socket is that API's own failure JSON — VERBATIM, a
-  // normal result (only transport failures are isError; a database_error
-  // on GET /apps is information, not a malfunction).
+  // A non-200 is the API's own failure JSON, verbatim and not isError.
   internalAnswers['GET /apps'] = {
     status: 500,
     body: { error: 'the apps table is unreadable', detail: null, code: 'database_error' },
@@ -604,10 +578,8 @@ test("the MCP wiring: tools/list is exactly this branch's set; status answers th
   internalAnswers['GET /apps'] = { status: 200, body: { apps: [] } };
   await client.close();
 
-  // Boot two: the apps surface OFF (empty socket env) — reload answers
-  // the clear off-surface error as isError; unregister COMPOSES instead
-  // (the row deletion is the whole story: no host, no mount); check
-  // still works (local).
+  // Boot two, apps off: reload is an isError; unregister composes (the row
+  // delete is the whole story); check still runs locally.
   const off = await boot({ CYBERMOLE_APPS_SOCK: '' });
   const reload = await call(off, 'reload', {});
   assert.equal(reload.isError, true);
@@ -618,9 +590,8 @@ test("the MCP wiring: tools/list is exactly this branch's set; status answers th
   assert.deepEqual(droppedBody.unregister, { id: 'x' });
   assert.equal(droppedBody.reload, null);
   assert.match(droppedBody.note, /apps surface is off/);
-  // check is LOCAL: the surface being off does not stop it — this stub
-  // tree has no node_modules, so the LINKS stage fails (a red envelope is
-  // a normal answer, the family's ok is true).
+  // No node_modules in this stub tree, so the links stage fails: a red
+  // envelope is a normal answer.
   const check = await call(off, 'check', { slug: 'wired-app' });
   assert.equal(check.isError, false);
   const checkBody = JSON.parse(check.text);

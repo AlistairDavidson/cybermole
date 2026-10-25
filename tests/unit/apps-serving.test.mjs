@@ -1,14 +1,7 @@
-// apps-serving.test.mjs — task/app-web (apps-plan §4) units: GET
-// /api/state's serving flag source — the app host /_admin/status ping
-// over a REAL tmp-dir unix socket (a stub host, counting requests),
-// plus the pure join. Covers: the snapshot parse, the single-flight +
-// TTL cache (one attempt per window — concurrent callers share it),
-// FAILURES NOT CACHED (a failure retried on the next call — a stale
-// negative would dim an app that just mounted; single-flight + the ping
-// timeout bound a hung socket without any cache), the off surface
-// (socketPath null: serving:false forever, zero requests), malformed
-// host answers degrading to failures, and joinServing's honest reasons
-// (mounted / the host's own skip reason / not-mounted / unreachable).
+// The serving flag's source: the host status ping over a real tmp socket (a
+// counting stub host) and the pure join. Snapshot parsing, single-flight and
+// the success cache, failures not cached, apps off (no requests), malformed
+// answers as failures, and joinServing's reasons.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as http from 'node:http';
@@ -20,8 +13,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-apps-serving-'));
 
 const { AppsServing, joinServing } = await import('../../dist-server/src/lib/apps/apps-serving.js');
 
-/** A stub app host serving GET /_admin/status with the given payload,
- *  counting requests. */
+/** Serves GET /_admin/status, counting requests. */
 function stubHost(socketPath, payload) {
   const state = { requests: 0 };
   const server = http.createServer((_req, res) => {
@@ -79,7 +71,7 @@ test('info(): reachable snapshot from a real host ping; cached within the window
     assert.equal(info.status.booted, true);
     assert.equal(info.status.mounted.has('fixture'), true);
     assert.equal(info.status.skipped.get('half-built'), 'app.json missing');
-    // The cached window: a second caller (another tab's poll) does not ping.
+    // within the window, another caller doesn't ping
     const again = await serving.info();
     assert.equal(again.reachable, true);
     assert.equal(host.state.requests, 1);
@@ -90,14 +82,13 @@ test('info(): reachable snapshot from a real host ping; cached within the window
 
 test('a failure is NOT cached: the next call retries (a mount must not wait out a window)', async () => {
   const socketPath = path.join(dir, 'down.sock');
-  // Nothing on the socket yet.
+  // nothing on the socket yet
   const serving = new AppsServing({ socketPath, ttlMs: 5000, timeoutMs: 200 });
   const dead = await serving.info();
   assert.equal(dead.reachable, false);
   assert.ok(dead.failureReason.includes('unreachable'), dead.failureReason);
 
-  // The host comes up; the NEXT call retries immediately — no negative
-  // window to wait out (e2e caught the stale dimming a just-mounted app).
+  // The host comes up and the next call retries at once: no negative cache.
   const host = stubHost(socketPath, STATUS_OK);
   await host.listen();
   try {

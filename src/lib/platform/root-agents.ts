@@ -1,16 +1,7 @@
-// root-agents.ts — the workspace-root AGENTS.md seeding (jobs-agent-plan
-// §9). runtime/workspace-root/AGENTS.md in the repo is the versioned template for
-// the root agent's standing instructions — scheduled work belongs in
-// jobs, a fired run is started-not-finished, check exit codes, the CLI +
-// MCP surface — seeded into the DEFAULT WORKSPACE CWD (the workspace
-// root: /workspace in the compose split, CYBERMOLE_NEW_SESSION_CWD
-// elsewhere) only-where-absent, the pi-template policy: an existing file
-// (the operator's own, an app tree's, a checkout that IS the cwd — dev's
-// /app bind) always wins, and template updates still land where they're
-// new. The seeder is whoever owns the dir, like seedAgentDir
-// (server/main.ts): the server at boot in single-user shapes, the
-// workspace entrypoint (uid 2000) in the split — web-side writes would
-// leave node-owned files the workspace uid can't replace.
+// Seeds the root agent's standing instructions (runtime/workspace-root/AGENTS.md)
+// into the default workspace cwd, only where absent: an existing file always
+// wins. Whoever owns that dir seeds it (the server in single-user shapes, the
+// workspace entrypoint in the split), so files aren't left with the wrong owner.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ResultFailure, ResultSuccess } from '@cybermole/app-kit';
@@ -25,12 +16,7 @@ export type SeedRootAgentsFailure = ResultFailure<
 >;
 export type SeedRootAgentsResult = SeedRootAgentsSuccess | SeedRootAgentsFailure;
 
-/** Copy the template to <workspaceRoot>/AGENTS.md unless a file is
- *  already there — the only-where-absent policy in one function, so the
- *  server boot and the unit tests run the same code. The fs boundary:
- *  every failure is caught here and returned, never thrown. An existing
- *  target is success (seeded: false) even without the template — the
- *  policy is satisfied, there is nothing to do. */
+/** Never throws. An existing target is success (seeded: false) even without the template. */
 export function seedRootAgentsFile(workspaceRoot: string, templateFile: string) {
   const target = path.join(workspaceRoot, 'AGENTS.md');
   try {

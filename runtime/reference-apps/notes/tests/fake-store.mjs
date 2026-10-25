@@ -1,11 +1,6 @@
-// fake-store.mjs — the in-memory NotesStore the action tests run against
-// (the interface lives in src/lib/notes-core.ts; the sqlite half,
-// src/lib/notes-db.ts, is exercised end-to-end through every face).
-// `captured` records every call so tests can assert the filter/patch the
-// actions actually handed the store — the list fake answers the
-// archived filter but deliberately does NOT re-implement search/tag (the
-// patterns are what the actions compile; the SQL binding is the e2e's
-// story, not the unit's).
+// In-memory NotesStore for the action tests. `captured` records each call so
+// tests can assert what the actions handed the store. The list fake applies
+// the archived filter but not search/tag: the SQL binding is e2e territory.
 export function fakeStore(seeded = []) {
   const rows = new Map(seeded.map(r => [r.id, { ...r }]));
   let nextId = seeded.reduce((max, r) => Math.max(max, r.id), 0) + 1;
@@ -40,7 +35,7 @@ export function fakeStore(seeded = []) {
   };
 }
 
-/** A storage row for seeding, with the defaults a fresh note carries. */
+/** A row with a fresh note's defaults. */
 export function row(over = {}) {
   return {
     id: 1,
@@ -54,7 +49,7 @@ export function row(over = {}) {
   };
 }
 
-/** A store whose every operation throws — the database_error face. */
+/** Every operation throws: the database_error path. */
 export function throwingStore(message = 'sqlite: disk full') {
   const boom = () => {
     throw new Error(message);

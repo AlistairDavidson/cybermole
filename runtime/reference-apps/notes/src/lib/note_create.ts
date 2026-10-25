@@ -1,9 +1,4 @@
-// The note_create action's logic — the capture half of the notes family,
-// grown from the add_action stub into the real domain (one Result family
-// per concern, docs/conventions/CODE_STYLE.md §1). Runtime-kit-free (types only) and
-// node-free: the unit tests import this with plain node, passing the
-// in-memory store; the sqlite implementation (notes-db.ts) is exercised
-// end-to-end through every face.
+// note_create: capture one note. Type-only kit imports, so plain-node testable.
 import type { ResultFailure, ResultSuccess } from '@cybermole/app-kit';
 import { BODY_MAX, TITLE_MAX, rowToNote, storeOp, validateTags, type Note, type NotesStore } from './notes-core.ts';
 
@@ -26,10 +21,8 @@ const fail = (errorCode: NoteCreateErrorCode, errorMessage: string): NoteCreateF
   errorMessage,
 });
 
-/** Capture one note. The table's zod schema judges SHAPE (a string, an
- *  array of strings); everything a user can get wrong — an empty title,
- *  bounds, tag rules — is judged HERE, so every face (page, shim, call)
- *  answers the same closed codes. */
+/** The schema judges shape; empty titles, bounds and tag rules are judged
+ *  here, so every face answers the same codes. */
 export function noteCreateResult(store: NotesStore, input: NoteCreateInput): NoteCreateResult {
   const title = (input.title ?? '').trim();
   if (title === '') return fail('invalid_title', 'title is required');

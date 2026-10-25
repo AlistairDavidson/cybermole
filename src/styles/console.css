@@ -1,14 +1,9 @@
-/* console.css — cybermole chrome on Web Awesome tokens + <wa-page>.
-   The app's identity lives entirely in the per-mode semantic-token sets
-   below, scoped to the html.wa-dark / html.wa-light classes Base.astro's
-   blocking script sets from prefers-color-scheme (the one place hex is
-   allowed); every component, utility class and rule follows from them.
-   Unlayered on purpose: it must win over the @layer'd Web Awesome
-   styles. */
+/* cybermole chrome on Web Awesome. The app's identity is the per-mode token
+   sets below (the one place hex is allowed). Unlayered on purpose, so it
+   wins over Web Awesome's @layer'd styles. */
 
-/* Native widgets, scrollbars and form controls follow the resolved mode.
-   The bare html rule is the no-JS fallback (neither class set): Web
-   Awesome's default light tokens, so the UA widgets stay light to match. */
+/* Native widgets follow the resolved mode. The bare html rule is the no-JS
+   fallback: Web Awesome's default light tokens. */
 html { color-scheme: light; }
 html.wa-dark { color-scheme: dark; }
 html.wa-light { color-scheme: light; }
@@ -20,12 +15,8 @@ html.wa-dark {
   --wa-color-surface-lowered: #0d0f15;
   --wa-color-surface-border: #262a36;
 
-  /* xterm palette (agent-terminal.ts resolves these at pane creation and
-     on every mode flip — xterm's theme wants literal #RRGGBB, so the
-     values live here next to the surfaces they sit on). Glyph colors are
-     the Tokyo Night terminal palette; the background repeats the app
-     surface so a terminal pane reads as a page surface, not a foreign
-     island (the pre-mode-era look, kept). */
+  /* xterm palette: the theme needs literal colours, read via getComputedStyle.
+     The background repeats the app surface so a pane reads as page. */
   --cybermole-xterm-background: #11131a;
   --cybermole-xterm-foreground: #c0caf5;
   --cybermole-xterm-cursor: #c0caf5;
@@ -48,11 +39,8 @@ html.wa-dark {
   --cybermole-xterm-cyan-bright: #a4daff;
   --cybermole-xterm-white-bright: #c0caf5;
 
-  /* find-bar search highlights (terminal find, agent-terminal.ts): the
-     xterm search addon paints match/active backgrounds onto the canvas —
-     literal #RRGGBB only, no var() chains (a custom-property read returns
-     the raw token stream, unresolved). Mirror of the dark surfaces +
-     brand-60 accent. */
+  /* Find highlights: the search addon paints onto the canvas, so these
+     must be literal colours too. */
   --cybermole-find-match: #313648;
   --cybermole-find-match-active: #3e96ff;
   --cybermole-find-overview: #888c96;
@@ -60,12 +48,8 @@ html.wa-dark {
 }
 
 /* ---- cybermole brand, light: the Tokyo-Night Day counterpart ----
-   Same structure as the dark set, colors from Tokyo Night Day (the
-   theme's light face): bg/bg_dark/bg_highlight for the surfaces, the
-   Day terminal palette for xterm, bg_visual + bg_search for find
-   highlights. RAISED goes lighter (WA light semantics: elevation lifts)
-   where Tokyo Night Day darkens its chrome — the one value not lifted
-   verbatim from the palette. */
+   RAISED goes lighter (Web Awesome's light elevation), where Tokyo Night
+   Day would darken. */
 html.wa-light {
   --wa-color-surface-default: #e1e2e7;
   --wa-color-surface-raised: #e9eaf2;
@@ -109,16 +93,11 @@ body {
 }
 .hidden { display: none !important; }
 
-/* ---- app-header: the global bar every signed-in page wears ---- */
-/* Base.astro adds .app-chrome to <body> when it renders <app-header>: the
-   page becomes bar + content. The console's fixed-height shell then fills
-   what remains of the viewport instead of all of it; the scrollable pages
-   (jobs, settings) fill at least the remainder and grow with
-   their content — the body scrolls, the bar stays put (sticky; it is NOT
-   wa-page's header slot because only the console page uses <wa-page> —
-   the bar must sit above every shell alike). z-index 5 matches the layer
-   wa-page gives its own sticky regions; the border, not a shadow, is the
-   app's chrome language elsewhere. */
+/* ---- app-header ---- */
+/* Base.astro puts .app-chrome on <body> with the header: the console's
+   fixed-height shell fills what remains, scrollable pages grow below the
+   sticky bar. Not wa-page's header slot, since only the console uses
+   <wa-page>. */
 body.app-chrome { display: flex; flex-direction: column; }
 body.app-chrome > app-header { flex: none; }
 body.app-chrome > console-app { flex: 1 1 0; min-height: 0; height: auto; }
@@ -133,12 +112,8 @@ app-header {
   background: var(--wa-color-surface-raised);
   border-bottom: var(--wa-border-width-s) solid var(--wa-color-surface-border);
 }
-/* The brand link leads the bar (icon in the brand colour, like the page
-   h1s); the current section's link reads brand-coloured + bold.
-   Foreground accents use the *-on-quiet text tokens throughout this
-   file: the fill-* family is background fills, near-black in wa-dark
-   (near-white in wa-light) — brand-blue-on-the-bar without this in
-   either mode. */
+/* Foreground accents use the *-on-quiet text tokens throughout: the fill-*
+   family is background fills, near-black in wa-dark. */
 app-header wa-button.app-brand::part(button) { font-weight: var(--wa-font-weight-bold); }
 app-header wa-button.app-brand wa-icon { color: var(--wa-color-brand-on-quiet); }
 app-header wa-button.app-nav-link[aria-current='page']::part(button) {
@@ -157,16 +132,11 @@ console-app wa-page::part(menu) {
 console-app wa-page::part(navigation-header) {
   border-bottom: var(--wa-border-width-s) solid var(--wa-color-surface-border);
 }
-/* App shell: pin the page to the host height. WA sizes its interior with
-   min-heights only, so content — the terminal's rendered rows — drives the
-   page height: the box ends up exactly as tall as the xterm content, the
-   ResizeObserver never fires when the viewport shrinks, and the page
-   scrolls instead. With base pinned, WA's minmax(0, 1fr) tracks clamp
-   every inner level to the remaining space. */
+/* Pin the page to the host height. Web Awesome only sets min-heights, so
+   otherwise the terminal's rows would drive the page height and the
+   ResizeObserver would never see the viewport shrink. */
 console-app wa-page::part(base) { height: 100%; min-height: 0; }
-/* body's align-items:start would leave main start-aligned and content-
-   sized; stretch it into its minmax(0, 1fr) track so the chain below is
-   height-definite all the way to .terminal-container. */
+/* Stretch main into its track so heights stay definite down to .terminal-container. */
 console-app wa-page::part(main) { align-self: stretch; }
 console-app main {
   display: flex; flex-direction: column; min-width: 0; height: 100%;
@@ -183,7 +153,7 @@ console-app main {
 }
 .nav-header h1 wa-icon { color: var(--wa-color-brand-on-quiet); }
 
-/* ---- workspace-sidebar (the sidebar IS the app switcher — plan §8) ---- */
+/* ---- workspace-sidebar ---- */
 workspace-sidebar {
   display: flex; flex-direction: column; height: 100%; min-height: 0;
   padding: 0; /* beats wa-page's ::slotted padding */
@@ -204,10 +174,8 @@ workspace-sidebar {
   flex: 1; min-width: 0; /* the chevron + actions flank it; ellipsis needs the shrink */
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-/* Group collapse toggle (task/collapsible-apps): a real <button> (the
-   poll discipline forbids stateful wa-* here); its chevron rotates with
-   aria-expanded, and the rows container's native [hidden] does the
-   hiding — both written by the render/toggle, never by JS layout. */
+/* A real <button> (no stateful wa-* in the sidebar); the chevron rotates
+   with aria-expanded and [hidden] hides the rows. */
 .nav .ws-group h2 .g-collapse {
   display: inline-flex; align-items: center; justify-content: center;
   flex: none;
@@ -223,12 +191,12 @@ workspace-sidebar {
 }
 .nav .ws-group h2 .g-collapse wa-icon {
   font-size: var(--wa-font-size-2xs);
-  transition: transform var(--wa-transition-normal) var(--wa-transition-easing); /* nice-to-have rotation; state is aria-expanded */
+  transition: transform var(--wa-transition-normal) var(--wa-transition-easing);
 }
 .nav .ws-group h2 .g-collapse[aria-expanded='false'] wa-icon {
   transform: rotate(-90deg);
 }
-.nav .ws-group-rows[hidden] { display: none; } /* beats any future display rule over [hidden] */
+.nav .ws-group-rows[hidden] { display: none; }
 .nav .ws-group h2 .g-actions {
   display: inline-flex; align-items: center; gap: var(--wa-space-3xs); flex: none;
 }
@@ -239,10 +207,8 @@ workspace-sidebar {
 .nav .ws-group h2 .g-actions wa-button:hover, .nav .ws-group h2 .g-actions wa-button:focus-visible {
   color: var(--wa-color-brand-on-quiet);
 }
-/* task/app-web (apps-plan §4): the app group's open link — the wa-button
-   siblings' look (quiet, brand on hover, min click target), a plain <a>
-   because the poll discipline forbids stateful components here. A dead
-   host demotes it: dimmed, the serving reason rides the title tooltip. */
+/* The app's open link: a plain <a> styled like its wa-button siblings.
+   Dimmed when not serving. */
 .nav .ws-group h2 .g-actions .open-app-btn {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: var(--wa-space-l); min-height: var(--wa-space-l);
@@ -307,7 +273,7 @@ workspace-sidebar {
 }
 .nav .new-app::part(base) { justify-content: flex-start; }
 
-/* ---- terminal-tabs (plan §8): the workspace's tab bar + panes ---- */
+/* ---- terminal-tabs ---- */
 terminal-tabs {
   flex: 1; display: flex; flex-direction: column;
   min-width: 0; min-height: 0;
@@ -351,9 +317,7 @@ terminal-tabs {
   color: var(--wa-color-text-quiet); font-size: var(--wa-font-size-2xs);
 }
 .tabs-bar .tab .tab-close:hover { color: var(--wa-color-danger-on-quiet); }
-/* Pop-out (task/popout-toolbar): the button lives in the pane's toolbar
-   (agent-terminal.ts), not on the row; a popped tab's terminal lives in
-   another browser tab, so its row dims. */
+/* A popped tab's terminal lives in another browser tab, so its row dims. */
 .tabs-bar .tab.popped { color: var(--wa-color-text-quiet); }
 .tabs-bar .tab.editor-tab wa-icon { font-size: var(--wa-font-size-2xs); flex: none; }
 .tabs-bar .tab-new {
@@ -368,7 +332,6 @@ terminal-tabs {
 .tabs-body {
   flex: 1; min-height: 0; display: flex; flex-direction: column;
 }
-/* The editor iframe fills the pane; its workbench does its own layout. */
 .editor-frame {
   flex: 1; min-height: 0; width: 100%;
   border: none; background: var(--wa-color-surface-default);
@@ -397,18 +360,13 @@ agent-terminal {
   position: relative; /* the toolbar overlays the pane's top-right */
   flex: 1; display: flex; flex-direction: column;
   min-width: 0; min-height: 0; padding: var(--wa-space-xs);
-  /* the toolbar's containing block */
   position: relative;
 }
 agent-terminal .terminal-container { flex: 1; min-height: 0; }
 agent-terminal .terminal-container .xterm { height: 100%; }
-/* The pane's overlay toolbar (top-right) — task/terminal-transcript's
-   copy/download buttons and task/terminal-search's find bar, one shared
-   surface (the branches' shared contract, joined at merge). Absolutely
-   positioned on PURPOSE — it must never be in .terminal-container's flow,
-   or it would eat a row of terminal and muddy the ResizeObserver fit's box
-   (AGENTS.md: the terminal tracks the available space). The translucent
-   surface keeps glyphs underneath from bleeding through the controls. */
+/* The pane's overlay toolbar. Absolutely positioned so it's never in
+   .terminal-container's flow, where it would eat a row and skew the fit.
+   The translucent surface keeps glyphs from bleeding through. */
 agent-terminal .terminal-toolbar {
   position: absolute;
   top: var(--wa-space-3xs);
@@ -506,18 +464,14 @@ agent-terminal .terminal-status.err wa-icon { color: var(--wa-color-danger-on-qu
 jobs-app { display: block; }
 .jobs-main { max-width: 46rem; margin: 0 auto; padding: var(--wa-space-m); }
 
-/* ---- logs page (task/logs-page): Grafana Explore filling the viewport ---- */
-/* Like the console's shell, not jobs/settings' scrollables: the iframe is
-   the whole content, so it takes exactly what remains under the header
-   (body.app-chrome's flex column) and never scrolls the page itself.
-   min-height: 0 lets the flex item shrink below its content — without it
-   the iframe's default 150px minimum grows the body instead. */
+/* ---- logs page ---- */
+/* The iframe takes exactly what's left under the header. min-height: 0
+   stops its default 150px minimum from growing the body. */
 body.app-chrome > .logs-main { flex: 1 1 0; min-height: 0; }
 .logs-main { display: flex; flex-direction: column; }
 .logs-main iframe {
   flex: 1; width: 100%; border: 0;
-  /* Grafana is a light-or-dark app of its own; a dark tile keeps the
-     frame from flashing white while it loads. */
+  /* avoids a white flash while Grafana loads */
   background: var(--wa-color-surface-default);
 }
 .jobs-header { align-items: center; }
@@ -548,8 +502,7 @@ body.app-chrome > .logs-main { flex: 1 1 0; min-height: 0; }
 .job-name {
   display: flex; align-items: center; gap: var(--wa-space-2xs);
   font-weight: var(--wa-font-weight-bold);
-  color: inherit; text-decoration: none; /* a link (task/jobs-page, plan §7):
-    the job's detail page — styled as the name it always was */
+  color: inherit; text-decoration: none;
 }
 .job-name:hover { text-decoration: underline; }
 .job-name wa-icon { color: var(--wa-color-brand-on-quiet); font-size: var(--wa-font-size-2xs); }
@@ -574,8 +527,8 @@ body.app-chrome > .logs-main { flex: 1 1 0; min-height: 0; }
 .schedule-feedback.ok { color: var(--wa-color-success-on-quiet); }
 .schedule-feedback.err { color: var(--wa-color-danger-on-quiet); }
 
-/* task/ws-jobs (plan §9): the app-tag chip, run-history dialog and its
-   log tail. The rows are a grid so the columns line up without a table. */
+/* App-tag chip, run-history dialog and log tail. The rows are a grid so
+   columns line up without a table. */
 .job-app { font-weight: var(--wa-font-weight-normal); }
 .runs-empty {
   color: var(--wa-color-text-quiet); margin: 0;
@@ -603,8 +556,7 @@ body.app-chrome > .logs-main { flex: 1 1 0; min-height: 0; }
 .run-exit.failed { color: var(--wa-color-danger-on-quiet); }
 .run-exit.unknown, .run-duration { color: var(--wa-color-text-quiet); }
 .run-log-cell { justify-self: end; }
-/* task/jobs-page (plan §7): the /jobs/:name detail page's history
-   heading — the rows below reuse the runs dialog's classes. */
+/* /jobs/:name history heading; the rows reuse the runs dialog's classes. */
 .runs-title {
   display: flex; align-items: center; gap: var(--wa-space-2xs);
   font-size: var(--wa-font-size-m); margin: 0;
@@ -628,18 +580,13 @@ body.app-chrome > .logs-main { flex: 1 1 0; min-height: 0; }
   overflow-wrap: anywhere;
 }
 
-/* Field messages in a wa-input / wa-textarea hint slot (WaField): the
-   hint text, then the validation message validation-enhancer writes
-   into .field-error. */
+/* WaField hint slot: the hint, then the message validation-enhancer writes. */
 .field-hint { display: flex; flex-direction: column; gap: var(--wa-space-3xs); }
-/* on-quiet: the text token (fill-normal is a background fill — near-black red in wa-dark, pale red in wa-light) */
+/* on-quiet: the text token (fill-normal is a background fill) */
 .field-error { color: var(--wa-color-danger-on-quiet); }
 .field-error:empty { display: none; }
-/* The terminal-defaults form's error lines RESERVE their height: a message
-   appearing or clearing reflows everything below the field, which moves a
-   mid-flight click onto whatever took the button's place (observed: fix an
-   invalid field, click save — the focusout validation clears the message,
-   the button jumps up, the click lands on the form, nothing saves).
-   :empty's display:none would fight the reservation, so this overrides it. */
+/* Error lines reserve their height: a message clearing on focusout would
+   otherwise move the save button out from under a mid-flight click. This
+   overrides :empty's display:none. */
 #terminal-defaults-form .field-error:empty { display: block; min-height: 1.4em; }
 
