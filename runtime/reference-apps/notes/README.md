@@ -1,6 +1,6 @@
 # Notes — the reference app
 
-This tree is cybermole's **reference app** (docs/plans/apps-plan.md §9): the
+This tree is cybermole's **reference app**: the
 notes/journal webapp built THROUGH the apps verbs — `scaffold`, five
 `add_action` calls, `check`, `register`, `reload` — as the epic's
 acceptance run, kept in the image as living documentation of what a
@@ -23,7 +23,7 @@ behind the console's login once it is registered and built.
   editor island for `note_edit`/`note_archive`).
 - `AGENTS.md` — the operator's manual for agents working in this tree.
 
-## The seeding contract (docs/plans/apps-plan.md §9)
+## The seeding contract
 
 This tree ships in the image and seeds into the install's apps root
 only-where-absent (the `runtime/workspace-root/` precedent: an existing tree at

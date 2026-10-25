@@ -1,7 +1,6 @@
 # @cybermole/app-kit
 
-The shared half of cybermole — what apps (and the console) are built on
-(docs/plans/apps-plan.md §5). Ships **source**, no build step: astro/vite
+The shared half of cybermole — what apps (and the console) are built on. Ships **source**, no build step: astro/vite
 compiles it through the workspace symlink (`vite.ssr.noExternal` for SSR
 builds), and the console's server tsc compiles it in place — the emitted
 files land in `dist-server/packages/app-kit/`, with the runtime manifest

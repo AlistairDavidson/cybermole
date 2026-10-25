@@ -1,14 +1,19 @@
 ## Apps
-Apps feature shipped — docs/plans/apps-plan.md (header: the six branches +
-integration amendments). The /apps surface: agent-built Astro webapps on
-the app host behind the session gate, built through the cybermole-apps
-MCP verbs (scaffold → check → register → reload), one action vocabulary
-per app (UI + shim tools + describe/call, same Result JSON). The
-reference app ships in the image — runtime/reference-apps/notes (seeded
-only-where-absent per install, nothing auto-registers; one register +
-reload makes it live). Same epic line as before it was planned: apps own
-their lifecycle via jobs + git, no cybermole deploy/rollback machinery
-(docs/plans/jobs-agent-plan.md §0)
+Apps own their lifecycle via jobs + git — no cybermole deploy/rollback machinery.
+
+per-app e2e harness (kit cribs the console's hermetic pattern; the check verb's unit stage is the only app-side test story today)
+
+app host fs-watch auto-reload (reload is verb-driven today)
+
+cross-app MCP registration (siblings talk plain HTTP through the host)
+
+WS routes for apps (crib the bridge code; the /apps proxy grows `ws: true`)
+
+per-app agent access: per-app scoping/enforcement of jobs, per-app uids / separate sockets (v1 is one root agent, one uid)
+
+server/mcp.ts still has its own socket client — move it onto src/lib/platform/internal-api-client.ts
+
+main.ts static+middleware factoring (the app host carries its own small serve helper instead)
 
 ## Human UX tasks
 Skills and other methods to enforce my coding patterns
@@ -42,19 +47,27 @@ hideable nav on desktop
 
 Rename "Console" -> "Cybermole"
 
-## Workspaces follow-ups (deferred with the plan — docs/plans/workspaces-plan.md §14)
+## Workspaces follow-ups
 
 terminal tab drag-reorder + workspace/app reorder UI (the sort_order columns exist)
 
-workspace templates (pre-seeded terminals) — still deferred; per-app cwd (done — apps carry an optional cwd; new workspaces derive theirs from it)
+workspace templates (pre-seeded terminals)
+
+per-workspace terminal command overrides
 
 app icons
 
-editor extension/marketplace configuration beyond the VSCodium defaults (Open VSX, no telemetry)
+editor extension/marketplace configuration beyond the VSCodium defaults (Open VSX, no telemetry); curated per-app extension sets
+
+editor host verification: open the Extensions viewlet and watch the iframe console for a CSP violation naming open-vsx.org — if it appears, add it to connect-src in editorSecurityHeaders() (src/lib/terminals/editor.ts); also check a CYBERMOLE_BASE=/foo deployment serves the workbench under /foo/editor/
 
 pi-session resume as a workspace action ("resume a past agent session into a new terminal tab")
 
-job exit-code notification hooks (deferred — jobs-agent-plan.md §11)
+job exit-code notification hooks (webhook, Grafana alerting on the Loki labels)
+
+job log size caps / rotation (no cap today)
+
+retire the workspace sidebar's 15s poll in favour of the /ws/events bus (topic field already reserved)
 
 ## Distribution
 installation instructions / script for agents / actual scripts

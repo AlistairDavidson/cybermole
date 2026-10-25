@@ -8,17 +8,14 @@ README.md.
 `docs/conventions/CODE_STYLE.md` covers the correctness rules: Result families with
 closed error codes, branded IDs, shared node-free schemas, thin Astro API
 routes behind the main.ts gate, HTML web components, and forms.
-`docs/conventions/REFACTOR_STYLE.md` covers porting older code into them. Formatting
-isn't prescribed; match the surrounding code.
 
 Comments are short and only say what the code can't: why, invariants,
-non-obvious constraints. Don't restate the code, and don't reference task
-branches, plan sections or past designs.
+non-obvious constraints.
 
 ## Testing
 
 Validation runs through the `cybermole-dev` MCP tools (registered by
-`.pi/mcp.json`, implemented in `tools/dev-mcp/` — docs/plans/dev-test-mcp-plan.md):
+`.pi/mcp.json`, implemented in `tools/dev-mcp/`):
 `run_check`, `run_lint`, `run_format_check`, `run_build`, `run_unit_tests`,
 `run_e2e` — one per npm script below. Every tool answers ONE quiet envelope
 (`{passed, returncode, duration_s, quiet, timed_out, output, counts?,
@@ -186,16 +183,3 @@ Testing), not just in the SSR HTML.
 - `agent-terminal` sizes itself with a `ResizeObserver` on `.terminal-container`; new
   layout around it must keep the box able to resize for any reason, not just
   window resizes.
-
-## Fleet merge process
-
-Fleet work lands on `task/*` branches (one per worker, all cut from the same
-base). Integration is ONE BRANCH AT A TIME. Fleet sandboxes are e2e-capable
-(see Testing): workers should self-test with the full suite before reporting
-done on UI- or server-touching work — a run is a few minutes and needs no
-setup. The `cybermole-dev` tools run in-sandbox too (`.sandbox-pi.json`'s
-projectMcpServers keeplist; `npm ci` first — the server needs the worktree's
-node_modules, and a server that failed to connect at boot reconnects via
-`/mcp` once they exist). The orchestrator still runs e2e as the integration
-gate per merged
-branch; host runs are serial (one `/tmp/cybermole-itest` at a time).

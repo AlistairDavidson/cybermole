@@ -1,5 +1,5 @@
-# deploy/editor/Dockerfile — the VSCodium reh-web editor as a webapp (task/ws-editor,
-# docs/guides/editor-webapp.md + docs/plans/editor-spike.md): self-hosted VS Code in the
+# deploy/editor/Dockerfile — the VSCodium reh-web editor as a webapp (task/ws-editor):
+# self-hosted VS Code in the
 # browser with server-side files. Thin on purpose — the pinned upstream
 # tarball plus a user; everything else (auth, TLS, the base path, framing)
 # is cybermole's same-origin /editor proxy in front of it.

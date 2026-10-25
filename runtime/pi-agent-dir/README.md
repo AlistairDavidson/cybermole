@@ -33,7 +33,7 @@ this, per pi's normal precedence — trust prompts included.
 ## The jobs MCP server
 
 `mcp.json` registers **cybermole-jobs** — the jobs surface as in-session
-MCP tools (docs/plans/jobs-agent-plan.md §6): a stdio server
+MCP tools: a stdio server
 (`dist-server/server/mcp.js`, spawned per session) whose tools are 1:1
 with the internal jobs API's verbs — `jobs_list`, `jobs_create`,
 `jobs_set`, `jobs_delete`, `jobs_runs`, `jobs_log`, `jobs_run_now`,
@@ -65,8 +65,7 @@ The root agent's standing instructions are NOT part of this dir: they
 live in the repo's [`runtime/workspace-root/AGENTS.md`](../workspace-root/AGENTS.md),
 seeded only-where-absent into the **default workspace cwd**
 (`CYBERMOLE_NEW_SESSION_CWD` — `/workspace` in the compose split), so
-app checkouts under the workspace root read them by upward walk
-(docs/plans/jobs-agent-plan.md §9). Same policy, same seeder halves as this
+app checkouts under the workspace root read them by upward walk. Same policy, same seeder halves as this
 template (the workspace entrypoint in the split, the server's boot
 seeding single-user); different target — the workspace root, not the
 runtime agent dir. Its content is the jobs conventions (scheduled work

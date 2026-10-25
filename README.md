@@ -294,7 +294,7 @@ directly.
 | `CYBERMOLE_JOB_LOG_DIR` | `/workspace/.cybermole/job-logs` | root under which job runs persist their logs + exit files (`<dir>/<job>/<fired-at>.{log,exit}`) — a path that exists in both containers of the compose split (laid out by `workspace-init`); point it somewhere writable in other split shapes |
 | `CYBERMOLE_JOB_LOG_MAX` | `20971520` (20 MiB) | write-time cap on each job run's log — past it the run wrapper's appender stops writing (one `[truncated at N bytes]` marker line) but keeps draining the job's output, so a chatty or runaway job can neither fill the disk mid-run nor die of a broken pipe. A non-integer or negative value stops the server at boot |
 | `CYBERMOLE_SOCK` | `/run/cybermole/cybermole.sock` when `/run/cybermole` exists (the compose split), else `<state dir>/cybermole.sock` | the [internal jobs API](#scheduled-jobs-jobs--the-in-process-scheduler)'s unix socket: a second HTTP listener in the same server process serving the workspace side (agents) — see the jobs section. **Empty = the listener is off**; a set-but-non-absolute value stops the server at boot, like the S3 vars. The socket file is created `0660` — the file mode (the shared `cybermole` group in the split shape) is the only auth |
-| `CYBERMOLE_APPS_SOCK` | `/run/cybermole/apps.sock` when `/run/cybermole` exists, else `<state dir>/apps.sock` | the **app host**'s unix socket (`server/app-host.ts`, [docs/plans/apps-plan.md](docs/plans/apps-plan.md) §3): mounts registered apps' built Astro middlewares and serves them at `/apps/<slug>/*` through the console's proxy (behind the login, same session gate as everything else). The env var decides ownership too: **unset** = the single-user shape, where the web server spawns and supervises `dist-server/server/app-host.js` as a child (restarting it with backoff if it crashes); **set** = the split (compose) or an operator-owned process — the web server is only a client on the socket and never spawns; **empty** = the apps surface is off (`/apps/*` answers 404, every app row reports `serving: false` in `/api/state`). A set-but-non-absolute value stops the boot, like `CYBERMOLE_SOCK` |
+| `CYBERMOLE_APPS_SOCK` | `/run/cybermole/apps.sock` when `/run/cybermole` exists, else `<state dir>/apps.sock` | the **app host**'s unix socket (`server/app-host.ts`): mounts registered apps' built Astro middlewares and serves them at `/apps/<slug>/*` through the console's proxy (behind the login, same session gate as everything else). The env var decides ownership too: **unset** = the single-user shape, where the web server spawns and supervises `dist-server/server/app-host.js` as a child (restarting it with backoff if it crashes); **set** = the split (compose) or an operator-owned process — the web server is only a client on the socket and never spawns; **empty** = the apps surface is off (`/apps/*` answers 404, every app row reports `serving: false` in `/api/state`). A set-but-non-absolute value stops the boot, like `CYBERMOLE_SOCK` |
 | `CYBERMOLE_TMUX_SOCKET` | `cybermole` | the tmux socket the app uses. A relative *name* is the single-user shape: the app's own server, forked on the first session-creating call, under the per-uid default dir. An **absolute path** switches on the privilege split ([below](#the-privilege-split-two-containers)): tmux runs as another uid/container on that shared socket (`-S` instead of `-L` — a relative name resolves per-uid and cannot be shared), and terminal spawns, job runs and attaches refuse to fork a server, erroring with "workspace tmux server not running" instead. The server lifecycle is then the workspace side's job (`docker-workspace-entrypoint.sh`, or the host-install equivalent below) |
 | `CYBERMOLE_TMUX_CONF` | `<app root>/runtime/tmux.conf` | tmux server config, applied when the tmux server starts (escape-time, scrollback, truecolour — see the file) |
 | `CYBERMOLE_DB_FILE` | `<state dir>/cybermole.db` | sqlite state db (0600): login credential, login sessions (`auth_sessions`), the workspace tree (`apps`, `workspaces`, `terminals`), scheduled-job tables (`jobs`, `job_runs` — the in-process scheduler + run logs), `settings` kv (the pi auto-update toggle + outcomes). Fresh setup: `npm run set-password` creates it |
@@ -389,9 +389,7 @@ jobs work in every install shape, the container included.
   dev/test shape — no longer stops the boot (§3 amended in
   integration): the instance serves on with the listener off and a
   loud boot line telling you to stop the other server or point
-  `CYBERMOLE_SOCK` elsewhere. Design:
-  [docs/plans/jobs-agent-plan.md](docs/plans/jobs-agent-plan.md)
-  §3–§4.
+  `CYBERMOLE_SOCK` elsewhere.
 - **The `cybermole-cli` CLI (agents, and humans in a terminal)**: a third bin
   (`package.json`, shipped in both containers of the split — the
   workspace side is its whole point) over that socket, parity with
@@ -404,8 +402,7 @@ jobs work in every install shape, the container included.
   socket), 2 usage; `validate`'s ANSWER is the validity, so 1 =
   something invalid. The socket is discovered `$CYBERMOLE_SOCK` →
   `/run/cybermole/cybermole.sock` → `<state dir>/cybermole.sock`, a friendly error
-  naming the knob when off. Design:
-  [docs/plans/jobs-agent-plan.md](docs/plans/jobs-agent-plan.md) §5.
+  naming the knob when off.
 - **MCP over the internal API (agents, in-session)**: `server/mcp.ts` is
   a stdio MCP server — also runnable as `cybermole-cli mcp`, the dev-shape
   convenience — whose tools are 1:1 with those verbs (plus `apps_list`)
@@ -413,8 +410,7 @@ jobs work in every install shape, the container included.
   `mcp.json` (see its README for the exposure, the absolute `/opt/cybermole`
   path it spawns, and the dev-shape difference). Tool results carry the
   internal API's Result JSON verbatim — an agent reads the same answers
-  the console and the CLI do. Design:
-  [docs/plans/jobs-agent-plan.md](docs/plans/jobs-agent-plan.md) §6.
+  the console and the CLI do.
 - **Root-agent conventions (`AGENTS.md`)**: the workspace root's
   `AGENTS.md` — the root agent's standing instructions: scheduled work
   belongs in jobs, a fired run is *started, not finished* (poll the run
@@ -424,8 +420,7 @@ jobs work in every install shape, the container included.
   cwd (`/workspace` in the split): by the workspace entrypoint (uid
   2000) there, by the server boot next to the pi-template seeding in
   single-user shapes. App agents in checkouts under the root read it by
-  upward walk — accepted same-uid usage. Design:
-  [docs/plans/jobs-agent-plan.md](docs/plans/jobs-agent-plan.md) §9.
+  upward walk — accepted same-uid usage.
 - The trade-off vs the old systemd timers: nothing fires while cybermole
   itself is down (hence the catch-up above). Job commands run as the
   cybermole user, on the app's socket, per the security model — the terminal
@@ -455,8 +450,7 @@ build**: a pi session in a workspace under the app gets the app's own
 MCP (its tools 1:1 with the route table, registered by the tree's
 `.pi/mcp.json`; `cybermole-apps` is disabled there on purpose). Every
 face — the pages, the app's tools, the root agent's `describe`/`call` —
-answers the same Result JSON with the same closed error codes. Design:
-[docs/plans/apps-plan.md](docs/plans/apps-plan.md) (status: shipped).
+answers the same Result JSON with the same closed error codes.
 
 The image ships one finished tree as living documentation:
 **`runtime/reference-apps/notes`** — the notes/journal reference app, built

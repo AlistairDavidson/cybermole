@@ -5,7 +5,7 @@
 # what the editor writes under /workspace stays group-shared (the same
 # discipline as the workspace half of the split).
 #
-# Flags are pinned by the spike (docs/plans/editor-spike.md):
+# Flags:
 #   --server-base-path ${CYBERMOLE_BASE%/}/editor  the proxy mounts the app at
 #       <base>/editor and the workbench's asset URLs must line up;
 #   --without-connection-token  auth is upstream — cybermole's session gate;

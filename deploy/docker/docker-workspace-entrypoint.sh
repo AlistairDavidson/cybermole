@@ -78,7 +78,7 @@ if [ -f "$ROOT_TEMPLATE" ] && [ ! -e "$ROOT_AGENTS" ]; then
   cp "$ROOT_TEMPLATE" "$ROOT_AGENTS"
 fi
 
-# task/app-notes (docs/plans/apps-plan.md §9): the reference app — the notes
+# task/app-notes: the reference app — the notes
 # tree ships in the image at /opt/cybermole/runtime/reference-apps/notes as
 # living documentation of a FINISHED app tree, and seeds into the
 # install's apps root ONLY-WHERE-ABSENT (the same policy the lines
@@ -126,7 +126,7 @@ tmux -S "$SOCKET" server-access -a "$WEB_USER"
 
 echo "cybermole workspace: tmux server on $SOCKET (web user: $WEB_USER, group: $SHARED_GROUP, pi agent dir: $AGENT_DIR)"
 
-# task/app-host (docs/plans/apps-plan.md §3): the app host — the SECOND
+# task/app-host: the app host — the SECOND
 # supervised child, after the tmux server, same uid/env. It listens on
 # CYBERMOLE_APPS_SOCK (0660 after its own listen; the setgid socket dir
 # gives it the shared group) and mounts registered apps' built Astro

@@ -183,7 +183,7 @@ services:
       # console hides its affordances, /editor answers 404). No token or
       # launch URL: auth is the web session, folders are URL params.
       CYBERMOLE_EDITOR_UPSTREAM: ${CYBERMOLE_EDITOR_UPSTREAM-http://editor:3000}
-      # task/app-host (docs/plans/apps-plan.md §3): the app host's socket, in
+      # task/app-host: the app host's socket, in
       # the shared setgid dir. The web container is CLIENT-ONLY on it for
       # now — branch 2 (task/app-web) adds the /apps/* proxy behind the
       # session gate that forwards here. The web side NEVER spawns the
