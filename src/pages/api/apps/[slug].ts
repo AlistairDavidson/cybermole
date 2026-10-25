@@ -19,6 +19,7 @@ export const PATCH: APIRoute = async ({ locals, params, request }) => {
   if (!parsed.ok) return failureResponse(parsed);
   const saved = await cybermole.apps.renameApp(slug.data, parsed.data.name, parsed.data.cwd);
   if (!saved.ok) return appFailureResponse(saved);
+  cybermole.invalidateAppsStatus();
   return jsonResponse(saved.data, 200);
 };
 
@@ -28,5 +29,6 @@ export const DELETE: APIRoute = async ({ locals, params }) => {
   if (!slug.success) return invalidAppSlugResponse();
   const deleted = await cybermole.apps.deleteApp(slug.data);
   if (!deleted.ok) return appFailureResponse(deleted);
+  cybermole.invalidateAppsStatus();
   return jsonResponse(deleted.data, 200);
 };

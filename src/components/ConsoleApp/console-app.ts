@@ -1,7 +1,11 @@
 // <console-app>: drives the workspace sidebar and terminal tabs, the 15 s
 // state poll, and the create/delete dialogs. The dialogs live here, outside
 // the sidebar's innerHTML re-render; the sidebar and tabs only emit events.
+// Scope "console" (the / page: console workspaces only) or "builder"
+// (/builder: the app portfolio — app workspace groups, lifecycle chips from
+// the /api/apps/status poll, + app).
 import type { ConsoleState, WorkspaceState } from '../../lib/platform/types';
+import type { AppsStatusData } from '../../lib/apps/apps-status';
 import {
   asTerminalId,
   asTmuxSessionName,
@@ -47,6 +51,10 @@ type PendingDelete =
 export class ConsoleApp extends HTMLElement {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private state: ConsoleState | null = null;
+  private readonly scope: 'console' | 'builder' =
+    this.getAttribute('scope') === 'builder' ? 'builder' : 'console';
+  /** The builder scope's portfolio join; null until its first poll lands. */
+  private appsStatus: AppsStatusData | null = null;
   private selected: WorkspaceId | null = null;
   /** Where the new-workspace dialog creates (null = the console group). */
   private newWorkspaceAppId: AppId | null = null;
@@ -154,7 +162,17 @@ export class ConsoleApp extends HTMLElement {
   }
 
   private selectedWorkspace(): WorkspaceState | null {
-    return this.state?.workspaces.find(w => w.id === this.selected) ?? null;
+    return this.scopedWorkspaces().find(w => w.id === this.selected) ?? null;
+  }
+
+  /** This page's half of the world: console shows app_id NULL, builder the
+   *  app workspaces. */
+  private scopedWorkspaces(): WorkspaceState[] {
+    const st = this.state;
+    if (!st) return [];
+    return st.workspaces.filter(w =>
+      this.scope === 'console' ? w.appId === null : w.appId !== null,
+    );
   }
 
   private dialog(sel: string): WaDialog {
@@ -220,15 +238,31 @@ export class ConsoleApp extends HTMLElement {
     if (!r.ok) return;
     const st = (await r.json()) as ConsoleState;
     this.state = st;
+    if (this.scope === 'builder') void this.loadAppsStatus();
     // Deep links are consumed in one pass, so a ?t= hit can't leave a ?run=
     // armed for the next poll.
     const pendingTerminal = this.pendingTerminal;
     const pendingRun = this.pendingRun;
     this.pendingTerminal = null;
     this.pendingRun = null;
+    if (pendingRun && this.scope === 'builder') {
+      // Job runs are orchestration: they live on the console page.
+      location.replace(`${BASE}/?run=${encodeURIComponent(pendingRun)}`);
+      return;
+    }
     if (pendingTerminal) {
       const home = st.workspaces.find(w => w.terminals.some(t => t.id === pendingTerminal));
       if (home) {
+        // Deep links route by owner: an app workspace's tab belongs on the
+        // builder page, a console workspace's on the console.
+        if (this.scope === 'console' && home.appId !== null) {
+          location.replace(`${BASE}/builder?t=${pendingTerminal}`);
+          return;
+        }
+        if (this.scope === 'builder' && home.appId === null) {
+          location.replace(`${BASE}/?t=${pendingTerminal}`);
+          return;
+        }
         this.selected = home.id;
         this.applySelection(pendingTerminal);
         return;
@@ -236,10 +270,12 @@ export class ConsoleApp extends HTMLElement {
       // Not ours: toast, and still land on a workspace below.
       this.toast('no such terminal', { variant: 'neutral', icon: 'circle-info', duration: 6000 });
     }
-    // Clear a deleted selection first, then fall back to the first workspace.
-    if (this.selected !== null && !this.selectedWorkspace()) this.selected = null;
-    if (this.selected === null && st.workspaces.length > 0) {
-      this.selected = st.workspaces[0]!.id;
+    // Clear a deleted (or other-scoped) selection first, then fall back to
+    // the first workspace this page shows.
+    const scoped = this.scopedWorkspaces();
+    if (this.selected !== null && !scoped.some(w => w.id === this.selected)) this.selected = null;
+    if (this.selected === null && scoped.length > 0) {
+      this.selected = scoped[0]!.id;
     }
     if (pendingRun) {
       this.applySelection();
@@ -249,12 +285,26 @@ export class ConsoleApp extends HTMLElement {
     this.applySelection();
   }
 
+  /** The builder scope's /api/apps/status half of the poll. A failure keeps
+   *  the last good list (the sidebar tolerates a null status). */
+  private async loadAppsStatus(): Promise<void> {
+    const sent = await signedInFetch(`${BASE}/api/apps/status`);
+    if (!sent.ok) return;
+    const r = sent.data.response;
+    if (!r.ok) return;
+    this.appsStatus = (await r.json()) as AppsStatusData;
+    this.applySelection();
+  }
+
   /** initialTab (the ?t= deep link) gets the pane instead of the first tab. */
   private applySelection(initialTab?: TerminalId): void {
     const st = this.state;
     if (!st) return;
     const ws = this.selectedWorkspace();
-    this.sidebar()?.render(st, this.selected);
+    this.sidebar()?.render(st, this.selected, {
+      scope: this.scope,
+      appsStatus: this.appsStatus,
+    });
     const tabs = this.tabs();
     if (!tabs) return;
     if (ws) {
@@ -282,10 +332,17 @@ export class ConsoleApp extends HTMLElement {
       this.newWorkspaceAppId === null
         ? null
         : ((this.state?.apps ?? []).find(a => a.id === this.newWorkspaceAppId) ?? null);
-    const start = app?.cwd ?? this.state?.defaultCwd;
-    if (note)
-      note.textContent =
-        start === undefined ? 'starts at the server default' : `starts at ${start}`;
+    if (note) {
+      if (this.scope === 'builder') {
+        // Build sessions work from the root cwd, framed at the app — never
+        // at the app tree (the server skips the parent's cwd for 'build').
+        note.textContent = `starts at ${this.state?.defaultCwd ?? 'the server default'} — the build session for ${app?.name ?? 'this app'}`;
+      } else {
+        const start = app?.cwd ?? this.state?.defaultCwd;
+        note.textContent =
+          start === undefined ? 'starts at the server default' : `starts at ${start}`;
+      }
+    }
     this.dialog('#workspace-dialog').show();
     this.focusField('#workspace-name');
   }
@@ -327,13 +384,16 @@ export class ConsoleApp extends HTMLElement {
 
   private async createWorkspace(): Promise<void> {
     const name = ((this.querySelector('#workspace-name') as WaInput | null)?.value ?? '').trim();
-    // No cwd: the server derives it.
+    // No cwd: the server derives it. Builder workspaces are build sessions
+    // (kind 'build': root cwd + the framing env); console ones stay plain.
     const appId = this.newWorkspaceAppId;
-    const done = await this.call(
-      'POST',
-      '/api/workspaces',
-      appId === null ? { name } : { appId, name },
-    );
+    const body =
+      appId === null
+        ? { name }
+        : this.scope === 'builder'
+          ? { appId, name, kind: 'build' as const }
+          : { appId, name };
+    const done = await this.call('POST', '/api/workspaces', body);
     if (!done) return;
     if (!done.ok) {
       this.errorToast('could not create the workspace — try again', done.json);

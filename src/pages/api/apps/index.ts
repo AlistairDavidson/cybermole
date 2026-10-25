@@ -12,5 +12,6 @@ export const POST: APIRoute = async ({ locals, request }) => {
   if (!parsed.ok) return failureResponse(parsed);
   const saved = await cybermole.apps.saveApp(parsed.data.name, parsed.data.cwd);
   if (!saved.ok) return appFailureResponse(saved);
+  cybermole.invalidateAppsStatus();
   return jsonResponse(saved.data, 200);
 };

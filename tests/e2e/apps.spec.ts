@@ -247,7 +247,9 @@ test('the serving flag: /api/state reports the registered app serving, the tree-
   expect(alpha, JSON.stringify(apps)).toBeDefined();
   expect(alpha?.serving).toBe(false);
   expect(typeof alpha?.servingReason).toBe('string');
-  // The sidebar's app group has the open link (dimmed when not serving).
+  // The sidebar's app group has the open link (dimmed when not serving) —
+  // on the builder page, where the app portfolio lives (the split).
+  await page.goto('/builder');
   const open = page.locator('workspace-sidebar .ws-group[data-group="app-fixture"] .open-app-btn');
   // The sidebar's own poll reads the same cached flag; ride out the window.
   await expect(open).toHaveAttribute('href', '/apps/app-fixture/');

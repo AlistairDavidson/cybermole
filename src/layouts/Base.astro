@@ -8,7 +8,7 @@ import { assertCybermoleLocals } from "../lib/web/locals";
 interface Props {
   title: string;
   /** Renders the header bar with that section marked current. Omitted on /login and the offline shell. */
-  header?: "console" | "jobs" | "logs" | "settings";
+  header?: "console" | "builder" | "jobs" | "logs" | "settings";
 }
 
 const { title, header } = Astro.props;

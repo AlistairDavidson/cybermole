@@ -4,7 +4,13 @@
 // filter's value, focus and caret are carried across, and no stateful wa-*
 // lives in here. Group collapse state lives in localStorage and is applied
 // at render, so a poll never flickers groups open.
+//
+// Scope splits the page (the console-split plan): "console" renders the
+// Console group only (orchestration); "builder" renders the app portfolio —
+// app groups with lifecycle chips from /api/apps/status, per-group
+// + workspace (a build session) and + app at the bottom.
 import type { AppServingState, ConsoleState, WorkspaceState } from '../lib/platform/types';
+import type { AppStatusEntry, AppsStatusData } from '../lib/apps/apps-status';
 import type { WorkspaceId } from '@cybermole/app-kit';
 import { BASE } from '../base';
 import '@awesome.me/webawesome/dist/components/input/input.js';
@@ -17,6 +23,16 @@ interface WaInputLike extends HTMLElement {
   value: string;
   focus(options?: FocusOptions): void;
   setSelectionRange(start: number, end: number): void;
+}
+
+export type SidebarScope = 'console' | 'builder';
+
+/** What <console-app> hands down per render. appsStatus is null until the
+ *  builder scope's first /api/apps/status poll lands; groups then render
+ *  from the state rows alone, chips absent. */
+export interface SidebarView {
+  scope: SidebarScope;
+  appsStatus: AppsStatusData | null;
 }
 
 function caretOf(el: WaInputLike): number | null {
@@ -65,27 +81,66 @@ function setGroupCollapsed(key: string, collapsed: boolean): void {
   }
 }
 
+// ---- the lifecycle chip (builder scope) ----
+
+/** The portfolio's four states; the title carries the reason. */
+function lifecycleChip(entry: AppStatusEntry): { label: string; variant: string; title: string } {
+  if (!entry.registered)
+    return {
+      label: 'unregistered tree',
+      variant: 'warning',
+      title: 'a scaffolded tree with no row — register it (the apps MCP) to serve it',
+    };
+  if (!entry.hasManifest)
+    return {
+      label: 'registered',
+      variant: 'neutral',
+      title: 'the row exists but no app tree yet — a build session can scaffold it',
+    };
+  if (!entry.built)
+    return {
+      label: 'registered',
+      variant: 'neutral',
+      title: 'registered, not built yet',
+    };
+  if (entry.buildStale)
+    return {
+      label: 'stale build',
+      variant: 'warning',
+      title: 'sources changed since the last build — rebuild',
+    };
+  return { label: 'built', variant: 'success', title: 'the build is fresh' };
+}
+
 export class WorkspaceSidebar extends HTMLElement {
   private selected: WorkspaceId | null = null;
   private state: ConsoleState | null = null;
+  private view: SidebarView = { scope: 'console', appsStatus: null };
   private search = '';
 
-  render(st: ConsoleState, selected: WorkspaceId | null): void {
+  render(st: ConsoleState, selected: WorkspaceId | null, view: SidebarView): void {
     this.selected = selected;
     this.state = st;
+    this.view = view;
     const prevSearch = this.querySelector('#workspace-search') as WaInputLike | null;
     if (prevSearch) this.search = prevSearch.value;
     const searchFocused = prevSearch !== null && document.activeElement === prevSearch;
     const searchCaret = searchFocused && prevSearch ? caretOf(prevSearch) : null;
+    // + app lives on the builder page (the portfolio's privileged act of
+    // making a row); the console teaches orchestration only.
+    const newApp =
+      view.scope === 'builder'
+        ? `<wa-button id="new-app" class="new-app" appearance="plain" size="s" data-drawer="close">
+          <wa-icon slot="start" name="plus"></wa-icon>new app
+        </wa-button>`
+        : '';
     this.innerHTML = `
       <nav class="nav">
         <wa-input id="workspace-search" class="workspace-search" placeholder="filter workspaces…" size="s">
           <wa-icon slot="start" name="magnifying-glass"></wa-icon>
         </wa-input>
         ${this.groups()}
-        <wa-button id="new-app" class="new-app" appearance="plain" size="s" data-drawer="close">
-          <wa-icon slot="start" name="plus"></wa-icon>new app
-        </wa-button>
+        ${newApp}
       </nav>`;
     const searchInput = this.querySelector('#workspace-search') as WaInputLike | null;
     if (searchInput) {
@@ -110,39 +165,46 @@ export class WorkspaceSidebar extends HTMLElement {
         }
       });
     }
-    (this.querySelector('#new-app') as HTMLElement).onclick = () =>
-      this.dispatchEvent(new CustomEvent('new-app', { bubbles: true, composed: true }));
+    const newAppBtn = this.querySelector('#new-app') as HTMLElement | null;
+    if (newAppBtn)
+      newAppBtn.onclick = () =>
+        this.dispatchEvent(new CustomEvent('new-app', { bubbles: true, composed: true }));
     this.wireRows();
   }
 
   private groups(): string {
     const st = this.state;
     if (!st) return '';
-    const groups: string[] = [
-      this.group(
+    if (this.view.scope === 'console')
+      return this.groupShell(
         CONSOLE_GROUP_KEY,
         'console',
+        'console',
         st.workspaces.filter(w => w.appId === null),
-      ),
-    ];
-    for (const app of st.apps) {
-      groups.push(
-        this.group(
-          app.slug,
-          app.name,
-          st.workspaces.filter(w => w.appId === app.id),
-          app,
-        ),
       );
-    }
-    return groups.join('');
+    // The builder page: the portfolio join is the group list (it carries the
+    // unregistered trees, exactly where "continue building" is the point);
+    // rows it hasn't covered yet (the status poll lagging) still render.
+    const entries = this.view.appsStatus?.apps ?? [];
+    const rows = st.apps.map(app => ({
+      slug: app.slug,
+      row: app as AppServingState | null,
+      entry: entries.find(e => e.slug === app.slug) ?? null,
+    }));
+    const extras = entries
+      .filter(e => !st.apps.some(a => a.slug === e.slug))
+      .map(e => ({ slug: e.slug, row: null as AppServingState | null, entry: e }));
+    return [...rows, ...extras].map(g => this.appGroup(g.slug, g.row, g.entry)).join('');
   }
 
-  private group(
+  /** The console page's single group (console workspaces). */
+  private groupShell(
     key: string,
     name: string,
+    title: string,
     workspaces: WorkspaceState[],
-    app?: AppServingState,
+    actions = '',
+    chip = '',
   ): string {
     const visible = workspaces.filter(w => this.matchesSearch(w));
     if (this.search.trim() && visible.length === 0) return ''; // a filter hides empty groups
@@ -151,28 +213,9 @@ export class WorkspaceSidebar extends HTMLElement {
     const collapsed = this.search.trim() === '' && navCollapsed().has(key);
     const rowsId = `ws-group-rows-${key}`;
     const hide = collapsed ? ' hidden' : '';
-    // A plain <a> (no stateful wa-*). Not serving only dims it, with the
-    // reason as tooltip; it's still clickable.
-    const open = app
-      ? `<a class="open-app-btn${app.serving ? '' : ' not-serving'}" ` +
-        `href="${BASE}/apps/${esc(app.slug)}/" target="_blank" rel="noopener" ` +
-        `title="${esc(app.serving ? `open ${app.name} in a new tab` : `${app.name} is not serving: ${app.servingReason ?? 'the app host is down'}`)}">` +
-        `<wa-icon name="arrow-up-right-from-square" label="open ${esc(app.name)}"></wa-icon></a>`
-      : '';
-    const del = app
-      ? `<wa-button class="del-app-btn" data-del-app="${esc(app.slug)}" size="xs" appearance="plain" ` +
-        `title="delete the app ${esc(app.name)} (and its workspaces)">` +
-        `<wa-icon name="trash-can" label="delete app"></wa-icon></wa-button>`
-      : '';
     const rows = visible.length
       ? `<ul class="ws-group-rows" id="${rowsId}"${hide}>${visible.map(w => this.row(w)).join('')}</ul>`
       : `<p class="ws-group-rows group-empty" id="${rowsId}"${hide}>no workspaces yet</p>`;
-    // The app's cwd shows in the header's tooltip.
-    const title = app
-      ? app.cwd
-        ? `${app.name} — workspaces start at ${app.cwd}`
-        : app.name
-      : 'console';
     return (
       `<section class="ws-group" data-group="${esc(key)}">` +
       `<h2>` +
@@ -181,13 +224,56 @@ export class WorkspaceSidebar extends HTMLElement {
       `aria-label="${esc(name)} workspaces">` +
       `<wa-icon name="chevron-down"></wa-icon></button>` +
       `<span class="g-name" title="${esc(title)}">${esc(name)}</span>` +
+      chip +
       `<span class="g-actions">` +
-      open +
-      `<wa-button class="new-ws-btn" data-new-ws="${app ? esc(app.id) : ''}" size="xs" appearance="plain" ` +
-      `title="new workspace in ${esc(name)}"><wa-icon name="plus" label="new workspace"></wa-icon></wa-button>` +
-      del +
+      actions +
       `</span></h2>${rows}</section>`
     );
+  }
+
+  /** A builder-page app group: lifecycle chip, open link (registered only),
+   *  + workspace (a build session; needs the row), delete (needs the row). */
+  private appGroup(
+    slug: string,
+    app: AppServingState | null,
+    entry: AppStatusEntry | null,
+  ): string {
+    const st = this.state;
+    const workspaces = st && app ? st.workspaces.filter(w => w.appId === app.id) : [];
+    const name = entry?.name ?? app?.name ?? slug;
+    // A plain <a> (no stateful wa-*). Not serving only dims it, with the
+    // reason as tooltip; it's still clickable.
+    const open = app
+      ? `<a class="open-app-btn${app.serving ? '' : ' not-serving'}" ` +
+        `href="${BASE}/apps/${esc(slug)}/" target="_blank" rel="noopener" ` +
+        `title="${esc(app.serving ? `open ${name} in a new tab` : `${name} is not serving: ${app.servingReason ?? 'the app host is down'}`)}">` +
+        `<wa-icon name="arrow-up-right-from-square" label="open ${esc(name)}"></wa-icon></a>`
+      : '';
+    const del = app
+      ? `<wa-button class="del-app-btn" data-del-app="${esc(slug)}" size="xs" appearance="plain" ` +
+        `title="delete the app ${esc(name)} (and its workspaces)">` +
+        `<wa-icon name="trash-can" label="delete app"></wa-icon></wa-button>`
+      : '';
+    const actions =
+      (app
+        ? `<wa-button class="new-ws-btn" data-new-ws="${esc(app.id)}" size="xs" appearance="plain" ` +
+          `title="new build workspace for ${esc(name)}"><wa-icon name="plus" label="new workspace"></wa-icon></wa-button>`
+        : '') +
+      open +
+      del;
+    const chip =
+      entry !== null
+        ? (() => {
+            const c = lifecycleChip(entry);
+            return (
+              `<wa-badge class="g-chip" pill variant="${c.variant}" title="${esc(c.title)}">` +
+              `${esc(c.label)}</wa-badge>`
+            );
+          })()
+        : '';
+    // The app's cwd shows in the header's tooltip.
+    const title = app?.cwd ? `${name} — build sessions are framed at ${app.cwd}` : name;
+    return this.groupShell(slug, name, title, workspaces, actions, chip);
   }
 
   private row(w: WorkspaceState): string {
@@ -226,7 +312,12 @@ export class WorkspaceSidebar extends HTMLElement {
     const nav = this.querySelector('.nav');
     if (!nav) return;
     nav.querySelectorAll('.ws-group').forEach(g => g.remove());
-    this.querySelector('#new-app')?.insertAdjacentHTML('beforebegin', this.groups());
+    const html = this.groups();
+    // #new-app (builder scope) follows the groups; on the console page the
+    // groups land at the nav's end.
+    const anchor = this.querySelector('#new-app');
+    if (anchor) anchor.insertAdjacentHTML('beforebegin', html);
+    else nav.insertAdjacentHTML('beforeend', html);
     this.wireRows();
   }
 

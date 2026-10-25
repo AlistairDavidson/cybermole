@@ -6,6 +6,7 @@ import {
   TMUX_SOCKET,
   WORKSPACE,
   STATE_DIR,
+  APPS_ROOT,
 } from './tests/support/env';
 
 const PORT = 3470;
@@ -48,6 +49,9 @@ export default defineConfig({
         // rm -rf's WORKSPACE after boot. The db and agent dir are pointed
         // into WORKSPACE explicitly.
         CYBERMOLE_STATE_DIR: STATE_DIR,
+        // The server's own apps-root opinion (the /api/apps/status join):
+        // the suite's run-scoped root, so unregistered trees are per-run too.
+        CYBERMOLE_APPS_ROOT: APPS_ROOT,
         // Serial from one IP, the suite upgrades far more than 30/min.
         CYBERMOLE_WS_UPGRADES_PER_MIN: '300',
         CYBERMOLE_DB_FILE: `${WORKSPACE}/cybermole.db`,

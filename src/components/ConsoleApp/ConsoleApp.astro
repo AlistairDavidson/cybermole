@@ -1,7 +1,10 @@
 ---
-// The console shell. The dialogs live here, outside the sidebar's
-// innerHTML re-render, so their state survives it. The wa-* imports here
-// only SSR; console-app.ts re-imports them client-side (AGENTS.md).
+// The console shell, on both pages: scope "console" (the orchestration
+// page — console workspaces, jobs, settings) or "builder" (the app
+// portfolio — app workspace groups, lifecycle chips, + app). The dialogs
+// live here, outside the sidebar's innerHTML re-render, so their state
+// survives it. The wa-* imports here only SSR; console-app.ts re-imports
+// them client-side (AGENTS.md).
 import '@awesome.me/webawesome/dist/components/page/page.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/dialog/dialog.js';
@@ -11,11 +14,16 @@ import WaField from '../form/WaField.astro';
 import { zodSchemaToHTMLAttributes } from '../../lib/web/zod.service';
 import { appForm, workspaceForm } from '../../schemas/api';
 
+interface Props {
+  scope?: 'console' | 'builder';
+}
+const { scope = 'console' } = Astro.props;
+
 // Native constraints from the dialogs' schemas; the server re-validates anyway.
 const appValidation = zodSchemaToHTMLAttributes(appForm);
 const wsValidation = zodSchemaToHTMLAttributes(workspaceForm);
 ---
-<console-app>
+<console-app scope={scope}>
   <wa-page>
     <workspace-sidebar slot="navigation"></workspace-sidebar>
     <main><terminal-tabs></terminal-tabs></main>
