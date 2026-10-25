@@ -296,10 +296,7 @@ test('a half-built tree (entry.mjs without dist/client) is skipped — never the
     await w.apps.saveApp('Good', healthy);
     const half = makeAppTree(w.root, 'half-built', { dist: false });
     fs.mkdirSync(path.join(half, 'dist', 'server'), { recursive: true });
-    fs.writeFileSync(
-      path.join(half, 'dist', 'server', 'entry.mjs'),
-      entrySource('never'),
-    );
+    fs.writeFileSync(path.join(half, 'dist', 'server', 'entry.mjs'), entrySource('never'));
     await w.apps.saveApp('Half Built', half);
 
     const report = await w.host.reload();
@@ -361,14 +358,8 @@ test('a scoped reload {slug} re-imports only that app; the rest carry over', asy
     const before = await status(w.host.socketPath);
     const betaBefore = before.mounted.find(m => m.slug === 'beta');
 
-    fs.writeFileSync(
-      path.join(a, 'dist', 'server', 'entry.mjs'),
-      entrySource('APP:alpha:v2'),
-    );
-    fs.writeFileSync(
-      path.join(b, 'dist', 'server', 'entry.mjs'),
-      entrySource('APP:beta:v2'),
-    );
+    fs.writeFileSync(path.join(a, 'dist', 'server', 'entry.mjs'), entrySource('APP:alpha:v2'));
+    fs.writeFileSync(path.join(b, 'dist', 'server', 'entry.mjs'), entrySource('APP:beta:v2'));
 
     const report = await w.host.reload('alpha');
     assert.deepEqual(report.reimported, ['alpha']);
