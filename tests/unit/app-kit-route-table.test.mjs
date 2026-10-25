@@ -230,6 +230,7 @@ test('toMcpToolShapes: one tool per entry, flattened input schema over the docum
   assert.deepEqual(get.inputSchema.properties.id, { type: 'integer', minimum: 1 });
   const list = tools[2];
   assert.deepEqual(list.inputSchema.properties.q, { type: 'string' }); // optional: not in required
+  assert.deepEqual(list.inputSchema.required, ['tag']); // q optional, tag required — the array itself, not just q's absence
   assert.deepEqual(list.inputSchema.properties.tag, { type: 'string', enum: ['a', 'b'] });
   assert.equal(list.inputSchema.additionalProperties, false);
 });

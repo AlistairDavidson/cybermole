@@ -78,6 +78,40 @@ if [ -f "$ROOT_TEMPLATE" ] && [ ! -e "$ROOT_AGENTS" ]; then
   cp "$ROOT_TEMPLATE" "$ROOT_AGENTS"
 fi
 
+# task/app-notes (docs/apps-plan.md §9): the reference app — the notes
+# tree ships in the image at /opt/cybermole/apps-reference/notes as
+# living documentation of a FINISHED app tree, and seeds into the
+# install's apps root ONLY-WHERE-ABSENT (the same policy the lines
+# above apply to the pi template): an existing tree always wins (the
+# operator's own notes app, their data/ — never touched), and NOTHING
+# AUTO-REGISTERS — registration is the privileged act (§8). The seeded
+# tree stands unregistered; the root agent's `status` shows it among
+# the unregistered trees and one `register` + `reload` makes it live.
+# git + the node_modules links are best-effort (a tree without its git
+# repo or links still serves once checked; the root agent's check tool
+# names the fix) — a seeding failure must never stop the boot.
+APPS_ROOT_DIR="${CYBERMOLE_APPS_ROOT:-/workspace/apps}"
+REFERENCE_TREE=/opt/cybermole/apps-reference/notes
+if [ -d "$REFERENCE_TREE" ] && [ ! -d "$APPS_ROOT_DIR/notes" ]; then
+  mkdir -p "$APPS_ROOT_DIR"
+  if cp -a "$REFERENCE_TREE" "$APPS_ROOT_DIR/notes" 2>/dev/null; then
+    if command -v git >/dev/null 2>&1; then
+      (
+        cd "$APPS_ROOT_DIR/notes"
+        git init -b main -q
+        git add -A
+        git -c user.name=cybermole-apps -c user.email=cybermole-apps@localhost \
+          commit -q -m 'seed the notes reference app from the image'
+      ) || echo "cybermole workspace: could not git-init the seeded notes tree — continuing" >&2
+    fi
+    (
+      cd "$APPS_ROOT_DIR/notes"
+      node scripts/setup-node-modules.mjs
+    ) || echo "cybermole workspace: notes tree node_modules links failed — run npm run setup in the tree" >&2
+    echo "cybermole workspace: seeded the notes reference app at $APPS_ROOT_DIR/notes (unregistered — register + reload to serve it)"
+  fi
+fi
+
 # Server conf: the app's tmux.conf + exit-empty off (see header). The
 # combined file is ephemeral — server-side state, not shared.
 SERVER_CONF=$(mktemp)

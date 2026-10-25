@@ -288,8 +288,11 @@ function convert(schema: z.ZodTypeAny): JsonSchema {
       const required: string[] = [];
       for (const [key, value] of Object.entries(shape)) {
         properties[key] = convert(unwrap(value));
-        const t = unwrap(value);
-        if (t._zod.def.type !== 'optional' && t._zod.def.type !== 'default') required.push(key);
+        // optionality is a property of the WRAPPER, so it is read before
+        // unwrap() strips it — reading it after would mark every optional
+        // field required (the notes app's emitted table caught that).
+        const wrapper = value._zod.def.type;
+        if (wrapper !== 'optional' && wrapper !== 'default') required.push(key);
       }
       node.type = 'object';
       node.properties = properties;

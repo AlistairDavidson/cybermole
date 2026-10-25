@@ -38,6 +38,9 @@
     "app-starter/",
     "app-starter/.gitignore",
     "apps-agent-template/",
+    "apps-reference/",
+    "apps-reference/notes/.gitignore",
+    "apps-reference/notes/.pi/mcp.json",
     "tmux.conf"
   ],
   "dependencies": {

@@ -1,0 +1,134 @@
+---
+// The list page — the note_list action's UI face, rendered server-side
+// from the same domain call the API serves (one vocabulary, every face),
+// plus the editor island for capture and the starter's ping island. The
+// find form is NATIVE controls on purpose: it works without JS (the
+// page's own GET), while the islands carry the interactive halves.
+// Frontmatter imports SSR the wa-* components (astro-lit, declarative
+// shadow DOM); the client script below re-imports them so the browser
+// upgrades them — BOTH halves, always (the repo rule "SSR imports ≠
+// client imports"; @cybermole/app-kit's wa-client carries the why).
+import '@awesome.me/webawesome/dist/components/card/card.js';
+import '@awesome.me/webawesome/dist/components/button/button.js';
+import '@awesome.me/webawesome/dist/components/input/input.js';
+import '@awesome.me/webawesome/dist/components/textarea/textarea.js';
+import '@awesome.me/webawesome/dist/components/badge/badge.js';
+import { getAppDb } from '../lib/notes-db';
+import { noteListResult } from '../lib/note_list';
+
+const sp = Astro.url.searchParams;
+const search = sp.get('search') ?? '';
+const tag = sp.get('tag') ?? '';
+const archivedView = sp.get('archived') === 'true';
+const listed = noteListResult(getAppDb(), {
+  search: sp.get('search') ?? undefined,
+  tag: sp.get('tag') ?? undefined,
+  archived: sp.get('archived') ?? undefined,
+});
+const notes = listed.ok ? listed.data.notes : [];
+const base = import.meta.env.BASE_URL;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Notes</title>
+    <link rel="icon" type="image/svg+xml" href="/apps/notes/favicon.svg" />
+  </head>
+  <body>
+    <main style="font-family: system-ui; max-width: 40rem; margin: 3rem auto; padding: 0 1rem;">
+      <wa-card>
+        <h1 slot="header">Notes</h1>
+        <p>capture, find, and archive notes and standup journals</p>
+
+        <form method="get" class="find">
+          <input type="search" name="search" placeholder="search" value={search} aria-label="search" />
+          <input type="text" name="tag" placeholder="tag" value={tag} aria-label="tag" />
+          {archivedView && <input type="hidden" name="archived" value="true" />}
+          <button type="submit">find</button>
+          <a href={archivedView ? `${base}/` : `${base}/?archived=true`}>
+            {archivedView ? 'live notes' : 'archived'}
+          </a>
+        </form>
+        {!listed.ok && (
+          <p class="error" role="alert">
+            {listed.errorMessage}
+          </p>
+        )}
+
+        <h2>{archivedView ? 'archived notes' : 'notes'}</h2>
+        {notes.length === 0 && (
+          <p>{archivedView ? 'nothing archived yet.' : 'no notes yet — capture one below.'}</p>
+        )}
+        <ul class="notes" style="list-style: none; padding: 0;">
+          {notes.map(note => (
+            <li style="margin: 0.5rem 0;">
+              <a href={`${base}/notes/${note.id}`}>{note.title}</a>
+              {note.archived && <wa-badge>archived</wa-badge>}
+              {note.body !== '' && (
+                <p style="margin: 0.1rem 0; opacity: 0.75;">
+                  {note.body.slice(0, 160)}
+                  {note.body.length > 160 ? '…' : ''}
+                </p>
+              )}
+              {note.tags.map(t => (
+                <wa-badge>{t}</wa-badge>
+              ))}
+            </li>
+          ))}
+        </ul>
+
+        <!-- The islands' HOSTS: this SSR'd markup is the initial content —
+             the islands (client script below) take the regions over and
+             wire the actions. Without JS the page still renders. The
+             markers are add_action's insertion points: it appends one
+             section per new action inside them (a fresh marked block if
+             they are gone). -->
+        <!-- BEGIN ACTION MOUNTS (generated — add_action appends one section per action) -->
+        {!archivedView && (
+          <section class="note-editor">
+            <h2>capture a note</h2>
+            <wa-input label="title"></wa-input>
+            <wa-textarea label="body"></wa-textarea>
+            <wa-input label="tags (comma-separated)"></wa-input>
+            <wa-button variant="brand">save note</wa-button>
+            <p aria-live="polite">— nothing saved yet —</p>
+          </section>
+        )}
+        <section class="ping-island">
+          <wa-input label="name" value="world"></wa-input>{' '}
+          <wa-button variant="brand">ping</wa-button>
+          <p aria-live="polite">— not pinged yet —</p>
+        </section>
+        <!-- END ACTION MOUNTS -->
+      </wa-card>
+    </main>
+    <script>
+      // Support modules MUST precede the wa-* imports — if the SSR'd
+      // elements define before lit hydration support installs, they
+      // render twice (@awesome.me/astro-lit README).
+      import '@cybermole/app-kit/wa-client';
+      import '@awesome.me/webawesome/dist/components/card/card.js';
+      import '@awesome.me/webawesome/dist/components/button/button.js';
+      import '@awesome.me/webawesome/dist/components/input/input.js';
+      import '@awesome.me/webawesome/dist/components/textarea/textarea.js';
+      import '@awesome.me/webawesome/dist/components/badge/badge.js';
+      import { mountIsland } from '@cybermole/app-kit/island';
+
+      // The islands' wiring — add_action's other insertion point: one
+      // import + mount per new action inside the markers.
+      // BEGIN ACTION ISLANDS (generated — add_action appends one import + mount per action)
+      import PingIsland from '../islands/PingIsland';
+
+      mountIsland('.ping-island', PingIsland, {});
+
+      import NoteEditorIsland, { type NoteEditorProps } from '../islands/NoteEditorIsland';
+
+      mountIsland('.note-editor', NoteEditorIsland, {
+        mode: 'create',
+      } satisfies NoteEditorProps);
+      // END ACTION ISLANDS
+    </script>
+  </body>
+</html>

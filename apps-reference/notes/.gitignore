@@ -1,0 +1,10 @@
+# a cybermole app's node_modules — per-package links + build output
+node_modules/
+dist/
+
+# the app's own sqlite lives here (kit's db helper); keep the dir, not the data
+data/*
+!data/.gitkeep
+
+# astro check/sync content types
+.astro/
