@@ -81,7 +81,30 @@ containers and two uids (server vs tmux/terminals) — see
   hashes are stored). No account machinery. Fails closed until the
   credential exists.
 
-## The console — apps, workspaces, terminal tabs
+## The console and the builder — two pages, workspaces, terminal tabs
+
+The console is two pages, each teaching one semantics (the
+[console-split plan](docs/plans/console-split-plan.md)). **`/`** is
+orchestration: console workspaces only (agents that talk to *everything* —
+multi-app work, jobs, platform management), the jobs and settings links.
+**`/builder`** is the app portfolio: the app list with lifecycle state (a
+chip per app — *unregistered tree* / *registered* / *built* / *stale
+build*, the reason as tooltip), the app workspace groups, `+ workspace`
+per app, and `+ app` at the bottom (moved off the console page). Place
+teaches role, and pages are homes, not permissions: nothing narrows. A
+builder-page workspace is a **build session** — a workspace row with
+`kind: 'build'` — with the root agent's full powers: root cwd (never the
+app tree; its editor tab and terminals work from `CYBERMOLE_NEW_SESSION_CWD`,
+the tree one click down) and the root AGENTS.md by walk, its attention
+framed at one app by two per-session env vars on **every** spawn (the
+create-time agent tab, later `+` tabs, and the WS-attach respawn):
+`CYBERMOLE_WORKSPACE_FOCUS=<slug>` and `CYBERMOLE_WORKSPACE_FOCUS_TREE=<tree>`.
+The builder page's portfolio data is `GET /api/apps/status` — the
+apps-status join (rows × mounted × built/stale, plus unregistered trees,
+exactly where "continue building" is the point), cached server-side ~10 s
+so the page's 15 s poll cannot turn into an fs storm (app-row routes
+invalidate the cache, so the user's own create is never hidden behind the
+TTL).
 
 The main pane shows the selected workspace's **terminal tabs** (title or
 "term N", a live dot, a close button) with a `+` to open another — each
@@ -94,35 +117,41 @@ always a confirming dialog; deleting an app or workspace kills its
 terminals' tmux sessions best-effort (job runs are never owned by
 anything — an app delete just un-tags its jobs).
 
-The surface behind it: `GET /api/state` — the 15 s poll every open tab
+The surface behind both pages: `GET /api/state` — the 15 s poll every open tab
 runs — serves the workspace tree (apps, workspaces with their terminals
 and live flags, plus `editor` on/off, `defaultCwd` and each app's own
 `cwd`; each app row also carries a `serving` flag — a bounded ping of
 the app host's status route — so a dead host is visible, not
-mysterious: the sidebar's open link dims with the reason). Each app
-group in the sidebar has an **open** link to its app at
-`/apps/<slug>/` (a new tab) — registered apps are reachable only
+mysterious: the builder page's open link dims with the reason); each page
+filters the tree by owner (console: `app_id` null, builder: set). Each app
+group on the builder page has an **open** link to its app at
+`/apps/<slug>/` (a new tab, registered apps only) — registered apps are reachable only
 through that proxy, behind the session gate (a host that is down
 answers 502 through the proxy; an unregistered slug 404s). The rest are thin Astro routes: `POST /api/apps` (an optional
-`cwd` — where workspaces under the app start) + `PATCH`/
+`cwd` — where the app's in-tree workspaces start) + `PATCH`/
 `DELETE /api/apps/:slug` (the patch also renames and/or sets/clears
 the cwd); `POST /api/workspaces` — no `cwd` on the wire: the server
 derives it (the parent app's `cwd` when it has one, else
 `CYBERMOLE_NEW_SESSION_CWD`; whatever wins must be an existing absolute
-dir) + `PATCH`/`DELETE /api/workspaces/:id`; `POST
+dir), except `kind: 'build'` (a literal, requires `appId` — the builder
+page's workspaces), which always starts at `CYBERMOLE_NEW_SESSION_CWD`
+and carries the framing env; kind is set at birth and never patchable)
++ `PATCH`/`DELETE /api/workspaces/:id`; `POST
 /api/workspaces/:id/terminals` (the row survives a failed spawn — the
 tab renders not-live and the first attach retries it) + `PATCH`/
 `DELETE /api/terminals/:id`. The terminal WS attaches in two modes:
 `terminal` (a tab's uuid — respawns the session at the workspace cwd
-when tmux died; reconnects re-send the frame they started with) and
+when tmux died, framing env again for a build session; reconnects re-send
+the frame they started with) and
 `run` (a live job run's session — never respawns); input and resize
 frames are unchanged. On attach the server sends one `backfill` frame
 ahead of any output — the pane's scrollback history captured with
 `tmux capture-pane` (history only; the client writes it under the attach
 redraw), so a reattached tab has searchable history — Ctrl+F / Cmd+F
 opens the pane's find bar (@xterm/addon-search). Deep links: `/?t=<terminal uuid>` opens that
-tab's workspace with it selected; `/?run=<session name>` attaches a
-live job run (the jobs page's "view" button).
+tab's workspace with it selected, bouncing to `/builder?t=…` when the
+workspace belongs to an app (and vice versa); `/?run=<session name>` attaches a
+live job run (the jobs page's "view" button — orchestration, so it lives on `/`).
 
 ## Requirements
 
@@ -1145,10 +1174,12 @@ standalone-workspace install above (`CYBERMOLE_AGENT_COMMAND`).
 - `src/layouts/Base.astro` — Web Awesome default theme + global styles
   (astro-lit hydration support is imported by each component script —
   import order vs wa-* modules matters, see AGENTS.md)
-- `src/components` — web components: `<console-app>` (the orchestrator),
-  `<workspace-sidebar>` (the app switcher), `<terminal-tabs>`,
-  `<agent-terminal>` (xterm.js island); each static shell is SSR'd by an
-  Astro wrapper (`ConsoleApp.astro`, `AgentTerminal.astro`)
+- `src/components` — web components: `<console-app>` (the orchestrator,
+  both pages: console scope on `/`, builder scope on `/builder`),
+  `<workspace-sidebar>` (the workspace switcher, scope-split),
+  `<terminal-tabs>`, `<agent-terminal>` (xterm.js island); each static
+  shell is SSR'd by an Astro wrapper (`ConsoleApp.astro`,
+  `AgentTerminal.astro`)
 - `src/lib` — shared strict TS: auth (scrypt + persisted sessions + rate
   limiter), tmux helpers, the apps/workspaces domains (the workspace tree,
   terminal lifecycle, `apps.ts`/`workspaces.ts`), the editor proxy
