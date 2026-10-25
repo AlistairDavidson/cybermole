@@ -2,6 +2,7 @@
 // cascades through workspaces and terminals via FKs, then kills their tmux
 // sessions best-effort. Jobs are only tagged (SET NULL), never owned.
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
 import { qb, type StateDb } from '../platform/db';
 import { componentLogger } from '../platform/logger';
 import { terminalSessionName } from '../terminals/tmux';
@@ -90,7 +91,7 @@ export class Apps {
   }
 
   /** The slug is derived from the name. An empty cwd means unset (the
-   *  server default). */
+   *  server default); a missing one is created, once the rest validates. */
   async saveApp(name: string, cwd?: string): Promise<SaveAppResult> {
     const fail = (errorCode: SaveAppErrorCode, errorMessage: string) =>
       ({ ok: false, resultType: 'save_app', errorCode, errorMessage }) satisfies SaveAppFailure;
@@ -102,9 +103,13 @@ export class Apps {
     const wanted = cwd === undefined ? '' : cwd.trim();
     let dir: string | null = null;
     if (wanted !== '') {
-      const checked = checkedCwd(wanted);
-      if (!checked.ok) return fail('invalid_cwd', checked.reason);
-      dir = checked.cwd;
+      if (!wanted.startsWith('/'))
+        return fail('invalid_cwd', `cwd must be an absolute path: ${wanted}`);
+      if (fs.existsSync(wanted)) {
+        const checked = checkedCwd(wanted);
+        if (!checked.ok) return fail('invalid_cwd', checked.reason);
+      }
+      dir = wanted;
     }
     const actor = this.actor();
     if (!actor.ok) return fail('database_error', actor.errorMessage);
@@ -114,6 +119,13 @@ export class Apps {
       return fail('duplicate_slug', `an app with the slug "${slug}" already exists`);
     const order = this.nextOrder();
     if (!order.ok) return fail('database_error', order.errorMessage);
+    if (dir !== null) {
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+      } catch (err) {
+        return fail('invalid_cwd', `could not create ${dir}: ${(err as Error).message}`);
+      }
+    }
     const id = asAppId(randomUUID());
     const now = Date.now();
     const inserted = databaseUpdate('could not save the app', () =>

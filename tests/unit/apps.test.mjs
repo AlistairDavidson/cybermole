@@ -157,11 +157,29 @@ test('save_app: optional cwd — stored + returned; empty/whitespace = unset', a
   assert.equal(appRow(db, 'no-dir-0').cwd, null);
 });
 
-test('save_app: invalid_cwd — relative, missing, a file (the workspace cwd rule); database_error paths unchanged', async () => {
+test('save_app: a missing cwd is created, nested parents included', async () => {
+  const db = freshDb();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-app-new-'));
+  const dir = path.join(root, 'nested', 'tree');
+  const made = await apps(db).saveApp('fresh', dir);
+  assert.equal(made.ok, true, made.errorMessage);
+  assert.equal(made.data.cwd, dir);
+  assert.equal(fs.statSync(dir).isDirectory(), true);
+});
+
+test('save_app: a rejected save creates no directory', async () => {
+  const a = apps(freshDb());
+  assert.equal((await a.saveApp('taken')).ok, true);
+  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-app-dup-')), 'tree');
+  assert.equal((await a.saveApp('Taken!', dir)).errorCode, 'duplicate_slug');
+  assert.equal(fs.existsSync(dir), false);
+});
+
+test('save_app: invalid_cwd — relative, a file, under a file; database_error paths unchanged', async () => {
   const a = apps(freshDb());
   const file = path.join(os.tmpdir(), `cybermole-app-file-${process.pid}`);
   fs.writeFileSync(file, '');
-  for (const cwd of ['relative/path', '/definitely/not/here', file]) {
+  for (const cwd of ['relative/path', file, path.join(file, 'sub')]) {
     const r = await a.saveApp('x', cwd);
     assert.equal(r.ok, false, cwd);
     assert.equal(r.resultType, 'save_app');

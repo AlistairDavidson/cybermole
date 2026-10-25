@@ -36,7 +36,7 @@ const wsValidation = zodSchemaToHTMLAttributes(workspaceForm);
           id="app-cwd"
           name="cwd"
           label="working directory"
-          hint="optional — workspaces under this app start here; empty starts them at the server default"
+          hint="optional — workspaces under this app start here (created if missing); empty starts them at the server default"
           {...appValidation.cwd}
         />
       </form>

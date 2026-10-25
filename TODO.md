@@ -1,4 +1,13 @@
+## Agents
+Two types of "app" agent (builder / operator) — resolved by the console split: two pages, build sessions framed by env, operator agents move to app pages later. Plan: docs/plans/console-split-plan.md
+
 ## Apps
+Apps list in topbar
+
+Apps have a single slide-in agent console, same UI across all apps, cwd to the app
+
+Apps have link to their build console
+
 Apps own their lifecycle via jobs + git — no cybermole deploy/rollback machinery.
 
 per-app e2e harness (kit cribs the console's hermetic pattern; the check verb's unit stage is the only app-side test story today)
@@ -19,6 +28,8 @@ main.ts static+middleware factoring (the app host carries its own small serve he
 Skills and other methods to enforce my coding patterns
 Write a refined agent workflow
 HIG skill
+keyboard shortcuts
+  ctrl-t ctrl-shift-t
 
 ## Agentic shit
 Code style skill - typescript branded types etc
@@ -68,6 +79,10 @@ job exit-code notification hooks (webhook, Grafana alerting on the Loki labels)
 job log size caps / rotation (no cap today)
 
 retire the workspace sidebar's 15s poll in favour of the /ws/events bus (topic field already reserved)
+
+## Git
+ability to make a workspace a worktree
+ability to merge
 
 ## Distribution
 installation instructions / script for agents / actual scripts

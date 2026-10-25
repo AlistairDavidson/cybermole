@@ -459,8 +459,10 @@ services:
       ["sh", "-c", "chown -R ${UID:-1000}:${GID:-1000} /app/node_modules /state"]
     restart: "no"
     volumes:
-      - cybermole-dev-node-modules:/app/node_modules
-      - cybermole-dev-state:/state
+      # :z as on dev — a shared label, so a reused container can still read
+      # volumes another container's create relabeled.
+      - cybermole-dev-node-modules:/app/node_modules:z
+      - cybermole-dev-state:/state:z
 
   # Dev object storage: fixed keys (the dev service and the host flow use
   # the same pair), loopback-published so `npm run dev:server` on the host
@@ -616,10 +618,10 @@ services:
       # (no-op elsewhere) — without it container processes can't even stat
       # files in a home-dir checkout.
       - .:/app:z
-      - cybermole-dev-node-modules:/app/node_modules # shadow: container-built native deps
+      - cybermole-dev-node-modules:/app/node_modules:z # shadow: container-built native deps
       # Durable dev state (see CYBERMOLE_STATE_DIR above) — prod's /state
       # shape on dev's own volume, chowned by dev-init on every up.
-      - cybermole-dev-state:/state
+      - cybermole-dev-state:/state:z
     # no restart policy: dev is an interactive foreground thing
 
 volumes:
