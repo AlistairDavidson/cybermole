@@ -38,9 +38,9 @@ schema regexes, the distribution `any` in the kit's `types/result.ts`,
 computed `delete`s) — don't "fix" those.
 
 `npm run format` / `npm run format:check` — Prettier (`.prettierrc`,
-code-only scope per `.prettierignore`). The repo-wide `npm run format`
-has NOT been applied yet (TODO.md, Quality) — don't run `format` on
-files you didn't otherwise touch until that lands.
+code-only scope per `.prettierignore`). The repo-wide `npm run format` has
+been applied — `format:check` is green across the tree; keep it that way in
+your changes (format files you touch before review).
 
 `npm run test:unit` — node:test units in `tests/unit/` against the
 compiled `dist-server` — `npm run build` first (tsc-only is enough:
