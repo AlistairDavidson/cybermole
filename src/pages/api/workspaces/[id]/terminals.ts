@@ -16,7 +16,11 @@ export const POST: APIRoute = async ({ locals, params, request }) => {
   if (!id.success) return invalidWorkspaceIdResponse();
   const parsed = await parseAndValidateAPIRequest(request, terminalCreateBody);
   if (!parsed.ok) return failureResponse(parsed);
-  const created = await cybermole.workspaces.newTerminal(id.data, parsed.data.title);
+  const created = await cybermole.workspaces.newTerminal(
+    id.data,
+    parsed.data.title,
+    parsed.data.command ?? 'shell',
+  );
   if (!created.ok) return terminalFailureResponse(created);
   return jsonResponse(created.data, 200);
 };

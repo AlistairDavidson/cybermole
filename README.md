@@ -107,8 +107,14 @@ invalidate the cache, so the user's own create is never hidden behind the
 TTL).
 
 The main pane shows the selected workspace's **terminal tabs** (title or
-"term N", a live dot, a close button) with a `+` to open another — each
-tab one tmux session on the app's socket, one WS; switching tabs hides
+"term N", a live dot, a close button) with new-tab affordances at the
+end: `+` opens a **shell tab** and the caret menu also offers a **new
+agent tab** (the workspace's agent command — what a new workspace's first
+tab auto-runs; a tab keeps its kind for respawns). `Ctrl+T` /
+`Ctrl+Shift+T` are the keyboard paths (never while typing in a field or
+a dialog). Tabs reorder by drag or `Shift+←`/`Shift+→` on a focused
+tab — the bar moves at once and the order persists. Each tab one tmux
+session on the app's socket, one WS; switching tabs hides
 the others but keeps them attached (state and scrollback persist, like
 tmux detach). The **editor tab** (pinned last) iframes the workspace's
 cwd through the `/editor` proxy — rendered only when the editor is
@@ -137,9 +143,13 @@ dir), except `kind: 'build'` (a literal, requires `appId` — the builder
 page's workspaces), which always starts at `CYBERMOLE_NEW_SESSION_CWD`
 and carries the framing env; kind is set at birth and never patchable)
 + `PATCH`/`DELETE /api/workspaces/:id`; `POST
-/api/workspaces/:id/terminals` (the row survives a failed spawn — the
+/api/workspaces/:id/terminals` (optional `command` `agent`|`shell` —
+defaults shell; the row survives a failed spawn — the
 tab renders not-live and the first attach retries it) + `PATCH`/
-`DELETE /api/terminals/:id`. The terminal WS attaches in two modes:
+`DELETE /api/terminals/:id` + `PUT /api/workspaces/:id/terminals/order`
+(the workspace's terminal ids in their new order — a full-list write; a
+list that doesn't match the workspace answers `409 invalid_order`).
+The terminal WS attaches in two modes:
 `terminal` (a tab's uuid — respawns the session at the workspace cwd
 when tmux died, framing env again for a build session; reconnects re-send
 the frame they started with) and

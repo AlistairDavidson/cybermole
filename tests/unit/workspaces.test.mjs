@@ -120,7 +120,7 @@ const termRows = (db, workspaceId) =>
   db.all(
     qb
       .selectFrom('terminals')
-      .select(['id', 'title', 'sort_order'])
+      .select(['id', 'title', 'sort_order', 'command', 'created_at'])
       .where('workspace_id', '=', workspaceId)
       .orderBy('sort_order'),
   );
@@ -577,6 +577,145 @@ test('new_terminal: workspace_not_found / database_error (no row, no spawn)', as
   assert.equal(broken.errorCode, 'database_error');
 });
 
+test('new_terminal: command picks the spawn — shell by default, agent on request — and is stored for respawns', async () => {
+  const db = freshDb();
+  const { spawned, spawnSession } = spawner();
+  const w = domain(db, USERNAME, async () => true, os.tmpdir(), spawnSession);
+  const ws = (await w.saveWorkspace({ name: 'x', cwd: os.tmpdir() })).data;
+  // The auto-opened first tab is the agent tab and says so in its row.
+  assert.equal(termRows(db, ws.id)[0].command, 'agent');
+
+  const shell = await w.newTerminal(ws.id, 'plain');
+  assert.equal(shell.ok, true, shell.errorMessage);
+  const agent = await w.newTerminal(ws.id, 'a second agent', 'agent');
+  assert.equal(agent.ok, true, agent.errorMessage);
+  assert.deepEqual(
+    spawned.map(s => s.command.join(' ')),
+    [AGENT_CMD, SHELL_CMD, AGENT_CMD],
+  );
+  assert.deepEqual(
+    termRows(db, ws.id).map(r => r.command),
+    ['agent', 'shell', 'agent'],
+  );
+  // A later agent tab never borrows the created_at agent slot: the flag
+  // comes from the row, and created_at stays strictly later than the ws.
+  const wsRowCreated = db.get(
+    qb.selectFrom('workspaces').select('created_at').where('id', '=', ws.id),
+  ).created_at;
+  assert.ok(termRows(db, ws.id)[2].created_at > wsRowCreated);
+
+  // A failed agent-command read: no row, no spawn.
+  const db2 = freshDb();
+  const ws2 = (await domain(db2).saveWorkspace({ name: 'y', cwd: os.tmpdir() })).data;
+  const noAgent = domain(
+    db2,
+    USERNAME,
+    async () => true,
+    os.tmpdir(),
+    spawnSession,
+    liveNames(),
+    () => cmdOk(SHELL_CMD),
+    () => CMD_FAIL,
+  );
+  const refused = await noAgent.newTerminal(ws2.id, undefined, 'agent');
+  assert.equal(refused.ok, false);
+  assert.equal(refused.errorCode, 'database_error');
+  assert.equal(termRows(db2, ws2.id).length, 1); // only the auto-opened tab
+});
+
+// ---------- reorder_terminals ----------
+
+test('reorder_terminals: rewrites sort_order in steps of 10; a same-order call writes nothing', async () => {
+  const db = freshDb();
+  const w = domain(db);
+  const ws = (await w.saveWorkspace({ name: 'x', cwd: os.tmpdir() })).data;
+  const a = termRows(db, ws.id)[0].id; // the auto-opened agent tab
+  const b = (await w.newTerminal(ws.id, 'two')).data.id;
+  const c = (await w.newTerminal(ws.id, 'three')).data.id;
+  assert.deepEqual(
+    termRows(db, ws.id).map(r => r.id),
+    [a, b, c],
+  );
+
+  const reordered = await w.reorderTerminals(ws.id, [c, a, b]);
+  assert.equal(reordered.ok, true, reordered.errorMessage);
+  assert.equal(reordered.resultType, 'reorder_terminals');
+  assert.deepEqual(reordered.data, { workspaceId: ws.id, order: [c, a, b] });
+  assert.deepEqual(
+    termRows(db, ws.id).map(r => [r.id, r.sort_order]),
+    [
+      [c, 10],
+      [a, 20],
+      [b, 30],
+    ],
+  );
+  // titles and commands ride along untouched
+  assert.deepEqual(
+    termRows(db, ws.id).map(r => [r.title, r.command]),
+    [
+      ['three', 'shell'],
+      [null, 'agent'],
+      ['two', 'shell'],
+    ],
+  );
+  // the tree reads the new order
+  const tree = (await w.workspaceTree()).data.workspaces.find(x => x.id === ws.id);
+  assert.deepEqual(
+    tree.terminals.map(t => t.id),
+    [c, a, b],
+  );
+
+  // A same-order reorder is a no-op success (updated_by/updated_at untouched).
+  const before = db.get(
+    qb.selectFrom('terminals').select(['id', 'updated_at']).where('id', '=', c),
+  );
+  await new Promise(r => setTimeout(r, 2));
+  const again = await w.reorderTerminals(ws.id, [c, a, b]);
+  assert.equal(again.ok, true, again.errorMessage);
+  const after = db.get(qb.selectFrom('terminals').select(['id', 'updated_at']).where('id', '=', c));
+  assert.equal(after.updated_at, before.updated_at);
+});
+
+test('reorder_terminals: invalid_order on a duplicate, an unknown id, or a partial list; the db is untouched', async () => {
+  const db = freshDb();
+  const w = domain(db);
+  const ws = (await w.saveWorkspace({ name: 'x', cwd: os.tmpdir() })).data;
+  const a = termRows(db, ws.id)[0].id;
+  const b = (await w.newTerminal(ws.id, 'two')).data.id;
+  const other = (await w.saveWorkspace({ name: 'other', cwd: os.tmpdir() })).data;
+  const foreign = termRows(db, other.id)[0].id;
+
+  for (const order of [
+    [a, a], // duplicate
+    [a, foreign], // a terminal of ANOTHER workspace
+    [a], // missing b
+    [a, b, MISSING_WS], // unknown id
+  ]) {
+    const r = await w.reorderTerminals(ws.id, order);
+    assert.equal(r.ok, false, JSON.stringify(order));
+    assert.equal(r.errorCode, 'invalid_order');
+    assert.equal(r.resultType, 'reorder_terminals');
+  }
+  assert.deepEqual(
+    termRows(db, ws.id).map(r => [r.id, r.sort_order]),
+    [
+      [a, 10],
+      [b, 20],
+    ],
+    'a refused reorder writes nothing',
+  );
+});
+
+test('reorder_terminals: workspace_not_found / database_error', async () => {
+  const w = domain(freshDb());
+  const missing = await w.reorderTerminals(MISSING_WS, []);
+  assert.equal(missing.errorCode, 'workspace_not_found');
+  assert.equal(
+    (await domain(brokenDb()).reorderTerminals(MISSING_WS, [])).errorCode,
+    'database_error',
+  );
+});
+
 // ---------- close / rename ----------
 
 test('close_terminal: deletes the row and best-effort-kills the derived session name; terminal_not_found after', async () => {
@@ -662,6 +801,50 @@ test("terminalForAttach: the row + its workspace's cwd + the agent-slot flag; te
   assert.equal(
     (await domain(brokenDb()).terminalForAttach(MISSING_WS)).errorCode,
     'database_error',
+  );
+});
+
+test("terminalForAttach: the stored command decides the respawn — 'agent' rows stay agents, 'shell' rows stay shells, pre-v7 NULL rows keep the created_at derivation", async () => {
+  const db = freshDb();
+  const w = domain(db);
+  const ws = (await w.saveWorkspace({ name: 'x', cwd: os.tmpdir() })).data;
+  const wsCreated = db.get(
+    qb.selectFrom('workspaces').select('created_at').where('id', '=', ws.id),
+  ).created_at;
+  const madeAgent = (await w.newTerminal(ws.id, 'later agent', 'agent')).data;
+  const madeShell = (await w.newTerminal(ws.id, 'later shell', 'shell')).data;
+
+  assert.equal((await w.terminalForAttach(madeAgent.id)).data.agent, true);
+  assert.equal((await w.terminalForAttach(madeShell.id)).data.agent, false);
+
+  // Two pre-v7 rows (command NULL): the auto-opened one shares the
+  // workspace's created_at, the + one is strictly later.
+  const legacy = (id, command, created) =>
+    db.run(
+      qb.insertInto('terminals').values({
+        id,
+        workspace_id: ws.id,
+        title: null,
+        sort_order: 100,
+        command,
+        created_at: created,
+        updated_at: created,
+        created_by: 'tester',
+        updated_by: 'tester',
+      }),
+    );
+  const asTerminalId = id => id; // branded ids round-trip through the db
+  legacy(asTerminalId('123e4567-e89b-42d3-a456-426614174111'), null, wsCreated);
+  legacy(asTerminalId('123e4567-e89b-42d3-a456-426614174112'), null, wsCreated + 5);
+  assert.equal(
+    (await w.terminalForAttach(asTerminalId('123e4567-e89b-42d3-a456-426614174111'))).data.agent,
+    true,
+    'a legacy row at the workspace\u2019s created_at derives agent',
+  );
+  assert.equal(
+    (await w.terminalForAttach(asTerminalId('123e4567-e89b-42d3-a456-426614174112'))).data.agent,
+    false,
+    'a legacy row created later derives shell',
   );
 });
 

@@ -2,7 +2,7 @@
 // client-side against the same definitions. Cron validity and name
 // normalization stay server-side, in the domains.
 import { z } from 'zod';
-import { AppIdSchema } from '@cybermole/app-kit';
+import { AppIdSchema, TerminalIdSchema } from '@cybermole/app-kit';
 
 /** A parse failure answers 401, which fail2ban counts. Empty strings pass:
  *  verify() decides those. */
@@ -65,7 +65,9 @@ export const workspacePatchBody = z.object({
   cwd: z.string().max(4096, 'cwd is too long').optional(),
 });
 
-/** No title: labelled "term N". */
+/** No title: labelled "term N". command picks what the tab runs; absent
+ *  is the shell, the common case (the workspace's first, auto-opened tab
+ *  is always an agent tab and is not created through this body). */
 export const terminalCreateBody = z.object({
   title: z
     .string()
@@ -73,6 +75,13 @@ export const terminalCreateBody = z.object({
     .min(1, 'title is required')
     .max(120, 'title is too long (max 120)')
     .optional(),
+  command: z.enum(['agent', 'shell']).optional(),
+});
+
+/** A full-list reorder: every terminal of the workspace, each once. The
+ *  domain checks the set; the schema caps the list. */
+export const terminalReorderBody = z.object({
+  order: z.array(TerminalIdSchema).min(1, 'order is required').max(200, 'too many terminals'),
 });
 
 /** A string sets, null clears back to "term N", absent is a no-op; '' is a 400. */

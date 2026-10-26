@@ -13,6 +13,7 @@ import { databaseRead, databaseUpdate, type DatabaseReadResult } from '@cybermol
 import { componentLogger } from '../platform/logger';
 import { terminalSessionName } from './tmux';
 import { splitCommandLine } from './terminal-defaults';
+import { reorderUpdates, type TerminalCommand } from './tab-order';
 import {
   asTerminalId,
   asWorkspaceId,
@@ -105,6 +106,19 @@ export type RenameTerminalFailure = ResultFailure<
   RenameTerminalErrorCode
 >;
 export type RenameTerminalResult = RenameTerminalSuccess | RenameTerminalFailure;
+
+/** A full-list reorder: the ids are the workspace's terminals, each once,
+ *  in their new order. invalid_order means the list doesn't match the
+ *  workspace (a stale client re-reads state and retries). */
+export type ReorderTerminalsData = { workspaceId: WorkspaceId; order: TerminalId[] };
+export type ReorderTerminalsErrorCode = 'workspace_not_found' | 'invalid_order' | 'database_error';
+export type ReorderTerminalsSuccess = ResultSuccess<'reorder_terminals', ReorderTerminalsData>;
+export type ReorderTerminalsFailure = ResultFailure<
+  'reorder_terminals',
+  ReorderTerminalsData,
+  ReorderTerminalsErrorCode
+>;
+export type ReorderTerminalsResult = ReorderTerminalsSuccess | ReorderTerminalsFailure;
 
 /** `agent`: this is the workspace's auto-opened agent tab, so a respawn
  *  runs the agent command rather than the shell. `env`: the build-session
@@ -337,17 +351,9 @@ export class Workspaces {
         `${appId === null ? 'console' : `app ${appId}`}${kind === 'build' ? ', build' : ''})`,
     );
     // A new workspace auto-opens its agent tab. A failed spawn never fails
-    // the create. The tab gets the workspace's exact created_at, which is
-    // how terminalForAttach recognises the agent slot (stable, unlike
-    // "first by sort_order", which would drift when the tab is closed).
-    const opened = await this.openTab(
-      id,
-      cwd.cwd,
-      undefined,
-      this.deps.agentCommand(),
-      now,
-      focusEnv,
-    );
+    // the create. The tab carries command 'agent' (and the workspace's
+    // exact created_at, which is what marks the agent slot on pre-v7 rows).
+    const opened = await this.openTab(id, cwd.cwd, undefined, 'agent', now, focusEnv);
     if (!opened.ok)
       log.warn(
         `workspace "${name}": its first terminal did not start ` +
@@ -457,10 +463,12 @@ export class Workspaces {
   }
 
   /** Inserts the row, then spawns best-effort; a failed spawn still
-   *  returns the row (live:false) for the first attach to retry. */
+   *  returns the row (live:false) for the first attach to retry.
+   *  command picks what the tab runs now and on every respawn. */
   async newTerminal(
     workspaceId: WorkspaceId,
     title: string | undefined,
+    command: TerminalCommand = 'shell',
   ): Promise<NewTerminalResult> {
     const fail = (errorCode: NewTerminalErrorCode, errorMessage: string) =>
       ({
@@ -473,20 +481,14 @@ export class Workspaces {
     if (!found.ok) return fail('database_error', found.errorMessage);
     const row = found.data.value;
     if (!row) return fail('workspace_not_found', 'no such workspace');
-    // created_at equal to the workspace's marks the agent slot, so a +
-    // tab must be strictly later (a script can land in the same ms).
+    // created_at equal to the workspace's marks the agent slot (the legacy
+    // derivation for pre-v7 rows), so a later tab must stay strictly later
+    // (a script can land in the same ms).
     const createdAt = Math.max(Date.now(), row.created_at + 1);
     // A build workspace's later tabs carry the framing too.
     const focus = this.focusEnvByRow(row);
     if (!focus.ok) return fail('database_error', focus.errorMessage);
-    return this.openTab(
-      workspaceId,
-      row.cwd,
-      title,
-      this.deps.shellCommand(),
-      createdAt,
-      focus.env,
-    );
+    return this.openTab(workspaceId, row.cwd, title, command, createdAt, focus.env);
   }
 
   /** Row first, then the spawn. A failed command read returns before the
@@ -495,7 +497,7 @@ export class Workspaces {
     workspaceId: WorkspaceId,
     cwd: string,
     title: string | null | undefined,
-    command: DatabaseReadResult<string>,
+    command: TerminalCommand,
     createdAt: number,
     env: Record<string, string> | null = null,
   ): Promise<NewTerminalResult> {
@@ -507,9 +509,10 @@ export class Workspaces {
         errorMessage,
         ...(data ? { data } : {}),
       }) satisfies NewTerminalFailure;
-    if (!command.ok)
-      return fail('database_error', command.errorMessage ?? 'could not read the terminal command');
-    const argv = splitCommandLine(command.data.value);
+    const resolved = command === 'agent' ? this.deps.agentCommand() : this.deps.shellCommand();
+    if (!resolved.ok)
+      return fail('database_error', resolved.errorMessage ?? 'could not read the terminal command');
+    const argv = splitCommandLine(resolved.data.value);
     const actor = this.actor();
     if (!actor.ok) return fail('database_error', actor.errorMessage);
     const order = databaseRead(
@@ -532,6 +535,7 @@ export class Workspaces {
           workspace_id: workspaceId,
           title: title ?? null,
           sort_order: order.data.value,
+          command,
           created_at: now,
           updated_at: now,
           created_by: actor.username,
@@ -626,6 +630,63 @@ export class Workspaces {
     } satisfies RenameTerminalSuccess;
   }
 
+  /** Persists a full-list reorder: positions become steps of 10. The plan
+   *  (same set, each once) is computed by tab-order's pure helper. */
+  async reorderTerminals(
+    workspaceId: WorkspaceId,
+    ordered: TerminalId[],
+  ): Promise<ReorderTerminalsResult> {
+    const fail = (errorCode: ReorderTerminalsErrorCode, errorMessage: string) =>
+      ({
+        ok: false,
+        resultType: 'reorder_terminals',
+        errorCode,
+        errorMessage,
+      }) satisfies ReorderTerminalsFailure;
+    const found = this.byId(workspaceId);
+    if (!found.ok) return fail('database_error', found.errorMessage);
+    if (!found.data.value) return fail('workspace_not_found', 'no such workspace');
+    const current = databaseRead('could not read terminals', () =>
+      this.deps.db
+        .all(
+          qb
+            .selectFrom('terminals')
+            .select(['id', 'sort_order'])
+            .where('workspace_id', '=', workspaceId),
+        )
+        .map(row => ({ id: row.id, sortOrder: row.sort_order })),
+    );
+    if (!current.ok) return fail('database_error', current.errorMessage);
+    const plan = reorderUpdates(current.data.value, ordered);
+    if (!plan.ok) return fail('invalid_order', plan.message);
+    if (plan.updates.length > 0) {
+      const actor = this.actor();
+      if (!actor.ok) return fail('database_error', actor.errorMessage);
+      const now = Date.now();
+      for (const update of plan.updates) {
+        const updated = databaseUpdate('could not save the terminal order', () =>
+          this.deps.db.run(
+            qb
+              .updateTable('terminals')
+              .set({
+                sort_order: update.sortOrder,
+                updated_at: now,
+                updated_by: actor.username,
+              })
+              .where('id', '=', update.id),
+          ),
+        );
+        if (!updated.ok) return fail('database_error', updated.errorMessage);
+      }
+      log.info(`workspace ${workspaceId}: ${plan.updates.length} terminal(s) reordered`);
+    }
+    return {
+      ok: true,
+      resultType: 'reorder_terminals',
+      data: { workspaceId, order: ordered },
+    } satisfies ReorderTerminalsSuccess;
+  }
+
   /** For the WS attach path, with the workspace cwd for respawns and the
    *  build-session framing env (null on a plain workspace). */
   async terminalForAttach(id: TerminalId): Promise<TerminalForAttachResult> {
@@ -648,6 +709,7 @@ export class Workspaces {
               'terminals.id',
               'terminals.workspace_id',
               'terminals.title',
+              'terminals.command',
               'terminals.created_at',
               'workspaces.cwd',
               'workspaces.kind as ws_kind',
@@ -674,7 +736,10 @@ export class Workspaces {
         workspaceId: row.workspace_id,
         title: row.title,
         cwd: row.cwd,
-        agent: row.created_at === row.ws_created_at,
+        // The stored command decides; pre-v7 rows (NULL) fall back to the
+        // created_at agent-slot derivation.
+        agent:
+          row.command === 'agent' || (row.command === null && row.created_at === row.ws_created_at),
         env,
       },
     } satisfies TerminalForAttachSuccess;
