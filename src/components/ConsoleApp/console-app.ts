@@ -20,6 +20,8 @@ import {
 } from '@cybermole/app-kit';
 import { BASE } from '../../base';
 import { signedInFetch, type SignedInFetchFailure } from '../signed-in-fetch';
+import { inTextField } from '../AgentTerminal/agent-terminal';
+import type { TerminalCommand } from '../../lib/terminals/tab-order';
 import 'validation-enhancer/zod';
 import type { ValidationEnhancerZod } from 'validation-enhancer/zod';
 import { appForm, workspaceForm } from '../../schemas/api';
@@ -59,6 +61,8 @@ export class ConsoleApp extends HTMLElement {
   /** Where the new-workspace dialog creates (null = the console group). */
   private newWorkspaceAppId: AppId | null = null;
   private pendingDelete: PendingDelete | null = null;
+  /** Serializes reorder writes (see the reorder-terminals listener). */
+  private reorderQueue: Promise<void> = Promise.resolve();
   /** /?t=<terminal uuid>, resolved on the first state load. A dead tab still
    *  opens (the attach respawns it); an unknown uuid toasts. */
   private pendingTerminal: TerminalId | null = (() => {
@@ -97,8 +101,29 @@ export class ConsoleApp extends HTMLElement {
       this.confirmDelete({ kind: 'app', slug: d.slug as AppSlug, name: d.name });
     });
     this.addEventListener('new-terminal', e => {
-      const id = (e as CustomEvent<{ workspaceId?: string }>).detail.workspaceId ?? '';
-      if (UUID_RE.test(id)) void this.createTerminal(asWorkspaceId(id));
+      const d = (e as CustomEvent<{ workspaceId?: string; command?: string }>).detail;
+      const id = d.workspaceId ?? '';
+      const command: TerminalCommand = d.command === 'agent' ? 'agent' : 'shell';
+      if (UUID_RE.test(id)) void this.createTerminal(asWorkspaceId(id), command);
+    });
+    this.addEventListener('reorder-terminals', e => {
+      const d = (e as CustomEvent<{ workspaceId?: string; order?: string[] }>).detail;
+      const id = d.workspaceId ?? '';
+      const order = (d.order ?? []).filter(x => UUID_RE.test(x));
+      if (UUID_RE.test(id) && order.length > 0) {
+        // Serialized, so two rapid drags write in dispatch order and the
+        // newest order is what the server keeps (each write is a full list).
+        const run = this.reorderQueue.then(() =>
+          this.reorderTerminals(
+            asWorkspaceId(id),
+            order.map(x => asTerminalId(x)),
+          ),
+        );
+        this.reorderQueue = run.then(
+          () => undefined,
+          () => undefined,
+        );
+      }
     });
     this.addEventListener('close-terminal', e => {
       const d = (e as CustomEvent<{ id: string }>).detail;
@@ -147,11 +172,28 @@ export class ConsoleApp extends HTMLElement {
     this.pollTimer = setInterval(() => {
       void this.loadState();
     }, 15000);
+    document.addEventListener('keydown', this.onKeydown, true);
   }
 
   disconnectedCallback(): void {
     if (this.pollTimer) clearInterval(this.pollTimer);
+    document.removeEventListener('keydown', this.onKeydown, true);
   }
+
+  /** ctrl-t / ctrl-shift-t open shell / agent tabs in the selected
+   *  workspace. Capture phase, so preventDefault beats both the browser's
+   *  own binding and xterm (which skips default-prevented events). Never
+   *  while typing: a focused text field, an open dialog or an open menu
+   *  keeps the keys for itself. */
+  private readonly onKeydown = (e: KeyboardEvent): void => {
+    if (this.selected === null) return;
+    if (e.repeat) return; // a held key must not spray tabs
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== 't') return;
+    if (inTextField(document.activeElement)) return;
+    if (document.querySelector('wa-dialog[open], wa-dropdown[open], wa-drawer[open]')) return;
+    e.preventDefault();
+    void this.createTerminal(this.selected, e.shiftKey ? 'agent' : 'shell');
+  };
 
   private sidebar(): WorkspaceSidebar | null {
     return this.querySelector('workspace-sidebar') as WorkspaceSidebar | null;
@@ -412,8 +454,11 @@ export class ConsoleApp extends HTMLElement {
   // ---- terminal tabs ----
 
   /** A failed spawn still carries the row, so it's selected anyway; the first attach retries. */
-  private async createTerminal(workspaceId: WorkspaceId): Promise<void> {
-    const done = await this.call('POST', `/api/workspaces/${workspaceId}/terminals`, {});
+  private async createTerminal(
+    workspaceId: WorkspaceId,
+    command: TerminalCommand = 'shell',
+  ): Promise<void> {
+    const done = await this.call('POST', `/api/workspaces/${workspaceId}/terminals`, { command });
     if (!done) return;
     const row = done.ok ? done.json : done.json?.terminal;
     if (!row?.id) {
@@ -422,6 +467,31 @@ export class ConsoleApp extends HTMLElement {
     }
     await this.loadState();
     this.tabs()?.selectTerminal(asTerminalId(row.id));
+  }
+
+  /** The tabs already moved optimistically; this persists the order. The
+   *  settle report plus the state reload either confirm or revert the bar.
+   *  Writes queue onto reorderQueue, so rapid drags stay ordered. */
+  private async reorderTerminals(workspaceId: WorkspaceId, order: TerminalId[]): Promise<void> {
+    const done = await this.call('PUT', `/api/workspaces/${workspaceId}/terminals/order`, {
+      order,
+    });
+    if (!done) {
+      // Network failure: report the revert the next sync will make.
+      this.tabs()?.reorderSettled(false);
+      await this.loadState();
+      return;
+    }
+    if (!done.ok) {
+      this.errorToast('could not reorder the tabs — try again', done.json);
+    }
+    // The response carries the persisted order, so a superseded write
+    // (two rapid drags, slower request landing last) confirms only itself.
+    const settled = Array.isArray(done.json?.order)
+      ? (done.json.order as string[]).filter(x => UUID_RE.test(x)).map(x => asTerminalId(x))
+      : undefined;
+    this.tabs()?.reorderSettled(done.ok, settled);
+    await this.loadState();
   }
 
   // ---- delete confirmations ----

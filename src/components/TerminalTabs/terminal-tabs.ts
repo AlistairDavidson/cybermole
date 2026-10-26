@@ -4,18 +4,28 @@
 // Bar updates are granular node moves and class flips, never innerHTML
 // swaps, so listeners and focus survive.
 //
+// Tabs reorder by drag (the dragged tab follows the pointer across the
+// bar's midpoints) or by Shift+Arrow on a focused tab. A reorder is
+// optimistic: the bar moves at once, the order rides a
+// 'reorder-terminals' event up to <console-app>, and the next sync
+// confirms it (or, after a failed write, reverts the bar).
+//
 // Pop-out moves a terminal to its own browser tab (/?t=<id>). It's a move,
 // not a copy: the server attaches with `tmux attach -d`, so two clients
 // would bump each other. The pane's socket closes but the session survives;
 // the terminal comes back when the popped tab closes or this tab is clicked.
 //
-// Emits (bubbling, handled by <console-app>): new-terminal {workspaceId},
-// close-terminal {id}, new-workspace {appId}, pop-blocked {id}.
+// Emits (bubbling, handled by <console-app>): new-terminal {workspaceId,
+// command}, close-terminal {id}, new-workspace {appId}, pop-blocked {id},
+// reorder-terminals {workspaceId, order}.
 import type { TerminalState, WorkspaceState } from '../../lib/platform/types';
 import type { TerminalId, TmuxSessionName, WorkspaceId } from '@cybermole/app-kit';
 import { BASE } from '../../base';
+import { moveItem, type TerminalCommand } from '../../lib/terminals/tab-order';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
+import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
+import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
 import type { AgentTerminal } from '../AgentTerminal/agent-terminal';
 import '../AgentTerminal/agent-terminal';
 
@@ -58,8 +68,12 @@ export class TerminalTabs extends HTMLElement {
   /** Only one tab can be both popped and active. */
   private poppedNotice: HTMLElement | null = null;
   private editorTab: HTMLButtonElement | null = null;
-  private plusButton: HTMLButtonElement | null = null;
+  private newTabGroup: HTMLElement | null = null;
   private editorPane: HTMLIFrameElement | null = null;
+  /** The in-flight optimistic tab order, until a poll confirms the write. */
+  private pendingOrder: TerminalId[] | null = null;
+  /** The tab being dragged, null when no drag is live. */
+  private dragging: TerminalId | null = null;
   private runHost: HTMLElement | null = null;
   private runPane: AgentTerminal | null = null;
   /** A named field so re-adding the listener on reconnect dedupes. */
@@ -86,6 +100,7 @@ export class TerminalTabs extends HTMLElement {
   setWorkspace(ws: WorkspaceState | null, editorEnabled: boolean, initialTab?: TerminalId): void {
     this.ws = ws;
     this.editorEnabled = editorEnabled;
+    this.pendingOrder = null; // any optimistic order belonged to the old workspace
     this.teardownPanes();
     if (!this.bar || !this.body) return;
     this.bar.innerHTML = '';
@@ -114,7 +129,7 @@ export class TerminalTabs extends HTMLElement {
       this.updateTabButton(t, i);
     }
     this.appendEditorTab();
-    this.appendPlusButton();
+    this.appendNewTabButtons();
     this.body.appendChild(this.runPaneHost());
     const initial =
       initialTab !== undefined && ws.terminals.some(t => t.id === initialTab) ? initialTab : null;
@@ -125,14 +140,37 @@ export class TerminalTabs extends HTMLElement {
   /** Granular reconcile with a fresh poll: nodes are moved, never rebuilt. */
   sync(ws: WorkspaceState): void {
     if (!this.bar || this.ws?.id !== ws.id) return;
+    // An in-flight optimistic reorder keeps the display order until a poll
+    // confirms it (identical ids) — a mid-write poll must not snap the bar
+    // back. Tabs that appeared or vanished elsewhere still reconcile.
+    if (this.pendingOrder !== null) {
+      const serverIds = ws.terminals.map(t => t.id);
+      const confirmed =
+        serverIds.length === this.pendingOrder.length &&
+        serverIds.every((id, i) => id === this.pendingOrder![i]);
+      if (confirmed) {
+        this.pendingOrder = null;
+      } else {
+        const byId = new Map(ws.terminals.map(t => [t.id, t] as const));
+        const ordered = this.pendingOrder
+          .map(id => byId.get(id))
+          .filter((t): t is TerminalState => t !== undefined);
+        const seen = new Set(ordered.map(t => t.id));
+        ws = {
+          ...ws,
+          terminals: [...ordered, ...ws.terminals.filter(t => !seen.has(t.id))],
+        };
+      }
+    }
     this.ws = ws;
-    // appendChild moves buttons into state order; editor and + stay last.
+    // appendChild moves buttons into state order; editor and the new-tab
+    // group stay last.
     for (const t of ws.terminals) {
       if (!this.tabs.has(t.id)) this.addTabButton(t);
       this.bar.appendChild(this.tabs.get(t.id)!);
     }
     if (this.editorTab) this.bar.appendChild(this.editorTab);
-    if (this.plusButton) this.bar.appendChild(this.plusButton);
+    if (this.newTabGroup) this.bar.appendChild(this.newTabGroup);
     const seen = new Set<TerminalId>();
     ws.terminals.forEach((t, i) => {
       seen.add(t.id);
@@ -151,6 +189,153 @@ export class TerminalTabs extends HTMLElement {
       this.clearPoppedNotice();
       if (!this.selectFirstTerminal()) this.renderNoTerminals();
     }
+  }
+
+  // ---- reorder ----
+
+  /** The bar's ids in display order (an optimistic reorder mutates ws). */
+  private displayIds(): TerminalId[] {
+    return this.ws ? this.ws.terminals.map(t => t.id) : [];
+  }
+
+  /** Moves the bar to the state order and pins editor/new-tab last. */
+  private applyDomOrder(): void {
+    if (!this.bar || !this.ws) return;
+    for (const t of this.ws.terminals) {
+      const tab = this.tabs.get(t.id);
+      if (tab) this.bar.appendChild(tab);
+    }
+    if (this.editorTab) this.bar.appendChild(this.editorTab);
+    if (this.newTabGroup) this.bar.appendChild(this.newTabGroup);
+  }
+
+  /** Optimistic: ws and the bar take the order at once, and the write rides
+   *  the event up to <console-app>, which reports back via reorderSettled. */
+  private applyOrder(ids: TerminalId[]): void {
+    if (!this.ws || !this.bar) return;
+    const byId = new Map(this.ws.terminals.map(t => [t.id, t] as const));
+    const reordered = ids
+      .map(id => byId.get(id))
+      .filter((t): t is TerminalState => t !== undefined);
+    if (reordered.length !== this.ws.terminals.length) return; // vanished mid-drag: sync reconciles
+    this.pendingOrder = ids;
+    this.ws = { ...this.ws, terminals: reordered };
+    this.applyDomOrder();
+    reordered.forEach((t, i) => this.updateTabButton(t, i)); // "term N" labels renumber
+    this.dispatchEvent(
+      new CustomEvent('reorder-terminals', {
+        detail: { workspaceId: this.ws!.id, order: ids },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
+  /** The console's reorder PUT settled. A failure clears the optimistic
+   *  order (the sync the console fires right after reverts the bar); a
+   *  success confirms only ITS order — a superseded one (a newer drag is
+   *  still in flight) must not clear the newer pending order. */
+  reorderSettled(ok: boolean, order?: TerminalId[]): void {
+    if (!ok) {
+      this.pendingOrder = null;
+      return;
+    }
+    if (
+      order !== undefined &&
+      this.pendingOrder !== null &&
+      order.length === this.pendingOrder.length &&
+      order.every((id, i) => id === this.pendingOrder![i])
+    )
+      this.pendingOrder = null;
+  }
+
+  /** HTML5 drag: the dragged tab follows the pointer, hopping each tab's
+   *  midpoint, so the drop position is already the DOM order. */
+  private onTabDragStart(id: TerminalId, e: DragEvent): void {
+    this.dragging = id;
+    // Data is required for Firefox to start a drag at all.
+    e.dataTransfer?.setData('text/plain', id);
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+    this.tabs.get(id)?.classList.add('dragging');
+  }
+
+  private onTabDragOver(over: TerminalId, e: DragEvent): void {
+    const dragged = this.dragging;
+    if (dragged === null) return;
+    // Every tab is a drop target, the dragged one too: dropping on itself
+    // keeps the preview position (dragend alone would snap it back).
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    if (dragged === over) return;
+    const draggedEl = this.tabs.get(dragged);
+    const overEl = this.tabs.get(over);
+    if (!this.bar || !draggedEl || !overEl) return;
+    const rect = overEl.getBoundingClientRect();
+    const reference = e.clientX > rect.left + rect.width / 2 ? overEl.nextSibling : overEl;
+    if (draggedEl !== reference && draggedEl.nextSibling !== reference)
+      this.bar.insertBefore(draggedEl, reference);
+  }
+
+  private onTabDrop(e: DragEvent): void {
+    if (this.dragging === null) return;
+    e.preventDefault();
+    this.finishDrag();
+  }
+
+  private onTabDragEnd(id: TerminalId): void {
+    if (this.dragging !== null) {
+      // No drop: the preview moved the tab, so snap the bar back.
+      this.dragging = null;
+      this.applyDomOrder();
+    }
+    this.tabs.get(id)?.classList.remove('dragging');
+  }
+
+  private finishDrag(): void {
+    const id = this.dragging;
+    this.dragging = null;
+    this.tabs.get(id!)?.classList.remove('dragging');
+    if (id === null || !this.bar) return;
+    const ids: TerminalId[] = [];
+    for (const el of this.bar.children) {
+      const term = (el as HTMLElement).dataset.term;
+      if (term !== undefined && this.tabs.has(term as TerminalId)) ids.push(term as TerminalId);
+    }
+    this.applyOrder(ids);
+  }
+
+  /** Arrows walk the tab bar (roving focus, wrapping); Shift+Arrow moves
+   *  the focused tab itself — the keyboard half of drag-reorder. */
+  private onTabKeydown(id: TerminalId, e: KeyboardEvent): void {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const ids = this.displayIds();
+    const from = ids.indexOf(id);
+    if (from < 0) return;
+    const delta = e.key === 'ArrowLeft' ? -1 : 1;
+    if (e.shiftKey) {
+      const to = from + delta;
+      if (to < 0 || to >= ids.length) return;
+      this.applyOrder(moveItem(ids, from, to));
+      // A DOM move can drop focus; the tab stays where the user is looking.
+      this.tabs.get(id)?.focus();
+    } else {
+      const next = ids[(from + delta + ids.length) % ids.length]!;
+      this.setRovingTabindex(next);
+      this.tabs.get(next)?.focus();
+    }
+  }
+
+  /** One tab stop in the bar: the given terminal tab, the rest -1. */
+  private setRovingTabindex(on: TerminalId | null): void {
+    let any = false;
+    for (const [id, tab] of this.tabs) {
+      const isOn = id === on;
+      if (isOn) any = true;
+      tab.tabIndex = isOn ? 0 : -1;
+    }
+    if (!any) for (const tab of this.tabs.values()) tab.tabIndex = 0;
   }
 
   // ---- pop-out ----
@@ -318,6 +503,8 @@ export class TerminalTabs extends HTMLElement {
     tab.className = 'tab';
     tab.setAttribute('role', 'tab');
     tab.dataset.term = t.id;
+    tab.draggable = true;
+    tab.setAttribute('aria-keyshortcuts', 'Shift+ArrowLeft Shift+ArrowRight');
     tab.innerHTML =
       `<span class="tab-dot" aria-hidden="true"></span>` +
       `<span class="tab-label"></span>` +
@@ -337,6 +524,11 @@ export class TerminalTabs extends HTMLElement {
       }
       this.selectTerminal(t.id);
     });
+    tab.addEventListener('dragstart', e => this.onTabDragStart(t.id, e));
+    tab.addEventListener('dragover', e => this.onTabDragOver(t.id, e));
+    tab.addEventListener('drop', e => this.onTabDrop(e));
+    tab.addEventListener('dragend', () => this.onTabDragEnd(t.id));
+    tab.addEventListener('keydown', e => this.onTabKeydown(t.id, e));
     this.tabs.set(t.id, tab);
     this.bar.appendChild(tab);
   }
@@ -373,25 +565,60 @@ export class TerminalTabs extends HTMLElement {
     this.editorTab = tab;
   }
 
-  private appendPlusButton(): void {
+  /** The new-tab affordances, pinned last in the bar: + opens a shell tab
+   *  (the common case, same as today), the caret opens the menu with both
+   *  kinds and their shortcuts. */
+  private appendNewTabButtons(): void {
     if (!this.bar || !this.ws) return;
-    const plus = document.createElement('button');
-    plus.type = 'button';
-    plus.className = 'tab-new';
-    plus.title = 'new terminal tab';
-    plus.setAttribute('aria-label', 'new terminal tab');
-    plus.innerHTML = `<wa-icon name="plus" aria-hidden="true"></wa-icon>`;
-    plus.addEventListener('click', () =>
-      this.dispatchEvent(
-        new CustomEvent('new-terminal', {
-          detail: { workspaceId: this.ws?.id },
-          bubbles: true,
-          composed: true,
-        }),
-      ),
+    const group = document.createElement('div');
+    group.className = 'tab-new-group';
+    const shell = document.createElement('button');
+    shell.type = 'button';
+    shell.className = 'tab-new';
+    shell.title = 'new shell tab';
+    shell.setAttribute('aria-label', 'new shell tab');
+    shell.innerHTML = `<wa-icon name="plus" aria-hidden="true"></wa-icon>`;
+    shell.addEventListener('click', () => this.emitNewTerminal('shell'));
+    const menu = document.createElement('wa-dropdown');
+    menu.setAttribute('placement', 'bottom-end');
+    menu.className = 'tab-new-menu';
+    const caret = document.createElement('button');
+    caret.type = 'button';
+    caret.className = 'tab-new-caret';
+    caret.title = 'new tab options';
+    caret.setAttribute('aria-label', 'new tab options');
+    caret.setAttribute('slot', 'trigger');
+    caret.innerHTML = `<wa-icon name="chevron-down" aria-hidden="true"></wa-icon>`;
+    menu.appendChild(caret);
+    for (const item of [
+      { value: 'shell', icon: 'terminal', label: 'new shell tab', hint: 'ctrl t' },
+      { value: 'agent', icon: 'robot', label: 'new agent tab', hint: 'ctrl shift t' },
+    ] as const) {
+      const entry = document.createElement('wa-dropdown-item');
+      entry.setAttribute('value', item.value);
+      entry.innerHTML =
+        `<wa-icon slot="icon" name="${item.icon}" aria-hidden="true"></wa-icon>` +
+        `<span>${item.label}</span><span slot="details">${item.hint}</span>`;
+      menu.appendChild(entry);
+    }
+    menu.addEventListener('wa-select', e => {
+      const chosen = (e as CustomEvent<{ item?: Element }>).detail.item;
+      const value = chosen?.getAttribute('value');
+      if (value === 'agent' || value === 'shell') this.emitNewTerminal(value);
+    });
+    group.append(shell, menu);
+    this.bar.appendChild(group);
+    this.newTabGroup = group;
+  }
+
+  private emitNewTerminal(command: TerminalCommand): void {
+    this.dispatchEvent(
+      new CustomEvent('new-terminal', {
+        detail: { workspaceId: this.ws?.id, command },
+        bubbles: true,
+        composed: true,
+      }),
     );
-    this.bar.appendChild(plus);
-    this.plusButton = plus;
   }
 
   private ensurePane(id: TerminalId): AgentTerminal {
@@ -434,8 +661,10 @@ export class TerminalTabs extends HTMLElement {
     this.clearPoppedNotice();
     this.editorTab?.remove();
     this.editorTab = null;
-    this.plusButton?.remove();
-    this.plusButton = null;
+    this.newTabGroup?.remove();
+    this.newTabGroup = null;
+    this.pendingOrder = null;
+    this.dragging = null;
     this.editorPane?.remove();
     this.editorPane = null;
     this.active = null;
@@ -495,6 +724,11 @@ export class TerminalTabs extends HTMLElement {
       tab.classList.toggle('active', on);
       tab.setAttribute('aria-selected', on ? 'true' : 'false');
     }
+    this.setRovingTabindex(
+      this.active !== null && this.active !== EDITOR
+        ? this.active
+        : (this.ws?.terminals[0]?.id ?? null),
+    );
     this.editorTab?.classList.toggle('active', this.active === EDITOR);
     this.editorTab?.setAttribute('aria-selected', this.active === EDITOR ? 'true' : 'false');
   }

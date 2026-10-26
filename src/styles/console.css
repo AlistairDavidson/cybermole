@@ -328,7 +328,13 @@ terminal-tabs {
 /* A popped tab's terminal lives in another browser tab, so its row dims. */
 .tabs-bar .tab.popped { color: var(--wa-color-text-quiet); }
 .tabs-bar .tab.editor-tab wa-icon { font-size: var(--wa-font-size-2xs); flex: none; }
-.tabs-bar .tab-new {
+.tabs-bar .tab.dragging { opacity: .45; }
+.tabs-bar .tab:focus-visible {
+  outline: var(--wa-border-width-s) solid var(--wa-color-brand-on-quiet);
+  outline-offset: calc(-1 * var(--wa-border-width-s));
+}
+.tabs-bar .tab-new,
+.tabs-bar .tab-new-caret {
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--wa-space-xl); flex: none;
   background: none; color: var(--wa-color-text-quiet);
@@ -336,7 +342,22 @@ terminal-tabs {
   border-radius: var(--wa-border-radius-s) var(--wa-border-radius-s) 0 0;
   cursor: pointer;
 }
-.tabs-bar .tab-new:hover { color: var(--wa-color-brand-on-quiet); }
+.tabs-bar .tab-new:hover,
+.tabs-bar .tab-new-caret:hover { color: var(--wa-color-brand-on-quiet); }
+.tabs-bar .tab-new:focus-visible,
+.tabs-bar .tab-new-caret:focus-visible {
+  outline: var(--wa-border-width-s) solid var(--wa-color-brand-on-quiet);
+  outline-offset: calc(-1 * var(--wa-border-width-s));
+}
+/* The new-tab affordances: + opens a shell tab, the caret a menu with both
+   kinds. One visual unit, so they read as one split button. */
+.tabs-bar .tab-new-group {
+  display: inline-flex; align-items: stretch; flex: none;
+  border-left: var(--wa-border-width-s) solid var(--wa-color-surface-border);
+  padding-left: var(--wa-space-3xs);
+}
+.tabs-bar .tab-new-group .tab-new-caret { width: var(--wa-space-m); }
+.tabs-bar .tab-new-group .tab-new-menu { display: inline-flex; }
 .tabs-body {
   flex: 1; min-height: 0; display: flex; flex-direction: column;
 }
