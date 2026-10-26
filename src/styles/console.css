@@ -327,6 +327,17 @@ workspace-sidebar {
   color: var(--wa-color-text-quiet);
 }
 .nav .new-app::part(base) { justify-content: flex-start; }
+/* Reorder affordances (the tab bar's language): rows and — on the builder
+   page — group headers drag; Shift+Arrow is the keyboard half. */
+.nav li[draggable='true'] { cursor: grab; }
+.nav li.dragging { opacity: .45; }
+.nav .ws-group h2[draggable='true'] { cursor: grab; }
+.nav .ws-group h2.dragging { opacity: .6; }
+.nav li:focus-visible,
+.nav .ws-group h2:focus-visible {
+  outline: var(--wa-border-width-s) solid var(--wa-color-brand-on-quiet);
+  outline-offset: calc(-1 * var(--wa-border-width-s));
+}
 
 /* ---- terminal-tabs ---- */
 terminal-tabs {
