@@ -1,5 +1,6 @@
-// <console-app>: drives the workspace sidebar and terminal tabs, the 15 s
-// state poll, the create/delete dialogs, and the desktop nav collapse. The
+// <console-app>: drives the workspace sidebar and terminal tabs, the
+// /ws/events-driven state refresh (subscribeConsoleEvents), the
+// create/delete dialogs, and the desktop nav collapse. The
 // dialogs and the nav-collapse control live here, outside the sidebar's
 // innerHTML re-render; the sidebar and tabs only emit events.
 // Scope "console" (the / page: console workspaces only) or "builder"
@@ -22,6 +23,7 @@ import {
 } from '@cybermole/app-kit';
 import { BASE } from '../../base';
 import { signedInFetch, type SignedInFetchFailure } from '../signed-in-fetch';
+import { subscribeConsoleEvents } from '../console-events';
 import { inTextField } from '../AgentTerminal/agent-terminal';
 import type { TerminalCommand } from '../../lib/terminals/tab-order';
 import 'validation-enhancer/zod';
@@ -66,7 +68,7 @@ function readNavRail(): boolean {
 }
 
 export class ConsoleApp extends HTMLElement {
-  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private teardownEvents: (() => void) | null = null;
   private state: ConsoleState | null = null;
   private readonly scope: 'console' | 'builder' =
     this.getAttribute('scope') === 'builder' ? 'builder' : 'console';
@@ -214,14 +216,22 @@ export class ConsoleApp extends HTMLElement {
     });
 
     void this.loadState();
-    this.pollTimer = setInterval(() => {
-      void this.loadState();
-    }, 15000);
+    // No poll: workspaces/apps events push the refresh, the liveness
+    // watcher covers out-of-band changes, and each (re)connect re-syncs.
+    this.teardownEvents = subscribeConsoleEvents({
+      onEvent: () => {
+        void this.loadState();
+      },
+      onOpen: () => {
+        void this.loadState();
+      },
+    });
     document.addEventListener('keydown', this.onKeydown, true);
   }
 
   disconnectedCallback(): void {
-    if (this.pollTimer) clearInterval(this.pollTimer);
+    this.teardownEvents?.();
+    this.teardownEvents = null;
     document.removeEventListener('keydown', this.onKeydown, true);
   }
 
@@ -316,7 +326,7 @@ export class ConsoleApp extends HTMLElement {
     });
   }
 
-  // ---- state poll ----
+  // ---- state refresh ----
 
   async loadState(): Promise<void> {
     const sent = await signedInFetch(`${BASE}/api/state`);

@@ -27,8 +27,8 @@ const wsValidation = zodSchemaToHTMLAttributes(workspaceForm);
   <wa-page>
     <!-- The collapse control lives here, in the navigation-header slot —
          static markup outside workspace-sidebar's innerHTML re-render, so
-         the 15s poll never touches it (AGENTS.md). console-app.ts flips
-         console-app's data-nav-collapsed; console.css does the rest. -->
+         the event-driven refresh never touches it (AGENTS.md). console-app.ts
+         flips console-app's data-nav-collapsed; console.css does the rest. -->
     <div slot="navigation-header" class="nav-header">
       <wa-button
         id="nav-collapse"
