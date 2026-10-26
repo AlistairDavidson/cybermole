@@ -16,8 +16,6 @@ WS routes for apps (crib the bridge code; the /apps proxy grows `ws: true`)
 
 per-app agent access: per-app scoping/enforcement of jobs, per-app uids / separate sockets (v1 is one root agent, one uid)
 
-server/mcp.ts still has its own socket client — move it onto src/lib/platform/internal-api-client.ts
-
 main.ts static+middleware factoring (the app host carries its own small serve helper instead)
 
 add a slight fade-in when switching to console pages
@@ -27,21 +25,13 @@ add a slight fade-in when switching to console pages
 Popout should only pop out that one tab's contents
 toolbar / popout for editor
 
-auto-suggest app directory from name
-
 app preview?
 
 self-naming workspaces
 
-hideable nav on desktop
-
-Rename "Console" -> "Cybermole"
+workspace/app reorder UI (the sort_order columns exist)
 
 ## Workspaces follow-ups
-
-Buttons for new agent and new empty terminal
-
-terminal tab drag-reorder + workspace/app reorder UI (the sort_order columns exist)
 
 workspace templates (pre-seeded terminals)
 
@@ -57,8 +47,6 @@ pi-session resume as a workspace action ("resume a past agent session into a new
 
 job exit-code notification hooks (webhook, Grafana alerting on the Loki labels)
 
-job log size caps / rotation (no cap today)
-
 retire the workspace sidebar's 15s poll in favour of the /ws/events bus (topic field already reserved)
 
 ## Git
@@ -70,8 +58,6 @@ ability to merge
 Skills and other methods to enforce my coding patterns
 Write a refined agent workflow
 HIG skill
-keyboard shortcuts
-  ctrl-t ctrl-shift-t
 
 ## Agentic shit
 Code style skill - typescript branded types etc
@@ -88,8 +74,8 @@ lit?
 playwright fuzzer/monkeys? fuzz based integration testing
 
 ## Distribution
-installation instructions / script for agents / actual scripts
-zsh init / offer to copy local settings
+
+(done 2026-10: install guide + scripts, zsh init seeding — docs/guides/installation.md, deploy/*.sh)
 
 ## Packaging
 Pull my typescript and astro and zod stuff out to packages
