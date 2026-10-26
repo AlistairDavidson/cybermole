@@ -112,7 +112,7 @@ export class EventsRelay {
         try {
           if (ws.readyState === ws.OPEN) ws.send(frame);
         } catch {
-          /* the poll is the safety net */
+          /* a dropped frame heals on the client's reconnect re-sync */
         }
       }
     }

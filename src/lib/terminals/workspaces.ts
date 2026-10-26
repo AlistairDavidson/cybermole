@@ -11,6 +11,7 @@ import * as path from 'node:path';
 import { qb, type StateDb } from '../platform/db';
 import { databaseRead, databaseUpdate, type DatabaseReadResult } from '@cybermole/app-kit';
 import { componentLogger } from '../platform/logger';
+import { emitDomainEvent } from '../platform/events';
 import { terminalSessionName } from './tmux';
 import { splitCommandLine } from './terminal-defaults';
 import { reorderUpdates, type TerminalCommand } from './tab-order';
@@ -350,6 +351,7 @@ export class Workspaces {
       `workspace "${name}" created (cwd ${cwd.cwd}, ` +
         `${appId === null ? 'console' : `app ${appId}`}${kind === 'build' ? ', build' : ''})`,
     );
+    emitDomainEvent({ topic: 'workspaces', type: 'workspace_created', workspaceId: id });
     // A new workspace auto-opens its agent tab. A failed spawn never fails
     // the create. The tab carries command 'agent' (and the workspace's
     // exact created_at, which is what marks the agent slot on pre-v7 rows).
@@ -417,6 +419,7 @@ export class Workspaces {
       ),
     );
     if (!updated.ok) return fail('database_error', updated.errorMessage);
+    emitDomainEvent({ topic: 'workspaces', type: 'workspace_updated', workspaceId: id });
     return {
       ok: true,
       resultType: 'save_workspace',
@@ -455,6 +458,7 @@ export class Workspaces {
     log.info(
       `workspace "${row.name}" deleted (${terminals.data.value.length} terminal sessions killed best-effort)`,
     );
+    emitDomainEvent({ topic: 'workspaces', type: 'workspace_deleted', workspaceId: id });
     return {
       ok: true,
       resultType: 'delete_workspace',
@@ -544,6 +548,7 @@ export class Workspaces {
       ),
     );
     if (!inserted.ok) return fail('database_error', inserted.errorMessage);
+    emitDomainEvent({ topic: 'workspaces', type: 'terminal_created', workspaceId, terminalId: id });
     const data: NewTerminalData = { id, workspaceId, title: title ?? null, live: false };
     const spawned = await this.deps.spawnSession(
       terminalSessionName(id),
@@ -585,6 +590,7 @@ export class Workspaces {
     );
     if (!deleted.ok) return fail('database_error', deleted.errorMessage);
     await this.deps.killSession(terminalSessionName(id));
+    emitDomainEvent({ topic: 'workspaces', type: 'terminal_closed', terminalId: id });
     return { ok: true, resultType: 'close_terminal', data: { id } } satisfies CloseTerminalSuccess;
   }
 
@@ -623,6 +629,7 @@ export class Workspaces {
     );
     if (!updated.ok) return fail('database_error', updated.errorMessage);
     if (Number(updated.data.changes) === 0) return fail('terminal_not_found', 'no such terminal');
+    emitDomainEvent({ topic: 'workspaces', type: 'terminal_renamed', terminalId: id });
     return {
       ok: true,
       resultType: 'rename_terminal',
@@ -679,6 +686,7 @@ export class Workspaces {
         if (!updated.ok) return fail('database_error', updated.errorMessage);
       }
       log.info(`workspace ${workspaceId}: ${plan.updates.length} terminal(s) reordered`);
+      emitDomainEvent({ topic: 'workspaces', type: 'terminals_reordered', workspaceId });
     }
     return {
       ok: true,
