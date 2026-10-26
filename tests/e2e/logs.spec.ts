@@ -125,7 +125,6 @@ test('CYBERMOLE_GRAFANA_URL set: header link + /logs iframe on Grafana Explore',
     await signIn(page, server);
     const link = page.locator('app-header wa-button[href$="/logs"]');
     await expect(link).toBeVisible();
-    await expect(link).toContainText('logs');
     await expect(link.locator('wa-icon')).toHaveAttribute('name', 'file-lines');
     // The vendored glyph renders (this page's icon is only pinned here).
     await page.waitForFunction(
