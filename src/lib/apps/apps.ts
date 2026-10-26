@@ -7,6 +7,7 @@ import { qb, type StateDb } from '../platform/db';
 import { componentLogger } from '../platform/logger';
 import { terminalSessionName } from '../terminals/tmux';
 import { checkedCwd } from '../terminals/workspaces';
+import { orderPlan } from '../order-plan';
 import {
   asAppId,
   asAppSlug,
@@ -48,6 +49,19 @@ export type ListAppsErrorCode = 'database_error';
 export type ListAppsSuccess = ResultSuccess<'list_apps', ListAppsData>;
 export type ListAppsFailure = ResultFailure<'list_apps', ListAppsData, ListAppsErrorCode>;
 export type ListAppsResult = ListAppsSuccess | ListAppsFailure;
+
+/** A full-list reorder: the ids are every app row, each once, in their
+ *  new order. invalid_order means the list doesn't match the rows (a
+ *  stale client re-reads state and retries). */
+export type ReorderAppsData = { order: AppId[] };
+export type ReorderAppsErrorCode = 'invalid_order' | 'database_error';
+export type ReorderAppsSuccess = ResultSuccess<'reorder_apps', ReorderAppsData>;
+export type ReorderAppsFailure = ResultFailure<
+  'reorder_apps',
+  ReorderAppsData,
+  ReorderAppsErrorCode
+>;
+export type ReorderAppsResult = ReorderAppsSuccess | ReorderAppsFailure;
 
 // ---------- domain ----------
 
@@ -275,5 +289,55 @@ export class Apps {
         })),
       },
     } satisfies ListAppsSuccess;
+  }
+
+  /** Persists a full-list reorder: positions become steps of 10. The plan
+   *  (same set, each once) is computed by order-plan's pure helper. */
+  async reorderApps(ordered: AppId[]): Promise<ReorderAppsResult> {
+    const fail = (errorCode: ReorderAppsErrorCode, errorMessage: string) =>
+      ({
+        ok: false,
+        resultType: 'reorder_apps',
+        errorCode,
+        errorMessage,
+      }) satisfies ReorderAppsFailure;
+    if (ordered.length === 0) return fail('invalid_order', 'the order is empty');
+    const rows = databaseRead('could not read apps', () =>
+      this.deps.db.all(qb.selectFrom('apps').select(['id', 'sort_order'])),
+    );
+    if (!rows.ok) return fail('database_error', rows.errorMessage);
+    const plan = orderPlan(
+      rows.data.value.map(a => ({ id: a.id, sortOrder: a.sort_order })),
+      ordered,
+      'app',
+      'in this list',
+    );
+    if (!plan.ok) return fail('invalid_order', plan.message);
+    if (plan.updates.length > 0) {
+      const actor = this.actor();
+      if (!actor.ok) return fail('database_error', actor.errorMessage);
+      const now = Date.now();
+      for (const update of plan.updates) {
+        const updated = databaseUpdate('could not save the app order', () =>
+          this.deps.db.run(
+            qb
+              .updateTable('apps')
+              .set({
+                sort_order: update.sortOrder,
+                updated_at: now,
+                updated_by: actor.username,
+              })
+              .where('id', '=', update.id),
+          ),
+        );
+        if (!updated.ok) return fail('database_error', updated.errorMessage);
+      }
+      log.info(`${plan.updates.length} app(s) reordered`);
+    }
+    return {
+      ok: true,
+      resultType: 'reorder_apps',
+      data: { order: ordered },
+    } satisfies ReorderAppsSuccess;
   }
 }
