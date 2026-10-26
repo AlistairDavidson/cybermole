@@ -164,7 +164,8 @@ async function makeTerminal(
 const paneStatus = (page: Page, state = ''): Locator =>
   page.locator(`agent-terminal:not(.hidden) .terminal-status${state}`);
 
-/** Forces the 15 s poll; raw in-page POSTs don't trigger it. */
+/** Forces an immediate state refresh; the push subscription makes one
+ *  anyway, but tests shouldn't depend on its timing. */
 async function refreshState(page: Page): Promise<void> {
   await page.evaluate(() =>
     (
@@ -322,6 +323,34 @@ test("the console group's + workspace creates a console workspace through the di
     page.locator('workspace-sidebar li[data-ws]').filter({ hasText: 'console made ws' }),
   ).toHaveCount(0);
   await expect(page.locator('workspace-sidebar li[data-ws].active')).toContainText('scratch');
+});
+
+// The sidebar has no poll anymore: /ws/events pushes workspaces/apps
+// mutations to an open page. Everything here is a raw in-page POST — no
+// dialog, no forced refreshState — so only the socket path can move the
+// sidebar inside the 2 s windows, and the sentinel proves no reload did.
+test('the sidebar updates over /ws/events push without a reload', async ({ page }) => {
+  await login(page);
+  await page.evaluate(() => (document.body.dataset.pushSentinel = 'alive'));
+  const rows = page.locator('workspace-sidebar li[data-ws]');
+
+  const made = await api(page, 'POST', '/api/workspaces', { name: 'push ws' });
+  expect(made.status, JSON.stringify(made.json)).toBe(200);
+  await expect(rows.filter({ hasText: 'push ws' })).toHaveCount(1, { timeout: 2_000 });
+
+  const renamed = await api(page, 'PATCH', `/api/workspaces/${made.json.id}`, {
+    name: 'push renamed',
+  });
+  expect(renamed.status, JSON.stringify(renamed.json)).toBe(200);
+  await expect(rows.filter({ hasText: 'push renamed' })).toHaveCount(1, { timeout: 2_000 });
+  await expect(rows.filter({ hasText: 'push ws' })).toHaveCount(0);
+
+  // Deletion disappears the same way; also the cleanup for the later specs.
+  const deleted = await api(page, 'DELETE', `/api/workspaces/${made.json.id}`);
+  expect(deleted.status, JSON.stringify(deleted.json)).toBe(200);
+  await expect(rows.filter({ hasText: 'push renamed' })).toHaveCount(0, { timeout: 2_000 });
+
+  expect(await page.evaluate(() => document.body.dataset.pushSentinel ?? '')).toBe('alive');
 });
 
 test('a new workspace auto-opens its first terminal running the AGENT command; other tabs run the shell', async ({
