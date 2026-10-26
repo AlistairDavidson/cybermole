@@ -25,6 +25,24 @@ const wsValidation = zodSchemaToHTMLAttributes(workspaceForm);
 ---
 <console-app scope={scope}>
   <wa-page>
+    <!-- The collapse control lives here, in the navigation-header slot —
+         static markup outside workspace-sidebar's innerHTML re-render, so
+         the 15s poll never touches it (AGENTS.md). console-app.ts flips
+         console-app's data-nav-collapsed; console.css does the rest. -->
+    <div slot="navigation-header" class="nav-header">
+      <wa-button
+        id="nav-collapse"
+        class="nav-collapse"
+        appearance="plain"
+        size="s"
+        title="collapse the sidebar"
+        aria-label="collapse the sidebar"
+        aria-expanded="true"
+      >
+        <wa-icon slot="start" name="chevron-left" class="when-open" label="collapse the sidebar"></wa-icon>
+        <wa-icon slot="start" name="chevron-right" class="when-collapsed" label="expand the sidebar"></wa-icon>
+      </wa-button>
+    </div>
     <workspace-sidebar slot="navigation"></workspace-sidebar>
     <main><terminal-tabs></terminal-tabs></main>
   </wa-page>
@@ -44,7 +62,7 @@ const wsValidation = zodSchemaToHTMLAttributes(workspaceForm);
           id="app-cwd"
           name="cwd"
           label="working directory"
-          hint="optional — workspaces under this app start here (created if missing); empty starts them at the server default"
+          hint="workspaces under this app start here (created if missing); auto-filled from the name until you edit it — empty starts them at the server default"
           {...appValidation.cwd}
         />
       </form>

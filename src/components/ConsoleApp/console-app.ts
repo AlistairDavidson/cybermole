@@ -1,6 +1,7 @@
 // <console-app>: drives the workspace sidebar and terminal tabs, the 15 s
-// state poll, and the create/delete dialogs. The dialogs live here, outside
-// the sidebar's innerHTML re-render; the sidebar and tabs only emit events.
+// state poll, the create/delete dialogs, and the desktop nav collapse. The
+// dialogs and the nav-collapse control live here, outside the sidebar's
+// innerHTML re-render; the sidebar and tabs only emit events.
 // Scope "console" (the / page: console workspaces only) or "builder"
 // (/builder: the app portfolio — app workspace groups, lifecycle chips from
 // the /api/apps/status poll, + app).
@@ -10,6 +11,7 @@ import {
   asTerminalId,
   asTmuxSessionName,
   asWorkspaceId,
+  normalizeSlug,
   TMUX_SESSION_NAME_RE,
   UUID_RE,
   type AppId,
@@ -50,6 +52,19 @@ type PendingDelete =
   | { kind: 'app'; slug: AppSlug; name: string }
   | { kind: 'terminal'; id: TerminalId; name: string };
 
+/** Collapsed desktop nav (the rail), remembered across reloads. Distinct
+ *  from the sidebar's group-collapse key (workspace-sidebar.ts). */
+const NAV_RAIL_KEY = 'cybermole:sidebar-collapsed';
+
+/** Read once; an unusable storage just means this load starts expanded. */
+function readNavRail(): boolean {
+  try {
+    return localStorage.getItem(NAV_RAIL_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 export class ConsoleApp extends HTMLElement {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private state: ConsoleState | null = null;
@@ -63,6 +78,11 @@ export class ConsoleApp extends HTMLElement {
   private pendingDelete: PendingDelete | null = null;
   /** Serializes reorder writes (see the reorder-terminals listener). */
   private reorderQueue: Promise<void> = Promise.resolve();
+  /** Desktop nav collapsed to the rail; see NAV_RAIL_KEY. */
+  private navCollapsed = readNavRail();
+  /** True once the user hand-edits the new-app dialog's cwd: the name no
+   *  longer re-suggests a directory. Reset when the dialog reopens. */
+  private appCwdTouched = false;
   /** /?t=<terminal uuid>, resolved on the first state load. A dead tab still
    *  opens (the attach respawns it); an unknown uuid toasts. */
   private pendingTerminal: TerminalId | null = (() => {
@@ -151,6 +171,31 @@ export class ConsoleApp extends HTMLElement {
     (this.querySelector('#workspace-save') as HTMLElement).onclick = () =>
       (this.querySelector('#workspace-form') as HTMLFormElement).requestSubmit();
     (this.querySelector('#confirm-delete-ok') as HTMLElement).onclick = () => void this.runDelete();
+    // The nav collapse control: SSR'd static markup in the nav header, so
+    // it survives the sidebar's innerHTML re-render (AGENTS.md).
+    this.applyNavCollapsed();
+    (this.querySelector('#nav-collapse') as HTMLElement | null)?.addEventListener('click', () => {
+      this.navCollapsed = !this.navCollapsed;
+      try {
+        localStorage.setItem(NAV_RAIL_KEY, String(this.navCollapsed));
+      } catch {
+        /* storage unavailable — this page load only */
+      }
+      this.applyNavCollapsed();
+    });
+    // The new-app dialog suggests a directory derived from the name (the
+    // server's own slug rule), until the cwd is hand-edited.
+    const appName = this.querySelector('#app-name') as WaInput | null;
+    const appCwd = this.querySelector('#app-cwd') as WaInput | null;
+    if (appName && appCwd) {
+      appName.addEventListener('input', () => {
+        if (this.appCwdTouched) return;
+        appCwd.value = this.suggestAppCwd(appName.value ?? '');
+      });
+      appCwd.addEventListener('input', () => {
+        this.appCwdTouched = true;
+      });
+    }
     // Above the enhancer: it stops invalid submits from propagating, and a
     // listener on the form itself would fire before validation.
     this.addEventListener('submit', e => {
@@ -362,6 +407,7 @@ export class ConsoleApp extends HTMLElement {
 
   private openAppDialog(): void {
     this.resetForm('#app-form');
+    this.appCwdTouched = false;
     this.dialog('#app-dialog').show();
     this.focusField('#app-name');
   }
@@ -403,6 +449,28 @@ export class ConsoleApp extends HTMLElement {
   /** After first render: wa-input's .focus() forwards to an inner input built on a microtask. */
   private focusField(sel: string): void {
     requestAnimationFrame(() => (this.querySelector(sel) as WaInput | null)?.focus());
+  }
+
+  /** The suggested directory for a new app: the server default cwd plus
+   *  the name's slug — the same normalizeSlug the server derives it with. */
+  private suggestAppCwd(name: string): string | null {
+    const slug = normalizeSlug(name);
+    const root = this.state?.defaultCwd;
+    if (slug === '' || root === undefined) return null;
+    return `${root.replace(/\/+$/, '')}/${slug}`;
+  }
+
+  /** Reflects the collapse on the host (console.css owns the look) and on
+   *  the control's semantics. */
+  private applyNavCollapsed(): void {
+    this.toggleAttribute('data-nav-collapsed', this.navCollapsed);
+    const toggle = this.querySelector('#nav-collapse') as HTMLElement | null;
+    if (toggle) {
+      const label = this.navCollapsed ? 'expand the sidebar' : 'collapse the sidebar';
+      toggle.setAttribute('aria-expanded', this.navCollapsed ? 'false' : 'true');
+      toggle.setAttribute('aria-label', label);
+      toggle.setAttribute('title', label);
+    }
   }
 
   private async createApp(): Promise<void> {
