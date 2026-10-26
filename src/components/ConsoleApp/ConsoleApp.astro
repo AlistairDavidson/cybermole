@@ -12,7 +12,7 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/toast/toast.js';
 import WaField from '../form/WaField.astro';
 import { zodSchemaToHTMLAttributes } from '../../lib/web/zod.service';
-import { appForm, workspaceForm } from '../../schemas/api';
+import { appForm, buildSessionForm, consoleWorkspaceForm } from '../../schemas/api';
 
 interface Props {
   scope?: 'console' | 'builder';
@@ -21,7 +21,11 @@ const { scope = 'console' } = Astro.props;
 
 // Native constraints from the dialogs' schemas; the server re-validates anyway.
 const appValidation = zodSchemaToHTMLAttributes(appForm);
-const wsValidation = zodSchemaToHTMLAttributes(workspaceForm);
+// The console dialog self-names (both fields optional); a build session
+// has no cwd to name from, so the builder dialog keeps the name required.
+const consoleWsValidation = zodSchemaToHTMLAttributes(consoleWorkspaceForm);
+const buildValidation = zodSchemaToHTMLAttributes(buildSessionForm);
+const wsValidation = scope === 'builder' ? buildValidation : consoleWsValidation;
 ---
 <console-app scope={scope}>
   <wa-page>
@@ -74,7 +78,28 @@ const wsValidation = zodSchemaToHTMLAttributes(workspaceForm);
   <wa-dialog id="workspace-dialog" label="New workspace" with-footer>
     <validation-enhancer-zod>
       <form id="workspace-form" class="wa-stack wa-gap-s">
-        <WaField id="workspace-name" name="name" label="name" {...wsValidation.name} />
+        {
+          scope === 'console' && (
+            <WaField
+              id="workspace-cwd"
+              name="cwd"
+              label="working directory"
+              hint="an existing folder this workspace's terminals start in; empty starts at the server default"
+              {...consoleWsValidation.cwd}
+            />
+          )
+        }
+        <WaField
+          id="workspace-name"
+          name="name"
+          label="name"
+          hint={
+            scope === 'console'
+              ? 'auto-filled from the directory until you edit it — empty names it after the directory'
+              : undefined
+          }
+          {...wsValidation.name}
+        />
         <p class="dialog-note" id="workspace-start">starts at the server default</p>
       </form>
     </validation-enhancer-zod>

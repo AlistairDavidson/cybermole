@@ -7,6 +7,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { StateDb, qb } from '../../dist-server/src/lib/platform/db.js';
 import { Workspaces } from '../../dist-server/src/lib/terminals/workspaces.js';
+import { workspaceNameFromCwd } from '../../dist-server/src/lib/terminals/workspace-name.js';
 import { Apps } from '../../dist-server/src/lib/apps/apps.js';
 import {
   terminalSessionName,
@@ -172,13 +173,66 @@ test('save_workspace: console (appId null) and app-scoped, cwd defaulting to the
   assert.equal(wsRow(db, scoped.data.id).sort_order, 10); // its own group's first
 });
 
-test('save_workspace: invalid_name on empty or whitespace-only names', async () => {
-  const w = domain(freshDb());
-  for (const name of ['', '   ']) {
-    const r = await w.saveWorkspace({ name });
-    assert.equal(r.ok, false, JSON.stringify(name));
-    assert.equal(r.errorCode, 'invalid_name');
-  }
+test('save_workspace: self-naming — an empty (or absent) name derives from the resolved cwd', async () => {
+  const db = freshDb();
+  const w = domain(db);
+  const notes = fs.mkdtempSync(path.join(os.tmpdir(), 'notes-'));
+  // explicit cwd: its basename
+  const first = await w.saveWorkspace({ cwd: notes });
+  assert.equal(first.ok, true, first.errorMessage);
+  assert.equal(first.data.name, path.basename(notes));
+  assert.equal(wsRow(db, first.data.id).name, path.basename(notes));
+  // whitespace-only is not meaningful either; the default cwd names it
+  const def = await w.saveWorkspace({ name: '   ' });
+  assert.equal(def.ok, true, def.errorMessage);
+  assert.equal(def.data.name, path.basename(os.tmpdir()));
+  // the parent app's cwd names an app workspace with neither name nor cwd
+  const a = new Apps({ db, username: () => USERNAME, killSession: async () => true });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-app-cwd-'));
+  const app = (await a.saveApp('app', dir)).data;
+  const under = await w.saveWorkspace({ appId: app.id });
+  assert.equal(under.ok, true, under.errorMessage);
+  assert.equal(under.data.name, path.basename(dir));
+  // kind 'build' always starts at the default — so that names it
+  const build = await w.saveWorkspace({ appId: app.id, kind: 'build' });
+  assert.equal(build.ok, true, build.errorMessage);
+  assert.equal(build.data.name, path.basename(os.tmpdir()));
+  // '/' has no basename worth taking
+  const root = await w.saveWorkspace({ cwd: '/' });
+  assert.equal(root.ok, true, root.errorMessage);
+  assert.equal(root.data.name, 'workspace');
+});
+
+test('save_workspace: self-naming uniquifies per group; explicit names win verbatim', async () => {
+  const db = freshDb();
+  const w = domain(db);
+  const notes = fs.mkdtempSync(path.join(os.tmpdir(), 'notes-'));
+  const base = path.basename(notes);
+  const app = await appless(db);
+  // same cwd twice in the console group: the second takes -2, a third -3
+  assert.equal((await w.saveWorkspace({ cwd: notes })).data.name, base);
+  assert.equal((await w.saveWorkspace({ cwd: notes })).data.name, `${base}-2`);
+  assert.equal((await w.saveWorkspace({ cwd: `${notes}/` })).data.name, `${base}-3`); // trailing slash
+  // the app group is a separate namespace: no suffix from console siblings
+  assert.equal((await w.saveWorkspace({ appId: app.id, cwd: notes })).data.name, base);
+  // an explicit name never uniquifies, even when it collides
+  assert.equal((await w.saveWorkspace({ cwd: notes, name: base })).data.name, base);
+  assert.equal((await w.saveWorkspace({ name: '  spaced  ' })).data.name, 'spaced');
+});
+
+test('workspaceNameFromCwd: the shared rule — basename, fallback, cap, boring -N suffixes', () => {
+  assert.equal(workspaceNameFromCwd('/srv/notes'), 'notes');
+  assert.equal(workspaceNameFromCwd('/srv/notes/'), 'notes');
+  assert.equal(workspaceNameFromCwd('/'), 'workspace');
+  assert.equal(workspaceNameFromCwd('/a/..'), 'workspace'); // nothing worth taking
+  assert.equal(workspaceNameFromCwd('/srv/notes', ['notes']), 'notes-2');
+  assert.equal(workspaceNameFromCwd('/srv/notes', ['notes', 'notes-2']), 'notes-3');
+  assert.equal(workspaceNameFromCwd('/srv/notes', ['notes', 'notes-3']), 'notes-2'); // gaps fill from 2
+  // the cap holds with and without a suffix
+  assert.equal(workspaceNameFromCwd(`/srv/${'x'.repeat(500)}`).length, 120);
+  const suffixed = workspaceNameFromCwd(`/srv/${'x'.repeat(500)}`, ['x'.repeat(120)]);
+  assert.ok(suffixed.length <= 120);
+  assert.ok(suffixed.startsWith('x') && /-2$/.test(suffixed));
 });
 
 test('save_workspace: invalid_cwd — relative, missing, a file; absolute + existing dir passes', async () => {

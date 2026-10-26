@@ -26,7 +26,8 @@ import { inTextField } from '../AgentTerminal/agent-terminal';
 import type { TerminalCommand } from '../../lib/terminals/tab-order';
 import 'validation-enhancer/zod';
 import type { ValidationEnhancerZod } from 'validation-enhancer/zod';
-import { appForm, workspaceForm } from '../../schemas/api';
+import { appForm, buildSessionForm, consoleWorkspaceForm } from '../../schemas/api';
+import { workspaceNameFromCwd } from '../../lib/terminals/workspace-name';
 import '@awesome.me/webawesome/dist/components/page/page.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/dialog/dialog.js';
@@ -83,6 +84,10 @@ export class ConsoleApp extends HTMLElement {
   /** True once the user hand-edits the new-app dialog's cwd: the name no
    *  longer re-suggests a directory. Reset when the dialog reopens. */
   private appCwdTouched = false;
+  /** True once the user hand-edits the new-workspace dialog's name: the
+   *  name no longer re-suggests from the typed cwd. Reset when the dialog
+   *  reopens. */
+  private wsNameTouched = false;
   /** /?t=<terminal uuid>, resolved on the first state load. A dead tab still
    *  opens (the attach respawns it); an unknown uuid toasts. */
   private pendingTerminal: TerminalId | null = (() => {
@@ -196,6 +201,23 @@ export class ConsoleApp extends HTMLElement {
         this.appCwdTouched = true;
       });
     }
+    // The new-workspace dialog suggests a name derived from the typed cwd
+    // (the server's own derivation rule, siblings included), until the
+    // name is hand-edited. Console scope only — the builder dialog has no
+    // cwd field (build sessions are pinned to the root cwd).
+    const wsCwd = this.querySelector('#workspace-cwd') as WaInput | null;
+    const wsName = this.querySelector('#workspace-name') as WaInput | null;
+    if (wsCwd && wsName) {
+      wsCwd.addEventListener('input', () => {
+        const typed = wsCwd.value ?? '';
+        this.updateWorkspaceStartNote(typed);
+        if (this.wsNameTouched) return;
+        wsName.value = this.suggestWorkspaceName(typed);
+      });
+      wsName.addEventListener('input', () => {
+        this.wsNameTouched = true;
+      });
+    }
     // Above the enhancer: it stops invalid submits from propagating, and a
     // listener on the form itself would fire before validation.
     this.addEventListener('submit', e => {
@@ -210,7 +232,7 @@ export class ConsoleApp extends HTMLElement {
       )?.setZodSchema(appForm);
       (
         this.querySelector('#workspace-dialog validation-enhancer-zod') as ValidationEnhancerZod
-      )?.setZodSchema(workspaceForm);
+      )?.setZodSchema(this.scope === 'builder' ? buildSessionForm : consoleWorkspaceForm);
     });
 
     void this.loadState();
@@ -414,25 +436,38 @@ export class ConsoleApp extends HTMLElement {
 
   private openWorkspaceDialog(): void {
     this.resetForm('#workspace-form');
-    // Show where the workspace will start, mirroring the server's derivation.
+    this.wsNameTouched = false;
+    this.updateWorkspaceStartNote('');
+    this.dialog('#workspace-dialog').show();
+    // Console flows from the directory (the name suggests itself from it);
+    // a build session starts at the name.
+    this.focusField(this.scope === 'builder' ? '#workspace-name' : '#workspace-cwd');
+  }
+
+  /** The start note: where the dialog's cwd field points once it holds
+   *  something, else the server's derivation (the parent app's cwd, else
+   *  the default — the root default framed at the app for a build session). */
+  private updateWorkspaceStartNote(cwd: string): void {
     const note = this.querySelector('#workspace-start') as HTMLElement | null;
+    if (!note) return;
+    const typed = cwd.trim();
+    if (typed !== '') {
+      note.textContent = `starts at ${typed}`;
+      return;
+    }
     const app =
       this.newWorkspaceAppId === null
         ? null
         : ((this.state?.apps ?? []).find(a => a.id === this.newWorkspaceAppId) ?? null);
-    if (note) {
-      if (this.scope === 'builder') {
-        // Build sessions work from the root cwd, framed at the app — never
-        // at the app tree (the server skips the parent's cwd for 'build').
-        note.textContent = `starts at ${this.state?.defaultCwd ?? 'the server default'} — the build session for ${app?.name ?? 'this app'}`;
-      } else {
-        const start = app?.cwd ?? this.state?.defaultCwd;
-        note.textContent =
-          start === undefined ? 'starts at the server default' : `starts at ${start}`;
-      }
+    if (this.scope === 'builder') {
+      // Build sessions work from the root cwd, framed at the app — never
+      // at the app tree (the server skips the parent's cwd for 'build').
+      note.textContent = `starts at ${this.state?.defaultCwd ?? 'the server default'} — the build session for ${app?.name ?? 'this app'}`;
+    } else {
+      const start = app?.cwd ?? this.state?.defaultCwd;
+      note.textContent =
+        start === undefined ? 'starts at the server default' : `starts at ${start}`;
     }
-    this.dialog('#workspace-dialog').show();
-    this.focusField('#workspace-name');
   }
 
   private resetForm(sel: string): void {
@@ -458,6 +493,18 @@ export class ConsoleApp extends HTMLElement {
     const root = this.state?.defaultCwd;
     if (slug === '' || root === undefined) return null;
     return `${root.replace(/\/+$/, '')}/${slug}`;
+  }
+
+  /** The suggested name for a new console workspace: the server's own
+   *  derivation — the typed cwd's basename, uniquified against the names
+   *  the group already holds (workspace-name.ts is the shared rule). */
+  private suggestWorkspaceName(cwd: string): string | null {
+    const typed = cwd.trim();
+    if (typed === '') return null;
+    const siblings = (this.state?.workspaces ?? [])
+      .filter(w => w.appId === this.newWorkspaceAppId)
+      .map(w => w.name);
+    return workspaceNameFromCwd(typed, siblings);
   }
 
   /** Reflects the collapse on the host (console.css owns the look) and on
@@ -496,13 +543,17 @@ export class ConsoleApp extends HTMLElement {
     const name = ((this.querySelector('#workspace-name') as WaInput | null)?.value ?? '').trim();
     // No cwd: the server derives it. Builder workspaces are build sessions
     // (kind 'build': root cwd + the framing env); console ones stay plain.
+    // Empty strings mean "derive it server-side": absent name → the cwd's
+    // basename, absent cwd → the parent app's, else the server default.
+    const cwd = ((this.querySelector('#workspace-cwd') as WaInput | null)?.value ?? '').trim();
     const appId = this.newWorkspaceAppId;
+    const derived = { ...(name === '' ? {} : { name }), ...(cwd === '' ? {} : { cwd }) };
     const body =
       appId === null
-        ? { name }
+        ? derived
         : this.scope === 'builder'
-          ? { appId, name, kind: 'build' as const }
-          : { appId, name };
+          ? { appId, ...derived, kind: 'build' as const }
+          : { appId, ...derived };
     const done = await this.call('POST', '/api/workspaces', body);
     if (!done) return;
     if (!done.ok) {

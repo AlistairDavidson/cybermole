@@ -304,9 +304,10 @@ test("the console group's + workspace creates a console workspace through the di
   await login(page);
   const group = page.locator('workspace-sidebar .ws-group[data-group="console"]');
   await group.locator('[data-new-ws]').click();
-  // No folder field in this dialog; the note says where it'll start — the
-  // server default, the same cwd every console workspace uses.
-  await expect(page.locator('#workspace-dialog wa-input[name="cwd"]')).toHaveCount(0);
+  // The console dialog takes an optional working directory (empty = the
+  // server default, the same cwd every console workspace uses); the note
+  // names the derivation.
+  await expect(page.locator('#workspace-dialog wa-input[name="cwd"]')).toHaveCount(1);
   await expect(page.locator('#workspace-start')).toHaveText(`starts at ${WORKSPACE}`);
   await page.fill('wa-input#workspace-name input', 'console made ws');
   await page.click('#workspace-save');
@@ -321,6 +322,72 @@ test("the console group's + workspace creates a console workspace through the di
   await expect(
     page.locator('workspace-sidebar li[data-ws]').filter({ hasText: 'console made ws' }),
   ).toHaveCount(0);
+  await expect(page.locator('workspace-sidebar li[data-ws].active')).toContainText('scratch');
+});
+
+test('self-naming: a workspace typed with only a cwd names itself after it, uniquified; a hand-typed name wins verbatim', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await login(page);
+  await page.waitForFunction(() => customElements.get('validation-enhancer-zod') !== undefined);
+  const selfNamed = path.join(WORKSPACE, 'self-named');
+  const handNamed = path.join(WORKSPACE, 'hand-named');
+  fs.mkdirSync(selfNamed, { recursive: true });
+  fs.mkdirSync(handNamed, { recursive: true });
+  const group = page.locator('workspace-sidebar .ws-group[data-group="console"]');
+  const nameValue = (): Promise<string | null> =>
+    page.evaluate(
+      () =>
+        (document.querySelector('wa-input#workspace-name') as unknown as { value: string | null })
+          .value,
+    );
+
+  // Typing only a directory: the name suggests itself and the note follows.
+  await group.locator('[data-new-ws]').click();
+  await page.fill('wa-input#workspace-cwd input', selfNamed);
+  await expect.poll(nameValue).toBe('self-named');
+  await expect(page.locator('#workspace-start')).toHaveText(`starts at ${selfNamed}`);
+  await page.click('#workspace-save');
+  let row = page.locator('workspace-sidebar li[data-ws].active');
+  await expect(row).toContainText('self-named');
+  await expect(row).toHaveAttribute('title', selfNamed);
+
+  // The same directory again: the note reset on reopen, and both the
+  // suggestion and the server uniquify (-2).
+  await group.locator('[data-new-ws]').click();
+  await expect(page.locator('#workspace-start')).toHaveText(`starts at ${WORKSPACE}`);
+  await page.fill('wa-input#workspace-cwd input', selfNamed);
+  await expect.poll(nameValue).toBe('self-named-2');
+  await page.click('#workspace-save');
+  row = page.locator('workspace-sidebar li[data-ws].active');
+  await expect(row).toContainText('self-named-2');
+  await expect(row).toHaveAttribute('title', selfNamed);
+
+  // Once the name is hand-edited it stops following the directory, and the
+  // explicit name lands verbatim.
+  await group.locator('[data-new-ws]').click();
+  await page.fill('wa-input#workspace-cwd input', handNamed);
+  await expect.poll(nameValue).toBe('hand-named');
+  await page.fill('wa-input#workspace-name input', 'mine');
+  await page.fill('wa-input#workspace-cwd input', selfNamed);
+  expect(await nameValue()).toBe('mine');
+  await page.click('#workspace-save');
+  row = page.locator('workspace-sidebar li[data-ws].active');
+  await expect(row).toContainText('mine');
+  await expect(row).toHaveAttribute('title', selfNamed);
+
+  // Keep the fixture world clean for the later specs (unique ids, not the
+  // shared 'self-named' text, which now names three rows).
+  const state = await api(page, 'GET', '/api/state');
+  const mine = state.json.workspaces.filter((w: { name: string }) =>
+    ['self-named', 'self-named-2', 'mine'].includes(w.name),
+  );
+  expect(mine.length).toBe(3);
+  for (const w of mine) {
+    expect((await api(page, 'DELETE', `/api/workspaces/${w.id}`)).status).toBe(200);
+  }
+  await refreshState(page);
   await expect(page.locator('workspace-sidebar li[data-ws].active')).toContainText('scratch');
 });
 
