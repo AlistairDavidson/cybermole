@@ -24,6 +24,7 @@ import type {
   DeleteWorkspaceFailure,
   NewTerminalFailure,
   RenameTerminalFailure,
+  ReorderTerminalsFailure,
   SaveWorkspaceFailure,
 } from '../terminals/workspaces';
 import type {
@@ -213,7 +214,8 @@ export function invalidWorkspaceIdResponse(): Response {
   return jsonResponse({ error: 'invalid workspace id', code: 'invalid_workspace_id' }, 400);
 }
 
-export type TerminalFailure = NewTerminalFailure | CloseTerminalFailure | RenameTerminalFailure;
+export type TerminalFailure =
+  NewTerminalFailure | CloseTerminalFailure | RenameTerminalFailure | ReorderTerminalsFailure;
 
 /** server_not_running is retryable once the workspace side is back. A
  *  spawn-failed create still carries its row, so the UI can show the tab. */
@@ -224,6 +226,10 @@ export function terminalFailureResponse(f: TerminalFailure): Response {
     case 'workspace_not_found':
     case 'terminal_not_found':
       return jsonResponse({ error: f.errorMessage ?? 'no such terminal', code: f.errorCode }, 404);
+    case 'invalid_order':
+      // The client's list doesn't match the workspace: stale state, so a
+      // re-read (not a tweak) is the fix.
+      return jsonResponse({ error: f.errorMessage ?? 'invalid order', code: f.errorCode }, 409);
     case 'server_not_running':
       return jsonResponse(
         {

@@ -117,7 +117,7 @@ function resolveFindDecorations(): ISearchDecorationOptions | undefined {
 /** Ctrl+F belongs to a focused text field, not the terminal. Probes shadow
  *  roots, since focus can sit on a wa-input host. Anything inside an
  *  <agent-terminal> (xterm's helper textarea, the find input) doesn't count. */
-const inTextField = (el: Element | null): boolean => {
+export const inTextField = (el: Element | null): boolean => {
   if (el === null) return false;
   if (el.closest('agent-terminal') !== null) return false;
   if ((el as HTMLElement).isContentEditable || el.matches('input, textarea, select')) return true;

@@ -56,6 +56,7 @@ const SCHEMA = `
     workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     title        TEXT,               -- NULL → UI labels "term N"
     sort_order   INTEGER NOT NULL,   -- tab order; append = max+10
+    command      TEXT,               -- 'agent' | 'shell'; NULL = pre-v7 row, derived from created_at
     created_at   INTEGER NOT NULL,
     updated_at   INTEGER NOT NULL,
     created_by   TEXT NOT NULL,
@@ -138,6 +139,8 @@ export interface TerminalsTable {
   /** NULL → labelled "term N". */
   title: string | null;
   sort_order: number;
+  /** 'agent' | 'shell'; NULL on pre-v7 rows (derived from created_at). */
+  command: string | null;
   created_at: number;
   updated_at: number;
   created_by: string;
@@ -204,13 +207,22 @@ function migrateToV6(db: DatabaseSync): void {
   addColumnIfMissing(db, 'workspaces', 'kind', 'TEXT');
 }
 
+/** v7: an explicit spawn command per tab, so a respawn re-runs what the
+ *  tab was born as — an agent tab created after the workspace stays an
+ *  agent tab. NULL rows predate it and keep the created_at derivation. */
+function migrateToV7(db: DatabaseSync): void {
+  migrateToV6(db);
+  addColumnIfMissing(db, 'terminals', 'command', 'TEXT');
+}
+
 export class StateDb extends SqliteDb {
   constructor(file: string) {
     super(file, {
       schema: SCHEMA,
-      migrate: migrateToV6,
-      // CREATE IF NOT EXISTS + migrateToV6 bring any older db to the current shape.
-      version: 6,
+      migrate: migrateToV7,
+      // CREATE IF NOT EXISTS + the migrate chain bring any older db to the
+      // current shape.
+      version: 7,
       freshMode: 0o600, // it holds the password hash
       label: 'state db',
     });
