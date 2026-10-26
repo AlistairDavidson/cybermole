@@ -254,16 +254,19 @@ services:
   # the socket dir 2770 setgid cybermole (socket creation + group inheritance)
   # and /workspace owned by uid 2000. Runs on every `up` — a no-op chown
   # once ownership is right. (Entrypoint overridden: the web entrypoint
-  # must not run here.) It also lays out the job-run log dir (plan §9):
-  # /workspace/.cybermole/job-logs is its own volume (see the cybermole service —
-  # web mounts /workspace READ-ONLY, but must read AND prune run logs),
-  # owned workspace:cybermole 2770 so the workspace uid's wrapper (umask 0007
-  # under it) writes group-shared logs the web uid can read + unlink.
+  # must not run here.) It also lays out /workspace/.cybermole — the
+  # job-run log dir (plan §9) PLUS the staged shell config and zsh history
+  # (task/install-docs): job-logs is its own volume (see the cybermole
+  # service — web mounts /workspace READ-ONLY, but must read AND prune run
+  # logs), while .cybermole itself must be workspace-writable for the shell
+  # files. All owned workspace:cybermole 2770 so the workspace uid's
+  # wrapper (umask 0007 under it) writes group-shared logs the web uid can
+  # read + unlink.
   workspace-init:
     build: *cybermole-build
     image: ${CYBERMOLE_IMAGE:-cybermole:local}
     user: "0:0"
-    entrypoint: ["sh", "-c", "chown workspace:cybermole /run/cybermole /workspace && chmod 2770 /run/cybermole /workspace && mkdir -p /workspace/.cybermole/job-logs && chown workspace:cybermole /workspace/.cybermole/job-logs && chmod 2770 /workspace/.cybermole/job-logs"]
+    entrypoint: ["sh", "-c", "chown workspace:cybermole /run/cybermole /workspace && chmod 2770 /run/cybermole /workspace && mkdir -p /workspace/.cybermole && chown workspace:cybermole /workspace/.cybermole && chmod 2770 /workspace/.cybermole && mkdir -p /workspace/.cybermole/job-logs && chown workspace:cybermole /workspace/.cybermole/job-logs && chmod 2770 /workspace/.cybermole/job-logs"]
     restart: "no"
     volumes:
       - cybermole-tmux:/run/cybermole

@@ -1,0 +1,26 @@
+# cybermole's default zsh init — seeded only-where-absent into the
+# terminal user's home by docker-workspace-entrypoint.sh (the compose
+# split), so a fresh workspace container boots into a usable shell
+# instead of zsh's bare defaults. Precedence: a file already in $HOME
+# always wins, and a copy staged from the operator's host dotfiles
+# (/workspace/.cybermole/shell — deploy/install-compose.sh
+# --with-shell-config) beats this default. The seed is re-applied on
+# every container recreate; edit the copy in $HOME for changes that
+# should last this container's life. docs/guides/installation.md
+# ("Shell settings") has the full story.
+
+# Persistent history: the terminal user's $HOME is image-layer and dies
+# with the container — the workspace volume doesn't. /workspace/.cybermole
+# exists in this shape (workspace-init lays it out, workspace-writable).
+if [ -d /workspace/.cybermole ]; then
+  HISTFILE=/workspace/.cybermole/zsh-history
+else
+  HISTFILE=$HOME/.zsh_history
+fi
+HISTSIZE=50000
+SAVEHIST=50000
+setopt share_history hist_ignore_dups hist_reduce_blanks
+setopt autocd
+
+# A compact one-line prompt (cyan cwd) — readable in narrow terminal tabs.
+PROMPT='%F{cyan}%~%f %# '

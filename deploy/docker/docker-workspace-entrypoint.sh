@@ -78,6 +78,46 @@ if [ -f "$ROOT_TEMPLATE" ] && [ ! -e "$ROOT_AGENTS" ]; then
   cp "$ROOT_TEMPLATE" "$ROOT_AGENTS"
 fi
 
+# task/install-docs: zsh init — the shipped terminal default is `zsh -l`
+# (CYBERMOLE_COMMAND in compose), and the terminal user's home is
+# image-layer: it dies with the container, so a fresh container boots into
+# zsh's bare defaults. Seed the four files a login zsh reads, only-where-
+# absent — a file already in $HOME always wins (edits made inside a running
+# container), and a copy the operator staged from their host dotfiles beats
+# the image's minimal default (runtime/zsh/zshrc). Staging is the opt-in
+# half: deploy/install-compose.sh --with-shell-config copies into
+# /workspace/.cybermole/shell on the persistent workspace volume (see
+# docs/guides/installation.md, "Shell settings"). Best-effort like the
+# notes seeding below: an unreadable staged file (a 0600 host dotfile)
+# must warn and continue, never keep the tmux server from starting.
+SHELL_HOME=${CYBERMOLE_HOME:-$HOME}
+SHELL_STAGED=/workspace/.cybermole/shell
+SHELL_DEFAULT=/opt/cybermole/runtime/zsh/zshrc
+SHELL_SEEDED=
+for f in .zshenv .zprofile .zshrc .zlogin; do
+  if [ -e "$SHELL_HOME/$f" ]; then
+    continue
+  fi
+  if [ -f "$SHELL_STAGED/$f" ]; then
+    if cp "$SHELL_STAGED/$f" "$SHELL_HOME/$f" 2>/dev/null; then
+      SHELL_SEEDED="$SHELL_SEEDED $f(staged)"
+    else
+      echo "cybermole workspace: could not seed $f from $SHELL_STAGED/$f (unreadable?) — continuing" >&2
+    fi
+  elif [ "$f" = .zshrc ] && [ -f "$SHELL_DEFAULT" ]; then
+    if cp "$SHELL_DEFAULT" "$SHELL_HOME/$f" 2>/dev/null; then
+      SHELL_SEEDED="$SHELL_SEEDED $f(default)"
+    else
+      echo "cybermole workspace: could not seed $f from $SHELL_DEFAULT — continuing" >&2
+    fi
+  fi
+done
+if [ -n "$SHELL_SEEDED" ]; then
+  echo "cybermole workspace: seeded zsh config into $SHELL_HOME (only where absent):$SHELL_SEEDED"
+elif [ ! -e "$SHELL_HOME/.zshrc" ]; then
+  echo "cybermole workspace: no zsh config to seed — stage the host operator's dotfiles with deploy/install-compose.sh --with-shell-config"
+fi
+
 # task/app-notes: the reference app — the notes
 # tree ships in the image at /opt/cybermole/runtime/reference-apps/notes as
 # living documentation of a FINISHED app tree, and seeds into the

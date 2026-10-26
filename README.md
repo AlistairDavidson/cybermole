@@ -183,6 +183,11 @@ npm start                     # = docker compose up -d --build — web + workspa
 docker compose exec cybermole node dist-server/server/set-password.js   # once, fresh deploy
 ```
 
+The consolidated install paths — this compose stack and the plain-host
+single-process shape, each with a preflight/install script an operator
+(or an agent acting for one) can follow verbatim — live in
+[docs/guides/installation.md](docs/guides/installation.md).
+
 Put it behind TLS (any reverse proxy) before exposing it anywhere — the
 cookie is `Secure` and login POSTs shouldn't cross plain HTTP. See
 `deploy/` for an nginx reverse-proxy block with WebSocket upgrade, and a
@@ -541,7 +546,11 @@ one proxy. The
 recommended deployment is a single VPS with Docker compose; on AWS, the
 documented path is the same compose setup on a single EC2 instance —
 state lives on the instance's own disk, and it is replaced only when you
-deploy.
+deploy. The full install story — both paths step by step, with the
+preflight scripts (`deploy/install-compose.sh`, `deploy/install-host.sh`)
+and their matching uninstalls — is
+[docs/guides/installation.md](docs/guides/installation.md); the commands
+below are the short form.
 
 ```sh
 docker compose build        # subpath deploy: 'The base path' below first — CYBERMOLE_BASE=/cybermole docker compose build
@@ -576,15 +585,21 @@ part of the plain stack and its proxy is wired on by default — set
   admits the web user with `tmux server-access -a node`, seeds the runtime
   pi-agent from the image's `runtime/pi-agent-dir/` template and the workspace root's
   `AGENTS.md` from its `runtime/workspace-root/` one (only where absent — same
-  policy as the single-user server boot), and supervises the server.
+  policy as the single-user server boot), seeds the terminal user's zsh
+  config (a copy staged from the operator's host dotfiles at
+  `/workspace/.cybermole/shell`, else the image's `runtime/zsh/zshrc`
+  default — again only where absent;
+  [docs/guides/installation.md](docs/guides/installation.md)), and supervises the server.
   Workspaces' files live on the `cybermole-workspace` volume at `/workspace`
   (the default workspace cwd — `CYBERMOLE_NEW_SESSION_CWD` prefills the
   dialog); pi's runtime dir (`CYBERMOLE_AGENT_DIR=/workspace/pi-agent`,
   credentials + pi's own session store) is there too.
 - **workspace-init** (one-shot, root) — `chown workspace:cybermole` +
   `chmod 2770` on the socket dir (`cybermole-tmux` volume at `/run/cybermole`),
-  `/workspace`, and the job-run log dir `/workspace/.cybermole/job-logs`
-  (its own `cybermole-job-logs` volume): empty named volumes start root-owned,
+  `/workspace`, and the shared `/workspace/.cybermole` dir (which also
+  carries the staged shell config and the persistent zsh history) with its
+  job-run log dir `/workspace/.cybermole/job-logs` (its own
+  `cybermole-job-logs` volume): empty named volumes start root-owned,
   and the socket dir must be setgid group `cybermole` (gid 2001) for the
   sharing below.
 
@@ -1238,8 +1253,10 @@ standalone-workspace install above (`CYBERMOLE_AGENT_COMMAND`).
 - `deploy/` — `docker/` (the image's `docker-entrypoint.sh` +
   `docker-workspace-entrypoint.sh`), `editor/` (the VSCodium reh-web
   editor image — pinned tarball, uid 2000 — `Dockerfile` + entrypoint,
-  [docs/guides/editor-webapp.md](docs/guides/editor-webapp.md)), and the
-  host-side config: `nginx/`, `fail2ban/`, `loki/`, `grafana/`
+  [docs/guides/editor-webapp.md](docs/guides/editor-webapp.md)), the
+  install/uninstall scripts (`install-compose.sh`, `install-host.sh` and
+  their uninstalls — [docs/guides/installation.md](docs/guides/installation.md)),
+  and the host-side config: `nginx/`, `fail2ban/`, `loki/`, `grafana/`
 - `.agents/skills/` — Web Awesome docs as pi skills: `webawesome` (component
   API reference) + `webawesome-design` (layout/theming/tokens), copied
   version-locked from the installed package by `tools/build_webawesome_skills.py`
