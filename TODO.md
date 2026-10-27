@@ -1,9 +1,4 @@
 ## Apps
-Apps have a single slide-in agent console, same UI across all apps, cwd to the app
-  - drawer from right, fills screen on mobile
-  
-Apps have link to their build console (builder page, first workspace of this app selected)
-
 per-app e2e harness (kit cribs the console's hermetic pattern; the check verb's unit stage is the only app-side test story today)
 
 cross-app MCP registration (siblings talk plain HTTP through the host)
