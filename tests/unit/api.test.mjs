@@ -12,12 +12,13 @@ import {
   appCreateBody,
   appPatchBody,
   workspaceCreateBody,
+  consoleWorkspaceForm,
+  buildSessionForm,
   workspacePatchBody,
   terminalCreateBody,
   terminalPatchBody,
   terminalDefaultsBody,
   appForm,
-  workspaceForm,
 } from '../../dist-server/src/schemas/api.js';
 import { JobSaveSchema } from '../../dist-server/src/schemas/jobs.js';
 import { parseZod } from '../../dist-server/src/lib/web/parsing.service.js';
@@ -152,19 +153,27 @@ test('appForm: trimmed non-empty name capped at 80; optional cwd — empty passe
   }
 });
 
-test('workspaceForm: name only (the dialog shows the derived start dir as a hint)', () => {
-  assert.deepEqual(parse(workspaceForm, { name: ' scratch ' }), { name: 'scratch' });
-  // a cwd key is stripped: the server derives the dir
-  assert.deepEqual(parse(workspaceForm, { name: 'scratch', cwd: '/workspace' }), {
-    name: 'scratch',
-  });
-  assert.equal(issueText(workspaceForm, { name: '' }), 'name: name is required');
+test('consoleWorkspaceForm: both fields optional — empty means "derive it"', () => {
+  assert.deepEqual(parse(consoleWorkspaceForm, { name: ' scratch ' }), { name: 'scratch' });
+  assert.deepEqual(parse(consoleWorkspaceForm, { name: '', cwd: '' }), { name: '', cwd: '' });
+  assert.deepEqual(parse(consoleWorkspaceForm, { cwd: '/workspace' }), { cwd: '/workspace' });
+  assert.deepEqual(parse(consoleWorkspaceForm, {}), {});
   assert.equal(
-    issueText(workspaceForm, { name: 'x'.repeat(121) }),
+    issueText(consoleWorkspaceForm, { name: 'x'.repeat(121) }),
     'name: name is too long (max 120)',
   );
+  for (const bad of [null, { name: 5 }, { cwd: 5 }]) {
+    assert.equal(ok(consoleWorkspaceForm, bad), false, JSON.stringify(bad));
+  }
+});
+
+test('buildSessionForm: the builder dialog keeps the name required', () => {
+  assert.deepEqual(parse(buildSessionForm, { name: ' build me ' }), { name: 'build me' });
+  assert.equal(issueText(buildSessionForm, { name: '' }), 'name: name is required');
+  // a cwd key is stripped: build sessions are pinned to the root cwd
+  assert.deepEqual(parse(buildSessionForm, { name: 'x', cwd: '/workspace' }), { name: 'x' });
   for (const bad of [null, {}, { name: 5 }, { name: '' }, { name: '   ' }]) {
-    assert.equal(ok(workspaceForm, bad), false, JSON.stringify(bad));
+    assert.equal(ok(buildSessionForm, bad), false, JSON.stringify(bad));
   }
 });
 
@@ -211,19 +220,26 @@ test('appPatchBody: name optional; cwd per terminalPatchBody (absent keeps, null
   assert.equal(issueText(appPatchBody, { cwd: 'x'.repeat(4097) }), 'cwd: cwd is too long');
 });
 
-test('workspaceCreateBody: appId null/absent/uuid v4; name required; no cwd (the server derives it)', () => {
+test('workspaceCreateBody: appId null/absent/uuid v4; name and cwd optional (absent/empty = derived)', () => {
   const ID = '123e4567-e89b-42d3-a456-426614174000';
   assert.deepEqual(parse(workspaceCreateBody, { name: 'scratch' }), { name: 'scratch' });
-  // a cwd is stripped: the create derives it
+  assert.deepEqual(parse(workspaceCreateBody, {}), {}); // both derived
   assert.deepEqual(parse(workspaceCreateBody, { appId: null, name: 'x', cwd: '/tmp', junk: 1 }), {
     appId: null,
     name: 'x',
+    cwd: '/tmp',
   });
   assert.deepEqual(parse(workspaceCreateBody, { appId: ID, name: 'x' }), { appId: ID, name: 'x' });
-  for (const bad of [{}, { name: 5 }, { appId: 'nope', name: 'x' }, { appId: 7, name: 'x' }]) {
+  for (const bad of [
+    { name: 5 },
+    { appId: 'nope', name: 'x' },
+    { appId: 7, name: 'x' },
+    { cwd: 5 },
+  ]) {
     assert.equal(ok(workspaceCreateBody, bad), false, JSON.stringify(bad));
   }
   assert.deepEqual(parse(workspaceCreateBody, { name: '' }), { name: '' }); // emptiness is the domain's call
+  assert.deepEqual(parse(workspaceCreateBody, { cwd: '' }), { cwd: '' });
   assert.equal(
     issueText(workspaceCreateBody, { appId: 'nope', name: 'x' }),
     'appId: invalid app id',

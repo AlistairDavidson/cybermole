@@ -136,12 +136,20 @@ through that proxy, behind the session gate (a host that is down
 answers 502 through the proxy; an unregistered slug 404s). The rest are thin Astro routes: `POST /api/apps` (an optional
 `cwd` — where the app's in-tree workspaces start) + `PATCH`/
 `DELETE /api/apps/:slug` (the patch also renames and/or sets/clears
-the cwd); `POST /api/workspaces` — no `cwd` on the wire: the server
-derives it (the parent app's `cwd` when it has one, else
-`CYBERMOLE_NEW_SESSION_CWD`; whatever wins must be an existing absolute
-dir), except `kind: 'build'` (a literal, requires `appId` — the builder
-page's workspaces), which always starts at `CYBERMOLE_NEW_SESSION_CWD`
-and carries the framing env; kind is set at birth and never patchable)
+the cwd); `POST /api/workspaces` — `cwd` optional on the wire
+(absent/empty: the server derives it — the parent app's `cwd` when it
+has one, else `CYBERMOLE_NEW_SESSION_CWD`; whatever wins must be an
+existing absolute dir), except `kind: 'build'` (a literal, requires
+`appId` — the builder page's workspaces), which always starts at
+`CYBERMOLE_NEW_SESSION_CWD` and carries the framing env; `name` is
+optional the same way — **self-naming workspaces**: a workspace created
+with no meaningful name is named after the resolved cwd's basename
+(`/srv/notes` → `notes`), uniquified against its group's siblings
+(`notes-2`, `notes-3`…); an explicit name always wins verbatim; the
+console dialog's name field auto-suggests the same derivation from the
+typed cwd (until hand-edited), while the builder dialog keeps the name
+required (every build session shares the root cwd, so deriving would name
+them all the same); kind is set at birth and never patchable)
 + `PATCH`/`DELETE /api/workspaces/:id`; `POST
 /api/workspaces/:id/terminals` (optional `command` `agent`|`shell` —
 defaults shell; the row survives a failed spawn — the

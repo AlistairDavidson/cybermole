@@ -1,5 +1,7 @@
 // POST creates a workspace (appId null = the console group). The cwd is
-// derived: the parent app's, else CYBERMOLE_NEW_SESSION_CWD.
+// optional: absent or empty derives it (the parent app's, else
+// CYBERMOLE_NEW_SESSION_CWD). The name is optional the same way: absent or
+// empty derives it from the resolved cwd's basename, uniquified per group.
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../../lib/web/locals';
 import { parseAndValidateAPIRequest } from '../../../lib/web/parsing.service';

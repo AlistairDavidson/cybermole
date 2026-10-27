@@ -5,6 +5,8 @@
 // A kind='build' workspace is a build session: cwd stays the console default
 // (the parent app's cwd is skipped) and every spawn carries the framing env
 // (CYBERMOLE_WORKSPACE_FOCUS[_TREE]) — advisory attention, never authority.
+// A workspace created without a meaningful name names itself: the resolved
+// cwd's basename, uniquified among its group's siblings (workspace-name.ts).
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -16,6 +18,7 @@ import { terminalSessionName } from './tmux';
 import { splitCommandLine } from './terminal-defaults';
 import { reorderUpdates, type TerminalCommand } from './tab-order';
 import { orderPlan } from '../order-plan';
+import { workspaceNameFromCwd } from './workspace-name';
 import {
   asTerminalId,
   asWorkspaceId,
@@ -44,8 +47,9 @@ export type SaveWorkspaceData = {
 };
 /** invalid_cwd: not absolute or not an existing directory. invalid_kind:
  *  kind 'build' without an appId (the API schema rejects it first; this is
- *  the closed-code backstop). app_not_found is pre-checked; the
- *  check-then-insert race degrades to database_error. */
+ *  the closed-code backstop). invalid_name fires on update only — a create
+ *  with no meaningful name derives one from the cwd instead. app_not_found
+ *  is pre-checked; the check-then-insert race degrades to database_error. */
 export type SaveWorkspaceErrorCode =
   | 'invalid_name'
   | 'invalid_cwd'
@@ -296,10 +300,12 @@ export class Workspaces {
   /** cwd: explicit, else the parent app's, else the default — except kind
    *  'build', which always takes the default (a build session works from
    *  the root cwd, never the app tree). Validated either way, since the
-   *  app's dir may have gone since it was saved. */
+   *  app's dir may have gone since it was saved. name: explicit wins
+   *  verbatim; an empty one derives from the resolved cwd (uniquified
+   *  against the group's existing names — explicit names never uniquify). */
   async saveWorkspace(input: {
     appId?: AppId | null;
-    name: string;
+    name?: string;
     cwd?: string;
     kind?: 'build';
   }): Promise<SaveWorkspaceResult> {
@@ -310,8 +316,6 @@ export class Workspaces {
         errorCode,
         errorMessage,
       }) satisfies SaveWorkspaceFailure;
-    const name = input.name.trim();
-    if (!name) return fail('invalid_name', 'name is required');
     const appId = input.appId ?? null;
     const kind: WorkspaceKind = input.kind === 'build' ? 'build' : null;
     if (kind === 'build' && appId === null)
@@ -340,6 +344,18 @@ export class Workspaces {
           : (parentCwd ?? this.deps.defaultCwd);
     const cwd = checkedCwd(wanted);
     if (!cwd.ok) return fail('invalid_cwd', cwd.reason);
+    const explicit = (input.name ?? '').trim();
+    let name = explicit;
+    if (explicit === '') {
+      const siblings = databaseRead('could not read workspace names', () =>
+        this.deps.db.all(qb.selectFrom('workspaces').select('name').where('app_id', 'is', appId)),
+      );
+      if (!siblings.ok) return fail('database_error', siblings.errorMessage);
+      name = workspaceNameFromCwd(
+        cwd.cwd,
+        siblings.data.value.map(row => row.name),
+      );
+    }
     const actor = this.actor();
     if (!actor.ok) return fail('database_error', actor.errorMessage);
     const order = this.nextOrder(appId);
