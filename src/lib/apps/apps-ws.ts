@@ -68,6 +68,9 @@ const DEFAULT_SWEEP_MS = 30_000;
  *  no res), then teardown — never a hang. */
 function refuse(socket: Duplex, deps: AppsWsDeps, status: string): void {
   if (socket.destroyed) return;
+  // The write can race a client reset; an async write error with no
+  // listener would take the whole process down.
+  socket.on('error', () => undefined);
   socket.write(`HTTP/1.1 ${status}\r\n${deps.securityHeaders}\r\n`);
   socket.destroy();
 }
@@ -125,16 +128,26 @@ function tunnelAppsUpgrade(
     path: req.url,
     headers,
   });
+  // From here until the 101 lands, the client socket's errors would
+  // otherwise be unhandled (fatal to the process) and a dead client would
+  // wedge the upstream request until the idle cap. Post-101, done() below
+  // owns teardown; destroying the detached request then is harmless.
+  socket.on('error', () => proxied.destroy());
+  socket.on('close', () => proxied.destroy());
   proxied.setTimeout(deps.idleTimeoutMs ?? APPS_PROXY_IDLE_MS, () =>
     proxied.destroy(new Error('app host upgrade idle')),
   );
   proxied.on('error', err => {
+    // The client may have gone first (its close/error destroys proxied);
+    // then there is nothing left to tell.
+    if (socket.destroyed) return;
     deps.log.error('apps ws upgrade failed', { error: err });
     // Like the HTTP proxy's 502: a down host refuses, never hangs.
     refuse(socket, deps, '502 Bad Gateway');
   });
   // Non-101 answer: forward the status and end.
   proxied.on('response', upstreamRes => {
+    socket.on('error', () => undefined); // a racing client reset must stay handled
     socket.write(
       `HTTP/1.1 ${upstreamRes.statusCode ?? 502} ${upstreamRes.statusMessage ?? ''}\r\n` +
         'Connection: close\r\n\r\n',

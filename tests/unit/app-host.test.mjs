@@ -861,3 +861,47 @@ test('reload re-imports a rebuilt ws entry (the cache-bust); close() cuts live u
     await w.internalApi.close();
   }
 });
+
+test('a client reset racing an upgrade refusal cannot take the host down', async () => {
+  const w = await bootWorld();
+  try {
+    const cwd = makeAppTree(w.root, 'app-rst');
+    await w.apps.saveApp('App RST', cwd);
+    await w.host.reload();
+    // Dial an unmounted slug (a 404 refusal), then reset immediately: the
+    // refusal write races the reset, and an unhandled socket error would
+    // kill the host process.
+    await new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          socketPath: w.host.socketPath,
+          path: '/apps/ghost/ws',
+          headers: {
+            connection: 'Upgrade',
+            upgrade: 'websocket',
+            'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==',
+            'sec-websocket-version': '13',
+          },
+        },
+        res => {
+          res.destroy();
+          resolve();
+        },
+      );
+      req.on('upgrade', (_res, socket) => {
+        socket.resetAndDestroy();
+        resolve();
+      });
+      req.on('error', () => resolve());
+      req.end();
+      setTimeout(() => reject(new Error('refusal never arrived')), 2000);
+    });
+    await new Promise(r => setTimeout(r, 100));
+    // The host survived and keeps serving.
+    const page = await call(w.host.socketPath, 'GET', '/apps/app-rst/page');
+    assert.equal(page.status, 200);
+  } finally {
+    await w.host.close();
+    await w.internalApi.close();
+  }
+});

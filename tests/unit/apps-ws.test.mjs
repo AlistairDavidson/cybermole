@@ -9,6 +9,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as http from 'node:http';
+import * as net from 'node:net';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -380,6 +381,40 @@ test('logout wiring: closeToken cuts every tunnel of the token', async () => {
     await within(closed, 5000, 'both cut');
     assert.equal(tunnels.count(), 0);
   } finally {
+    await host.close();
+    await closeWeb();
+  }
+});
+
+test('a client RST during the upgrade window: no unhandled error, no wedge', async () => {
+  const host = stubHost(path.join(dir, 'rst.sock'));
+  await host.listen();
+  await bootWeb(path.join(dir, 'rst.sock'));
+  const errors = [];
+  process.on('uncaughtException', errors.push);
+  try {
+    // Wedged upstream + an aborting client: the tunnel must destroy the
+    // upstream request quietly (the old shape crashed the process).
+    const client = net.connect(webPort, '127.0.0.1', () => {
+      client.write(
+        `GET /apps/fixture/wedged HTTP/1.1\r\nHost: 127.0.0.1:${webPort}\r\n` +
+          'Connection: Upgrade\r\nUpgrade: websocket\r\n' +
+          'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n' +
+          'Origin: http://web.test\r\nCookie: cybermole_session=tok-1\r\n\r\n' +
+          'bytes-left-in-flight',
+      );
+    });
+    client.on('data', () => {});
+    await new Promise(r => setTimeout(r, 30));
+    client.resetAndDestroy();
+    await new Promise(r => setTimeout(r, 250));
+    assert.deepEqual(errors, []);
+    // And the web side still serves: nothing wedged.
+    const stillAlive = await rawUpgrade('/apps/fixture/ws');
+    assert.equal(stillAlive.status, 101);
+    stillAlive.socket.destroy();
+  } finally {
+    process.off('uncaughtException', errors.push);
     await host.close();
     await closeWeb();
   }

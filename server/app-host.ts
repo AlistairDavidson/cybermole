@@ -745,6 +745,9 @@ function dispatchUpgrade(
   socket: Duplex,
   head: Buffer,
 ): void {
+  // A client reset racing the refusal writes (or the app's own handling)
+  // must never surface as an unhandled 'error' — that would kill the host.
+  socket.on('error', () => socket.destroy());
   const url = (req.url ?? '').split('?')[0] ?? '/';
   const mount = host.mountFor(url);
   if (mount === null) {
