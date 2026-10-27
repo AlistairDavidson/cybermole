@@ -27,6 +27,7 @@ const PACKAGES = [
   '@awesome.me/astro-lit',
   '@awesome.me/webawesome',
   '@cybermole/app-kit',
+  'ws',
 ];
 const BINS = ['astro', 'tsc'];
 

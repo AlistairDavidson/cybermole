@@ -44,7 +44,9 @@ the root):
   island convention.
 - **`@cybermole/app-kit/route-table`** / **`route-table-emit`** — the
   node-free binder core, and `writeRouteTable()` for the app's build
-  (dist/route-table.json).
+  (dist/route-table.json) plus `writeWsEntry()` (the optional
+  dist/server/ws.mjs WS entry — see the app-starter README's § WebSocket
+  routes for the whole contract).
 
 ## Deferred
 

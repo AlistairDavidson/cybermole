@@ -28,6 +28,7 @@ import * as jobs from '../src/lib/jobs/jobs';
 import { startLivenessWatch } from '../src/lib/terminals/liveness';
 import { seedRootAgentsFile } from '../src/lib/platform/root-agents';
 import { EventsRelay, checkEventsUpgrade } from '../src/lib/platform/events-ws';
+import { TunnelTracker } from '../src/lib/platform/ws-tunnels';
 import { AutoUpdater } from '../src/lib/platform/auto-update';
 import {
   EDITOR_HOP_BY_HOP_HEADERS,
@@ -47,6 +48,7 @@ import {
   type CybermoleLocals,
 } from '../src/lib/platform/services';
 import { handleAppsRequest, isAppsHttpPath } from '../src/lib/apps/apps-proxy';
+import { handleAppsUpgrade } from '../src/lib/apps/apps-ws';
 import { AppsServing } from '../src/lib/apps/apps-serving';
 import {
   startAppHostSupervisor,
@@ -66,6 +68,7 @@ import { parseClientMsg } from '../src/schemas/frames';
 import {
   TerminalIdSchema,
   TmuxSessionNameSchema,
+  type AppSlug,
   type SessionToken,
   type TmuxSessionName,
 } from '@cybermole/app-kit';
@@ -261,6 +264,13 @@ const services = createServices({
 });
 const shutdownScheduler = (): void => scheduler.stop();
 const shutdownLivenessWatch = (): void => stopLivenessWatch();
+
+/** Shared by the HTTP proxy and the WS upgrade tunnel: registered slugs, or
+ *  null when the state db can't be read (fail closed). */
+const appsRegistered = (slug: AppSlug): boolean | null => {
+  const listed = services.apps.listApps();
+  return listed.ok ? listed.data.apps.some(a => a.slug === slug) : null;
+};
 
 // ---------- internal API ----------
 // Unix-socket listener serving the workspace side (agents) the jobs/apps
@@ -643,6 +653,10 @@ function proxyEditorRequest(
 // tunnels like terminal sockets, and each tunnel sweeps for token expiry.
 const editorTunnels = new EditorTunnelTracker();
 
+// App WS tunnels get the same lifecycle: logout/shutdown cuts them, and each
+// sweeps for token expiry.
+const appTunnels = new TunnelTracker();
+
 /** Raw byte tunnel to the upstream; gates have already run. */
 function upgradeEditorSocket(
   req: http.IncomingMessage,
@@ -827,10 +841,11 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
   if (req.method === 'POST' && url === route('/logout')) {
     const token = Auth.sessionToken(req.headers.cookie);
     const dropped = auth.drop(token);
-    // End live terminals and editor shells too, not just future requests.
+    // End live terminals, editor shells and app tunnels too, not just future requests.
     if (token) {
       closeTokenSockets(token, { type: 'signed-out' });
       editorTunnels.closeToken(token);
+      appTunnels.closeToken(token);
       eventsRelay.closeToken(token, { type: 'signed-out' });
     }
     // The token is still valid server-side; say so (the cookie is cleared regardless).
@@ -903,6 +918,7 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
     const dropped = auth.dropAll();
     closeAllSockets({ type: 'signed-out' });
     editorTunnels.closeAll();
+    appTunnels.closeAll();
     eventsRelay.closeAll({ type: 'signed-out' });
     if (!dropped.ok) {
       authLog.error(`log out everywhere failed: ${dropped.errorMessage}`);
@@ -937,10 +953,7 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse): void {
       {
         base: CFG.base,
         socketPath: APPS_SOCK,
-        registered: slug => {
-          const listed = services.apps.listApps();
-          return listed.ok ? listed.data.apps.some(a => a.slug === slug) : null;
-        },
+        registered: appsRegistered,
       },
       req,
       res,
@@ -1116,6 +1129,32 @@ server.on('upgrade', (req, socket, head) => {
       return;
     }
     eventsRelay.handleUpgrade(req, socket, head, gate.token);
+    return;
+  }
+  if (isAppsHttpPath(CFG.base, url)) {
+    // The events socket's gate family, then the slug/registry resolution
+    // and tunnel (transport in apps-ws.ts, unit-tested there).
+    handleAppsUpgrade(
+      {
+        base: CFG.base,
+        socketPath: APPS_SOCK,
+        registered: appsRegistered,
+        gate: checkEventsUpgrade(req, ipOf(req), {
+          shuttingDown: () => shuttingDown,
+          allow: ip => wsLimiter.allow(ip),
+          originOk,
+          validSession: cookie => auth.valid(Auth.sessionToken(cookie)),
+        }),
+        securityHeaders: securityHeaderBlock(),
+        track: (token, tunnel) => appTunnels.track(token, tunnel),
+        untrack: (token, tunnel) => appTunnels.untrack(token, tunnel),
+        alive: token => auth.alive(token),
+        log: wsLog,
+      },
+      req,
+      socket,
+      head,
+    );
     return;
   }
   if (url !== route('/ws')) {
@@ -1446,6 +1485,9 @@ const shutdownSteps: Array<() => void | Promise<void>> = [
   },
   () => {
     editorTunnels.closeAll();
+  },
+  () => {
+    appTunnels.closeAll();
   },
   () => {
     // Keep-alive sockets go idle after the console's last re-poll; a
