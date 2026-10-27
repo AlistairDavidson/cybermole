@@ -83,6 +83,15 @@ async function refreshState(page: Page): Promise<void> {
   );
 }
 
+/** The server's persisted terminal order for a workspace — the reorder
+ *  write's echo. The bar is optimistic, so a reload must wait on THIS, not
+ *  on the DOM (a reload can kill the PUT still in flight). */
+async function persistedOrder(page: Page, ws: string): Promise<string[]> {
+  const state = await api(page, 'GET', '/api/state');
+  const w = state.json.workspaces.find((x: { id: string }) => x.id === ws);
+  return w.terminals.map((t: { id: string }) => t.id);
+}
+
 /** A fresh console workspace, selected, with titled tabs for stable labels:
  * [term 1 (the auto-opened agent tab), ...titles]. */
 async function makeWorkspace(page: Page, name: string, titles: string[] = []): Promise<string> {
@@ -154,7 +163,7 @@ test('dragging a tab reorders the bar optimistically and the order survives a re
   test.setTimeout(60_000);
   await login(page);
   const ws = await makeWorkspace(page, 'tabs drag ws', ['one', 'two']);
-  const [auto, one] = await tabIds(page);
+  const [auto, one, two] = await tabIds(page);
   expect(await tabLabels(page)).toEqual(['term 1', 'one', 'two']);
 
   // Drop 'one' on the auto tab's left half: it lands before it, the auto
@@ -162,7 +171,9 @@ test('dragging a tab reorders the bar optimistically and the order survives a re
   await tabOf(page, one!).dragTo(tabOf(page, auto!), { targetPosition: { x: 2, y: 4 } });
   await expect.poll(() => tabLabels(page)).toEqual(['one', 'term 2', 'two']);
 
-  // The write landed: a fresh boot renders the same order.
+  // The write landed (server echo, not just the optimistic bar): a fresh
+  // boot renders the same order.
+  await expect.poll(() => persistedOrder(page, ws)).toEqual([one, auto, two]);
   await page.reload();
   await reselectWorkspace(page, ws);
   await expect.poll(() => tabLabels(page)).toEqual(['one', 'term 2', 'two']);
@@ -176,7 +187,7 @@ test('Shift+Arrow moves the focused tab, and that order survives a reload too', 
   await login(page);
   const ws = await makeWorkspace(page, 'tabs keys ws', ['one', 'two']);
   const ids = await tabIds(page);
-  const [, , two] = ids;
+  const [auto, one, two] = ids;
   expect(await tabLabels(page)).toEqual(['term 1', 'one', 'two']);
 
   // Keyboard alternative to the drag: focus a tab, Shift+ArrowLeft walks it
@@ -190,6 +201,9 @@ test('Shift+Arrow moves the focused tab, and that order survives a reload too', 
   // Plain arrows only walk focus: the bar keeps its order.
   await page.keyboard.press('ArrowRight');
   await expect.poll(() => tabLabels(page)).toEqual(['two', 'term 2', 'one']);
+  // The second hop's write is in the server's echo before the reload can
+  // kill it in flight (the bar above is only optimistic).
+  await expect.poll(() => persistedOrder(page, ws)).toEqual([two, auto, one]);
 
   await page.reload();
   await reselectWorkspace(page, ws);
