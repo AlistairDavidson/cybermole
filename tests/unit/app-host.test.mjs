@@ -2,7 +2,8 @@
 // synthetic app trees (app.json + a stub entry.mjs; no astro build). The
 // registry, reload mount/re-import/drop (the cache bust), per-mount error
 // isolation, /_admin/status, the admin body policy, security headers, the
-// boot-race retry and the socket lifecycle.
+// fs-watch auto-reload (debounce, lifecycle, watcher errors), the boot-race
+// retry and the socket lifecycle.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as http from 'node:http';
@@ -21,8 +22,15 @@ const { Apps } = await import('../../dist-server/src/lib/apps/apps.js');
 const { appsSocketDefault } = await import('../../dist-server/src/lib/platform/env.js');
 
 /** internalApi: false boots the host first (the boot race); call
- *  bootInternalApi() afterwards. A tiny retryDelayMs keeps it fast. */
-async function bootWorld({ internalApi = true } = {}) {
+ *  bootInternalApi() afterwards. A tiny retryDelayMs keeps it fast.
+ *  Watching is off by default: many tests rewrite dist/ by hand and would
+ *  race their own verb reloads; the watch tests opt in. */
+async function bootWorld({
+  internalApi = true,
+  watch = false,
+  watchDebounceMs,
+  watchFactory,
+} = {}) {
   const root = fs.mkdtempSync(path.join(dir, 'case-'));
   const db = new StateDb(path.join(root, 'cybermole.db'));
   const scheduler = new Scheduler(db, { cwd: root, env: {}, logDir: path.join(root, 'job-logs') });
@@ -41,6 +49,9 @@ async function bootWorld({ internalApi = true } = {}) {
     internalSocketPath: internalSocket,
     retryDelayMs: 25,
     discoveryTimeoutMs: 2000,
+    watch,
+    ...(watch ? { watchDebounceMs: watchDebounceMs ?? 30 } : {}),
+    ...(watchFactory ? { watchFactory } : {}),
   });
   return {
     root,
@@ -143,6 +154,47 @@ const callJson = (socketPath, method, urlPath, body) =>
 
 const status = async socketPath =>
   JSON.parse((await call(socketPath, 'GET', '/_admin/status')).text);
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+/** Polls fn() every 20 ms until truthy (its value) or the deadline. */
+async function waitFor(fn, timeoutMs = 5000, what = 'condition') {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = await fn();
+    if (value) return value;
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    await sleep(20);
+  }
+}
+
+const servedMarker = async (socketPath, slug) =>
+  (await call(socketPath, 'GET', `/apps/${slug}/`)).text;
+
+const watchState = async socketPath => (await status(socketPath)).watch;
+
+/** A watch factory that records every handle: tests fire errors, trigger
+ *  onChange on demand, and assert closes. */
+function recordingWatchFactory() {
+  const made = [];
+  const watchFactory = (target, options, onChange) => {
+    const handle = {
+      target,
+      recursive: options.recursive,
+      closed: false,
+      errorListeners: [],
+      close() {
+        handle.closed = true;
+      },
+      onError(listener) {
+        handle.errorListeners.push(listener);
+      },
+    };
+    made.push({ handle, onChange });
+    return handle;
+  };
+  return { made, watchFactory };
+}
 
 // ---------- registry ----------
 
@@ -395,6 +447,255 @@ test('reload mounts an app registered after boot (the sync point)', async () => 
     assert.equal((await call(w.host.socketPath, 'GET', '/apps/app-fixture/')).status, 200);
   } finally {
     await w.host.close();
+    await w.internalApi.close();
+  }
+});
+
+// ---------- fs-watch auto-reload ----------
+
+test('a dist touch auto-reloads just that app — exactly one reload, siblings untouched', async () => {
+  const w = await bootWorld({ watch: true });
+  try {
+    const a = makeAppTree(w.root, 'alpha');
+    const b = makeAppTree(w.root, 'beta');
+    await w.apps.saveApp('Alpha', a);
+    await w.apps.saveApp('Beta', b);
+    await w.host.reload();
+    assert.equal(await servedMarker(w.host.socketPath, 'alpha'), 'APP:alpha:v1');
+
+    fs.writeFileSync(path.join(a, 'dist', 'server', 'entry.mjs'), entrySource('APP:alpha:v2'));
+    await waitFor(
+      async () => (await servedMarker(w.host.socketPath, 'alpha')) === 'APP:alpha:v2',
+      5000,
+      'the touched app to re-import',
+    );
+    // settle: no second reload follows the burst
+    await sleep(150);
+    const watch = await watchState(w.host.socketPath);
+    assert.deepEqual(
+      watch.apps.find(x => x.slug === 'alpha'),
+      { slug: 'alpha', autoReloads: 1 },
+    );
+    assert.equal(watch.apps.find(x => x.slug === 'beta').autoReloads, 0);
+    assert.equal(await servedMarker(w.host.socketPath, 'beta'), 'APP:beta:v1');
+    assert.equal(watch.debounceMs, 30); // the injected test timing
+  } finally {
+    await w.host.close();
+    await w.internalApi.close();
+  }
+});
+
+test('an app.json change auto-reloads too (the manifest re-reads)', async () => {
+  const w = await bootWorld({ watch: true });
+  try {
+    const cwd = makeAppTree(w.root, 'gamma');
+    await w.apps.saveApp('Gamma', cwd);
+    await w.host.reload();
+
+    fs.writeFileSync(
+      path.join(cwd, 'app.json'),
+      JSON.stringify({ name: 'Renamed app', description: 'after the edit', slug: 'gamma' }),
+    );
+    // The reload re-imports the entry (importedAt advances); the mounted
+    // manifest fields carry over from the first mount by design.
+    const before = (await status(w.host.socketPath)).mounted.find(m => m.slug === 'gamma');
+    await waitFor(
+      async () =>
+        (await watchState(w.host.socketPath)).apps.find(x => x.slug === 'gamma')?.autoReloads === 1,
+      5000,
+      'the app.json watcher to fire one reload',
+    );
+    const after = (await status(w.host.socketPath)).mounted.find(m => m.slug === 'gamma');
+    assert.ok(after.importedAt > before.importedAt, 'the entry re-imported');
+    await sleep(150);
+    assert.equal((await watchState(w.host.socketPath)).apps[0].autoReloads, 1);
+  } finally {
+    await w.host.close();
+    await w.internalApi.close();
+  }
+});
+
+test('a burst of dist writes collapses into one debounced reload', async () => {
+  const w = await bootWorld({ watch: true });
+  try {
+    const cwd = makeAppTree(w.root, 'bursty');
+    await w.apps.saveApp('Bursty', cwd);
+    await w.host.reload();
+
+    // one synchronous build-shaped burst: assets plus a rewritten entry
+    for (let i = 0; i < 8; i++) {
+      fs.writeFileSync(path.join(cwd, 'dist', 'client', '_astro', `chunk.${i}.js`), 'export {}');
+    }
+    fs.writeFileSync(path.join(cwd, 'dist', 'server', 'entry.mjs'), entrySource('APP:bursty:v2'));
+    await waitFor(
+      async () => (await servedMarker(w.host.socketPath, 'bursty')) === 'APP:bursty:v2',
+      5000,
+      'the burst to land as one reload',
+    );
+    await sleep(150);
+    const watch = await watchState(w.host.socketPath);
+    assert.equal(watch.apps.find(x => x.slug === 'bursty').autoReloads, 1);
+  } finally {
+    await w.host.close();
+    await w.internalApi.close();
+  }
+});
+
+test('a whole-dist replacement still auto-reloads (the tree watcher catches the swap)', async () => {
+  const w = await bootWorld({ watch: true });
+  try {
+    const cwd = makeAppTree(w.root, 'swap');
+    await w.apps.saveApp('Swap', cwd);
+    await w.host.reload();
+
+    // dist/ replaced, not mutated: the recursive watcher may die with the
+    // old inode, the cwd watcher still catches the swap.
+    fs.rmSync(path.join(cwd, 'dist'), { recursive: true });
+    fs.mkdirSync(path.join(cwd, 'dist', 'server'), { recursive: true });
+    fs.mkdirSync(path.join(cwd, 'dist', 'client', '_astro'), { recursive: true });
+    fs.writeFileSync(path.join(cwd, 'dist', 'client', '_astro', 'app.HASH.css'), 'body{}');
+    fs.writeFileSync(path.join(cwd, 'dist', 'server', 'entry.mjs'), entrySource('APP:swap:v2'));
+    await waitFor(
+      async () => (await servedMarker(w.host.socketPath, 'swap')) === 'APP:swap:v2',
+      5000,
+      'the swapped dist to reload',
+    );
+    await sleep(150);
+    const watch = await watchState(w.host.socketPath);
+    // re-armed after the reload, whatever died with the old dist
+    assert.ok(watch.apps.some(x => x.slug === 'swap'));
+    assert.ok(watch.apps.find(x => x.slug === 'swap').autoReloads >= 1);
+    // and the fresh dist watcher sees a later in-place touch too
+    fs.writeFileSync(path.join(cwd, 'dist', 'server', 'entry.mjs'), entrySource('APP:swap:v3'));
+    await waitFor(
+      async () => (await servedMarker(w.host.socketPath, 'swap')) === 'APP:swap:v3',
+      5000,
+      'the re-armed watcher to fire',
+    );
+  } finally {
+    await w.host.close();
+    await w.internalApi.close();
+  }
+});
+
+test('unmounting closes the watcher: touches on the dropped tree never reload', async () => {
+  const w = await bootWorld({ watch: true });
+  try {
+    const gone = makeAppTree(w.root, 'goner');
+    const stays = makeAppTree(w.root, 'stayer');
+    await w.apps.saveApp('Goner', gone);
+    await w.apps.saveApp('Stayer', stays);
+    await w.host.reload();
+    assert.deepEqual((await watchState(w.host.socketPath)).apps.map(x => x.slug).sort(), [
+      'goner',
+      'stayer',
+    ]);
+
+    await w.apps.deleteApp('goner');
+    const report = await w.host.reload();
+    assert.deepEqual(report.dropped, ['goner']);
+    assert.deepEqual(
+      (await watchState(w.host.socketPath)).apps.map(x => x.slug),
+      ['stayer'],
+    );
+
+    // the tree still exists on disk, but nothing watches it anymore
+    fs.writeFileSync(path.join(gone, 'dist', 'server', 'entry.mjs'), entrySource('APP:goner:v2'));
+    fs.writeFileSync(path.join(gone, 'app.json'), JSON.stringify({ name: 'Nope', slug: 'goner' }));
+    await sleep(200);
+    assert.equal((await watchState(w.host.socketPath)).apps[0].autoReloads, 0);
+    const page = await call(w.host.socketPath, 'GET', '/apps/goner/');
+    assert.equal(page.status, 404);
+    assert.equal(await servedMarker(w.host.socketPath, 'stayer'), 'APP:stayer:v1');
+  } finally {
+    await w.host.close();
+    await w.internalApi.close();
+  }
+});
+
+test('a watcher error is a logged degrade, never a throw: handle closed, entry thins, a reload re-arms', async () => {
+  const { made, watchFactory } = recordingWatchFactory();
+  const w = await bootWorld({ watch: true, watchFactory });
+  try {
+    const cwd = makeAppTree(w.root, 'errapp');
+    await w.apps.saveApp('Errapp', cwd);
+    await w.host.reload();
+    assert.equal(made.length, 2); // the cwd watch + the recursive dist watch
+    const treeHandle = made.find(m => !m.handle.recursive).handle;
+    const distHandle = made.find(m => m.handle.recursive).handle;
+
+    // EMFILE on the dist watch: logged, that handle closes, the tree watch
+    // keeps the entry (auto-reload still armed through it)
+    distHandle.errorListeners[0](
+      Object.assign(new Error('EMFILE: watch limit reached'), { code: 'EMFILE' }),
+    );
+    assert.equal(distHandle.closed, true);
+    assert.deepEqual(
+      (await watchState(w.host.socketPath)).apps.map(x => x.slug),
+      ['errapp'],
+    );
+
+    // the tree watch dies too (EPERM on a busy tree): the entry goes, the
+    // mounted app keeps serving — the verb reload remains
+    treeHandle.errorListeners[0](Object.assign(new Error('EPERM: watch'), { code: 'EPERM' }));
+    assert.equal(treeHandle.closed, true);
+    assert.deepEqual((await watchState(w.host.socketPath)).apps, []);
+    assert.equal(await servedMarker(w.host.socketPath, 'errapp'), 'APP:errapp:v1');
+
+    // a verb reload re-arms from scratch
+    await w.host.reload('errapp');
+    const after = await watchState(w.host.socketPath);
+    assert.deepEqual(
+      after.apps.map(x => x.slug),
+      ['errapp'],
+    );
+    assert.equal(made.length, 4); // two fresh handles
+  } finally {
+    await w.host.close();
+    await w.internalApi.close();
+  }
+});
+
+test('a trigger pending through a re-arm still fires (a mid-reload write is not lost); close() closes everything', async () => {
+  const { made, watchFactory } = recordingWatchFactory();
+  const w = await bootWorld({ watch: true, watchDebounceMs: 400, watchFactory });
+  try {
+    const cwd = makeAppTree(w.root, 'absorb');
+    await w.apps.saveApp('Absorb', cwd);
+    await w.host.reload();
+    assert.equal(made.length, 2);
+
+    // an event schedules the 400 ms trigger, then a verb reload re-arms
+    // before it fires: the pending trigger must survive the swap, not die
+    // with the old handles (a write that landed mid-reload is not lost)
+    made[0].onChange();
+    await w.host.reload('absorb');
+    assert.equal(made[0].handle.closed, true);
+    assert.equal(made[1].handle.closed, true);
+    assert.equal(made.length, 4);
+    await waitFor(
+      async () => (await watchState(w.host.socketPath)).apps[0]?.autoReloads === 1,
+      5000,
+      'the surviving trigger to fire',
+    );
+    // the auto reload re-armed again: two fresh handles, all older ones closed
+    await waitFor(() => made.length === 6, 2000, 'the third generation of handles');
+    assert.ok(made.slice(0, 4).every(m => m.handle.closed));
+    assert.ok(made.slice(4).every(m => !m.handle.closed));
+    assert.equal(await servedMarker(w.host.socketPath, 'absorb'), 'APP:absorb:v1');
+
+    // close(): every live handle closes (a pending debounce dies with them)
+    await w.host.close();
+    await sleep(100);
+    assert.ok(made.every(m => m.handle.closed));
+    await w.internalApi.close();
+    return;
+  } finally {
+    try {
+      await w.host.close();
+    } catch {
+      /* closed in-case */
+    }
     await w.internalApi.close();
   }
 });
@@ -850,6 +1151,36 @@ test('reload re-imports a rebuilt ws entry (the cache-bust); close() cuts live u
         resolve();
       });
     });
+    await w.internalApi.close();
+    return;
+  } finally {
+    try {
+      await w.host.close();
+    } catch {
+      /* closed in-case */
+    }
+    await w.internalApi.close();
+  }
+});
+
+test('close() during an in-flight reload leaks no watchers (the late syncWatchers re-arms nothing)', async () => {
+  const { made, watchFactory } = recordingWatchFactory();
+  const w = await bootWorld({ watch: true, watchFactory });
+  try {
+    // a top-level await holds doReload's import (and thus its syncWatchers)
+    // open long enough to close() underneath it, deterministically
+    const slowEntry = 'await new Promise(r => setTimeout(r, 250));\n' + entrySource('APP:slow:v1');
+    const cwd = makeAppTree(w.root, 'slow', { entry: slowEntry });
+    await w.apps.saveApp('Slow', cwd);
+    await w.host.reload();
+    assert.equal(made.length, 2);
+
+    const inFlight = w.host.reload('slow'); // its import sleeps 250 ms
+    await w.host.close(); // stop() closes gen 1; the reload is still running
+    await inFlight;
+    await sleep(500); // any post-close arming would land here
+    assert.equal(made.length, 2, 'a reload in flight at close() armed no new watchers');
+    assert.ok(made.every(m => m.handle.closed));
     await w.internalApi.close();
     return;
   } finally {
