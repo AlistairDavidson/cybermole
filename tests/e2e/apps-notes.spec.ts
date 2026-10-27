@@ -531,7 +531,8 @@ async function waitForPaneText(
 const waitForDrawerText = (page: Page, text: string, timeout?: number): Promise<void> =>
   waitForPaneText(page, 'agent-console', text, timeout);
 
-/** The notes app's row + its workspaces through /api/state, in-page. */
+/** The notes app's row + ITS workspaces (appId-scoped: the sweep below must
+ *  never touch other worlds' rows — the console fixtures, other apps). */
 async function notesState(page: Page): Promise<{
   appId: string;
   workspaces: Array<{
@@ -548,13 +549,16 @@ async function notesState(page: Page): Promise<{
   expect(app, 'the notes app row exists').toBeDefined();
   return {
     appId: app!.id,
-    workspaces: state.json.workspaces as Array<{
-      id: string;
-      kind: 'build' | null;
-      cwd: string;
-      order: number;
-      terminals: Array<{ id: string; order: number }>;
-    }>,
+    workspaces: (
+      state.json.workspaces as Array<{
+        id: string;
+        appId: string | null;
+        kind: 'build' | null;
+        cwd: string;
+        order: number;
+        terminals: Array<{ id: string; order: number }>;
+      }>
+    ).filter(w => w.appId === app!.id),
   };
 }
 
