@@ -19,10 +19,6 @@ main.ts static+middleware factoring (the app host carries its own small serve he
 
 add a slight fade-in when switching to console pages
 
-## Console features
-
-
-
 ## Workspaces follow-ups
 
 
@@ -32,13 +28,13 @@ editor host verification: open the Extensions viewlet and watch the iframe conso
 
 job exit-code notification hooks (webhook, Grafana alerting on the Loki labels)
 
-
 ## Git
 ability to make a workspace a worktree
 ability to merge
 
-
 ## Human UX tasks
+Review the notes app, finalise technical and stylistic decisions 
+Discuss with AI how to turn that into skills and linting
 Skills and other methods to enforce my coding patterns
 Write a refined agent workflow
 HIG skill
