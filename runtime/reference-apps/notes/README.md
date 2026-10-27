@@ -23,6 +23,27 @@ behind the console's login once it is registered and built.
   editor island for `note_edit`/`note_archive`).
 - `AGENTS.md` — the operator's manual for agents working in this tree.
 
+## The live list (the WS example)
+
+The list page is live: every open tab updates on any write, with no
+reload and no polling. It is the worked example of an app WebSocket
+route (the app-starter README § WebSocket routes has the contract):
+
+- `src/ws.mjs` — the WS entry the build copies to `dist/server/ws.mjs`.
+  It watches `data/` and broadcasts `{"type":"notes_changed"}` on any
+  `app.db*` touch (debounced). One-way, self-contained — no `src/lib`
+  imports, `node:` builtins and `ws` only.
+- The list page's client (`src/pages/index.astro`) dials
+  `/apps/notes/ws`, and on the signal re-fetches the page over HTTP and
+  swaps only the `.notes` region — the find form and the islands keep
+  their state. Reconnects with capped backoff (the host cuts tunnels on
+  logout/expiry without a close handshake).
+
+The split is the point: **WS carries the nudge, HTTP actions carry the
+ data.** The same signal makes the capturing tab's own list refresh
+ after a save (the island's save previously left the SSR list stale
+ until a manual reload).
+
 ## The seeding contract
 
 This tree ships in the image and seeds into the install's apps root

@@ -118,6 +118,46 @@ const base = import.meta.env.BASE_URL;
         mode: 'create',
       } satisfies NoteEditorProps);
       // END ACTION ISLANDS
+
+      // ---- the live list (the app's WS example) ----
+      // /apps/notes/ws signals notes_changed on every store write; answer
+      // by re-fetching this page and swapping just the list (never the form
+      // or the islands, so typing survives). The socket is one-way: data
+      // still moves over the HTTP actions. The host cuts tunnels on logout
+      // or token expiry without a close handshake, so reconnect with a
+      // capped backoff.
+      const liveList = document.querySelector('.notes');
+      if (liveList !== null) {
+        let delay = 1000;
+        const connect = (): void => {
+          const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+          const ws = new WebSocket(`${proto}://${location.host}/apps/notes/ws`);
+          ws.onopen = () => {
+            delay = 1000;
+          };
+          ws.onmessage = async event => {
+            let msg: { type?: string };
+            try {
+              msg = JSON.parse(String(event.data)) as { type?: string };
+            } catch {
+              return;
+            }
+            if (msg.type !== 'notes_changed') return;
+            // no-store: the swap must always see the committed store, never
+            // a cached copy of an earlier signal's fetch.
+            const r = await fetch(location.href, { cache: 'no-store' });
+            if (!r.ok) return;
+            const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+            const fresh = doc.querySelector('.notes');
+            if (fresh !== null) liveList.innerHTML = fresh.innerHTML;
+          };
+          ws.onclose = () => {
+            setTimeout(connect, delay);
+            delay = Math.min(delay * 2, 15000);
+          };
+        };
+        connect();
+      }
     </script>
   </body>
 </html>

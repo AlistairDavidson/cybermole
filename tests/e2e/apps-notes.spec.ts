@@ -441,3 +441,43 @@ test('the app MCP shim: the table\u2019s tools over stdio, note_get by id, the s
   });
   await client.close();
 });
+
+test("the WS example: a write in one tab updates another tab's list without a reload", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await ensureRegisteredAndMounted();
+  await login(page);
+  await page.goto(`/apps/${SLUG}/`);
+
+  // A second tab of the same list (the shared context carries the cookie).
+  const p2 = await page.context().newPage();
+  await p2.goto(`/apps/${SLUG}/`);
+  await p2.evaluate(() => (document.body.dataset.liveSentinel = 'alive'));
+  const before = await page.locator('.notes a').count();
+  await expect(p2.locator('.notes a')).toHaveCount(before);
+
+  // Any writer — here the page API — broadcasts notes_changed; both tabs'
+  // lists refresh on their own (the capturing tab's own list included,
+  // which the island's save used to leave stale until a manual reload).
+  const made = await api(page, 'POST', `/apps/${SLUG}/api/notes`, {
+    title: 'live-list note',
+    body: 'created from another tab',
+    tags: ['ws'],
+  });
+  expect(made.status, JSON.stringify(made.json)).toBe(201);
+  await expect(p2.locator('.notes a', { hasText: 'live-list note' })).toHaveCount(1);
+  await expect(p2.locator('.notes a')).toHaveCount(before + 1);
+  await expect(page.locator('.notes a', { hasText: 'live-list note' })).toHaveCount(1);
+  // And it really was push: neither tab reloaded.
+  expect(await p2.evaluate(() => document.body.dataset.liveSentinel ?? '')).toBe('alive');
+
+  // The walkthrough asserts exact list counts later in the run only through
+  // its own notes; still, keep this test's world as it found it: archive
+  // the note out of the live list (both tabs see that signal too).
+  const id = made.json.data.note.id as number;
+  const archived = await api(page, 'POST', `/apps/${SLUG}/api/notes/${id}/archive`);
+  expect(archived.status, JSON.stringify(archived.json)).toBe(200);
+  await expect(p2.locator('.notes a')).toHaveCount(before);
+  await p2.close();
+});

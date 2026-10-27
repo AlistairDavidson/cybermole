@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'astro/config';
 import node from '@astrojs/node';
 import lit from '@awesome.me/astro-lit';
-import { writeRouteTable } from '@cybermole/app-kit/route-table-emit';
+import { writeRouteTable, writeWsEntry } from '@cybermole/app-kit/route-table-emit';
 import { routes } from './src/routes';
 
 const appRoot = path.dirname(fileURLToPath(import.meta.url));
@@ -28,10 +28,21 @@ const emitRouteTable = () => ({
   },
 });
 
+// Copies src/ws.mjs (the WS entry) into dist/server/ when present — a
+// no-op without it, so the hook ships in every tree.
+const emitWsEntry = () => ({
+  name: 'emit-ws-entry',
+  hooks: {
+    'astro:build:done': () => {
+      writeWsEntry(appRoot);
+    },
+  },
+});
+
 export default defineConfig({
   output: 'server',
   adapter: node({ mode: 'middleware' }),
-  integrations: [lit(), emitRouteTable()],
+  integrations: [lit(), emitRouteTable(), emitWsEntry()],
   base,
   srcDir: './src',
   outDir: './dist',
