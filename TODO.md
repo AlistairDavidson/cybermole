@@ -16,10 +16,6 @@ main.ts static+middleware factoring (the app host carries its own small serve he
 ## Workspaces follow-ups
 
 
-editor extension/marketplace configuration beyond the VSCodium defaults (Open VSX, no telemetry); curated per-app extension sets
-
-editor host verification: open the Extensions viewlet and watch the iframe console for a CSP violation naming open-vsx.org — if it appears, add it to connect-src in editorSecurityHeaders() (src/lib/terminals/editor.ts); also check a CYBERMOLE_BASE=/foo deployment serves the workbench under /foo/editor/
-
 job exit-code notification hooks (webhook, Grafana alerting on the Loki labels)
 
 ## Git
