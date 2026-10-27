@@ -30,7 +30,7 @@ commits
 How to scaffold an app eg write its AGENTS.md, always make an mcp with tools that match every user action
 
 ## Infrastructure
-lit?
+lit? preact?
 
 ## Quality
 playwright fuzzer/monkeys? fuzz based integration testing
