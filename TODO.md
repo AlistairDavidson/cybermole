@@ -14,7 +14,7 @@ cross-app MCP registration (siblings talk plain HTTP through the host)
 
 WS routes for apps (crib the bridge code; the /apps proxy grows `ws: true`)
 
-per-app agent access: per-app scoping/enforcement of jobs, per-app uids / separate sockets (v1 is one root agent, one uid)
+per-app agent access: settled 2026-10 — one uid for everything, no per-app sandboxing; the slide-in console controls scope by framing (app cwd + AGENTS.md + app MCP)
 
 main.ts static+middleware factoring (the app host carries its own small serve helper instead)
 
