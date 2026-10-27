@@ -4,6 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  apiJson,
   appBySlug,
   builderLink,
   firstTerminal,
@@ -109,4 +110,47 @@ test('builderLink: this app\u2019s first build workspace\u2019s first terminal, 
     workspaces: state().workspaces.map(w => (w.id === BUILD_A ? { ...w, terminals: [] } : w)),
   };
   assert.equal(builderLink(tabless, APP_ID, ''), '/builder');
+});
+
+// ---- apiJson: the drawer's failure surfaces ----
+
+test('apiJson: the console\u2019s {error, code} failure envelope reaches the drawer verbatim', async () => {
+  const { createServer } = await import('node:http');
+  const server = createServer((req, res) => {
+    if (req.url === '/api/state') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ me: 'ok', apps: [], workspaces: [] }));
+    } else if (req.url === '/api/reject') {
+      // The shape workspaceFailureResponse emits for a closed code.
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'no such app', code: 'app_not_found' }));
+    } else if (req.url === '/api/bad-json') {
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('boom');
+    } else if (req.url === '/api/signed-out') {
+      res.writeHead(401, { 'Content-Type': 'text/plain' });
+      res.end('nope');
+    }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  try {
+    const ok = await apiJson(`http://127.0.0.1:${port}/api/state`);
+    assert.deepEqual(ok, { ok: true, json: { me: 'ok', apps: [], workspaces: [] } });
+    // the server's message, not a bare status
+    const rejected = await apiJson(`http://127.0.0.1:${port}/api/reject`);
+    assert.deepEqual(rejected, { ok: false, message: 'no such app' });
+    const bare = await apiJson(`http://127.0.0.1:${port}/api/bad-json`);
+    assert.deepEqual(bare, { ok: false, message: 'HTTP 500' });
+    const signedOut = await apiJson(`http://127.0.0.1:${port}/api/signed-out`);
+    assert.deepEqual(signedOut, {
+      ok: false,
+      message: 'signed out — sign in at the console, then come back',
+    });
+    const unreachable = await apiJson('http://127.0.0.1:1/nope');
+    assert.equal(unreachable.ok, false);
+    assert.match(unreachable.message, /^could not reach the console/);
+  } finally {
+    server.close();
+  }
 });

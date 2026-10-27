@@ -36,6 +36,7 @@ import './agent-console.css';
 import type { ClientMsg, ServerMsg } from './terminal-protocol';
 import { parseBackfillMsg } from './terminal-protocol';
 import {
+  apiJson,
   appBySlug,
   builderLink,
   firstTerminal,
@@ -96,33 +97,6 @@ function tokenTheme(): ITheme {
   };
 }
 
-/** One JSON Result off the console's API, or an error message. */
-async function apiJson(
-  url: string,
-  init?: RequestInit,
-): Promise<{ ok: true; json: unknown } | { ok: false; message: string }> {
-  let response: Response;
-  try {
-    response = await fetch(url, init);
-  } catch (e) {
-    return { ok: false, message: `could not reach the console (${(e as Error).message})` };
-  }
-  if (response.status === 401)
-    return { ok: false, message: 'signed out — sign in at the console, then come back' };
-  let json: unknown = null;
-  try {
-    json = await response.json();
-  } catch {
-    /* error bodies below carry no JSON */
-  }
-  if (!response.ok) {
-    const failure = json as { errorMessage?: string; errorCode?: string } | null;
-    const detail = failure?.errorMessage ?? failure?.errorCode ?? `HTTP ${response.status}`;
-    return { ok: false, message: detail };
-  }
-  return { ok: true, json };
-}
-
 export class AgentConsole extends HTMLElement {
   /** The lean terminal's xterm, for tests reading the pane. */
   terminal?: Terminal;
@@ -145,6 +119,9 @@ export class AgentConsole extends HTMLElement {
   private bufferPrimed = false;
   /** Guards the open flow: a second open while one resolves reuses it. */
   private opening: Promise<void> | null = null;
+  /** Bumped by detach(): an open flow resolved after its detach attaches
+   *  nothing (a socket opened post-close would reconnect forever). */
+  private generation = 0;
 
   constructor() {
     super();
@@ -232,7 +209,8 @@ export class AgentConsole extends HTMLElement {
   private async open(): Promise<void> {
     if (this.drawer) this.drawer.open = true;
     if (this.opening) return;
-    this.opening = this.ensureAttached().finally(() => {
+    const generation = this.generation;
+    this.opening = this.ensureAttached(generation).finally(() => {
       this.opening = null;
     });
     await this.opening;
@@ -240,7 +218,7 @@ export class AgentConsole extends HTMLElement {
 
   /** Resolve (or create) the operator workspace, then attach. Errors land
    *  in the status line; the page is never touched. */
-  private async ensureAttached(): Promise<void> {
+  private async ensureAttached(generation: number): Promise<void> {
     this.status('resolving this app\u2019s workspace \u2026');
     const state = await this.fetchState();
     if (!state.ok) return this.status(state.message, 'err');
@@ -284,6 +262,8 @@ export class AgentConsole extends HTMLElement {
       if (!row.id) return this.status('the agent tab was created but carries no id', 'err');
       terminalId = row.id as TerminalId;
     }
+    // Closed while the flow was resolving: attach nothing.
+    if (generation !== this.generation) return;
     this.attach(terminalId);
   }
 
@@ -313,6 +293,7 @@ export class AgentConsole extends HTMLElement {
   private attach(id: TerminalId): void {
     this.cancelReconnect();
     this.closeSocket();
+    if (!this.drawer?.open) return; // closed mid-flow
     this.terminal?.reset();
     this.bufferPrimed = false;
     this.attachedTarget = '';
@@ -392,6 +373,7 @@ export class AgentConsole extends HTMLElement {
 
   /** Tear-down, not a drop: no reconnect; the tmux session keeps running. */
   detach(): void {
+    this.generation++;
     this.cancelReconnect();
     this.closeSocket();
   }

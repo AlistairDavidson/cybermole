@@ -1,8 +1,9 @@
 // The app-pages agent drawer's pure half: which workspace a page's drawer
-// attaches to, and where its builder link points — decided from the
-// console's state JSON (GET /api/state), never from the DOM. Structural
-// subsets: the console's ConsoleState is assignable to ConsoleStateLite.
-// Node-free and DOM-free, so unit tests run it straight from dist-server.
+// attaches to, where its builder link points, and the one-JSON-off-the-
+// console-API fetch helper — decided from the console's state JSON (GET
+// /api/state), never from the DOM. Structural subsets: the console's
+// ConsoleState is assignable to ConsoleStateLite. Node-free and DOM-free,
+// so unit tests run it straight from dist-server (fetch globals included).
 import type { AppId, TerminalId, WorkspaceId } from './types/branded';
 
 /** The slices of GET /api/state the drawer reads. */
@@ -56,4 +57,33 @@ export function builderLink(state: ConsoleStateLite, appId: AppId, base: string)
     .sort((a, b) => a.order - b.order)[0];
   const terminal = build ? firstTerminal(state, build.id) : null;
   return terminal ? `${base}/builder?t=${terminal}` : `${base}/builder`;
+}
+
+/** One JSON Result off the console's same-origin API, or an error message
+ *  for the drawer's status line. Failure bodies follow the kit's HTTP
+ *  mapping ({ error, code }); 401 is signed-out, never a server error. */
+export async function apiJson(
+  url: string,
+  init?: RequestInit,
+): Promise<{ ok: true; json: unknown } | { ok: false; message: string }> {
+  let response: Response;
+  try {
+    response = await fetch(url, init);
+  } catch (e) {
+    return { ok: false, message: `could not reach the console (${(e as Error).message})` };
+  }
+  if (response.status === 401)
+    return { ok: false, message: 'signed out — sign in at the console, then come back' };
+  let json: unknown = null;
+  try {
+    json = await response.json();
+  } catch {
+    /* error bodies below carry no JSON */
+  }
+  if (!response.ok) {
+    const failure = json as { error?: string; code?: string } | null;
+    const detail = failure?.error ?? failure?.code ?? `HTTP ${response.status}`;
+    return { ok: false, message: detail };
+  }
+  return { ok: true, json };
 }
