@@ -319,4 +319,64 @@ test.describe('editor pane (private server, dead upstream)', () => {
       )
       .toContain(`/editor/?folder=${encodeURIComponent(server!.dir)}`);
   });
+
+  test("the editor toolbar's only control pops the workspace out to the single view", async ({
+    page,
+  }) => {
+    // Nothing may leave the loopback.
+    await page.route('**/*', route => {
+      const host = new URL(route.request().url()).hostname;
+      if (host === '127.0.0.1' || host === 'localhost') return route.continue();
+      return route.abort();
+    });
+
+    const ws = await fetch(`${BASE}/api/workspaces`, {
+      method: 'POST',
+      headers: { cookie: server!.cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'theme-pop', cwd: server!.dir }),
+    });
+    expect(ws.status).toBe(200);
+    const id = ((await ws.json()) as { id: string }).id;
+
+    await page.context().addCookies([
+      {
+        name: 'cybermole_session',
+        value: server!.cookie.split('=').slice(1).join('='),
+        url: BASE,
+      },
+    ]);
+    await page.goto(`${BASE}/`);
+    await page.waitForSelector('workspace-sidebar .nav');
+    await page.click(`workspace-sidebar li[data-ws="${id}"]`);
+
+    await page.click('button.tab.editor-tab');
+    const toolbar = page.locator('.editor-toolbar');
+    await expect(toolbar).toBeVisible();
+    // The toolbar's only control is the pop-out.
+    await expect(toolbar.locator('wa-button')).toHaveCount(1);
+    const [pop] = await Promise.all([
+      page.waitForEvent('popup'),
+      toolbar.locator('wa-button').click(),
+    ]);
+
+    await pop.waitForSelector('single-view iframe.editor-frame');
+    await expect(pop).toHaveURL(new RegExp(`/view\\?w=${id}$`));
+    await expect(pop).toHaveTitle('cybermole — theme-pop — editor');
+    // The single view, not the console.
+    await expect(pop.locator('app-header')).toHaveCount(0);
+    await expect(pop.locator('workspace-sidebar')).toHaveCount(0);
+    await expect(pop.locator('terminal-tabs')).toHaveCount(0);
+    // ...and it opens the workspace folder through the proxy, like the tab.
+    await expect
+      .poll(async () =>
+        pop.evaluate(
+          () =>
+            (document.querySelector('iframe.editor-frame') as HTMLIFrameElement | null)?.src ?? '',
+        ),
+      )
+      .toContain(`/editor/?folder=${encodeURIComponent(server!.dir)}`);
+    // A copy, not a move: the editor pane here stays live.
+    await expect(page.locator('iframe.editor-frame')).toBeVisible();
+    await pop.close();
+  });
 });

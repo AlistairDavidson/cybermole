@@ -1055,8 +1055,9 @@ Promise<{ status: number; json: any }> {
   );
 }
 
-// Pop-out moves the pane to a /?t=<id> tab. The server attaches with
-// `tmux attach -d`, so the main page's socket must close first. The row
+// Pop-out moves the pane to a /view?t=<id> tab (the chrome-free single
+// view). The server attaches with `tmux attach -d`, so the main page's
+// socket must close first. The row
 // stays (marked popped); the terminal returns when the popped tab closes or
 // the row is clicked (which bumps the popped tab).
 test("popping a tab moves the pane to a new tab: main socket down, popped tab attached, row survives; the tab click and the popped tab's close both bring it back", async ({
@@ -1076,8 +1077,8 @@ test("popping a tab moves the pane to a new tab: main socket down, popped tab at
   await expect(page.locator('terminal-tabs .tb-pop-out')).toHaveCount(1);
 
   const [popout] = await Promise.all([page.waitForEvent('popup'), popBtn.click()]);
-  await popout.waitForSelector('workspace-sidebar .nav');
-  await expect(popout.locator(`terminal-tabs .tab[data-term="${id}"]`)).toHaveClass(/active/);
+  await popout.waitForSelector('single-view agent-terminal');
+  await expect(popout).toHaveURL(new RegExp(`/view\\?t=${id}$`));
   await expect(popout.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`);
   await waitForTermText(popout, MARKER, 20_000);
 
@@ -1107,7 +1108,7 @@ test("popping a tab moves the pane to a new tab: main socket down, popped tab at
 
   // Pop again and close the popped tab: its pagehide re-attaches here unprompted.
   const [popout2] = await Promise.all([page.waitForEvent('popup'), popBtn.click()]);
-  await popout2.waitForSelector('workspace-sidebar .nav');
+  await popout2.waitForSelector('single-view agent-terminal');
   await expect(popout2.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`);
   await expect(page.locator('terminal-tabs agent-terminal')).toHaveCount(0);
   await popout2.close();
