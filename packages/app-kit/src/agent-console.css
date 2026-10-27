@@ -1,0 +1,79 @@
+/* <agent-console>: the app pages' agent drawer. One implementation in
+   app-kit, shared by every app (the console's own rich terminal keeps its
+   styles in console.css; this file stands alone on Web Awesome tokens —
+   apps don't load the console's stylesheet). Structural lengths are the
+   few one-offs a terminal pane needs; every color, space and font comes
+   from a token. */
+
+agent-console {
+  /* the fixed affordance cluster, end-bottom of the viewport */
+  .agent-console-affordance {
+    position: fixed;
+    inset-block-end: var(--wa-space-m);
+    inset-inline-end: var(--wa-space-m);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--wa-space-2xs);
+    /* above ordinary page content; wa-drawer renders in the dialog top
+       layer, so it still covers the affordance when open */
+    z-index: 10;
+  }
+
+  .agent-console-builder {
+    font-size: var(--wa-font-size-xs);
+    color: var(--wa-color-text-quiet);
+    text-decoration: none;
+    padding-inline: var(--wa-space-2xs);
+  }
+
+  .agent-console-builder:hover,
+  .agent-console-builder:focus-visible {
+    color: var(--wa-color-text-normal);
+    text-decoration: underline;
+  }
+
+  /* the pane: terminal fills, status hugs the bottom */
+  .agent-console-pane {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--wa-color-surface-lowered);
+  }
+
+  .terminal-container {
+    flex: 1;
+    min-height: 0;
+    padding: var(--wa-space-3xs) var(--wa-space-2xs) 0;
+  }
+
+  .terminal-container .xterm {
+    height: 100%;
+  }
+
+  .terminal-status {
+    display: flex;
+    align-items: center;
+    gap: var(--wa-space-3xs);
+    padding: var(--wa-space-4xs) var(--wa-space-2xs);
+    font-size: var(--wa-font-size-s);
+    color: var(--wa-color-text-quiet);
+    border-top: var(--wa-border-width-default) var(--wa-border-style-default)
+      var(--wa-color-surface-border);
+  }
+
+  .terminal-status.ok wa-icon {
+    color: var(--wa-color-success-on-quiet);
+  }
+
+  .terminal-status.err wa-icon {
+    color: var(--wa-color-danger-on-quiet);
+  }
+}
+
+/* wide on the desktop, full-bleed on a phone (wa-drawer shrinks --size to
+   fit, so the min() is belt-and-braces) */
+agent-console wa-drawer {
+  --size: min(100vw, 46rem);
+}
