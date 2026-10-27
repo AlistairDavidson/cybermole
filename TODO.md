@@ -4,8 +4,6 @@ Apps have a single slide-in agent console, same UI across all apps, cwd to the a
   
 Apps have link to their build console (builder page, first workspace of this app selected)
 
-Apps own their lifecycle via jobs + git — no cybermole deploy/rollback machinery.
-
 per-app e2e harness (kit cribs the console's hermetic pattern; the check verb's unit stage is the only app-side test story today)
 
 app host fs-watch auto-reload (reload is verb-driven today)
@@ -13,11 +11,7 @@ app host fs-watch auto-reload (reload is verb-driven today)
 cross-app MCP registration (siblings talk plain HTTP through the host)
 
 
-per-app agent access: settled 2026-10 — one uid for everything, no per-app sandboxing; the slide-in console controls scope by framing (app cwd + AGENTS.md + app MCP)
-
 main.ts static+middleware factoring (the app host carries its own small serve helper instead)
-
-add a slight fade-in when switching to console pages
 
 ## Workspaces follow-ups
 
@@ -47,15 +41,10 @@ commits
 How to scaffold an app eg write its AGENTS.md, always make an mcp with tools that match every user action
 
 ## Infrastructure
-preact signals - make this available for any frontend state needs apps might have in future
 lit?
 
 ## Quality
 playwright fuzzer/monkeys? fuzz based integration testing
-
-## Distribution
-
-(done 2026-10: install guide + scripts, zsh init seeding — docs/guides/installation.md, deploy/*.sh)
 
 ## Packaging
 Pull my typescript and astro and zod stuff out to packages
