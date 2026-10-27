@@ -208,7 +208,19 @@ export class AgentConsole extends HTMLElement {
 
   private async open(): Promise<void> {
     if (this.drawer) this.drawer.open = true;
-    if (this.opening) return;
+    if (this.opening) {
+      // A click while a flow resolves joins it. If that flow was detached
+      // mid-flight (close-reopen) or errored, this open is still unattached
+      // — run a fresh one rather than leave the drawer busy forever.
+      await this.opening;
+      if (this.opening === null && this.attachedTarget === '' && (this.drawer?.open ?? false)) {
+        this.opening = this.ensureAttached(this.generation).finally(() => {
+          this.opening = null;
+        });
+        await this.opening;
+      }
+      return;
+    }
     const generation = this.generation;
     this.opening = this.ensureAttached(generation).finally(() => {
       this.opening = null;
