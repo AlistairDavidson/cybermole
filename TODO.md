@@ -6,8 +6,6 @@ Apps have link to their build console (builder page, first workspace of this app
 
 per-app e2e harness (kit cribs the console's hermetic pattern; the check verb's unit stage is the only app-side test story today)
 
-app host fs-watch auto-reload (reload is verb-driven today)
-
 cross-app MCP registration (siblings talk plain HTTP through the host)
 
 
