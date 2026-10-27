@@ -75,7 +75,7 @@ function entrySource(marker) {
   ].join('\n');
 }
 
-/** opts drop pieces (the skip cases) or override the entry and manifest. */
+/** opts drop pieces (the skip cases) or override the entry, ws entry and manifest. */
 function makeAppTree(root, slug, opts = {}) {
   const cwd = path.join(root, slug);
   fs.mkdirSync(cwd, { recursive: true });
@@ -98,6 +98,9 @@ function makeAppTree(root, slug, opts = {}) {
       path.join(cwd, 'dist', 'server', 'entry.mjs'),
       opts.entry ?? entrySource(`APP:${slug}:v1`),
     );
+    if (opts.wsEntry !== undefined) {
+      fs.writeFileSync(path.join(cwd, 'dist', 'server', 'ws.mjs'), opts.wsEntry);
+    }
     fs.writeFileSync(path.join(cwd, 'dist', 'client', '_astro', 'app.HASH.css'), 'body{}');
     fs.writeFileSync(path.join(cwd, 'dist', 'client', 'favicon.svg'), '<svg/>');
   }
@@ -708,4 +711,153 @@ test('readAppsSocket: empty = off (null), unset = the shape default, absolute wi
   assert.equal(read({ CYBERMOLE_APPS_SOCK: '/tmp/apps.sock' }).value, '/tmp/apps.sock');
   const bad = read({ CYBERMOLE_APPS_SOCK: 'apps.sock' });
   assert.match(bad.error, /CYBERMOLE_APPS_SOCK="apps\.sock" must be an absolute socket path/);
+});
+
+// ---------- WS upgrade dispatch ----------
+
+/** A ws entry that answers 101 with its marker and echoes `marker:` + bytes;
+ *  /unrouted refuses app-side (the app is the router). */
+function wsEntrySource(marker) {
+  return [
+    `const marker = ${JSON.stringify(marker)};`,
+    'export function handleUpgrade(req, socket, head) {',
+    "  const url = (req.url || '').split('?')[0];",
+    "  if (url.endsWith('/unrouted')) {",
+    "    socket.write('HTTP/1.1 404 Not Found\\r\\nConnection: close\\r\\n\\r\\n');",
+    '    socket.destroy();',
+    '    return;',
+    '  }',
+    '  socket.write(`HTTP/1.1 101 Switching Protocols\\r\\nX-Marker: ${marker}\\r\\nConnection: Upgrade\\r\\nUpgrade: websocket\\r\\n\\r\\n`);',
+    "  socket.on('data', d => socket.write(marker + ':' + d));",
+    '}',
+  ].join('\n');
+}
+
+/** A raw upgrade dial against the host's socket: resolves the 101 (+socket)\n *  or the refusal status. */
+function rawUpgrade(socketPath, urlPath) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        socketPath,
+        path: urlPath,
+        headers: {
+          connection: 'Upgrade',
+          upgrade: 'websocket',
+          'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==',
+          'sec-websocket-version': '13',
+        },
+      },
+      res => {
+        resolve({ status: res.statusCode });
+        res.destroy();
+      },
+    );
+    req.on('upgrade', (res, socket) =>
+      resolve({ status: res.statusCode, marker: res.headers['x-marker'], socket }),
+    );
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+test('an app with a ws entry: upgrades reach it, verbatim path; without one they 404', async () => {
+  const w = await bootWorld();
+  try {
+    const withWs = makeAppTree(w.root, 'app-ws', { wsEntry: wsEntrySource('WS:v1') });
+    await w.apps.saveApp('App WS', withWs);
+    const withoutWs = makeAppTree(w.root, 'app-nows');
+    await w.apps.saveApp('App NoWS', withoutWs);
+    await w.host.reload();
+
+    // Through the ws entry: 101 + a raw echo round trip.
+    const up = await rawUpgrade(w.host.socketPath, '/apps/app-ws/ws?x=1');
+    assert.equal(up.status, 101);
+    assert.equal(up.marker, 'WS:v1');
+    const echoed = await new Promise((resolve, reject) => {
+      up.socket.on('data', d => resolve(String(d)));
+      up.socket.on('error', reject);
+      up.socket.write('ping');
+    });
+    assert.equal(echoed, 'WS:v1:ping');
+    up.socket.destroy();
+
+    // The app routes its own paths (its own 404 forwards verbatim).
+    const unrouted = await rawUpgrade(w.host.socketPath, '/apps/app-ws/unrouted');
+    assert.equal(unrouted.status, 404);
+
+    // No ws entry: the app's upgrades 404; unmounted slugs the same.
+    const nows = await rawUpgrade(w.host.socketPath, '/apps/app-nows/ws');
+    assert.equal(nows.status, 404);
+    const ghost = await rawUpgrade(w.host.socketPath, '/apps/ghost/ws');
+    assert.equal(ghost.status, 404);
+
+    // The HTTP face is unaffected.
+    const page = await call(w.host.socketPath, 'GET', '/apps/app-ws/page');
+    assert.equal(page.status, 200);
+  } finally {
+    await w.host.close();
+    await w.internalApi.close();
+  }
+});
+
+test('a broken ws entry degrades to 503 upgrades, never a skipped mount', async () => {
+  const w = await bootWorld();
+  try {
+    const cwd = makeAppTree(w.root, 'app-badws', { wsEntry: 'export const notAHook = 1;' });
+    await w.apps.saveApp('App BadWS', cwd);
+    await w.host.reload();
+    const statusBody = await status(w.host.socketPath);
+    assert.ok(
+      statusBody.mounted.some(m => m.slug === 'app-badws'),
+      'the app still mounts',
+    );
+
+    const refused = await rawUpgrade(w.host.socketPath, '/apps/app-badws/ws');
+    assert.equal(refused.status, 503);
+    const page = await call(w.host.socketPath, 'GET', '/apps/app-badws/page');
+    assert.equal(page.status, 200);
+  } finally {
+    await w.host.close();
+    await w.internalApi.close();
+  }
+});
+
+test('reload re-imports a rebuilt ws entry (the cache-bust); close() cuts live upgrade sockets', async () => {
+  const w = await bootWorld();
+  try {
+    const cwd = makeAppTree(w.root, 'app-reload', { wsEntry: wsEntrySource('WS:v1') });
+    await w.apps.saveApp('App Reload', cwd);
+    await w.host.reload();
+    const first = await rawUpgrade(w.host.socketPath, '/apps/app-reload/ws');
+    assert.equal(first.marker, 'WS:v1');
+    first.socket.destroy();
+
+    fs.writeFileSync(path.join(cwd, 'dist', 'server', 'ws.mjs'), wsEntrySource('WS:v2'));
+    await w.host.reload();
+    const second = await rawUpgrade(w.host.socketPath, '/apps/app-reload/ws');
+    assert.equal(second.marker, 'WS:v2');
+
+    // The drain cannot hang on a live upgrade socket: close() cuts it, and
+    // the client sees the cut.
+    const cut = new Promise(resolve => second.socket.once('close', resolve));
+    const t0 = Date.now();
+    await w.host.close();
+    assert.ok(Date.now() - t0 < 5000, `close took ${Date.now() - t0}ms`);
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('client socket not cut by close()')), 2000);
+      cut.then(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+    await w.internalApi.close();
+    return;
+  } finally {
+    try {
+      await w.host.close();
+    } catch {
+      /* closed in-case */
+    }
+    await w.internalApi.close();
+  }
 });
