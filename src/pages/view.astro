@@ -1,0 +1,52 @@
+---
+// /view — a popped-out pane with none of the console chrome: exactly one
+// terminal (?t=<uuid>, the same id the tab bar and the console's /?t= deep
+// links identify a tab with) or one workspace's editor (?w=<uuid>). The
+// console's pop-out buttons open this page; it deep-links on its own and
+// sits behind the same session gate as every page (an unauthenticated GET
+// renders /login in place).
+import Base from '../layouts/Base.astro';
+import { assertCybermoleLocals } from '../lib/web/locals';
+import { resolvePopoutView, type PopoutView } from '../lib/web/popout-view';
+
+const { cybermole } = assertCybermoleLocals(Astro.locals);
+const tree = await cybermole.workspaces.workspaceTree();
+const view: PopoutView = tree.ok
+  ? resolvePopoutView(tree.data.workspaces, {
+      terminalId: Astro.url.searchParams.get('t'),
+      workspaceId: Astro.url.searchParams.get('w'),
+      editorEnabled: cybermole.cfg.editorUpstream !== null,
+    })
+  : { kind: 'missing', message: 'could not read the workspaces — reload to try again' };
+const title = view.kind === 'missing' ? 'cybermole' : `cybermole — ${view.label}`;
+---
+<Base title={title}>
+  {
+    view.kind === 'missing' && (
+      <div class="view-empty">
+        <wa-icon name="circle-info" label={view.message}></wa-icon>
+        <p>{view.message}</p>
+      </div>
+    )
+  }
+  {
+    view.kind === 'terminal' && (
+      <single-view kind="terminal" target={view.id} label={view.label} />
+    )
+  }
+  {
+    view.kind === 'editor' && (
+      <single-view kind="editor" target={view.id} label={view.label} cwd={view.cwd} />
+    )
+  }
+</Base>
+
+<script>
+  // Must precede any wa-* import, or SSR'd elements render twice (the
+  // empty state's wa-icon; AGENTS.md).
+  import '@awesome.me/astro-lit/dsd-polyfill.js';
+  import '@awesome.me/astro-lit/hydration-support.js';
+  // Before any wa-* defines, or icons fetch from the CDN first.
+  import '../icons';
+  import '../components/SingleView/single-view';
+</script>
