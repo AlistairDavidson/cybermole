@@ -37,8 +37,6 @@ editor extension/marketplace configuration beyond the VSCodium defaults (Open VS
 
 editor host verification: open the Extensions viewlet and watch the iframe console for a CSP violation naming open-vsx.org — if it appears, add it to connect-src in editorSecurityHeaders() (src/lib/terminals/editor.ts); also check a CYBERMOLE_BASE=/foo deployment serves the workbench under /foo/editor/
 
-pi-session resume as a workspace action ("resume a past agent session into a new terminal tab")
-
 job exit-code notification hooks (webhook, Grafana alerting on the Loki labels)
 
 
