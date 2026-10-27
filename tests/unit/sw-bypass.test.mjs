@@ -106,6 +106,19 @@ test('sw.js: the other paths keep their established behavior', async () => {
     false,
     'path outside bypass shape but api/',
   );
+  // app content is bypassed whole: pages are authed and live, and an
+  // app's own API fetches must never answer from a stale SWR copy
+  assert.equal(await swHandles(sw, 'http://127.0.0.1:4000/apps/notes/'), false, 'app page');
+  assert.equal(
+    await swHandles(sw, 'http://127.0.0.1:4000/apps/notes/api/notes'),
+    false,
+    'app API action',
+  );
+  assert.equal(
+    await swHandles(sw, 'http://127.0.0.1:4000/apps/notes/_astro/chunk-abc.mjs'),
+    false,
+    'app asset (the host owns freshness)',
+  );
   // hashed assets (cache-first) and navigations (network-first) are handled
   assert.equal(await swHandles(sw, 'http://127.0.0.1:4000/_astro/chunk-abc123.js'), true);
   assert.equal(await swHandles(sw, 'http://127.0.0.1:4000/jobs', 'GET'), true, 'navigate');

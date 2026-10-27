@@ -1,4 +1,4 @@
-const VERSION = 'cybermole-v5'; // bump to drop old caches on activate
+const VERSION = 'cybermole-v6'; // bump to drop old caches on activate
 const SCOPE = new URL(self.registration.scope); // <origin><base>/
 const at = p => new URL(p, SCOPE).href;
 const PRECACHE = [
@@ -77,11 +77,16 @@ self.addEventListener('fetch', event => {
   if (rel === null) return; // outside the app's base
   // Never cached: the API, partials (a stale one would undo a delete on
   // screen) and the editor, whose unhashed asset paths would mix versions
-  // after an upgrade and whose authed content would outlive logout.
+  // after an upgrade and whose authed content would outlive logout. Apps
+  // too, whole: their pages are authed and live (an app's own fetches —
+  // its API actions, its live-refresh re-fetches — must never answer from
+  // a stale-while-revalidate copy), and their unhashed assets would mix
+  // versions across app rebuilds. The app host owns its freshness.
   if (
     rel.startsWith('api/') ||
     rel.startsWith('partials/') ||
     rel.startsWith('editor/') ||
+    rel.startsWith('apps/') ||
     rel === 'ws' ||
     rel === 'sw.js'
   )
