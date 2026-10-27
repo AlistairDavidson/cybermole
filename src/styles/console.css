@@ -453,6 +453,7 @@ single-view {
 .view-empty {
   flex: 1; display: flex; flex-direction: column; align-items: center;
   justify-content: center; gap: var(--wa-space-2xs);
+  min-height: calc(100dvh - 2 * var(--wa-space-s)); box-sizing: border-box;
   color: var(--wa-color-text-quiet);
   border: var(--wa-border-width-s) dashed var(--wa-color-surface-border);
   border-radius: var(--wa-border-radius-m);

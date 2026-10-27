@@ -171,6 +171,8 @@ test('the terminal pop-out opens the chrome-free single view and round-trips a k
     // document.title names the tab; the pane attaches through the same WS.
     await expect(pop).toHaveTitle('cybermole — popview');
     await expect(paneStatus(pop, '.ok')).toContainText(`attached: t-${id}`);
+    // Already popped out: the pane's own pop-out button has nowhere to go.
+    await expect(pop.locator('agent-terminal .tb-pop-out')).toBeHidden();
     await waitForTermText(pop, MARKER);
 
     // A keystroke round-trips through the fixture command.
