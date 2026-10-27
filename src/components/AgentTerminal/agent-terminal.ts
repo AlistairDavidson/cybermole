@@ -18,9 +18,12 @@ import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/input/input.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
-import type { ActiveKey, ClientMsg, ServerMsg } from '../../lib/platform/types';
+// The protocol types come from the kit's terminal-protocol (one definition,
+// shared with the app pages' lean agent-console client — the convergence
+// path noted there).
+import type { ActiveKey, ClientMsg, ServerMsg } from '@cybermole/app-kit';
+import { parseBackfillMsg } from '@cybermole/app-kit';
 import type { TerminalId, TmuxSessionName } from '@cybermole/app-kit';
-import { parseBackfillMsg } from '../../schemas/frames';
 import { BASE } from '../../base';
 
 /** JSON spends at most 6 bytes per UTF-16 unit, so a frame stays under
