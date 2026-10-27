@@ -163,7 +163,8 @@ console-app main {
 }
 /* The nav header hosts the desktop collapse control. It is static SSR
    markup in the navigation-header slot, outside workspace-sidebar's
-   innerHTML re-render, so the 15s poll never touches it (AGENTS.md). */
+   innerHTML re-render, so the event-driven refresh never touches it
+   (AGENTS.md). */
 .nav-header {
   /* beats wa-page's ::slotted padding (var(--wa-space-m) all around) and
      its column flex-direction */

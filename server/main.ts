@@ -25,6 +25,7 @@ import {
 } from '../src/lib/platform/env';
 import { componentLogger, closeLogger } from '../src/lib/platform/logger';
 import * as jobs from '../src/lib/jobs/jobs';
+import { startLivenessWatch } from '../src/lib/terminals/liveness';
 import { seedRootAgentsFile } from '../src/lib/platform/root-agents';
 import { EventsRelay, checkEventsUpgrade } from '../src/lib/platform/events-ws';
 import { AutoUpdater } from '../src/lib/platform/auto-update';
@@ -185,6 +186,9 @@ const scheduler = new jobs.Scheduler(stateDb, {
   logMaxBytes: ENV.CYBERMOLE_JOB_LOG_MAX,
 });
 scheduler.start();
+// The console page has no state poll anymore: sidebar liveness heals on
+// this watcher's liveness_changed events instead.
+const stopLivenessWatch = startLivenessWatch({ liveSessionNames: tmux.liveSessionNames });
 // Reads its setting lazily: the state db opens lazily, and with auto-update
 // off nothing is ever scheduled.
 const autoUpdater = new AutoUpdater({ db: stateDb, appRoot: APP_ROOT });
@@ -256,6 +260,7 @@ const services = createServices({
   appsServing,
 });
 const shutdownScheduler = (): void => scheduler.stop();
+const shutdownLivenessWatch = (): void => stopLivenessWatch();
 
 // ---------- internal API ----------
 // Unix-socket listener serving the workspace side (agents) the jobs/apps
@@ -1416,6 +1421,9 @@ const whenClosed = new Promise<void>(resolve => server.once('close', resolve));
 const shutdownSteps: Array<() => void | Promise<void>> = [
   () => {
     shutdownScheduler();
+  },
+  () => {
+    shutdownLivenessWatch();
   },
   () => {
     autoUpdater.stop();

@@ -177,7 +177,8 @@ Testing), not just in the SSR HTML.
 - `console.css` is unlayered on purpose (must win over @layer'd Web Awesome
   styles) and is the only sanctioned place for hex colors.
 - The workspace sidebar (`src/components/workspace-sidebar.ts`) re-renders via
-  `innerHTML` on a 15s poll — preserve
+  `innerHTML` on every state refresh (push events over `/ws/events`, plus a
+  re-sync on socket (re)connect) — preserve
   transient state (e.g. input value/focus) in `render()`, and don't put
   stateful components (e.g. `wa-details`) in it.
 - `agent-terminal` sizes itself with a `ResizeObserver` on `.terminal-container`; new

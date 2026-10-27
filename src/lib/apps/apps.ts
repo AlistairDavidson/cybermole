@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import { qb, type StateDb } from '../platform/db';
 import { componentLogger } from '../platform/logger';
+import { emitDomainEvent } from '../platform/events';
 import { terminalSessionName } from '../terminals/tmux';
 import { checkedCwd } from '../terminals/workspaces';
 import {
@@ -145,6 +146,7 @@ export class Apps {
     );
     if (!inserted.ok) return fail('database_error', inserted.errorMessage);
     log.info(`app "${trimmed}" (${slug}) created${dir === null ? '' : `, cwd ${dir}`}`);
+    emitDomainEvent({ topic: 'apps', type: 'app_created', slug: asAppSlug(slug) });
     return {
       ok: true,
       resultType: 'save_app',
@@ -197,6 +199,7 @@ export class Apps {
       ),
     );
     if (!updated.ok) return fail('database_error', updated.errorMessage);
+    emitDomainEvent({ topic: 'apps', type: 'app_updated', slug });
     return {
       ok: true,
       resultType: 'save_app',
@@ -231,6 +234,7 @@ export class Apps {
     log.info(
       `app ${slug} deleted (${terminals.data.value.length} terminal sessions killed best-effort)`,
     );
+    emitDomainEvent({ topic: 'apps', type: 'app_deleted', slug });
     return { ok: true, resultType: 'delete_app', data: { id: row.id } } satisfies DeleteAppSuccess;
   }
 

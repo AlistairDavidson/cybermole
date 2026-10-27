@@ -1,4 +1,5 @@
-// The console's 15 s poll. Also re-arms the cookie's Max-Age when due (auth.cookieRefresh).
+// The console's state read (the event-driven refresh's loadState). Also
+// re-arms the cookie's Max-Age when due (auth.cookieRefresh).
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../lib/web/locals';
 import { consoleStateFailureResponse } from '../../lib/web/responses.service';
