@@ -118,8 +118,13 @@ test('workspaces: no-op updates, title-less renames and failures publish nothing
     // undefined title: the read-only return
     const tab = (await w.workspaceTree()).data.workspaces[0].terminals[0];
     assert.ok((await w.renameTerminal(tab.id, undefined)).ok);
-    // invalid input and dead rows never reach the write
-    assert.equal((await w.saveWorkspace({ name: '  ' })).errorCode, 'invalid_name');
+    // invalid input and dead rows never reach the write. (Self-naming made a
+    // blank create name derive from the cwd — invalid_name is update-only now,
+    // so the create failure here is the bad cwd.)
+    assert.equal(
+      (await w.saveWorkspace({ name: 'x', cwd: '/no/such/dir' })).errorCode,
+      'invalid_cwd',
+    );
     assert.equal(
       (await w.updateWorkspace(made.data.id, { name: 'x', cwd: '/no/such/dir' })).errorCode,
       'invalid_cwd',
