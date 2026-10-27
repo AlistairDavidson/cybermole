@@ -7,6 +7,7 @@ export * from './types/result';
 export * from './types/branded';
 export * from './schemas/patterns';
 export * from './schemas/ids';
+export * from './terminal-protocol';
 export * from './web/responses.service';
 export * from './db/sqlite';
 export * from './storage';

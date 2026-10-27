@@ -21,6 +21,10 @@ server-compiled code uses:
 - **`schemas/patterns` + `schemas/ids`** — the node-free zod schema layer:
   ID regexes (`JOB_NAME_RE`, …), normalizers (`normalizeSlug`, …) and the
   validating, branding schemas built on them.
+- **`terminal-protocol`** — the terminal WS wire protocol (`ClientMsg`,
+  `ServerMsg`, `ActiveKey`, `parseClientMsg`/`parseBackfillMsg`): one
+  definition shared by the console's rich terminal client, the app
+  pages' drawer client, and the server's frame gate.
 - **`web/responses.service`** — the generic Result→HTTP mapping
   (`jsonResponse`, `successResponse`, `firstIssueText`,
   `validationFailureResponse`). The console's domain mappers stay in the
@@ -42,6 +46,13 @@ the root):
   import it FIRST in any client script that uses SSR'd wa-* components.
 - **`@cybermole/app-kit/island`** — `mountIsland()`, the preact-signals
   island convention.
+- **`@cybermole/app-kit/agent-console`** — the app pages' agent drawer
+  (`<agent-console slug=…>`): the wa-drawer + ONE lean xterm over the
+  console's /ws bridge, the operator-workspace open flow and the builder
+  deep link (see the app-starter README § The agent drawer). Imports the
+  theme tokens + its wa-* halves itself; pulls `@xterm/xterm` and
+  `@xterm/addon-fit` (declared as kit dependencies — apps link them via
+  `scripts/setup-node-modules.mjs`).
 - **`@cybermole/app-kit/route-table`** / **`route-table-emit`** — the
   node-free binder core, and `writeRouteTable()` for the app's build
   (dist/route-table.json) plus `writeWsEntry()` (the optional

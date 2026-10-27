@@ -22,8 +22,8 @@
     "src/schemas/**/*.ts",
     "packages/app-kit/src/**/*.ts"
   ],
-  "exclude": ["packages/app-kit/src/island.ts"]
-  // ^ client-only (preact's jsx types reference lib="dom", which would
+  "exclude": ["packages/app-kit/src/island.ts", "packages/app-kit/src/agent-console.ts"]
+  // ^ client-only modules (the DOM/xterm libraries and preact's jsx types
   // pollute this node-typed program — FormData/RequestInit clashes). The
-  // kit's own tsconfig.json checks it, with DOM libs.
+  // kit's own tsconfig.json checks them, with DOM libs.
 }

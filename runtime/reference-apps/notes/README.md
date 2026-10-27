@@ -20,7 +20,10 @@ behind the console's login once it is registered and built.
   fake), `notes-db.ts` (the sqlite half — `data/app.db`, gitignored).
 - `src/pages/` — the list page (SSR over `note_list`, a no-JS search
   form, the capture island) and the note page (SSR over `note_get`, the
-  editor island for `note_edit`/`note_archive`).
+  editor island for `note_edit`/`note_archive`). Both embed the agent
+  drawer (`<agent-console slug="notes">` — the app-starter README §
+  The agent drawer has the contract): one terminal in this tree's
+  operator workspace, plus the builder deep link.
 - `AGENTS.md` — the operator's manual for agents working in this tree.
 
 ## The live list (the WS example)

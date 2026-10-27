@@ -1,7 +1,7 @@
 // The WS client-frame gate: malformed frames answer null (dropped), never thrown on.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as frames from '../../dist-server/src/schemas/frames.js';
+import * as frames from '../../dist-server/packages/app-kit/src/terminal-protocol.js';
 const { parseClientMsg } = frames;
 
 test('accepts each frame shape, stripping unknown extra keys', () => {

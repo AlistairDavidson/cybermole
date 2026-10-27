@@ -62,9 +62,9 @@ import {
 } from '../src/lib/terminals/terminal-defaults';
 import { startInternalApi, InternalSocketOwnedError, type InternalApiHandle } from './internal-api';
 import { ObjectStore } from '../src/lib/platform/storage';
-import type { ClientMsg, ServerMsg } from '../src/lib/platform/types';
+import type { ClientMsg, ServerMsg } from '@cybermole/app-kit';
 import { loginBody } from '../src/schemas/api';
-import { parseClientMsg } from '../src/schemas/frames';
+import { parseClientMsg } from '@cybermole/app-kit';
 import {
   TerminalIdSchema,
   TmuxSessionNameSchema,

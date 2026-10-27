@@ -4,19 +4,23 @@
   "description": "The shared half of cybermole — what apps (and the console) are built on: the Result family + branded IDs, the node-free zod schema layer, the Result→HTTP mapping, the node:sqlite helper, the object-storage client, and the route-table binder. Ships SOURCE, no build step: astro/vite compiles it through the workspace symlink, the console's server tsc compiles it in place.",
   "license": "MIT",
   "sideEffects": [
-    "./src/wa-client.ts"
+    "./src/wa-client.ts",
+    "./src/agent-console.ts"
   ],
   "exports": {
     ".": "./src/index.ts",
     "./route-table": "./src/route-table.ts",
     "./route-table-emit": "./src/route-table-emit.ts",
     "./wa-client": "./src/wa-client.ts",
-    "./island": "./src/island.ts"
+    "./island": "./src/island.ts",
+    "./agent-console": "./src/agent-console.ts"
   },
   "dependencies": {
     "@awesome.me/astro-lit": "^5.0.4",
     "@aws-sdk/client-s3": "^3.1149.0",
     "@aws-sdk/lib-storage": "^3.1149.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "kysely": "^0.29.6",
     "preact": "^10.27.2",
     "zod": "^4.6.5"

@@ -175,21 +175,6 @@ export interface UpdateResult {
 }
 
 // ---- WS wire protocol ----
-// ClientMsg is defined in src/schemas/frames.ts; ServerMsg is never parsed, so stays hand-written.
-export type { ClientMsg } from '../../schemas/frames';
-
-export type ServerMsg =
-  | { type: 'attached'; target: TmuxSessionName; socket: string }
-  | { type: 'output'; data: string }
-  /** Scrollback history, sent once before any 'output'; the client writes it
-   *  and pushes the viewport down so the attach redraw lands below it. */
-  | { type: 'backfill'; data: string }
-  | { type: 'exit'; target: TmuxSessionName }
-  | { type: 'error'; message: string }
-  /** the token was dropped (logout); don't reconnect */
-  | { type: 'signed-out' }
-  /** server shutting down; reconnect with the usual backoff */
-  | { type: 'restart' };
-
-/** The console's selected target: a terminal tab or a live job run. */
-export type ActiveKey = `terminal:${TerminalId}` | `run:${TmuxSessionName}`;
+// ClientMsg, ServerMsg and ActiveKey live in @cybermole/app-kit
+// (terminal-protocol.ts): one definition shared with the app pages'
+// agent-console drawer client.
