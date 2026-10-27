@@ -4,12 +4,15 @@
 // MCP's job.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { isAppIcon } from './app-icons';
 
 export interface StatusAppRow {
   id: string;
   name: string;
   slug: string;
   cwd: string | null;
+  /** Effective (never null) — /api/state and GET /apps derive it. */
+  icon: string;
 }
 
 /** The fields of server/app-host.ts AppHostStatus the join reads. */
@@ -23,6 +26,8 @@ export interface AppStatusEntry {
   slug: string;
   /** the manifest's name, else the row's */
   name: string | null;
+  /** the row's (effective), else the manifest's; null = the default */
+  icon: string | null;
   registered: boolean;
   tree: string | null;
   /** A registered row without one is a plain console group, not an app. */
@@ -83,19 +88,24 @@ function newestMtime(root: string, skipDirs: Set<string> | null): number {
 export function inspectTree(tree: string): {
   hasManifest: boolean;
   name: string | null;
+  /** a known vendored name from the manifest, else null */
+  icon: string | null;
   built: boolean;
   buildStale: boolean | null;
 } {
   let name: string | null = null;
+  let icon: string | null = null;
   let hasManifest = false;
   try {
     const manifest = JSON.parse(fs.readFileSync(path.join(tree, 'app.json'), 'utf8')) as {
       name?: unknown;
+      icon?: unknown;
     };
     if (typeof manifest.name === 'string' && manifest.name.trim() !== '') {
       name = manifest.name.trim();
       hasManifest = true;
     }
+    if (typeof manifest.icon === 'string' && isAppIcon(manifest.icon)) icon = manifest.icon;
   } catch {
     /* no manifest */
   }
@@ -121,6 +131,7 @@ export function inspectTree(tree: string): {
   return {
     hasManifest,
     name,
+    icon,
     built,
     buildStale: built ? sources > buildStamp : null,
   };
@@ -176,6 +187,7 @@ export function joinAppsStatus(
     return {
       slug,
       name: facts?.name ?? row?.name ?? null,
+      icon: row?.icon ?? facts?.icon ?? null,
       registered,
       tree,
       hasManifest: facts?.hasManifest ?? false,

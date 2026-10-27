@@ -49,7 +49,7 @@ const appRow = (db, slug) =>
   db.get(
     qb
       .selectFrom('apps')
-      .select(['id', 'name', 'slug', 'cwd', 'sort_order', 'created_by', 'updated_by'])
+      .select(['id', 'name', 'slug', 'cwd', 'icon', 'sort_order', 'created_by', 'updated_by'])
       .where('slug', '=', slug),
   );
 const rows = (db, table) => db.all(qb.selectFrom(table).selectAll());
@@ -167,6 +167,46 @@ test('save_app: a missing cwd is created, nested parents included', async () => 
   assert.equal(fs.statSync(dir).isDirectory(), true);
 });
 
+test('save_app: icon — an absent one is suggested from the name, a given one must be registered', async () => {
+  const db = freshDb();
+  const a = apps(db);
+  // absent → the shared suggestion rule (app-icons.ts)
+  const noted = await a.saveApp('Notes Standup');
+  assert.equal(noted.ok, true, noted.errorMessage);
+  assert.equal(noted.data.icon, 'file-lines');
+  assert.equal(appRow(db, 'notes-standup').icon, 'file-lines');
+  // explicit
+  const made = await a.saveApp('Explicit', undefined, 'robot');
+  assert.equal(made.ok, true, made.errorMessage);
+  assert.equal(made.data.icon, 'robot');
+  assert.equal(appRow(db, 'explicit').icon, 'robot');
+  // unknown names are refused, nothing written
+  for (const bad of ['nope', '', '  ', 'CUBES']) {
+    const r = await a.saveApp(`icon-bad-${bad.length}${bad.trim().length}`, undefined, bad);
+    assert.equal(r.errorCode, 'invalid_icon', JSON.stringify(bad));
+    assert.match(r.errorMessage, /cubes/);
+  }
+  assert.equal(rows(db, 'apps').length, 2, 'only the two good saves landed');
+  // a NULL row (pre-v8) reads as the default in state
+  db.run(
+    qb.insertInto('apps').values({
+      id: '123e4567-e89b-42d3-a456-426614174010',
+      name: 'Legacy',
+      slug: 'legacy',
+      cwd: null,
+      icon: null,
+      sort_order: 100,
+      created_at: 1,
+      updated_at: 1,
+      created_by: 't',
+      updated_by: 't',
+    }),
+  );
+  const listed = a.listApps();
+  assert.equal(listed.ok, true);
+  assert.equal(listed.data.apps.find(x => x.slug === 'legacy')?.icon, 'cubes');
+});
+
 test('save_app: a rejected save creates no directory', async () => {
   const a = apps(freshDb());
   assert.equal((await a.saveApp('taken')).ok, true);
@@ -237,7 +277,103 @@ test('rename: changes the display name, never the slug; absent fields are a no-o
     name: 'New Name',
     slug: 'old-name',
     cwd: null,
+    icon: 'cubes',
   });
+});
+
+test('rename: icon — absent keeps, a registry name sets, unknown refused; cwd still rides along', async () => {
+  const db = freshDb();
+  const a = apps(db);
+  const { slug } = (await a.saveApp('Untyped Holder')).data; // no keyword -> the default
+  // absent keeps
+  const kept = await a.renameApp(slug, 'Renamed', undefined, undefined);
+  assert.equal(kept.ok, true, kept.errorMessage);
+  assert.equal(kept.data.icon, 'cubes');
+  assert.equal(appRow(db, slug).icon, 'cubes');
+  // a registry name sets (the name edit and icon edit land together)
+  const set = await a.renameApp(slug, 'Renamed Again', undefined, 'terminal');
+  assert.equal(set.ok, true, set.errorMessage);
+  assert.equal(set.data.icon, 'terminal');
+  assert.equal(appRow(db, slug).icon, 'terminal');
+  // unknown names are refused, nothing written
+  for (const bad of ['sparkles', '']) {
+    const r = await a.renameApp(slug, undefined, undefined, bad);
+    assert.equal(r.errorCode, 'invalid_icon', JSON.stringify(bad));
+  }
+  assert.equal(appRow(db, slug).icon, 'terminal');
+  assert.equal(appRow(db, slug).name, 'Renamed Again');
+  // icon alone is a valid patch (the picker's own write)
+  const iconOnly = await a.renameApp(slug, undefined, undefined, 'gear');
+  assert.equal(iconOnly.ok, true, iconOnly.errorMessage);
+  assert.equal(appRow(db, slug).icon, 'gear');
+  // cwd still rides along
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-app-rename-'));
+  const moved = await a.renameApp(slug, undefined, dir, 'clock');
+  assert.equal(moved.ok, true, moved.errorMessage);
+  assert.deepEqual(
+    { cwd: appRow(db, slug).cwd, icon: appRow(db, slug).icon },
+    { cwd: dir, icon: 'clock' },
+  );
+  // app_not_found for a slug that resolves to nothing
+  assert.equal(
+    (await a.renameApp('missing', undefined, undefined, 'gear')).errorCode,
+    'app_not_found',
+  );
+});
+
+test('readApp: the settings page’s full row (effective icon, timestamps), or app_not_found', async () => {
+  const db = freshDb();
+  const a = apps(db);
+  const made = await a.saveApp('Read Me', undefined, 'robot');
+  assert.equal(made.ok, true, made.errorMessage);
+  const read = a.readApp(made.data.slug);
+  assert.equal(read.ok, true, read.errorMessage);
+  assert.equal(read.resultType, 'read_app');
+  assert.deepEqual(
+    {
+      id: read.data.id,
+      name: read.data.name,
+      slug: read.data.slug,
+      cwd: read.data.cwd,
+      icon: read.data.icon,
+    },
+    {
+      id: made.data.id,
+      name: 'Read Me',
+      slug: 'read-me',
+      cwd: null,
+      icon: 'robot',
+    },
+  );
+  assert.equal(typeof read.data.createdAt, 'number');
+  assert.equal(typeof read.data.updatedAt, 'number');
+  assert.ok(read.data.updatedAt >= read.data.createdAt);
+  // a NULL row (pre-v8) reads as the default
+  db.run(
+    qb.insertInto('apps').values({
+      id: '123e4567-e89b-42d3-a456-426614174011',
+      name: 'Legacy',
+      slug: 'legacy',
+      cwd: null,
+      icon: null,
+      sort_order: 100,
+      created_at: 1,
+      updated_at: 2,
+      created_by: 't',
+      updated_by: 't',
+    }),
+  );
+  const legacy = a.readApp('legacy');
+  assert.equal(legacy.ok, true);
+  assert.equal(legacy.data.icon, 'cubes');
+  assert.deepEqual(
+    { createdAt: legacy.data.createdAt, updatedAt: legacy.data.updatedAt },
+    { createdAt: 1, updatedAt: 2 },
+  );
+  // unknown slug
+  const missing = a.readApp('nope');
+  assert.equal(missing.ok, false);
+  assert.equal(missing.errorCode, 'app_not_found');
 });
 
 test('rename: invalid_name on an empty name; app_not_found on a slug that does not resolve', async () => {
@@ -415,6 +551,7 @@ test('list_apps: every app, sort_order asc (+ created_at tiebreak); empty; datab
     name: 'with dir',
     slug: 'with-dir',
     cwd: dir,
+    icon: 'cubes',
     order: 40,
   });
   assert.equal(a.listApps().data.apps.length, 4); // stable across calls

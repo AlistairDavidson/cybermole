@@ -230,7 +230,16 @@ test('jobs_list + apps_list: the API JSON verbatim; the app filter and its app_n
     const apps = await callJson(w.client, 'apps_list', {});
     assert.equal(apps.isError, false);
     assert.deepEqual(apps.json, {
-      apps: [{ id: app.data.id, name: 'Deploy Tools', slug: 'deploy-tools', cwd: null, order: 10 }],
+      apps: [
+        {
+          id: app.data.id,
+          name: 'Deploy Tools',
+          slug: 'deploy-tools',
+          cwd: null,
+          icon: 'cubes',
+          order: 10,
+        },
+      ],
     });
   } finally {
     await w.client.close();

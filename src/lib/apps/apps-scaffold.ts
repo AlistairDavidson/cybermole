@@ -6,15 +6,21 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { normalizeSlug, type ResultFailure, type ResultSuccess } from '@cybermole/app-kit';
 import { CommandNotFoundError, type ChildRun, type RunChildFn } from './apps-child';
+import { APP_ICON_NAMES, isAppIcon, suggestAppIcon } from './app-icons';
 
 export interface ScaffoldAppInput {
   name: string;
   description?: string | undefined;
+  /** Absent = suggested from the name; must be a registry name. */
+  icon?: string | undefined;
 }
 
 export type ScaffoldAppData = {
   /** stable once created */
   slug: string;
+  /** the effective icon (given, else suggested from the name) — in app.json,
+   *  so register lands it on the row */
+  icon: string;
   /** absolute */
   tree: string;
   linked: boolean;
@@ -24,6 +30,7 @@ export type ScaffoldAppData = {
 };
 export type ScaffoldAppErrorCode =
   | 'invalid_name'
+  | 'invalid_icon'
   | 'tree_exists'
   | 'template_missing'
   | 'write_failed'
@@ -75,7 +82,7 @@ const fail = (errorCode: ScaffoldAppErrorCode, errorMessage: string): ScaffoldAp
 function writeTree(
   deps: ScaffoldDeps,
   tree: string,
-  input: ScaffoldAppInput & { slug: string },
+  input: ScaffoldAppInput & { slug: string; icon: string },
 ): void {
   fs.cpSync(deps.templateDir, tree, { recursive: true });
   // npm pack drops a deeply nested .gitignore, so the template ships it undotted
@@ -104,7 +111,12 @@ function writeTree(
   fs.writeFileSync(
     path.join(tree, 'app.json'),
     `${JSON.stringify(
-      { name: input.name, description: description ? description : null, slug: input.slug },
+      {
+        name: input.name,
+        description: description ? description : null,
+        slug: input.slug,
+        icon: input.icon,
+      },
       null,
       2,
     )}\n`,
@@ -115,7 +127,7 @@ function writeTree(
 function writeAgentsMd(
   deps: ScaffoldDeps,
   tree: string,
-  input: ScaffoldAppInput & { slug: string },
+  input: ScaffoldAppInput & { slug: string; icon: string },
 ): void {
   const template = fs.readFileSync(deps.agentTemplateFile, 'utf8');
   let text = template;
@@ -138,9 +150,18 @@ export async function scaffoldApp(
       `the name ${JSON.stringify(input.name)} normalizes to an empty slug — give the app a name with letters or digits`,
     );
   }
+  const icon = input.icon?.trim() ?? '';
+  if (icon !== '' && !isAppIcon(icon)) {
+    return fail(
+      'invalid_icon',
+      `icon must be one of the vendored names: ${APP_ICON_NAMES} — or omit it and the name suggests one`,
+    );
+  }
+  const effectiveIcon = icon === '' ? suggestAppIcon(name) : icon;
   const tree = path.join(deps.appsRoot, slug);
   const data: ScaffoldAppData = {
     slug,
+    icon: effectiveIcon,
     tree,
     linked: false,
     committed: false,
@@ -170,8 +191,8 @@ export async function scaffoldApp(
       );
     }
     fs.mkdirSync(deps.appsRoot, { recursive: true });
-    writeTree(deps, tree, { ...input, name, slug });
-    writeAgentsMd(deps, tree, { ...input, name, slug });
+    writeTree(deps, tree, { ...input, name, slug, icon: effectiveIcon });
+    writeAgentsMd(deps, tree, { ...input, name, slug, icon: effectiveIcon });
   } catch (err) {
     return fail('write_failed', `could not write the tree at ${tree}: ${(err as Error).message}`);
   }

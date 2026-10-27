@@ -17,7 +17,12 @@ export const PATCH: APIRoute = async ({ locals, params, request }) => {
   if (!slug.success) return invalidAppSlugResponse();
   const parsed = await parseAndValidateAPIRequest(request, appPatchBody);
   if (!parsed.ok) return failureResponse(parsed);
-  const saved = await cybermole.apps.renameApp(slug.data, parsed.data.name, parsed.data.cwd);
+  const saved = await cybermole.apps.renameApp(
+    slug.data,
+    parsed.data.name,
+    parsed.data.cwd,
+    parsed.data.icon,
+  );
   if (!saved.ok) return appFailureResponse(saved);
   cybermole.invalidateAppsStatus();
   return jsonResponse(saved.data, 200);

@@ -330,7 +330,7 @@ function createRoutes(
     if (!body.ok) return sendWebResponse(res, body.response);
     const parsed = await parseAndValidateAPIRequest(body.request, appCreateBody);
     if (!parsed.ok) return sendWebResponse(res, failureResponse(parsed));
-    const saved = await apps.saveApp(parsed.data.name, parsed.data.cwd);
+    const saved = await apps.saveApp(parsed.data.name, parsed.data.cwd, parsed.data.icon);
     if (!saved.ok) return sendWebResponse(res, appFailureResponse(saved));
     return sendWebResponse(res, jsonResponse(saved.data, 200));
   }
@@ -344,7 +344,7 @@ function createRoutes(
     if (!body.ok) return sendWebResponse(res, body.response);
     const parsed = await parseAndValidateAPIRequest(body.request, appPatchBody);
     if (!parsed.ok) return sendWebResponse(res, failureResponse(parsed));
-    const saved = await apps.renameApp(slug, parsed.data.name, parsed.data.cwd);
+    const saved = await apps.renameApp(slug, parsed.data.name, parsed.data.cwd, parsed.data.icon);
     if (!saved.ok) return sendWebResponse(res, appFailureResponse(saved));
     return sendWebResponse(res, jsonResponse(saved.data, 200));
   }

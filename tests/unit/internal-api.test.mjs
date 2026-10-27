@@ -366,7 +366,16 @@ test('GET /apps: the picker rows over the socket; database_error when the apps d
     const r = await call(w.socketPath, 'GET', '/apps');
     assert.equal(r.status, 200);
     assert.deepEqual(r.json, {
-      apps: [{ id: app.data.id, name: 'Deploy Tools', slug: 'deploy-tools', cwd: null, order: 10 }],
+      apps: [
+        {
+          id: app.data.id,
+          name: 'Deploy Tools',
+          slug: 'deploy-tools',
+          cwd: null,
+          icon: 'cubes',
+          order: 10,
+        },
+      ],
     });
     // other methods on /apps exist; an unknown one is still a JSON 404
     const notAVerb = await call(w.socketPath, 'PUT', '/apps');

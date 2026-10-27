@@ -17,6 +17,8 @@ export interface AppState {
   slug: AppSlug;
   /** Where its workspaces start; null = the server default. */
   cwd: string | null;
+  /** Vendored icon name (app-icons.ts) — effective, never null in state. */
+  icon: string;
   order: number;
 }
 

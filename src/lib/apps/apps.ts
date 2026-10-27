@@ -9,6 +9,7 @@ import { emitDomainEvent } from '../platform/events';
 import { terminalSessionName } from '../terminals/tmux';
 import { checkedCwd } from '../terminals/workspaces';
 import { orderPlan } from '../order-plan';
+import { APP_ICON_NAMES, DEFAULT_APP_ICON, isAppIcon, suggestAppIcon } from './app-icons';
 import {
   asAppId,
   asAppSlug,
@@ -29,11 +30,23 @@ const log = componentLogger('apps');
 
 // ---------- results ----------
 
-export type SaveAppData = { id: AppId; name: string; slug: AppSlug; cwd: string | null };
+export type SaveAppData = {
+  id: AppId;
+  name: string;
+  slug: AppSlug;
+  cwd: string | null;
+  /** effective (the suggestion or the default when the row keeps NULL) */
+  icon: string;
+};
 /** invalid_name: empty, or slugs to nothing. duplicate_slug is pre-checked;
  *  the check-then-insert race degrades to database_error. */
 export type SaveAppErrorCode =
-  'invalid_name' | 'invalid_cwd' | 'duplicate_slug' | 'app_not_found' | 'database_error';
+  | 'invalid_name'
+  | 'invalid_cwd'
+  | 'invalid_icon'
+  | 'duplicate_slug'
+  | 'app_not_found'
+  | 'database_error';
 export type SaveAppSuccess = ResultSuccess<'save_app', SaveAppData>;
 export type SaveAppFailure = ResultFailure<'save_app', SaveAppData, SaveAppErrorCode>;
 export type SaveAppResult = SaveAppSuccess | SaveAppFailure;
@@ -63,6 +76,22 @@ export type ReorderAppsFailure = ResultFailure<
   ReorderAppsErrorCode
 >;
 export type ReorderAppsResult = ReorderAppsSuccess | ReorderAppsFailure;
+
+/** The settings page's read: one full row. */
+export type ReadAppData = {
+  id: AppId;
+  name: string;
+  slug: AppSlug;
+  cwd: string | null;
+  /** effective (the default when the row keeps NULL) */
+  icon: string;
+  createdAt: number;
+  updatedAt: number;
+};
+export type ReadAppErrorCode = 'app_not_found' | 'database_error';
+export type ReadAppSuccess = ResultSuccess<'read_app', ReadAppData>;
+export type ReadAppFailure = ResultFailure<'read_app', ReadAppData, ReadAppErrorCode>;
+export type ReadAppResult = ReadAppSuccess | ReadAppFailure;
 
 // ---------- domain ----------
 
@@ -100,14 +129,16 @@ export class Apps {
       'could not read app',
       () =>
         this.deps.db.get(
-          qb.selectFrom('apps').select(['id', 'name', 'cwd']).where('slug', '=', slug),
+          qb.selectFrom('apps').select(['id', 'name', 'cwd', 'icon']).where('slug', '=', slug),
         ) ?? null,
     );
   }
 
   /** The slug is derived from the name. An empty cwd means unset (the
-   *  server default); a missing one is created, once the rest validates. */
-  async saveApp(name: string, cwd?: string): Promise<SaveAppResult> {
+   *  server default); a missing one is created, once the rest validates.
+   *  An absent icon is suggested from the name; a given one must be a
+   *  registry name (the vendored set — anything else has no glyph). */
+  async saveApp(name: string, cwd?: string, icon?: string): Promise<SaveAppResult> {
     const fail = (errorCode: SaveAppErrorCode, errorMessage: string) =>
       ({ ok: false, resultType: 'save_app', errorCode, errorMessage }) satisfies SaveAppFailure;
     const trimmed = name.trim();
@@ -115,6 +146,9 @@ export class Apps {
     const slug = normalizeSlug(trimmed);
     if (!slug || !APP_SLUG_RE.test(slug))
       return fail('invalid_name', 'name must contain letters or digits');
+    const chosen = icon === undefined ? suggestAppIcon(trimmed) : icon.trim();
+    if (!isAppIcon(chosen))
+      return fail('invalid_icon', `icon must be one of the vendored names: ${APP_ICON_NAMES}`);
     const wanted = cwd === undefined ? '' : cwd.trim();
     let dir: string | null = null;
     if (wanted !== '') {
@@ -150,6 +184,7 @@ export class Apps {
           name: trimmed,
           slug: asAppSlug(slug),
           cwd: dir,
+          icon: chosen,
           sort_order: order.data.value,
           created_at: now,
           updated_at: now,
@@ -164,15 +199,17 @@ export class Apps {
     return {
       ok: true,
       resultType: 'save_app',
-      data: { id, name: trimmed, slug: asAppSlug(slug), cwd: dir },
+      data: { id, name: trimmed, slug: asAppSlug(slug), cwd: dir, icon: chosen },
     } satisfies SaveAppSuccess;
   }
 
-  /** Absent fields keep; the slug never changes. cwd null clears it. */
+  /** Absent fields keep; the slug never changes. cwd null clears it.
+   *  icon sets to a registry name (absent keeps). */
   async renameApp(
     slug: AppSlug,
     name: string | undefined,
     cwd: string | null | undefined,
+    icon?: string,
   ): Promise<SaveAppResult> {
     const fail = (errorCode: SaveAppErrorCode, errorMessage: string) =>
       ({ ok: false, resultType: 'save_app', errorCode, errorMessage }) satisfies SaveAppFailure;
@@ -180,15 +217,24 @@ export class Apps {
     if (!found.ok) return fail('database_error', found.errorMessage);
     const row = found.data.value;
     if (!row) return fail('app_not_found', 'no such app');
-    if (name === undefined && cwd === undefined) {
+    if (name === undefined && cwd === undefined && icon === undefined) {
       return {
         ok: true,
         resultType: 'save_app',
-        data: { id: row.id, name: row.name, slug, cwd: row.cwd },
+        data: {
+          id: row.id,
+          name: row.name,
+          slug,
+          cwd: row.cwd,
+          icon: row.icon ?? DEFAULT_APP_ICON,
+        },
       } satisfies SaveAppSuccess;
     }
     const trimmed = name === undefined ? undefined : name.trim();
     if (trimmed === '') return fail('invalid_name', 'name is required');
+    const chosen = icon === undefined ? undefined : icon.trim();
+    if (chosen !== undefined && !isAppIcon(chosen))
+      return fail('invalid_icon', `icon must be one of the vendored names: ${APP_ICON_NAMES}`);
     let dir: string | null | undefined;
     if (cwd === null)
       dir = null; // an empty string is a 400, not a clear
@@ -206,6 +252,7 @@ export class Apps {
           .set({
             ...(trimmed === undefined ? {} : { name: trimmed }),
             ...(dir === undefined ? {} : { cwd: dir }),
+            ...(chosen === undefined ? {} : { icon: chosen }),
             updated_at: Date.now(),
             updated_by: actor.username,
           })
@@ -217,7 +264,13 @@ export class Apps {
     return {
       ok: true,
       resultType: 'save_app',
-      data: { id: row.id, name: trimmed ?? row.name, slug, cwd: dir === undefined ? row.cwd : dir },
+      data: {
+        id: row.id,
+        name: trimmed ?? row.name,
+        slug,
+        cwd: dir === undefined ? row.cwd : dir,
+        icon: chosen ?? row.icon ?? DEFAULT_APP_ICON,
+      },
     } satisfies SaveAppSuccess;
   }
 
@@ -261,13 +314,14 @@ export class Apps {
         name: string;
         slug: AppSlug;
         cwd: string | null;
+        icon: string | null;
         sort_order: number;
         created_at: number;
       }> =>
         this.deps.db.all(
           qb
             .selectFrom('apps')
-            .select(['id', 'name', 'slug', 'cwd', 'sort_order', 'created_at'])
+            .select(['id', 'name', 'slug', 'cwd', 'icon', 'sort_order', 'created_at'])
             .orderBy('sort_order', 'asc')
             .orderBy('created_at', 'asc'),
         ),
@@ -289,10 +343,43 @@ export class Apps {
           name: a.name,
           slug: a.slug,
           cwd: a.cwd,
+          icon: a.icon ?? DEFAULT_APP_ICON,
           order: a.sort_order,
         })),
       },
     } satisfies ListAppsSuccess;
+  }
+
+  /** The settings page's read: the full row, timestamps included. */
+  readApp(slug: AppSlug): ReadAppResult {
+    const read = databaseRead(
+      'could not read app',
+      () =>
+        this.deps.db.get(
+          qb
+            .selectFrom('apps')
+            .select(['id', 'name', 'cwd', 'icon', 'created_at', 'updated_at'])
+            .where('slug', '=', slug),
+        ) ?? null,
+    );
+    const fail = (errorCode: ReadAppErrorCode, errorMessage: string) =>
+      ({ ok: false, resultType: 'read_app', errorCode, errorMessage }) satisfies ReadAppFailure;
+    if (!read.ok) return fail('database_error', read.errorMessage);
+    const row = read.data.value;
+    if (!row) return fail('app_not_found', 'no such app');
+    return {
+      ok: true,
+      resultType: 'read_app',
+      data: {
+        id: row.id,
+        name: row.name,
+        slug,
+        cwd: row.cwd,
+        icon: row.icon ?? DEFAULT_APP_ICON,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      },
+    } satisfies ReadAppSuccess;
   }
 
   /** Persists a full-list reorder: positions become steps of 10. The plan

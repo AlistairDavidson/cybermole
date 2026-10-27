@@ -33,16 +33,21 @@ export const autoUpdateBody = z.object({
 // and slugify), so these only type and cap strings. Terminals have no such
 // code, so titles are validated here.
 
-/** Empty or absent cwd = unset; a non-empty one is checked by the domain. */
+/** Empty or absent cwd = unset; a non-empty one is checked by the domain.
+ *  icon: absent = suggested from the name; membership is checked by the
+ *  domain (the registry is the vendored set). */
 export const appCreateBody = z.object({
   name: z.string().max(80, 'name is too long (max 80)'),
   cwd: z.string().max(4096, 'cwd is too long').optional(),
+  icon: z.string().max(64, 'icon is too long').optional(),
 });
 
-/** The slug never changes. cwd: absent keeps, null clears, a string sets. */
+/** The slug never changes. cwd: absent keeps, null clears, a string sets.
+ *  icon: absent keeps; membership is checked by the domain. */
 export const appPatchBody = z.object({
   name: z.string().max(80, 'name is too long (max 80)').optional(),
   cwd: z.string().max(4096, 'cwd is too long').nullable().optional(),
+  icon: z.string().max(64, 'icon is too long').optional(),
 });
 
 /** appId null or absent = the console group. An absent or empty cwd is
@@ -121,6 +126,14 @@ export const terminalPatchBody = z.object({
 
 /** No min on cwd: the enhancer reads an empty wa-input as '', which means unset. */
 export const appForm = z.object({
+  name: z.string().trim().min(1, 'name is required').max(80, 'name is too long (max 80)'),
+  cwd: z.string().trim().max(4096, 'cwd is too long').optional(),
+});
+
+/** The app settings page's form (stricter than appPatchBody so an empty
+ *  name never costs a round trip). The icon rides the grid, never this
+ *  form — the page always sends a registry name picked from it. */
+export const appSettingsForm = z.object({
   name: z.string().trim().min(1, 'name is required').max(80, 'name is too long (max 80)'),
   cwd: z.string().trim().max(4096, 'cwd is too long').optional(),
 });

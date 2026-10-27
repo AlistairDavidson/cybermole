@@ -257,6 +257,7 @@ export function createServices(deps: ServiceDeps): CybermoleServices {
           name: app.name,
           slug: app.slug,
           cwd: app.cwd,
+          icon: app.icon,
         })),
         host,
       );

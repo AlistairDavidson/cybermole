@@ -112,7 +112,8 @@ body.app-chrome { display: flex; flex-direction: column; }
 body.app-chrome > app-header { flex: none; }
 body.app-chrome > console-app { flex: 1 1 0; min-height: 0; height: auto; }
 body.app-chrome > jobs-app,
-body.app-chrome > settings-app { flex: 1 0 auto; }
+body.app-chrome > settings-app,
+body.app-chrome > app-settings { flex: 1 0 auto; }
 
 app-header {
   position: sticky; top: 0; z-index: 5;
@@ -218,6 +219,12 @@ workspace-sidebar {
   letter-spacing: .08em; color: var(--wa-color-text-quiet);
   margin: var(--wa-space-s) var(--wa-space-2xs) var(--wa-space-3xs);
 }
+.nav .ws-group h2 .g-icon {
+  flex: none;
+  display: inline-flex; align-items: center;
+  color: var(--wa-color-text-quiet);
+  font-size: var(--wa-font-size-xs);
+}
 .nav .ws-group h2 .g-name {
   flex: 1; min-width: 0; /* the chevron + actions flank it; ellipsis needs the shrink */
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -263,16 +270,18 @@ workspace-sidebar {
 .nav .ws-group h2 .g-actions wa-button:hover, .nav .ws-group h2 .g-actions wa-button:focus-visible {
   color: var(--wa-color-brand-on-quiet);
 }
-/* The app's open link: a plain <a> styled like its wa-button siblings.
-   Dimmed when not serving. */
-.nav .ws-group h2 .g-actions .open-app-btn {
+/* The app settings link: a plain <a> styled like its open-link sibling. */
+.nav .ws-group h2 .g-actions .open-app-btn,
+.nav .ws-group h2 .g-actions .app-settings-btn {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: var(--wa-space-l); min-height: var(--wa-space-l);
   border-radius: var(--wa-border-radius-s);
   color: var(--wa-color-text-quiet);
 }
 .nav .ws-group h2 .g-actions .open-app-btn:hover,
-.nav .ws-group h2 .g-actions .open-app-btn:focus-visible {
+.nav .ws-group h2 .g-actions .open-app-btn:focus-visible,
+.nav .ws-group h2 .g-actions .app-settings-btn:hover,
+.nav .ws-group h2 .g-actions .app-settings-btn:focus-visible {
   color: var(--wa-color-brand-on-quiet);
 }
 .nav .ws-group h2 .g-actions .open-app-btn.not-serving {
@@ -531,6 +540,52 @@ agent-terminal .terminal-status.err wa-icon { color: var(--wa-color-danger-on-qu
 .cfg-row .v {
   font-family: var(--wa-font-family-code); font-size: var(--wa-font-size-s);
   text-align: end; overflow-wrap: anywhere; min-width: 0;
+}
+
+/* ---- app settings (the /builder/:slug page) ---- */
+.app-settings-main {
+  max-width: 48rem; margin-inline: auto;
+  padding: var(--wa-space-m);
+}
+.app-settings-header p { margin: 0; }
+.app-settings-back {
+  color: var(--wa-color-brand-on-quiet);
+  font-size: var(--wa-font-size-s);
+}
+/* The icon picker: one button per registry name, the picked one marked. */
+.icon-field {
+  border: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: var(--wa-space-3xs);
+}
+.icon-field legend {
+  color: var(--wa-color-text-quiet); font-size: var(--wa-font-size-2xs);
+  padding: 0; margin-bottom: var(--wa-space-3xs);
+}
+.icon-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(3rem, 1fr));
+  gap: var(--wa-space-3xs);
+}
+.icon-grid .icon-choice {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: var(--wa-space-2xl);
+  padding: var(--wa-space-2xs);
+  background: var(--wa-color-surface-raised);
+  border: var(--wa-border-width-s) solid var(--wa-color-surface-border);
+  border-radius: var(--wa-border-radius-m);
+  color: var(--wa-color-text-normal); cursor: pointer; font: inherit;
+}
+.icon-grid .icon-choice wa-icon { font-size: var(--wa-font-size-l); }
+.icon-grid .icon-choice:hover,
+.icon-grid .icon-choice:focus-visible {
+  border-color: var(--wa-color-brand-on-quiet);
+}
+.icon-grid .icon-choice[aria-checked='true'] {
+  border-color: var(--wa-color-brand-on-quiet);
+  background: color-mix(in oklab, var(--wa-color-brand-on-quiet) 12%, transparent);
+}
+.icon-grid .icon-choice:focus-visible {
+  outline: var(--wa-border-width-m) solid var(--wa-color-brand-fill-quiet);
+  outline-offset: var(--wa-border-width-s);
 }
 .npm-output {
   margin: 0; max-height: 40vh; overflow: auto;

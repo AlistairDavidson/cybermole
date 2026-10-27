@@ -1,0 +1,141 @@
+---
+// One app's settings, under the builder's portfolio framing: the icon
+// picker (one button per registry name — previews are wa-icon over the
+// vendored svgs), rename, and the cwd new workspaces start at; slug and
+// timestamps read-only. `app` is null only when the slug resolves to no
+// row (a 404 page body).
+import '@awesome.me/webawesome/dist/components/card/card.js';
+import '@awesome.me/webawesome/dist/components/button/button.js';
+import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '@awesome.me/webawesome/dist/components/callout/callout.js';
+import WaField from '../form/WaField.astro';
+import { zodSchemaToHTMLAttributes } from '../../lib/web/zod.service';
+import { appSettingsForm } from '../../schemas/api';
+import { APP_ICONS } from '../../lib/apps/app-icons';
+import type { ReadAppData } from '../../lib/apps/apps';
+
+interface Props {
+  app: ReadAppData | null;
+}
+const { app } = Astro.props;
+const validation = zodSchemaToHTMLAttributes(appSettingsForm);
+const iso = (at: number): string => new Date(at).toISOString();
+---
+{
+  app ? (
+    <main class="app-settings-main wa-stack wa-gap-m">
+      <header class="settings-header app-settings-header">
+        <h1>
+          <wa-icon id="app-settings-title-icon" name={app.icon} />
+          <span id="app-settings-title-name">{app.name}</span>
+        </h1>
+        <p class="hint">app settings — the icon, the name, and where its workspaces start</p>
+      </header>
+
+      <wa-card class="settings-card" with-header>
+        <div slot="header" class="wa-split">
+          <strong class="card-title">identity</strong>
+          <span class="hint">saved through the same service as rename</span>
+        </div>
+        <validation-enhancer-zod>
+          <form id="app-settings-form" class="wa-stack wa-gap-s" novalidate>
+            <fieldset class="icon-field">
+              <legend>icon</legend>
+              <div class="icon-grid" role="radiogroup" aria-label="icon">
+                {APP_ICONS.map(name => (
+                  <button
+                    type="button"
+                    class="icon-choice"
+                    role="radio"
+                    data-icon={name}
+                    aria-checked={name === app.icon ? 'true' : 'false'}
+                    title={name}
+                  >
+                    <wa-icon name={name} label={name} />
+                  </button>
+                ))}
+              </div>
+              <span class="field-hint">
+                <span class="field-hint-text">
+                  the group header's glyph in the builder sidebar — the vendored set only
+                </span>
+              </span>
+            </fieldset>
+            <WaField
+              id="app-name"
+              name="name"
+              label="name"
+              hint="the display name; the slug is derived from it at creation and never changes"
+              {...validation.name}
+            />
+            <WaField
+              id="app-cwd"
+              name="cwd"
+              label="working directory"
+              hint="where this app's workspaces start (created if missing); empty = the server default"
+              {...validation.cwd}
+            />
+            <div class="wa-cluster wa-gap-2xs">
+              <wa-button id="app-settings-save" type="button" variant="brand" size="s">
+                <wa-icon slot="start" name="circle-check" />
+                save
+              </wa-button>
+              <a class="app-settings-back" href={`/builder`}>
+                back to the portfolio
+              </a>
+            </div>
+          </form>
+        </validation-enhancer-zod>
+        <wa-callout id="app-settings-result" class="hidden" />
+      </wa-card>
+
+      <wa-card class="settings-card" with-header>
+        <div slot="header" class="wa-split">
+          <strong class="card-title">read-only</strong>
+          <span class="hint">the slug is the app's address; the timestamps are its row's</span>
+        </div>
+        <div class="wa-stack wa-gap-2xs">
+          <div class="cfg-row wa-split">
+            <span class="k">slug</span>
+            <span class="v">
+              <code>{app.slug}</code>
+            </span>
+          </div>
+          <div class="cfg-row wa-split">
+            <span class="k">created</span>
+            <time class="v" datetime={iso(app.createdAt)}>
+              {iso(app.createdAt)}
+            </time>
+          </div>
+          <div class="cfg-row wa-split">
+            <span class="k">updated</span>
+            <time class="v" datetime={iso(app.updatedAt)}>
+              {iso(app.updatedAt)}
+            </time>
+          </div>
+        </div>
+      </wa-card>
+
+      {/* The client half's source of truth: wa-input's value is a property
+          the server can't render, so the fields prefill from here. */}
+      <span
+        id="app-settings-prefill"
+        hidden
+        data-slug={app.slug}
+        data-name={app.name}
+        data-cwd={app.cwd ?? ''}
+        data-icon={app.icon}
+      />
+    </main>
+  ) : (
+    <main class="app-settings-main wa-stack wa-gap-s">
+      <header class="settings-header app-settings-header">
+        <h1>no such app</h1>
+      </header>
+      <p class="hint">no app answers this slug — it may have been deleted or never registered.</p>
+      <a class="app-settings-back" href={`/builder`}>
+        back to the portfolio
+      </a>
+    </main>
+  )
+}

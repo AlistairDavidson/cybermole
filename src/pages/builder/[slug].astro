@@ -1,0 +1,35 @@
+---
+// /builder/:slug — one app's settings page (the portfolio's per-app page):
+// the icon picker, rename, and the cwd; a slug that resolves to no row
+// renders the not-found body with a 404.
+import Base from '../../layouts/Base.astro';
+import AppSettingsView from '../../components/AppSettings/AppSettingsView.astro';
+import { assertCybermoleLocals } from '../../lib/web/locals';
+import { AppSlugSchema } from '@cybermole/app-kit';
+import type { ReadAppData } from '../../lib/apps/apps';
+
+const { cybermole } = assertCybermoleLocals(Astro.locals);
+const parsed = AppSlugSchema.safeParse(Astro.params.slug);
+let app: ReadAppData | null = null;
+if (parsed.success) {
+  const read = cybermole.apps.readApp(parsed.data);
+  if (read.ok) app = read.data;
+  // console.error: winston stays out of the Vite bundle.
+  else console.error(`app settings page: ${read.errorMessage}`);
+}
+if (app === null) Astro.response.status = 404;
+---
+<Base title={`cybermole — app ${app ? app.slug : 'not found'}`} header="builder">
+  <app-settings>
+    <AppSettingsView app={app} />
+  </app-settings>
+</Base>
+
+<script>
+  // Must precede any wa-* import, or SSR'd elements render twice.
+  import '@awesome.me/astro-lit/dsd-polyfill.js';
+  import '@awesome.me/astro-lit/hydration-support.js';
+  // Before any wa-* defines, or icons fetch from the CDN first.
+  import '../../icons';
+  import '../../components/AppSettings/app-settings';
+</script>

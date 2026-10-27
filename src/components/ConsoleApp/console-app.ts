@@ -30,6 +30,7 @@ import 'validation-enhancer/zod';
 import type { ValidationEnhancerZod } from 'validation-enhancer/zod';
 import { appForm, buildSessionForm, consoleWorkspaceForm } from '../../schemas/api';
 import { workspaceNameFromCwd } from '../../lib/terminals/workspace-name';
+import { DEFAULT_APP_ICON, suggestAppIcon } from '../../lib/apps/app-icons';
 import '@awesome.me/webawesome/dist/components/page/page.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/dialog/dialog.js';
@@ -191,13 +192,16 @@ export class ConsoleApp extends HTMLElement {
       this.applyNavCollapsed();
     });
     // The new-app dialog suggests a directory derived from the name (the
-    // server's own slug rule), until the cwd is hand-edited.
+    // server's own slug rule), until the cwd is hand-edited. The icon
+    // preview rides the same name typing through the shared suggestion
+    // rule — the server applies it when the create carries no icon.
     const appName = this.querySelector('#app-name') as WaInput | null;
     const appCwd = this.querySelector('#app-cwd') as WaInput | null;
     if (appName && appCwd) {
       appName.addEventListener('input', () => {
         if (this.appCwdTouched) return;
         appCwd.value = this.suggestAppCwd(appName.value ?? '');
+        this.updateAppIconPreview(appName.value ?? '');
       });
       appCwd.addEventListener('input', () => {
         this.appCwdTouched = true;
@@ -440,6 +444,7 @@ export class ConsoleApp extends HTMLElement {
   private openAppDialog(): void {
     this.resetForm('#app-form');
     this.appCwdTouched = false;
+    this.updateAppIconPreview('');
     this.dialog('#app-dialog').show();
     this.focusField('#app-name');
   }
@@ -503,6 +508,17 @@ export class ConsoleApp extends HTMLElement {
     const root = this.state?.defaultCwd;
     if (slug === '' || root === undefined) return null;
     return `${root.replace(/\/+$/, '')}/${slug}`;
+  }
+
+  /** The preview shows exactly what the server will pick when the create
+   *  carries no icon: the shared rule, default fallback included. */
+  private updateAppIconPreview(name: string): void {
+    const glyph = this.querySelector('#app-icon-glyph');
+    const label = this.querySelector('#app-icon-name');
+    if (!glyph || !label) return;
+    const icon = name.trim() === '' ? DEFAULT_APP_ICON : suggestAppIcon(name);
+    glyph.setAttribute('name', icon);
+    label.textContent = `suggested icon: ${icon} (from the name)`;
   }
 
   /** The suggested name for a new console workspace: the server's own
