@@ -36,6 +36,27 @@ app's own action tools under the app's slug: the shim binary
 `AGENTS.md` in this tree is the operator's manual for agents working
 here — read it first.
 
+## The agent drawer
+
+Every scaffolded app ships the drawer: the page embeds
+`<agent-console slug="__APP_SLUG__"></agent-console>` and its client
+script imports `@cybermole/app-kit/agent-console` (both already in
+`src/pages/index.astro` — keep them on new pages, or drop them
+deliberately). It is the app's operator console:
+
+- the **agent** button (fixed, bottom-end) opens a drawer with ONE
+  terminal — this app's operator workspace's agent tab. The workspace
+  (kind NULL, cwd = this tree) is created on first open through
+  `POST /api/workspaces {appId}`; a dead session respawns at the tree;
+  closing the drawer detaches (the tmux session keeps running).
+- the **builder** link beside it deep-links to `/builder?t=<this app's
+  first build workspace's first terminal>` — plain `/builder` when the
+  app has no build session yet.
+
+The drawer talks to the console same-origin (`/api/*`, `/ws`) with the
+session cookie — apps get terminal powers, not console powers; the
+frame is advisory. Keep it as-is; apps don't reimplement it.
+
 ## WebSocket routes
 
 An app can serve live sockets at its own paths: a page (or any same-origin

@@ -19,11 +19,13 @@ import * as path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import {
+  AGENT_MARKER,
   APPS_ROOT,
   APPS_SOCKET,
   INTERNAL_SOCKET,
   PASSWORD,
   USERNAME,
+  WORKSPACE,
   readSharedSessionCookie,
   writeSharedSessionCookie,
 } from '../support/env';
@@ -215,7 +217,9 @@ test('the shipped reference tree: seed → check green → register + reload →
 });
 
 /** Registered and mounted, established idempotently (no file-order
- *  assumptions). One status round trip when already right. */
+ *  assumptions). One status round trip when already right. A reload that
+ *  races the host's first discovery (a grep-run whose first test is a
+ *  later one) retries briefly instead of failing. */
 async function ensureRegisteredAndMounted(): Promise<void> {
   const status = await tool(statusTool(deps, SLUG));
   expect(status.isError, JSON.stringify(status.body)).toBe(false);
@@ -227,12 +231,14 @@ async function ensureRegisteredAndMounted(): Promise<void> {
       JSON.stringify(registered),
     ).toBe(true);
   }
-  const reloaded = await tool(reloadTool(deps, SLUG));
-  expect(reloaded.isError, JSON.stringify(reloaded.body)).toBe(false);
-  expect(
-    [...(reloaded.body.mounted ?? []), ...(reloaded.body.reimported ?? [])],
-    JSON.stringify(reloaded.body),
-  ).toContain(SLUG);
+  for (let attempt = 0; ; attempt++) {
+    const reloaded = await tool(reloadTool(deps, SLUG));
+    expect(reloaded.isError, JSON.stringify(reloaded.body)).toBe(false);
+    const mounted = [...(reloaded.body.mounted ?? []), ...(reloaded.body.reimported ?? [])];
+    if (mounted.includes(SLUG)) return;
+    expect(attempt, JSON.stringify(reloaded.body)).toBeLessThan(10);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
 }
 
 test('the use loop through the console origin: list, capture on every face, find, archive', async ({
@@ -480,4 +486,188 @@ test("the WS example: a write in one tab updates another tab's list without a re
   expect(archived.status, JSON.stringify(archived.json)).toBe(200);
   await expect(p2.locator('.notes a')).toHaveCount(before);
   await p2.close();
+});
+
+// ---- the agent drawer (the app pages epic's first cut) ----
+
+/** A pane's buffer ('agent-console' or 'agent-terminal'), searched line
+ *  by line — the builder spec's waitForTermText shape. */
+async function waitForPaneText(
+  page: Page,
+  selector: string,
+  text: string,
+  timeout = 20_000,
+): Promise<void> {
+  await page.waitForFunction(
+    ([sel, marker]) => {
+      const el = document.querySelector(sel!) as unknown as {
+        terminal?: {
+          buffer: {
+            active: {
+              length: number;
+              getLine(i: number): { translateToString(trimRight?: boolean): string } | undefined;
+            };
+          };
+        };
+      } | null;
+      const buf = el?.terminal?.buffer.active;
+      if (!buf) return false;
+      for (let i = 0; i < buf.length; i++) {
+        if (
+          buf
+            .getLine(i)
+            ?.translateToString(true)
+            .includes(marker as string)
+        )
+          return true;
+      }
+      return false;
+    },
+    [selector, text] as const,
+    { timeout },
+  );
+}
+
+const waitForDrawerText = (page: Page, text: string, timeout?: number): Promise<void> =>
+  waitForPaneText(page, 'agent-console', text, timeout);
+
+/** The notes app's row + its workspaces through /api/state, in-page. */
+async function notesState(page: Page): Promise<{
+  appId: string;
+  workspaces: Array<{
+    id: string;
+    kind: 'build' | null;
+    cwd: string;
+    order: number;
+    terminals: Array<{ id: string; order: number }>;
+  }>;
+}> {
+  const state = await api(page, 'GET', '/api/state');
+  expect(state.status).toBe(200);
+  const app = (state.json.apps as Array<{ id: string; slug: string }>).find(a => a.slug === SLUG);
+  expect(app, 'the notes app row exists').toBeDefined();
+  return {
+    appId: app!.id,
+    workspaces: state.json.workspaces as Array<{
+      id: string;
+      kind: 'build' | null;
+      cwd: string;
+      order: number;
+      terminals: Array<{ id: string; order: number }>;
+    }>,
+  };
+}
+
+test('the agent drawer: opens from the app page, ensures the operator workspace, attaches in the app tree', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await ensureRegisteredAndMounted();
+  await login(page);
+
+  // Idempotent precondition: the notes app owns no workspaces yet, so the
+  // drawer's first open has to create the operator one, and the builder
+  // link has no build session to point at.
+  await page.goto('/');
+  const state0 = await notesState(page);
+  for (const ws of state0.workspaces) {
+    const deleted = await api(page, 'DELETE', `/api/workspaces/${ws.id}`);
+    expect(deleted.status).toBe(200);
+  }
+
+  await page.goto(`/apps/${SLUG}/`);
+  // The affordance: the drawer button and the builder link (plain — no
+  // build session exists yet), on the page.
+  await expect(page.locator('agent-console .agent-console-open')).toBeVisible();
+  await expect(page.locator('agent-console .agent-console-builder')).toHaveAttribute(
+    'href',
+    '/builder',
+    { timeout: 10_000 },
+  );
+
+  // Open: the drawer shows, resolves the app, creates the operator
+  // workspace (kind NULL, cwd = the app tree) and attaches its agent tab.
+  await page.click('agent-console .agent-console-open');
+  await expect(page.locator('agent-console wa-drawer')).toHaveAttribute('open', '');
+  await expect(page.locator('agent-console .terminal-status.ok')).toHaveText(
+    /attached: t-[0-9a-f-]+ \(/,
+    { timeout: 20_000 },
+  );
+  // The agent tab's spawn banner rode the backfill.
+  await waitForDrawerText(page, AGENT_MARKER);
+
+  // The workspace exists exactly as the console-split plan shapes it.
+  const state = await notesState(page);
+  const operators = state.workspaces.filter(w => w.kind === null);
+  expect(operators).toHaveLength(1);
+  expect(operators[0]!.cwd).toBe(path.join(APPS_ROOT, SLUG));
+  expect(operators[0]!.terminals.length).toBeGreaterThanOrEqual(1);
+
+  // The pane really is a shell at the app tree — typed, round-tripped.
+  await page.locator('agent-console .terminal-container').click();
+  await page.keyboard.type('pwd\n');
+  await waitForDrawerText(page, path.join(APPS_ROOT, SLUG));
+
+  // Closing detaches without killing: the tmux session keeps running, so
+  // reopening finds the earlier output in the backfill.
+  await page.keyboard.type('echo DRAWER_SURVIVED_CLOSE\n');
+  await waitForDrawerText(page, 'DRAWER_SURVIVED_CLOSE');
+  await page.locator('agent-console wa-drawer [part="close-button"]').click();
+  await expect(page.locator('agent-console wa-drawer')).not.toHaveAttribute('open', '');
+  await page.click('agent-console .agent-console-open');
+  await expect(page.locator('agent-console .terminal-status.ok')).toHaveText(
+    /attached: t-[0-9a-f-]+ \(/,
+    { timeout: 20_000 },
+  );
+  await waitForDrawerText(page, 'DRAWER_SURVIVED_CLOSE');
+});
+
+test('the drawer\u2019s builder link: deep-links the app\u2019s build workspace terminal', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await ensureRegisteredAndMounted();
+  await login(page);
+
+  // Idempotent precondition: one build workspace for notes (so the link has
+  // a terminal to point at).
+  await page.goto('/');
+  const state = await notesState(page);
+  const builds = state.workspaces.filter(w => w.kind === 'build').sort((a, b) => a.order - b.order);
+  if (builds.length === 0) {
+    const created = await api(page, 'POST', '/api/workspaces', {
+      appId: state.appId,
+      kind: 'build',
+    });
+    expect(created.status, JSON.stringify(created.json)).toBe(200);
+  }
+
+  await page.goto(`/apps/${SLUG}/`);
+  const fresh = await notesState(page);
+  const firstBuild = fresh.workspaces
+    .filter(w => w.kind === 'build')
+    .sort((a, b) => a.order - b.order)[0]!;
+  const firstTerm = [...firstBuild.terminals].sort((a, b) => a.order - b.order)[0]!;
+  await expect(page.locator('agent-console .agent-console-builder')).toHaveAttribute(
+    'href',
+    `/builder?t=${firstTerm.id}`,
+    { timeout: 10_000 },
+  );
+
+  // The deep link lands on the builder page with that terminal selected —
+  // a build session at the console's default cwd, not the app tree.
+  await page.click('agent-console .agent-console-builder');
+  await page.waitForURL(u => u.pathname === '/builder' && u.searchParams.get('t') === firstTerm.id);
+  await expect(page.locator('agent-terminal:not(.hidden)')).toBeVisible();
+  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page.keyboard.type('pwd\n');
+  await waitForPaneText(page, 'agent-terminal:not(.hidden)', WORKSPACE, 10_000);
+  await expect
+    .poll(async () => {
+      const active = await page
+        .locator('workspace-sidebar li[data-ws].active')
+        .getAttribute('data-ws');
+      return active === firstBuild.id;
+    })
+    .toBe(true);
 });

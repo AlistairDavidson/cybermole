@@ -58,6 +58,9 @@ const base = import.meta.env.BASE_URL;
         )}
       </wa-card>
     </main>
+    <!-- The agent drawer (see the app-starter README): one terminal in
+         this app's operator workspace, plus the builder deep link. -->
+    <agent-console slug="notes"></agent-console>
     <script>
       // wa-client must precede the wa-* imports, or SSR'd elements render twice.
       import '@cybermole/app-kit/wa-client';
@@ -67,6 +70,8 @@ const base = import.meta.env.BASE_URL;
       import '@awesome.me/webawesome/dist/components/textarea/textarea.js';
       import '@awesome.me/webawesome/dist/components/badge/badge.js';
       import { mountIsland } from '@cybermole/app-kit/island';
+      // The agent drawer (client-only; it imports its own wa-* halves).
+      import '@cybermole/app-kit/agent-console';
 
       import NoteEditorIsland from '../../islands/NoteEditorIsland';
       import type { NoteEditorProps } from '../../islands/NoteEditorIsland';
