@@ -716,6 +716,86 @@ test('reorder_terminals: workspace_not_found / database_error', async () => {
   );
 });
 
+// ---------- reorder_workspaces ----------
+
+test('reorder_workspaces: rewrites one group in steps of 10; other groups and a same-order call write nothing', async () => {
+  const db = freshDb();
+  const w = domain(db);
+  const app = await appless(db);
+  // Deterministic created_at: it tiebreaks equal sort_order in the tree.
+  const a = (await w.saveWorkspace({ name: 'a', cwd: os.tmpdir() })).data.id;
+  await new Promise(r => setTimeout(r, 3));
+  const b = (await w.saveWorkspace({ name: 'b', cwd: os.tmpdir() })).data.id;
+  await new Promise(r => setTimeout(r, 3));
+  const c = (await w.saveWorkspace({ appId: app.id, name: 'c', cwd: os.tmpdir() })).data.id;
+  assert.deepEqual(
+    [wsRow(db, a).sort_order, wsRow(db, b).sort_order, wsRow(db, c).sort_order],
+    [10, 20, 10], // each group numbers its own rows
+  );
+
+  const reordered = await w.reorderWorkspaces([b, a]);
+  assert.equal(reordered.ok, true, reordered.errorMessage);
+  assert.equal(reordered.resultType, 'reorder_workspaces');
+  assert.deepEqual(reordered.data, { order: [b, a] });
+  assert.deepEqual(
+    [wsRow(db, b).sort_order, wsRow(db, a).sort_order, wsRow(db, c).sort_order],
+    [10, 20, 10], // the app group is another list entirely
+  );
+
+  // The tree reads the new order (sort_order, then created_at).
+  const tree = (await w.workspaceTree()).data.workspaces;
+  assert.deepEqual(
+    tree.map(x => x.id),
+    [b, c, a],
+  );
+
+  // A same-order reorder is a no-op success (updated_at untouched).
+  const before = wsRow(db, b).updated_at;
+  await new Promise(r => setTimeout(r, 2));
+  const again = await w.reorderWorkspaces([b, a]);
+  assert.equal(again.ok, true, again.errorMessage);
+  assert.equal(wsRow(db, b).updated_at, before);
+});
+
+test('reorder_workspaces: invalid_order on a duplicate, an unknown id, a partial list or mixed groups; the db is untouched', async () => {
+  const db = freshDb();
+  const w = domain(db);
+  const app = await appless(db);
+  const a = (await w.saveWorkspace({ name: 'a', cwd: os.tmpdir() })).data.id;
+  const b = (await w.saveWorkspace({ name: 'b', cwd: os.tmpdir() })).data.id;
+  const c = (await w.saveWorkspace({ appId: app.id, name: 'c', cwd: os.tmpdir() })).data.id;
+
+  for (const order of [
+    [a, a], // duplicate
+    [a, c], // two groups in one order
+    [a], // missing b
+    [a, b, MISSING_WS], // unknown id
+    [], // nothing to reorder
+  ]) {
+    const r = await w.reorderWorkspaces(order);
+    assert.equal(r.ok, false, JSON.stringify(order));
+    assert.equal(r.errorCode, 'invalid_order');
+    assert.equal(r.resultType, 'reorder_workspaces');
+  }
+  assert.deepEqual(
+    [wsRow(db, a).sort_order, wsRow(db, b).sort_order, wsRow(db, c).sort_order],
+    [10, 20, 10],
+    'a refused reorder writes nothing',
+  );
+});
+
+test('reorder_workspaces: an app group reorders too; database_error on a broken db', async () => {
+  const db = freshDb();
+  const w = domain(db);
+  const app = await appless(db);
+  const c = (await w.saveWorkspace({ appId: app.id, name: 'c', cwd: os.tmpdir() })).data.id;
+  const d = (await w.saveWorkspace({ appId: app.id, name: 'd', cwd: os.tmpdir() })).data.id;
+  const r = await w.reorderWorkspaces([d, c]);
+  assert.equal(r.ok, true, r.errorMessage);
+  assert.deepEqual([wsRow(db, d).sort_order, wsRow(db, c).sort_order], [10, 20]);
+  assert.equal((await domain(brokenDb()).reorderWorkspaces([d])).errorCode, 'database_error');
+});
+
 // ---------- close / rename ----------
 
 test('close_terminal: deletes the row and best-effort-kills the derived session name; terminal_not_found after', async () => {

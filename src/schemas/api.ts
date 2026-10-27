@@ -2,7 +2,7 @@
 // client-side against the same definitions. Cron validity and name
 // normalization stay server-side, in the domains.
 import { z } from 'zod';
-import { AppIdSchema, TerminalIdSchema } from '@cybermole/app-kit';
+import { AppIdSchema, TerminalIdSchema, WorkspaceIdSchema } from '@cybermole/app-kit';
 
 /** A parse failure answers 401, which fail2ban counts. Empty strings pass:
  *  verify() decides those. */
@@ -82,6 +82,18 @@ export const terminalCreateBody = z.object({
  *  domain checks the set; the schema caps the list. */
 export const terminalReorderBody = z.object({
   order: z.array(TerminalIdSchema).min(1, 'order is required').max(200, 'too many terminals'),
+});
+
+/** A full-list reorder within one group (the console's or one app's):
+ *  every workspace of that group, each once. The domain checks the set;
+ *  the schema caps the list. */
+export const workspaceReorderBody = z.object({
+  order: z.array(WorkspaceIdSchema).min(1, 'order is required').max(500, 'too many workspaces'),
+});
+
+/** A full-list reorder: every app row, each once. */
+export const appReorderBody = z.object({
+  order: z.array(AppIdSchema).min(1, 'order is required').max(200, 'too many apps'),
 });
 
 /** A string sets, null clears back to "term N", absent is a no-op; '' is a 400. */

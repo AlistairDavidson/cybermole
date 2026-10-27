@@ -426,3 +426,71 @@ test('list_apps: every app, sort_order asc (+ created_at tiebreak); empty; datab
   assert.equal(broken.ok, false);
   assert.equal(broken.errorCode, 'database_error');
 });
+
+// ---------- reorderApps ----------
+
+const appOrder = db =>
+  db.all(
+    qb.selectFrom('apps').select(['id', 'slug', 'sort_order', 'updated_at']).orderBy('sort_order'),
+  );
+
+test('reorder_apps: rewrites sort_order in steps of 10; a same-order call writes nothing', async () => {
+  const db = freshDb();
+  const a = apps(db);
+  const one = (await a.saveApp('one')).data;
+  const two = (await a.saveApp('two')).data;
+  const three = (await a.saveApp('three')).data;
+  assert.deepEqual(
+    appOrder(db).map(r => r.slug),
+    ['one', 'two', 'three'],
+  );
+
+  const r = await a.reorderApps([three.id, one.id, two.id]);
+  assert.equal(r.ok, true, r.errorMessage);
+  assert.equal(r.resultType, 'reorder_apps');
+  assert.deepEqual(r.data, { order: [three.id, one.id, two.id] });
+  assert.deepEqual(
+    appOrder(db).map(x => [x.slug, x.sort_order]),
+    [
+      ['three', 10],
+      ['one', 20],
+      ['two', 30],
+    ],
+  );
+  // the list read carries the new order
+  assert.deepEqual(
+    a.listApps().data.apps.map(x => x.slug),
+    ['three', 'one', 'two'],
+  );
+
+  // A same-order reorder is a no-op success (updated_at untouched).
+  const before = appOrder(db).find(x => x.slug === 'three').updated_at;
+  await new Promise(resolve => setTimeout(resolve, 2));
+  const again = await a.reorderApps([three.id, one.id, two.id]);
+  assert.equal(again.ok, true, again.errorMessage);
+  assert.equal(appOrder(db).find(x => x.slug === 'three').updated_at, before);
+});
+
+test('reorder_apps: invalid_order on a duplicate, an unknown id, a partial list or an empty one; the db is untouched', async () => {
+  const db = freshDb();
+  const a = apps(db);
+  const one = (await a.saveApp('one')).data;
+  const two = (await a.saveApp('two')).data;
+  const MISSING_APP = '99999999-9999-4999-8999-999999999999';
+
+  for (const order of [[one.id, one.id], [one.id], [one.id, two.id, MISSING_APP], []]) {
+    const r = await a.reorderApps(order);
+    assert.equal(r.ok, false, JSON.stringify(order));
+    assert.equal(r.errorCode, 'invalid_order');
+    assert.equal(r.resultType, 'reorder_apps');
+  }
+  assert.deepEqual(
+    appOrder(db).map(x => [x.slug, x.sort_order]),
+    [
+      ['one', 10],
+      ['two', 20],
+    ],
+    'a refused reorder writes nothing',
+  );
+  assert.equal((await apps(brokenDb()).reorderApps([one.id])).errorCode, 'database_error');
+});

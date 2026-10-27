@@ -15,6 +15,7 @@ import { emitDomainEvent } from '../platform/events';
 import { terminalSessionName } from './tmux';
 import { splitCommandLine } from './terminal-defaults';
 import { reorderUpdates, type TerminalCommand } from './tab-order';
+import { orderPlan } from '../order-plan';
 import {
   asTerminalId,
   asWorkspaceId,
@@ -119,6 +120,21 @@ export type ReorderTerminalsFailure = ResultFailure<
   ReorderTerminalsData,
   ReorderTerminalsErrorCode
 >;
+
+/** A full-list reorder within one group (the console's or one app's): the
+ *  ids are that group's workspaces, each once, in their new order. The
+ *  group is whichever parent the listed rows share; ids from two groups
+ *  (or nowhere) are invalid_order — a stale client re-reads state and
+ *  retries. */
+export type ReorderWorkspacesData = { order: WorkspaceId[] };
+export type ReorderWorkspacesErrorCode = 'invalid_order' | 'database_error';
+export type ReorderWorkspacesSuccess = ResultSuccess<'reorder_workspaces', ReorderWorkspacesData>;
+export type ReorderWorkspacesFailure = ResultFailure<
+  'reorder_workspaces',
+  ReorderWorkspacesData,
+  ReorderWorkspacesErrorCode
+>;
+export type ReorderWorkspacesResult = ReorderWorkspacesSuccess | ReorderWorkspacesFailure;
 export type ReorderTerminalsResult = ReorderTerminalsSuccess | ReorderTerminalsFailure;
 
 /** `agent`: this is the workspace's auto-opened agent tab, so a respawn
@@ -693,6 +709,61 @@ export class Workspaces {
       resultType: 'reorder_terminals',
       data: { workspaceId, order: ordered },
     } satisfies ReorderTerminalsSuccess;
+  }
+
+  /** Persists a full-list reorder of one group: positions become steps of
+   *  10. The plan (same set, each once) is computed by order-plan's pure
+   *  helper. */
+  async reorderWorkspaces(ordered: WorkspaceId[]): Promise<ReorderWorkspacesResult> {
+    const fail = (errorCode: ReorderWorkspacesErrorCode, errorMessage: string) =>
+      ({
+        ok: false,
+        resultType: 'reorder_workspaces',
+        errorCode,
+        errorMessage,
+      }) satisfies ReorderWorkspacesFailure;
+    if (ordered.length === 0) return fail('invalid_order', 'the order is empty');
+    const rows = databaseRead('could not read workspaces', () =>
+      this.deps.db.all(qb.selectFrom('workspaces').select(['id', 'app_id', 'sort_order'])),
+    );
+    if (!rows.ok) return fail('database_error', rows.errorMessage);
+    // The group is the first listed row's parent; every other id must share
+    // it, or orderPlan flags it as not in this group.
+    const parent = rows.data.value.find(w => w.id === ordered[0])?.app_id ?? null;
+    const group = rows.data.value.filter(w => w.app_id === parent);
+    const plan = orderPlan(
+      group.map(w => ({ id: w.id, sortOrder: w.sort_order })),
+      ordered,
+      'workspace',
+      'in this group',
+    );
+    if (!plan.ok) return fail('invalid_order', plan.message);
+    if (plan.updates.length > 0) {
+      const actor = this.actor();
+      if (!actor.ok) return fail('database_error', actor.errorMessage);
+      const now = Date.now();
+      for (const update of plan.updates) {
+        const updated = databaseUpdate('could not save the workspace order', () =>
+          this.deps.db.run(
+            qb
+              .updateTable('workspaces')
+              .set({
+                sort_order: update.sortOrder,
+                updated_at: now,
+                updated_by: actor.username,
+              })
+              .where('id', '=', update.id),
+          ),
+        );
+        if (!updated.ok) return fail('database_error', updated.errorMessage);
+      }
+      log.info(`${plan.updates.length} workspace(s) reordered in their group`);
+    }
+    return {
+      ok: true,
+      resultType: 'reorder_workspaces',
+      data: { order: ordered },
+    } satisfies ReorderWorkspacesSuccess;
   }
 
   /** For the WS attach path, with the workspace cwd for respawns and the
