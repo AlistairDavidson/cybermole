@@ -12,7 +12,6 @@ app host fs-watch auto-reload (reload is verb-driven today)
 
 cross-app MCP registration (siblings talk plain HTTP through the host)
 
-WS routes for apps (crib the bridge code; the /apps proxy grows `ws: true`)
 
 per-app agent access: settled 2026-10 — one uid for everything, no per-app sandboxing; the slide-in console controls scope by framing (app cwd + AGENTS.md + app MCP)
 
@@ -22,13 +21,10 @@ add a slight fade-in when switching to console pages
 
 ## Console features
 
-Popout should only pop out that one tab's contents - we need a layout without all the title bar and nav and such
-toolbar for editor, popout button only
 
 
 ## Workspaces follow-ups
 
-app icons
 
 editor extension/marketplace configuration beyond the VSCodium defaults (Open VSX, no telemetry); curated per-app extension sets
 
