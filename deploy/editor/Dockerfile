@@ -60,12 +60,21 @@ RUN case "$TARGETARCH" in \
 #   astro-build.astro-vscode  the stack's framework (the official Astro
 #     extension). Platform-specific .vsix (the language server ships
 #     per-OS bits): one sha256 per arch, selected below like the tarball.
+#   dbaeumer.vscode-eslint  the repo's lint gate (eslint.config.mjs —
+#     ESLint 9 flat config). Universal .vsix: the server is bundled
+#     node, one sha256 for all arches.
+#   esbenp.prettier-vscode  the repo's formatter (.prettierrc; resolves
+#     the workspace's own prettier install). Universal .vsix.
 #   ms-playwright.playwright the repo's e2e toolchain (tests/e2e).
 #   redhat.vscode-yaml       compose.yaml / deploy configs — VS Code
 #     bundles no YAML support of its own.
 ARG ASTRO_EXT_VERSION=2.16.20
 ARG ASTRO_EXT_SHA256_X64=5ca31435f5440daf79e0e3cc5e7ff07f099762a2d579268d2af82f066fd195d3
 ARG ASTRO_EXT_SHA256_ARM64=472e3dc42682ff93651487428cb8937430c8a57b708c9ba18f84fb86df263fb0
+ARG ESLINT_EXT_VERSION=3.0.34
+ARG ESLINT_EXT_SHA256=ca5334d46f6a39079e751ef4601bfc9f86bc3a46483e87291ec609239d161308
+ARG PRETTIER_EXT_VERSION=12.4.0
+ARG PRETTIER_EXT_SHA256=fb730ea4306d09cdc0a3aaa9e9baae28058cc97a4fbfce8b056b377a0639a9fe
 ARG PLAYWRIGHT_EXT_VERSION=1.1.19
 ARG PLAYWRIGHT_EXT_SHA256=23fa3d9a97596935a13ebc546172a262cfa16eb95f4c3ce0d81a4153ce7a50ce
 ARG YAML_EXT_VERSION=2.0.2026101408
@@ -80,6 +89,12 @@ RUN case "$TARGETARCH" in \
     && curl -fsSL -o /opt/editor-bundled-extensions/astro-build.astro-vscode.vsix \
       "https://open-vsx.org/api/astro-build/astro-vscode/linux-${ASSET}/${ASTRO_EXT_VERSION}/file/astro-build.astro-vscode-${ASTRO_EXT_VERSION}@linux-${ASSET}.vsix" \
     && echo "${ASTRO_SHA}  /opt/editor-bundled-extensions/astro-build.astro-vscode.vsix" | sha256sum -c - \
+    && curl -fsSL -o /opt/editor-bundled-extensions/dbaeumer.vscode-eslint.vsix \
+      "https://open-vsx.org/api/dbaeumer/vscode-eslint/${ESLINT_EXT_VERSION}/file/dbaeumer.vscode-eslint-${ESLINT_EXT_VERSION}.vsix" \
+    && echo "${ESLINT_EXT_SHA256}  /opt/editor-bundled-extensions/dbaeumer.vscode-eslint.vsix" | sha256sum -c - \
+    && curl -fsSL -o /opt/editor-bundled-extensions/esbenp.prettier-vscode.vsix \
+      "https://open-vsx.org/api/esbenp/prettier-vscode/${PRETTIER_EXT_VERSION}/file/esbenp.prettier-vscode-${PRETTIER_EXT_VERSION}.vsix" \
+    && echo "${PRETTIER_EXT_SHA256}  /opt/editor-bundled-extensions/esbenp.prettier-vscode.vsix" | sha256sum -c - \
     && curl -fsSL -o /opt/editor-bundled-extensions/ms-playwright.playwright.vsix \
       "https://open-vsx.org/api/ms-playwright/playwright/${PLAYWRIGHT_EXT_VERSION}/file/ms-playwright.playwright-${PLAYWRIGHT_EXT_VERSION}.vsix" \
     && echo "${PLAYWRIGHT_EXT_SHA256}  /opt/editor-bundled-extensions/ms-playwright.playwright.vsix" | sha256sum -c - \
