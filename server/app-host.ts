@@ -3,8 +3,11 @@
 // reach it only through the web server's session-gated /apps/* proxy.
 //
 // Discovers app rows over the internal API, mounts each complete one (app.json
-// + built dist/), and re-syncs on POST /_admin/reload. A throwing app is a 500
-// on its own paths only.
+// + built dist/), and re-syncs on POST /_admin/reload. Mounted apps are also
+// fs-watched (their app.json and built dist/ tree): a settled burst of disk
+// changes auto-reloads that one slug. A watcher failure is a logged line, so
+// the verb-driven reload remains the fallback. A throwing app is a 500 on its
+// own paths only.
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -14,6 +17,7 @@ import { componentLogger } from '../src/lib/platform/logger';
 import { readAppsSocket, readInternalApiSocket } from '../src/lib/platform/env';
 import { requestInternalApi } from '../src/lib/platform/internal-api-client';
 import { AppSlugSchema } from '@cybermole/app-kit';
+import { debounceTrailing } from '../src/lib/platform/debounce';
 import { probeSocketFile } from './internal-api';
 
 const log = componentLogger('app-host');
@@ -78,6 +82,12 @@ export interface AppHostDeps {
   retryDelayMs?: number;
   /** Default 5 s: a listener that accepts but never answers mustn't hang the boot loop. */
   discoveryTimeoutMs?: number;
+  /** Default true: fs-watch auto-reload of mounted apps. */
+  watch?: boolean;
+  /** Default 300: per-app debounce that collapses a build's file burst. */
+  watchDebounceMs?: number;
+  /** Injectable fs.watch stand-in for the tests (errors, close tracking). */
+  watchFactory?: AppWatchFactory;
 }
 
 export interface ReloadReport {
@@ -108,6 +118,11 @@ export interface AppHostStatus {
     importedAt: number;
   }>;
   skipped: SkippedApp[];
+  /** The fs-watch auto-reload state (absent apps are not being watched). */
+  watch: {
+    debounceMs: number;
+    apps: Array<{ slug: string; autoReloads: number }>;
+  };
 }
 
 export interface AppHostHandle {
@@ -321,6 +336,42 @@ function inspectRowChecked(row: AppRow):
   };
 }
 
+// ---------- fs-watch auto-reload ----------
+
+/** A few hundred ms: a build's file burst settles before one reload fires. */
+const WATCH_DEBOUNCE_MS = 300;
+
+/** All the host needs from a watcher handle: close, and errors surfaced. */
+export interface AppWatchHandle {
+  close(): void;
+  onError(listener: (err: Error) => void): void;
+}
+
+/** Injectable so the tests can fake fs.watch (error paths, close tracking). */
+export type AppWatchFactory = (
+  target: string,
+  options: { readonly recursive: boolean },
+  onChange: () => void,
+) => AppWatchHandle;
+
+const nodeWatch: AppWatchFactory = (target, options, onChange) => {
+  const watcher = fs.watch(target, options, () => onChange());
+  return {
+    close: () => watcher.close(),
+    onError: listener => watcher.on('error', listener),
+  };
+};
+
+/** One mounted app's watchers plus its debounced trigger. The cwd watch
+ *  (non-recursive) covers app.json edits and dist being replaced whole; the
+ *  recursive dist watch covers in-place build output. */
+interface AppWatchEntry {
+  readonly slug: string;
+  readonly fire: (() => void) & { cancel(): void };
+  readonly handles: AppWatchHandle[];
+  autoReloads: number;
+}
+
 // ---------- host ----------
 
 class AppHost {
@@ -331,6 +382,10 @@ class AppHost {
   /** Serializes reloads; chained as a function so it doesn't start early. */
   private reloadChain: Promise<unknown> = Promise.resolve();
   private importCounter = 0;
+  /** slug → watchers; kept in step with `mounted` by doReload. */
+  private readonly watchers = new Map<string, AppWatchEntry>();
+  private readonly watchFactory: AppWatchFactory;
+  private readonly watchEnabled: boolean;
   /** Set by close(); the pending retry sleep is woken and unref'd so a
    *  closed host never holds the process open. */
   private stopped = false;
@@ -342,7 +397,10 @@ class AppHost {
     this.resolveFirstSync = resolve;
   });
 
-  constructor(private readonly deps: AppHostDeps) {}
+  constructor(private readonly deps: AppHostDeps) {
+    this.watchEnabled = deps.watch ?? true;
+    this.watchFactory = deps.watchFactory ?? nodeWatch;
+  }
 
   private retrySleep(ms: number): Promise<void> {
     return new Promise(resolve => {
@@ -361,6 +419,7 @@ class AppHost {
   stop(): void {
     this.stopped = true;
     this.wakeRetry?.();
+    for (const slug of [...this.watchers.keys()]) this.closeWatchEntry(this.watchers.get(slug));
   }
 
   /** The web server's internal API may not be up yet when the workspace
@@ -543,7 +602,97 @@ class AppHost {
     this.mounted.clear();
     for (const [name, mounted] of next) this.mounted.set(name, mounted);
     this.skipped = report.skipped;
+    this.syncWatchers(report);
     return report;
+  }
+
+  /** Watchers follow the registry: armed on mount/re-import (a rebuild may
+   *  replace dist/ whole, so re-arm rather than reuse), closed on drop.
+   *  A reload still in flight at close() re-arms nothing. */
+  private syncWatchers(report: ReloadReport): void {
+    if (!this.watchEnabled || this.stopped) return;
+    for (const slug of report.dropped) this.closeWatchEntry(this.watchers.get(slug));
+    for (const slug of [...report.mounted, ...report.reimported]) {
+      const mounted = this.mounted.get(slug);
+      if (mounted !== undefined) this.armWatchers(mounted);
+    }
+  }
+
+  private armWatchers(mounted: MountedApp): void {
+    const previous = this.watchers.get(mounted.slug);
+    const autoReloads = previous?.autoReloads ?? 0;
+    // A trigger still pending against the old handles survives the swap: an
+    // event that landed mid-reload must not be lost to the re-arm.
+    this.closeWatchEntry(previous, false);
+    const fire = debounceTrailing(
+      () => this.autoReload(mounted.slug),
+      this.deps.watchDebounceMs ?? WATCH_DEBOUNCE_MS,
+    );
+    const entry: AppWatchEntry = { slug: mounted.slug, fire, handles: [], autoReloads };
+    const distDir = path.join(mounted.cwd, 'dist');
+    for (const [label, target, recursive] of [
+      ['app tree', mounted.cwd, false],
+      ['built dist', distDir, true],
+    ] as Array<readonly [string, string, boolean]>) {
+      try {
+        const handle = this.watchFactory(target, { recursive }, fire);
+        handle.onError(err => this.watchError(entry, handle, target, err));
+        entry.handles.push(handle);
+      } catch (err) {
+        log.warn(
+          `could not watch the ${label} of "${mounted.slug}" (${target}): ` +
+            `${(err as Error).message} — reload it by verb instead`,
+        );
+      }
+    }
+    if (entry.handles.length > 0) this.watchers.set(mounted.slug, entry);
+    else fire.cancel();
+  }
+
+  /** A watcher failure (EMFILE, EPERM, a vanished tree) is a logged line,
+   *  never a throw: auto-reload for the slug goes quiet until the next
+   *  reload re-arms it. */
+  private watchError(
+    entry: AppWatchEntry,
+    handle: AppWatchHandle,
+    target: string,
+    err: Error,
+  ): void {
+    log.warn(
+      `watcher on ${target} for app "${entry.slug}" failed: ${err.message} — ` +
+        'auto-reload is off for it until the next reload',
+    );
+    handle.close();
+    const at = entry.handles.indexOf(handle);
+    if (at >= 0) entry.handles.splice(at, 1);
+    // An error off a stale generation's handle must not take the current
+    // entry down with it.
+    if (this.watchers.get(entry.slug) !== entry) return;
+    if (entry.handles.length === 0) {
+      entry.fire.cancel();
+      this.watchers.delete(entry.slug);
+    }
+  }
+
+  /** cancelPending=false on re-arm: a burst straddling the reload still fires. */
+  private closeWatchEntry(entry: AppWatchEntry | undefined, cancelPending = true): void {
+    if (entry === undefined) return;
+    if (cancelPending) entry.fire.cancel();
+    for (const handle of entry.handles) handle.close();
+    this.watchers.delete(entry.slug);
+  }
+
+  /** One debounced event burst → one scoped reload; reloadChain serializes
+   *  whatever overlaps. A failure is logged and leaves the mount standing. */
+  private autoReload(slug: string): void {
+    if (this.stopped) return;
+    const entry = this.watchers.get(slug);
+    if (entry === undefined) return; // dropped since the event queued
+    entry.autoReloads++;
+    log.info(`watch: "${slug}" changed on disk — reloading it`);
+    this.reload(slug).catch(err =>
+      log.warn(`watch reload of "${slug}" failed: ${(err as Error).message}`),
+    );
   }
 
   status(): AppHostStatus {
@@ -564,6 +713,10 @@ class AppHost {
         importedAt: m.importedAt,
       })),
       skipped: this.skipped,
+      watch: {
+        debounceMs: this.deps.watchDebounceMs ?? WATCH_DEBOUNCE_MS,
+        apps: [...this.watchers.values()].map(e => ({ slug: e.slug, autoReloads: e.autoReloads })),
+      },
     };
   }
 
