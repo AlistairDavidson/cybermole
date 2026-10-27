@@ -1,7 +1,6 @@
 // Policy for the same-origin editor proxy (the transport is in server/main.ts).
 // The editor's integrated terminal is a shell, so logout must cut its tunnels.
 
-import type { SessionToken } from '@cybermole/app-kit';
 import { UPLOAD_MAX_BODY_BYTES } from '../../schemas/uploads';
 
 /** Node regenerates these for the leg it owns. */
@@ -139,44 +138,5 @@ export function editorBodyCapStatus(req: {
 }
 
 /** Idempotent: closeToken may race a socket's own end. */
-export interface EditorTunnelHandle {
-  close(): void;
-}
-
-export class EditorTunnelTracker {
-  private readonly byToken = new Map<SessionToken, Set<EditorTunnelHandle>>();
-
-  track(token: SessionToken, handle: EditorTunnelHandle): void {
-    let set = this.byToken.get(token);
-    if (!set) {
-      set = new Set();
-      this.byToken.set(token, set);
-    }
-    set.add(handle);
-  }
-
-  untrack(token: SessionToken, handle: EditorTunnelHandle): void {
-    const set = this.byToken.get(token);
-    if (!set) return;
-    set.delete(handle);
-    if (set.size === 0) this.byToken.delete(token);
-  }
-
-  closeToken(token: SessionToken): void {
-    const set = this.byToken.get(token);
-    if (!set) return;
-    this.byToken.delete(token);
-    for (const handle of set) handle.close();
-  }
-
-  closeAll(): void {
-    for (const set of this.byToken.values()) for (const handle of set) handle.close();
-    this.byToken.clear();
-  }
-
-  count(): number {
-    let n = 0;
-    for (const set of this.byToken.values()) n += set.size;
-    return n;
-  }
-}
+export type { TunnelHandle as EditorTunnelHandle } from '../platform/ws-tunnels';
+export { TunnelTracker as EditorTunnelTracker } from '../platform/ws-tunnels';

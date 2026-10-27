@@ -9,6 +9,7 @@ import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import type { Duplex } from 'node:stream';
 import { componentLogger } from '../src/lib/platform/logger';
 import { readAppsSocket, readInternalApiSocket } from '../src/lib/platform/env';
 import { requestInternalApi } from '../src/lib/platform/internal-api-client';
@@ -27,6 +28,10 @@ type AppHandler = (
   next: (err?: unknown) => void,
 ) => void;
 
+/** The app's optional WS entry (dist/server/ws.mjs): handed raw upgrades
+ *  under the app's base. See runtime/app-starter/README.md § WebSocket routes. */
+type AppUpgradeHandler = (req: http.IncomingMessage, socket: Duplex, head: Buffer) => void;
+
 /** A manifest slug that disagrees with the row would have a baked base that
  *  doesn't match the mount, so the app is skipped. */
 interface AppManifest {
@@ -44,6 +49,10 @@ interface MountedApp {
   readonly entryPath: string;
   readonly clientDir: string;
   readonly handler: AppHandler;
+  /** null: the app ships no ws entry, so upgrades under it 404. */
+  readonly upgrade: AppUpgradeHandler | null;
+  /** set when a ws entry exists but failed to import — upgrades answer 503. */
+  readonly upgradeError: string | null;
   readonly importedAt: number;
 }
 
@@ -173,6 +182,13 @@ function hardenResponse(res: http.ServerResponse): void {
   }) as typeof res.end;
 }
 
+/** For upgrade rejections, written straight to the socket. */
+function securityHeaderBlock(): string {
+  return Object.entries(SECURITY_HEADERS)
+    .map(([n, v]) => `${n}: ${v}\r\n`)
+    .join('');
+}
+
 function logAccess(req: http.IncomingMessage, res: http.ServerResponse): void {
   const start = Date.now();
   res.on('finish', () => {
@@ -231,10 +247,14 @@ function readBody(req: http.IncomingMessage): Promise<Record<string, unknown> | 
 
 // ---------- discovery ----------
 
-function inspectRow(
-  row: AppRow,
-):
-  | { ok: true; manifest: AppManifest; entryPath: string; clientDir: string }
+function inspectRow(row: AppRow):
+  | {
+      ok: true;
+      manifest: AppManifest;
+      entryPath: string;
+      clientDir: string;
+      wsEntryPath: string | null;
+    }
   | { ok: false; reason: string } {
   try {
     return inspectRowChecked(row);
@@ -244,10 +264,14 @@ function inspectRow(
   }
 }
 
-function inspectRowChecked(
-  row: AppRow,
-):
-  | { ok: true; manifest: AppManifest; entryPath: string; clientDir: string }
+function inspectRowChecked(row: AppRow):
+  | {
+      ok: true;
+      manifest: AppManifest;
+      entryPath: string;
+      clientDir: string;
+      wsEntryPath: string | null;
+    }
   | { ok: false; reason: string } {
   if (row.cwd === null)
     return { ok: false, reason: 'row has no cwd (a console group row, not an app tree)' };
@@ -286,7 +310,15 @@ function inspectRowChecked(
   if (!fs.statSync(clientDir).isDirectory()) {
     return { ok: false, reason: `dist/client is not a directory (${clientDir})` };
   }
-  return { ok: true, manifest: { name: raw.name.trim(), description, slug }, entryPath, clientDir };
+  // The optional WS entry: dist/server/ws.mjs, emitted by the app's build.
+  const wsEntryPath = path.join(row.cwd, 'dist', 'server', 'ws.mjs');
+  return {
+    ok: true,
+    manifest: { name: raw.name.trim(), description, slug },
+    entryPath,
+    clientDir,
+    wsEntryPath: fs.existsSync(wsEntryPath) ? wsEntryPath : null,
+  };
 }
 
 // ---------- host ----------
@@ -401,6 +433,32 @@ class AppHost {
     return m.handler as AppHandler;
   }
 
+  /** Same cache-bust as the handler: a rebuilt ws entry is re-read. */
+  private async importWsEntry(entryPath: string): Promise<AppUpgradeHandler> {
+    const url = pathToFileURL(entryPath);
+    url.search = `v=${Date.now()}-${this.importCounter++}`;
+    const m: { handleUpgrade?: unknown } = await import(url.href);
+    if (typeof m.handleUpgrade !== 'function') {
+      throw new Error('dist/server/ws.mjs exports no handleUpgrade function');
+    }
+    return m.handleUpgrade as AppUpgradeHandler;
+  }
+
+  /** A broken ws entry degrades to 503 upgrades, never a skipped mount: the
+   *  HTTP face keeps serving the previous build. */
+  private async loadWsEntry(
+    wsEntryPath: string | null,
+  ): Promise<{ upgrade: AppUpgradeHandler | null; upgradeError: string | null }> {
+    if (wsEntryPath === null) return { upgrade: null, upgradeError: null };
+    try {
+      return { upgrade: await this.importWsEntry(wsEntryPath), upgradeError: null };
+    } catch (err) {
+      const reason = (err as Error).message;
+      log.warn(`ws entry failed to import — upgrades answer 503: ${reason}`);
+      return { upgrade: null, upgradeError: reason };
+    }
+  }
+
   /** A slug scopes the sync to that app. A failed re-import keeps the
    *  previous build serving. */
   async reload(slug: string | null = null): Promise<ReloadReport> {
@@ -436,7 +494,8 @@ class AppHost {
       if (existing) {
         try {
           const handler = await this.importHandler(inspected.entryPath);
-          next.set(row.slug, { ...existing, handler, importedAt: Date.now() });
+          const ws = await this.loadWsEntry(inspected.wsEntryPath);
+          next.set(row.slug, { ...existing, handler, ...ws, importedAt: Date.now() });
           report.reimported.push(row.slug);
         } catch (err) {
           report.skipped.push({
@@ -449,6 +508,7 @@ class AppHost {
       }
       try {
         const handler = await this.importHandler(inspected.entryPath);
+        const ws = await this.loadWsEntry(inspected.wsEntryPath);
         const mounted: MountedApp = {
           slug: row.slug,
           base: `/apps/${row.slug}`,
@@ -457,6 +517,8 @@ class AppHost {
           entryPath: inspected.entryPath,
           clientDir: inspected.clientDir,
           handler,
+          upgrade: ws.upgrade,
+          upgradeError: ws.upgradeError,
           importedAt: Date.now(),
         };
         next.set(row.slug, mounted);
@@ -550,6 +612,8 @@ export async function startAppHost(deps: AppHostDeps): Promise<AppHostHandle> {
     fs.rmSync(deps.socketPath, { force: true });
   }
   const host = new AppHost(deps);
+  /** Live upgrade sockets; close() cuts them so the drain can't hang. */
+  const upgradeSockets = new Set<Duplex>();
   const server = http.createServer((req, res) => {
     hardenResponse(res);
     logAccess(req, res);
@@ -558,6 +622,13 @@ export async function startAppHost(deps: AppHostDeps): Promise<AppHostHandle> {
       if (!res.headersSent) send(res, 500, 'internal error');
       else res.destroy();
     });
+  });
+  // WS under /apps/<slug>/…: handed to the mounted app's optional ws entry.
+  // The web server's proxy has already run the session/Origin/rate gates.
+  server.on('upgrade', (req, socket, head) => {
+    upgradeSockets.add(socket);
+    socket.on('close', () => upgradeSockets.delete(socket));
+    dispatchUpgrade(host, req, socket, head);
   });
   await new Promise<void>((resolve, reject) => {
     const onListenError = (err: Error): void => reject(err);
@@ -580,6 +651,8 @@ export async function startAppHost(deps: AppHostDeps): Promise<AppHostHandle> {
     status: () => host.status(),
     close() {
       host.stop();
+      for (const socket of upgradeSockets) socket.destroy();
+      upgradeSockets.clear();
       return new Promise(resolve => {
         server.close(() => {
           try {
@@ -661,6 +734,39 @@ async function dispatch(
     log.error(`app ${mount.slug} handler threw`, { error: err });
     if (!res.headersSent) send(res, 500, 'app error');
     else res.destroy();
+  }
+}
+
+/** Upgrades forward to the mounted app's optional ws entry; everything
+ *  else refuses (an upgrade has no res — the status line goes to the socket). */
+function dispatchUpgrade(
+  host: AppHost,
+  req: http.IncomingMessage,
+  socket: Duplex,
+  head: Buffer,
+): void {
+  const url = (req.url ?? '').split('?')[0] ?? '/';
+  const mount = host.mountFor(url);
+  if (mount === null) {
+    log.debug(`ws upgrade for an unmounted path: ${url}`);
+    socket.write(`HTTP/1.1 404 Not Found\r\n${securityHeaderBlock()}\r\n`);
+    socket.destroy();
+    return;
+  }
+  if (mount.upgrade === null) {
+    // An app that ships no ws entry 404s; a broken one 503s (refuse, never hang).
+    const status = mount.upgradeError === null ? '404 Not Found' : '503 Service Unavailable';
+    if (mount.upgradeError !== null) log.warn(`${mount.slug} ws upgrade: ${mount.upgradeError}`);
+    socket.write(`HTTP/1.1 ${status}\r\n${securityHeaderBlock()}\r\n`);
+    socket.destroy();
+    return;
+  }
+  log.debug(`ws upgrade for ${mount.slug}: ${url}`);
+  try {
+    mount.upgrade(req, socket, head);
+  } catch (err) {
+    log.error(`app ${mount.slug} ws upgrade handler threw`, { error: err });
+    socket.destroy();
   }
 }
 

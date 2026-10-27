@@ -31,6 +31,7 @@ const PACKAGES = [
   '@cybermole/app-kit',
   'kysely',
   '@types/node',
+  'ws',
 ];
 const BINS = ['astro', 'tsc'];
 
