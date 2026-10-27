@@ -31,8 +31,6 @@ app preview?
 
 ## Workspaces follow-ups
 
-workspace templates (pre-seeded terminals)
-
 per-workspace terminal command overrides
 
 app icons
