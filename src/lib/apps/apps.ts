@@ -77,6 +77,22 @@ export type ReorderAppsFailure = ResultFailure<
 >;
 export type ReorderAppsResult = ReorderAppsSuccess | ReorderAppsFailure;
 
+/** The settings page's read: one full row. */
+export type ReadAppData = {
+  id: AppId;
+  name: string;
+  slug: AppSlug;
+  cwd: string | null;
+  /** effective (the default when the row keeps NULL) */
+  icon: string;
+  createdAt: number;
+  updatedAt: number;
+};
+export type ReadAppErrorCode = 'app_not_found' | 'database_error';
+export type ReadAppSuccess = ResultSuccess<'read_app', ReadAppData>;
+export type ReadAppFailure = ResultFailure<'read_app', ReadAppData, ReadAppErrorCode>;
+export type ReadAppResult = ReadAppSuccess | ReadAppFailure;
+
 // ---------- domain ----------
 
 export interface AppsDeps {
@@ -187,11 +203,13 @@ export class Apps {
     } satisfies SaveAppSuccess;
   }
 
-  /** Absent fields keep; the slug never changes. cwd null clears it. */
+  /** Absent fields keep; the slug never changes. cwd null clears it.
+   *  icon sets to a registry name (absent keeps). */
   async renameApp(
     slug: AppSlug,
     name: string | undefined,
     cwd: string | null | undefined,
+    icon?: string,
   ): Promise<SaveAppResult> {
     const fail = (errorCode: SaveAppErrorCode, errorMessage: string) =>
       ({ ok: false, resultType: 'save_app', errorCode, errorMessage }) satisfies SaveAppFailure;
@@ -199,7 +217,7 @@ export class Apps {
     if (!found.ok) return fail('database_error', found.errorMessage);
     const row = found.data.value;
     if (!row) return fail('app_not_found', 'no such app');
-    if (name === undefined && cwd === undefined) {
+    if (name === undefined && cwd === undefined && icon === undefined) {
       return {
         ok: true,
         resultType: 'save_app',
@@ -214,6 +232,9 @@ export class Apps {
     }
     const trimmed = name === undefined ? undefined : name.trim();
     if (trimmed === '') return fail('invalid_name', 'name is required');
+    const chosen = icon === undefined ? undefined : icon.trim();
+    if (chosen !== undefined && !isAppIcon(chosen))
+      return fail('invalid_icon', `icon must be one of the vendored names: ${APP_ICON_NAMES}`);
     let dir: string | null | undefined;
     if (cwd === null)
       dir = null; // an empty string is a 400, not a clear
@@ -231,6 +252,7 @@ export class Apps {
           .set({
             ...(trimmed === undefined ? {} : { name: trimmed }),
             ...(dir === undefined ? {} : { cwd: dir }),
+            ...(chosen === undefined ? {} : { icon: chosen }),
             updated_at: Date.now(),
             updated_by: actor.username,
           })
@@ -247,7 +269,7 @@ export class Apps {
         name: trimmed ?? row.name,
         slug,
         cwd: dir === undefined ? row.cwd : dir,
-        icon: row.icon ?? DEFAULT_APP_ICON,
+        icon: chosen ?? row.icon ?? DEFAULT_APP_ICON,
       },
     } satisfies SaveAppSuccess;
   }
@@ -326,6 +348,38 @@ export class Apps {
         })),
       },
     } satisfies ListAppsSuccess;
+  }
+
+  /** The settings page's read: the full row, timestamps included. */
+  readApp(slug: AppSlug): ReadAppResult {
+    const read = databaseRead(
+      'could not read app',
+      () =>
+        this.deps.db.get(
+          qb
+            .selectFrom('apps')
+            .select(['id', 'name', 'cwd', 'icon', 'created_at', 'updated_at'])
+            .where('slug', '=', slug),
+        ) ?? null,
+    );
+    const fail = (errorCode: ReadAppErrorCode, errorMessage: string) =>
+      ({ ok: false, resultType: 'read_app', errorCode, errorMessage }) satisfies ReadAppFailure;
+    if (!read.ok) return fail('database_error', read.errorMessage);
+    const row = read.data.value;
+    if (!row) return fail('app_not_found', 'no such app');
+    return {
+      ok: true,
+      resultType: 'read_app',
+      data: {
+        id: row.id,
+        name: row.name,
+        slug,
+        cwd: row.cwd,
+        icon: row.icon ?? DEFAULT_APP_ICON,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      },
+    } satisfies ReadAppSuccess;
   }
 
   /** Persists a full-list reorder: positions become steps of 10. The plan

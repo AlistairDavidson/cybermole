@@ -15,6 +15,7 @@ import {
   INTERNAL_SOCKET,
   PASSWORD,
   USERNAME,
+  WORKSPACE,
   readSharedSessionCookie,
   writeSharedSessionCookie,
 } from '../support/env';
@@ -237,4 +238,94 @@ test('the new-app dialog previews the suggested icon from the name (the shared r
   await expect(page.locator('#app-icon-glyph')).toHaveAttribute('name', 'code');
   // nothing was created; the dialog just previews
   await page.click('#app-dialog [data-dialog="close"]');
+});
+
+test('the settings page: gear -> change icon, name and cwd; the sidebar shows it; empty name is a field error', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await ensureRegistered();
+  await login(page);
+
+  // The gear affordance on the row's group links to its settings page.
+  const group = page.locator(`workspace-sidebar .ws-group[data-group="${SLUG}"]`);
+  await expect(group.locator('.app-settings-btn')).toHaveAttribute('href', `/builder/${SLUG}`);
+  await group.locator('.app-settings-btn').click();
+  await page.waitForURL(u => u.pathname === `/builder/${SLUG}`);
+
+  // The page prefilled from the row: name, cwd, the picked icon, and the
+  // read-only slug + timestamps.
+  await expect(page.locator('wa-input#app-name input')).toHaveValue('Icon Probe');
+  await expect(page.locator('wa-input#app-cwd input')).toHaveValue(`${APPS_ROOT}/${SLUG}`);
+  await expect(page.locator('.icon-choice[aria-checked="true"]')).toHaveAttribute(
+    'data-icon',
+    'robot',
+  );
+  await expect(page.locator('.cfg-row').filter({ hasText: 'slug' })).toContainText(SLUG);
+  await expect(page.locator('.cfg-row').filter({ hasText: 'created' })).toContainText(
+    /\d{4}-\d{2}-\d{2}T/,
+  );
+
+  await page.waitForFunction(() => customElements.get('validation-enhancer-zod') !== undefined);
+  // An empty name is blocked in the browser, the error in the hint slot.
+  const patches: string[] = [];
+  page.on('request', r => {
+    if (r.method() === 'PATCH') patches.push(new URL(r.url()).pathname);
+  });
+  await page.fill('wa-input#app-name input', '');
+  await page.click('#app-settings-save');
+  await expect(page.locator('#app-name-error')).toHaveText('name is required');
+  expect(patches.filter(p => p === `/api/apps/${SLUG}`)).toEqual([]);
+
+  // A cwd that does not exist is a server field error (the rename path
+  // checks existence — it never mkdirs).
+  const dir = `${WORKSPACE}/icon-probe-cwd`;
+  await page.fill('wa-input#app-name input', 'Icon Probe Renamed');
+  await page.fill('wa-input#app-cwd input', dir);
+  await page.click('.icon-choice[data-icon="terminal"]');
+  await page.click('#app-settings-save');
+  await expect(page.locator('#app-cwd-error')).toHaveText(`cwd does not exist: ${dir}`);
+  expect(patches.filter(p => p === `/api/apps/${SLUG}`)).toEqual([`/api/apps/${SLUG}`]);
+
+  // An existing dir + the new icon and name: saved, and the header agrees.
+  fs.mkdirSync(dir, { recursive: true });
+  await page.click('#app-settings-save');
+  await expect(page.locator('#app-settings-result')).toContainText('saved');
+  await expect(page.locator('#app-settings-title-name')).toHaveText('Icon Probe Renamed');
+  await expect(page.locator('#app-settings-title-icon')).toHaveAttribute('name', 'terminal');
+
+  // The row agrees, and /builder shows it in the group header (the group
+  // key stays the slug — it never changes).
+  const state = await api(page, 'GET', '/api/state');
+  expect(state.json.apps.find((a: Json) => a.slug === SLUG)).toMatchObject({
+    name: 'Icon Probe Renamed',
+    icon: 'terminal',
+    cwd: dir,
+  });
+  await page.goto('/builder');
+  await page.waitForSelector('workspace-sidebar .nav');
+  const renamed = page.locator(`workspace-sidebar .ws-group[data-group="${SLUG}"]`);
+  await expect(renamed.locator('h2 .g-name')).toHaveText('Icon Probe Renamed');
+  await expect(renamed.locator('h2 .g-icon wa-icon')).toHaveAttribute('name', 'terminal');
+
+  // Clearing the cwd returns the app to the server default (the hint's
+  // “empty = the server default”: an empty save sends null, not a keep).
+  await page.goto(`/builder/${SLUG}`);
+  await expect(page.locator('wa-input#app-cwd input')).toHaveValue(dir); // prefilled from the row
+  await page.fill('wa-input#app-cwd input', '');
+  await page.click('#app-settings-save');
+  await expect
+    .poll(
+      async () =>
+        (await api(page, 'GET', '/api/state')).json.apps.find((a: Json) => a.slug === SLUG)?.cwd,
+      { timeout: 10_000 },
+    )
+    .toBe(null);
+
+  // A slug with no row (or a bad shape) is the 404 body.
+  const missing = await page.goto('/builder/no-such-app');
+  expect(missing?.status()).toBe(404);
+  await expect(page.locator('.app-settings-main')).toContainText('no such app');
+  const badShape = await page.goto(`/builder/${encodeURIComponent('NO!')}`);
+  expect(badShape?.status()).toBe(404);
 });

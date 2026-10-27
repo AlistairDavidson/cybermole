@@ -325,7 +325,9 @@ export class WorkspaceSidebar extends HTMLElement {
   ): string {
     const st = this.state;
     const workspaces = st && app ? st.workspaces.filter(w => w.appId === app.id) : [];
-    const name = entry?.name ?? app?.name ?? slug;
+    // The row names what the operator sees (rename edits it); a bare tree
+    // falls back to its manifest's name.
+    const name = app?.name ?? entry?.name ?? slug;
     // A plain <a> (no stateful wa-*). Not serving only dims it, with the
     // reason as tooltip; it's still clickable.
     const open = app
@@ -333,6 +335,13 @@ export class WorkspaceSidebar extends HTMLElement {
         `href="${BASE}/apps/${esc(slug)}/" target="_blank" rel="noopener" ` +
         `title="${esc(app.serving ? `open ${name} in a new tab` : `${name} is not serving: ${app.servingReason ?? 'the app host is down'}`)}">` +
         `<wa-icon name="arrow-up-right-from-square" label="open ${esc(name)}"></wa-icon></a>`
+      : '';
+    // The settings page (the picker lives there); a row is addressable, a
+    // bare tree is not.
+    const settings = app
+      ? `<a class="app-settings-btn" href="${BASE}/builder/${esc(slug)}" ` +
+        `title="settings for ${esc(name)}">` +
+        `<wa-icon name="gear" label="settings for ${esc(name)}"></wa-icon></a>`
       : '';
     const del = app
       ? `<wa-button class="del-app-btn" data-del-app="${esc(slug)}" size="xs" appearance="plain" ` +
@@ -345,6 +354,7 @@ export class WorkspaceSidebar extends HTMLElement {
           `title="new build workspace for ${esc(name)}"><wa-icon name="plus" label="new workspace"></wa-icon></wa-button>`
         : '') +
       open +
+      settings +
       del;
     const chip =
       entry !== null
