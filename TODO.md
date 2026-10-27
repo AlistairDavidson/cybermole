@@ -22,8 +22,8 @@ add a slight fade-in when switching to console pages
 
 ## Console features
 
-Popout should only pop out that one tab's contents
-toolbar / popout for editor
+Popout should only pop out that one tab's contents - we need a layout without all the title bar and nav and such
+toolbar for editor, popout button only
 
 app preview?
 
