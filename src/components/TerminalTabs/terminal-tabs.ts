@@ -10,10 +10,11 @@
 // 'reorder-terminals' event up to <console-app>, and the next sync
 // confirms it (or, after a failed write, reverts the bar).
 //
-// Pop-out moves a terminal to its own browser tab (/?t=<id>). It's a move,
-// not a copy: the server attaches with `tmux attach -d`, so two clients
-// would bump each other. The pane's socket closes but the session survives;
-// the terminal comes back when the popped tab closes or this tab is clicked.
+// Pop-out moves a terminal to its own browser tab (/view?t=<id>: the
+// chrome-free single view). It's a move, not a copy: the server attaches
+// with `tmux attach -d`, so two clients would bump each other. The pane's
+// socket closes but the session survives; the terminal comes back when the
+// popped tab closes or this tab is clicked.
 //
 // Emits (bubbling, handled by <console-app>): new-terminal {workspaceId,
 // command}, close-terminal {id}, new-workspace {appId}, pop-blocked {id},
@@ -22,6 +23,7 @@ import type { TerminalState, WorkspaceState } from '../../lib/platform/types';
 import type { TerminalId, TmuxSessionName, WorkspaceId } from '@cybermole/app-kit';
 import { BASE } from '../../base';
 import { moveItem, type TerminalCommand } from '../../lib/terminals/tab-order';
+import { armEditorThemeReload, editorSrc } from '../editor-pane';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
@@ -31,24 +33,6 @@ import '../AgentTerminal/agent-terminal';
 
 /** A terminal id is a uuid, so no collision. */
 const EDITOR = 'editor';
-
-/** No theme param: the workbench only reads folder/workspace/ew from the
- *  URL. It follows the browser's scheme at boot instead, so a mode flip
- *  reloads the iframe. */
-const editorSrc = (cwd: string): string => `${BASE}/editor/?folder=${encodeURIComponent(cwd)}`;
-
-// On a colour-mode flip, reload any editor pane (re-assigning src reloads)
-// so the workbench boots in the new mode. Its own live re-theming is
-// unreliable. Only scroll position is lost.
-let editorThemeArmed = false;
-function armEditorThemeReload(): void {
-  if (editorThemeArmed) return;
-  editorThemeArmed = true;
-  new MutationObserver(() => {
-    for (const frame of document.querySelectorAll<HTMLIFrameElement>('iframe.editor-frame'))
-      frame.src = frame.src; // eslint-disable-line no-self-assign -- a reload, on purpose
-  }).observe(document.documentElement, { attributeFilter: ['class'], attributes: true });
-}
 
 /** After a popped tab's pagehide, wait this long before trusting `closed`. */
 const POPUP_GONE_MS = 300;
@@ -69,7 +53,8 @@ export class TerminalTabs extends HTMLElement {
   private poppedNotice: HTMLElement | null = null;
   private editorTab: HTMLButtonElement | null = null;
   private newTabGroup: HTMLElement | null = null;
-  private editorPane: HTMLIFrameElement | null = null;
+  /** The editor pane: a toolbar (pop-out) above the workbench iframe. */
+  private editorHost: HTMLElement | null = null;
   /** The in-flight optimistic tab order, until a poll confirms the write. */
   private pendingOrder: TerminalId[] | null = null;
   /** The tab being dragged, null when no drag is live. */
@@ -355,7 +340,7 @@ export class TerminalTabs extends HTMLElement {
     }
     // Open before tearing down, so a blocked open leaves the pane intact.
     // '_blank' with no features string is a new tab, not a popup.
-    const win = window.open(`${BASE}/?t=${id}`, '_blank');
+    const win = window.open(`${BASE}/view?t=${id}`, '_blank');
     if (!win) {
       this.dispatchEvent(
         new CustomEvent('pop-blocked', {
@@ -370,7 +355,7 @@ export class TerminalTabs extends HTMLElement {
     this.destroyPane(id);
     this.markPopped(id, true);
     this.showPoppedNotice();
-    // Same-origin navigation reuses the window, so the about:blank → /?t=
+    // Same-origin navigation reuses the window, so the about:blank → /view?t=
     // swap fires pagehide too. Only count it once `closed` is true.
     win.addEventListener('pagehide', () => {
       setTimeout(() => {
@@ -437,7 +422,7 @@ export class TerminalTabs extends HTMLElement {
     for (const [pid, p] of this.panes) {
       (p as unknown as HTMLElement).classList.toggle('hidden', pid !== id);
     }
-    this.editorPane?.classList.add('hidden');
+    this.editorHost?.classList.add('hidden');
     this.markActive();
     pane.activate();
   }
@@ -450,7 +435,7 @@ export class TerminalTabs extends HTMLElement {
     this.active = EDITOR;
     this.ensureEditorPane();
     for (const p of this.panes.values()) (p as unknown as HTMLElement).classList.add('hidden');
-    this.editorPane?.classList.remove('hidden');
+    this.editorHost?.classList.remove('hidden');
     this.markActive();
   }
 
@@ -470,7 +455,7 @@ export class TerminalTabs extends HTMLElement {
     }
     this.runPaneHost().classList.remove('hidden');
     for (const p of this.panes.values()) (p as unknown as HTMLElement).classList.add('hidden');
-    this.editorPane?.classList.add('hidden');
+    this.editorHost?.classList.add('hidden');
     this.active = null;
     this.markActive();
     this.runPane.attach('run', target, `run:${target}`);
@@ -634,14 +619,49 @@ export class TerminalTabs extends HTMLElement {
 
   /** Created on first open: a hidden iframe would still boot the whole workbench. */
   private ensureEditorPane(): void {
-    if (this.editorPane || !this.body || !this.ws) return;
+    if (this.editorHost || !this.body || !this.ws) return;
     armEditorThemeReload();
+    const host = document.createElement('div');
+    host.className = 'editor-host hidden';
+    const bar = document.createElement('div');
+    bar.className = 'editor-toolbar';
+    bar.setAttribute('role', 'toolbar');
+    bar.setAttribute('aria-label', 'editor actions');
+    const pop = document.createElement('wa-button');
+    pop.className = 'tb-pop-out';
+    pop.setAttribute('appearance', 'plain');
+    pop.setAttribute('variant', 'neutral');
+    pop.setAttribute('size', 'xs');
+    pop.title = "pop out — open this workspace's editor in its own browser tab";
+    pop.innerHTML =
+      '<wa-icon slot="start" name="arrow-up-right-from-square" aria-hidden="true"></wa-icon>pop out';
+    pop.addEventListener('click', () => this.popEditor());
+    bar.appendChild(pop);
     const frame = document.createElement('iframe');
-    frame.className = 'editor-frame hidden';
+    frame.className = 'editor-frame';
     frame.title = 'editor';
     frame.src = editorSrc(this.ws.cwd);
-    this.body.appendChild(frame);
-    this.editorPane = frame;
+    host.append(bar, frame);
+    this.body.appendChild(host);
+    this.editorHost = host;
+  }
+
+  /** The editor pops out to /view?w=<id>: a copy, not a move — the editor
+   *  upstream serves many clients, so the pane here stays live (unlike a
+   *  terminal pop-out, which moves the single attach). */
+  private popEditor(): void {
+    const id = this.ws?.id;
+    if (!id) return;
+    const win = window.open(`${BASE}/view?w=${id}`, '_blank');
+    if (!win) {
+      this.dispatchEvent(
+        new CustomEvent('pop-blocked', {
+          detail: { id },
+          bubbles: true,
+          composed: true,
+        }),
+      );
+    }
   }
 
   /** A teardown, not a drop: no reconnect. */
@@ -665,8 +685,8 @@ export class TerminalTabs extends HTMLElement {
     this.newTabGroup = null;
     this.pendingOrder = null;
     this.dragging = null;
-    this.editorPane?.remove();
-    this.editorPane = null;
+    this.editorHost?.remove();
+    this.editorHost = null;
     this.active = null;
     if (this.runPane) {
       this.runPane.destroy();
