@@ -31,8 +31,6 @@ app preview?
 
 ## Workspaces follow-ups
 
-per-workspace terminal command overrides
-
 app icons
 
 editor extension/marketplace configuration beyond the VSCodium defaults (Open VSX, no telemetry); curated per-app extension sets
