@@ -27,9 +27,7 @@ toolbar / popout for editor
 
 app preview?
 
-self-naming workspaces
 
-workspace/app reorder UI (the sort_order columns exist)
 
 ## Workspaces follow-ups
 
@@ -47,7 +45,6 @@ pi-session resume as a workspace action ("resume a past agent session into a new
 
 job exit-code notification hooks (webhook, Grafana alerting on the Loki labels)
 
-retire the workspace sidebar's 15s poll in favour of the /ws/events bus (topic field already reserved)
 
 ## Git
 ability to make a workspace a worktree
