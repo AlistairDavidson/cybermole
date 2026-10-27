@@ -33,10 +33,13 @@ export const autoUpdateBody = z.object({
 // and slugify), so these only type and cap strings. Terminals have no such
 // code, so titles are validated here.
 
-/** Empty or absent cwd = unset; a non-empty one is checked by the domain. */
+/** Empty or absent cwd = unset; a non-empty one is checked by the domain.
+ *  icon: absent = suggested from the name; membership is checked by the
+ *  domain (the registry is the vendored set). */
 export const appCreateBody = z.object({
   name: z.string().max(80, 'name is too long (max 80)'),
   cwd: z.string().max(4096, 'cwd is too long').optional(),
+  icon: z.string().max(64, 'icon is too long').optional(),
 });
 
 /** The slug never changes. cwd: absent keeps, null clears, a string sets. */

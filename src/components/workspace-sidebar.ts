@@ -30,6 +30,7 @@ import {
 } from '@cybermole/app-kit';
 import { BASE } from '../base';
 import { moveItem, sameSequence } from '../lib/order-plan';
+import { DEFAULT_APP_ICON } from '../lib/apps/app-icons';
 import { applyPendingAppOrder, applyPendingWorkspaceOrders } from '../lib/web/sidebar-order';
 import { signedInFetch } from './signed-in-fetch';
 import '@awesome.me/webawesome/dist/components/input/input.js';
@@ -273,7 +274,8 @@ export class WorkspaceSidebar extends HTMLElement {
 
   /** The console page's single group (console workspaces). reorderable
    *  marks the group header itself as draggable — builder app groups only;
-   *  workspace rows always reorder within their group. */
+   *  workspace rows always reorder within their group. icon renders ahead
+   *  of the name (app groups only). */
   private groupShell(
     key: string,
     name: string,
@@ -282,6 +284,7 @@ export class WorkspaceSidebar extends HTMLElement {
     actions = '',
     chip = '',
     reorderable = false,
+    icon = '',
   ): string {
     const visible = workspaces.filter(w => this.matchesSearch(w));
     if (this.search.trim() && visible.length === 0) return ''; // a filter hides empty groups
@@ -293,6 +296,10 @@ export class WorkspaceSidebar extends HTMLElement {
     const rows = visible.length
       ? `<ul class="ws-group-rows" id="${rowsId}"${hide}>${visible.map(w => this.row(w)).join('')}</ul>`
       : `<p class="ws-group-rows group-empty" id="${rowsId}"${hide}>no workspaces yet</p>`;
+    const glyph =
+      icon === ''
+        ? ''
+        : `<span class="g-icon"><wa-icon name="${esc(icon)}" label="${esc(name)}"></wa-icon></span>`;
     return (
       `<section class="ws-group" data-group="${esc(key)}">` +
       `<h2${reorderable ? ' draggable="true" aria-keyshortcuts="Shift+ArrowUp Shift+ArrowDown"' : ''}>` +
@@ -300,6 +307,7 @@ export class WorkspaceSidebar extends HTMLElement {
       `aria-expanded="${collapsed ? 'false' : 'true'}" aria-controls="${rowsId}" ` +
       `aria-label="${esc(name)} workspaces">` +
       `<wa-icon name="chevron-down"></wa-icon></button>` +
+      glyph +
       `<span class="g-name" title="${esc(title)}">${esc(name)}</span>` +
       chip +
       `<span class="g-actions">` +
@@ -350,9 +358,12 @@ export class WorkspaceSidebar extends HTMLElement {
         : '';
     // The app's cwd shows in the header's tooltip.
     const title = app?.cwd ? `${name} — build sessions are framed at ${app.cwd}` : name;
+    // The row's icon wins (the picker's write), else the manifest's (a
+    // scaffolded tree shows its icon before it registers), else the default.
+    const icon = app?.icon ?? entry?.icon ?? DEFAULT_APP_ICON;
     // Only a group with a row persists an order; an unregistered tree is
     // the portfolio's stationary invitation.
-    return this.groupShell(slug, name, title, workspaces, actions, chip, app !== null);
+    return this.groupShell(slug, name, title, workspaces, actions, chip, app !== null, icon);
   }
 
   private row(w: WorkspaceState): string {

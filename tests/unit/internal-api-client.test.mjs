@@ -40,7 +40,16 @@ test('GET /apps over the socket: status + body verbatim, headers along', async (
     const answer = await requestInternalApi(w.internalSocket, { method: 'GET', path: '/apps' });
     assert.equal(answer.status, 200);
     assert.deepEqual(JSON.parse(answer.body), {
-      apps: [{ id: app.data.id, name: 'Deploy Tools', slug: 'deploy-tools', cwd: null, order: 10 }],
+      apps: [
+        {
+          id: app.data.id,
+          name: 'Deploy Tools',
+          slug: 'deploy-tools',
+          cwd: null,
+          icon: 'cubes',
+          order: 10,
+        },
+      ],
     });
     assert.equal(answer.headers['content-type'], 'application/json');
   } finally {

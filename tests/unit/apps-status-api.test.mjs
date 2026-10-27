@@ -100,6 +100,7 @@ test('appsStatus: rows × mounted × built/stale plus unregistered trees — the
   assert.deepEqual(bySlug['bare-row'], {
     slug: 'bare-row',
     name: 'Bare Row',
+    icon: 'cubes',
     registered: true,
     tree: null,
     hasManifest: false,

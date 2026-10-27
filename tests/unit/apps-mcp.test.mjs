@@ -51,6 +51,7 @@ test('scaffold: writes the baked tree, links node_modules, commits — the happy
     name: 'Smoke Probe 2',
     description: 'the unit-run tree',
     slug,
+    icon: 'cubes',
   });
   // the base is baked into the astro config; the slug everywhere else
   const astro = fs.readFileSync(path.join(tree, 'astro.config.mjs'), 'utf8');
@@ -95,6 +96,7 @@ test('scaffold: an absent description becomes null in app.json', async () => {
     name: 'quiet one',
     description: null,
     slug: 'quiet-one',
+    icon: 'cubes',
   });
 });
 
@@ -356,8 +358,8 @@ test('status: the join — registered × mounted × built/stale × unregistered 
   const data = joinAppsStatus(
     root,
     [
-      { id: '1', name: 'App app-a', slug: 'app-a', cwd: treeA },
-      { id: '2', name: 'Group Row', slug: 'group-row', cwd: null },
+      { id: '1', name: 'App app-a', slug: 'app-a', cwd: treeA, icon: 'robot' },
+      { id: '2', name: 'Group Row', slug: 'group-row', cwd: null, icon: 'cubes' },
     ],
     {
       booted: true,
@@ -372,6 +374,7 @@ test('status: the join — registered × mounted × built/stale × unregistered 
   assert.deepEqual(bySlug['app-a'], {
     slug: 'app-a',
     name: 'App app-a',
+    icon: 'robot',
     registered: true,
     tree: treeA,
     hasManifest: true,
@@ -395,16 +398,38 @@ test('status: the join — registered × mounted × built/stale × unregistered 
   );
   assert.ok(!('not-an-app' in bySlug), 'a dir without a manifest is not an app tree');
   assert.deepEqual(data.unregisteredTrees, ['app-b', 'app-c']);
+  // an unregistered tree with no row shows its manifest icon
+  fs.writeFileSync(
+    path.join(root, 'app-b', 'app.json'),
+    JSON.stringify({ name: 'App app-b', icon: 'code' }),
+  );
+  const withManifestIcon = joinAppsStatus(
+    root,
+    [
+      { id: '1', name: 'App app-a', slug: 'app-a', cwd: treeA, icon: 'robot' },
+      { id: '2', name: 'Group Row', slug: 'group-row', cwd: null, icon: 'cubes' },
+    ],
+    { booted: true, mounted: [{ slug: 'app-a' }], skipped: [] },
+  );
+  assert.equal(
+    withManifestIcon.apps.find(a => a.slug === 'app-b')?.icon,
+    'code',
+    'a tree without a row shows the manifest icon',
+  );
 });
 
 test('status: registered but not mounted, host still booting — the reason says so', () => {
   const root = fs.mkdtempSync(path.join(dir, 'join-'));
   const treeA = synthTree(root, 'app-a');
-  const data = joinAppsStatus(root, [{ id: '1', name: 'a', slug: 'app-a', cwd: treeA }], {
-    booted: false,
-    mounted: [],
-    skipped: [],
-  });
+  const data = joinAppsStatus(
+    root,
+    [{ id: '1', name: 'a', slug: 'app-a', cwd: treeA, icon: 'cubes' }],
+    {
+      booted: false,
+      mounted: [],
+      skipped: [],
+    },
+  );
   assert.equal(data.apps[0].mounted, false);
   assert.match(data.apps[0].servingReason, /first discovery/);
 });
@@ -413,11 +438,15 @@ test('status: a row whose cwd points OUTSIDE the apps root still reports its tre
   const root = fs.mkdtempSync(path.join(dir, 'join-'));
   const elsewhere = fs.mkdtempSync(path.join(dir, 'elsewhere-'));
   const tree = synthTree(elsewhere, 'moved-app');
-  const data = joinAppsStatus(root, [{ id: '1', name: 'm', slug: 'moved-app', cwd: tree }], {
-    booted: true,
-    mounted: [],
-    skipped: [],
-  });
+  const data = joinAppsStatus(
+    root,
+    [{ id: '1', name: 'm', slug: 'moved-app', cwd: tree, icon: 'cubes' }],
+    {
+      booted: true,
+      mounted: [],
+      skipped: [],
+    },
+  );
   assert.equal(data.apps[0].tree, tree);
   assert.equal(data.apps[0].built, true);
   assert.match(data.apps[0].servingReason, /not mounted/);

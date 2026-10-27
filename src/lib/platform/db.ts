@@ -32,6 +32,7 @@ const SCHEMA = `
     name       TEXT NOT NULL,        -- display name, free text
     slug       TEXT NOT NULL UNIQUE, -- APP_SLUG_RE (the kit's schemas/patterns.ts)
     cwd        TEXT,                 -- where its workspaces start; NULL = server default
+    icon       TEXT,                 -- vendored icon name (src/lib/apps/app-icons.ts); NULL = the default
     sort_order INTEGER NOT NULL,
     created_at INTEGER NOT NULL,     -- epoch ms
     updated_at INTEGER NOT NULL,
@@ -113,6 +114,8 @@ export interface AppsTable {
   slug: AppSlug;
   /** NULL = the configured default. */
   cwd: string | null;
+  /** Vendored icon name; NULL = the default (app-icons.ts). */
+  icon: string | null;
   sort_order: number;
   created_at: number;
   updated_at: number;
@@ -215,14 +218,21 @@ function migrateToV7(db: DatabaseSync): void {
   addColumnIfMissing(db, 'terminals', 'command', 'TEXT');
 }
 
+/** v8: a per-app icon. NULL = the default (app-icons.ts picks it); the
+ *  picker on the app's settings page writes the names it offers. */
+function migrateToV8(db: DatabaseSync): void {
+  migrateToV7(db);
+  addColumnIfMissing(db, 'apps', 'icon', 'TEXT');
+}
+
 export class StateDb extends SqliteDb {
   constructor(file: string) {
     super(file, {
       schema: SCHEMA,
-      migrate: migrateToV7,
+      migrate: migrateToV8,
       // CREATE IF NOT EXISTS + the migrate chain bring any older db to the
       // current shape.
-      version: 7,
+      version: 8,
       freshMode: 0o600, // it holds the password hash
       label: 'state db',
     });

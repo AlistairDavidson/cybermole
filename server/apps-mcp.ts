@@ -23,6 +23,7 @@ import {
 import { runChild } from '../src/lib/apps/apps-child';
 import { scaffoldApp } from '../src/lib/apps/apps-scaffold';
 import { buildApp, checkApp } from '../src/lib/apps/apps-gate';
+import { isAppIcon } from '../src/lib/apps/app-icons';
 import { ActionNameSchema, addAction } from '../src/lib/apps/apps-actions';
 import { findAction, planActionRequest, readRouteTable } from '../src/lib/apps/apps-route-table';
 import {
@@ -113,16 +114,20 @@ export interface RegisterPrecheck {
   ok: boolean;
   /** From the manifest. */
   name?: string;
+  /** From the manifest; validated — an unknown name is left for the row's
+   *  suggestion, never a failing register. */
+  icon?: string;
   tree: string;
   failure?: { errorCode: string; errorMessage: string };
 }
 
 export function registerPrecheck(appsRoot: string, slug: string): RegisterPrecheck {
   const tree = path.join(appsRoot, slug);
-  let manifest: { name?: unknown } | null = null;
+  let manifest: { name?: unknown; icon?: unknown } | null = null;
   try {
     manifest = JSON.parse(fs.readFileSync(path.join(tree, 'app.json'), 'utf8')) as {
       name?: unknown;
+      icon?: unknown;
     };
   } catch {
     /* answered below */
@@ -148,7 +153,9 @@ export function registerPrecheck(appsRoot: string, slug: string): RegisterPreche
       },
     };
   }
-  return { ok: true, name: name.trim(), tree };
+  const icon =
+    typeof manifest.icon === 'string' && isAppIcon(manifest.icon) ? manifest.icon : undefined;
+  return { ok: true, name: name.trim(), ...(icon === undefined ? {} : { icon }), tree };
 }
 
 /** The one deviation from verbatim: add the recovery to duplicate_slug's text. */
@@ -191,7 +198,8 @@ export async function reloadTool(
   return r.ok ? json(parseOrRaw(r.body)) : r.result;
 }
 
-/** Name from the manifest, cwd = the tree. */
+/** Name (and icon, when the manifest carries a known one) from the
+ *  manifest, cwd = the tree. */
 export async function registerTool(deps: AppsMcpDeps, slug: string): Promise<CallToolResult> {
   const pre = registerPrecheck(deps.appsRoot, slug);
   if (!pre.ok || pre.name === undefined) {
@@ -208,7 +216,11 @@ export async function registerTool(deps: AppsMcpDeps, slug: string): Promise<Cal
     {
       method: 'POST',
       path: '/apps',
-      body: JSON.stringify({ name: pre.name, cwd: pre.tree }),
+      body: JSON.stringify({
+        name: pre.name,
+        cwd: pre.tree,
+        ...(pre.icon === undefined ? {} : { icon: pre.icon }),
+      }),
     },
     unreachable,
   );
@@ -386,9 +398,16 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
           .string()
           .optional()
           .describe('one line about what the app is for — lands in app.json and AGENTS.md'),
+        icon: z
+          .string()
+          .optional()
+          .describe(
+            "the app's icon, one of the vendored names (cubes, file-lines, code, robot, terminal, folder, gear, clock, play, download, magnifying-glass, pencil, copy, circle-check, circle-info, triangle-exclamation, eye, eye-slash, arrows-rotate, rotate-right) — omitted, the name suggests one; lands in app.json, so register puts it on the row",
+          ),
       },
     },
-    async ({ name, description }) => json(await scaffoldApp(scaffoldDeps, { name, description })),
+    async ({ name, description, icon }) =>
+      json(await scaffoldApp(scaffoldDeps, { name, description, icon })),
   );
 
   server.registerTool(

@@ -178,6 +178,8 @@ export function appFailureResponse(f: AppFailure): Response {
       return jsonResponse({ error: f.errorMessage ?? 'invalid name', code: f.errorCode }, 400);
     case 'invalid_cwd':
       return jsonResponse({ error: f.errorMessage ?? 'invalid cwd', code: f.errorCode }, 400);
+    case 'invalid_icon':
+      return jsonResponse({ error: f.errorMessage ?? 'invalid icon', code: f.errorCode }, 400);
     case 'duplicate_slug':
       return jsonResponse(
         { error: f.errorMessage ?? 'an app with that slug already exists', code: f.errorCode },

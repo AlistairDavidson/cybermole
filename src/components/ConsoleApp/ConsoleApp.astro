@@ -69,6 +69,10 @@ const wsValidation = scope === 'builder' ? buildValidation : consoleWsValidation
           hint="workspaces under this app start here (created if missing); auto-filled from the name until you edit it — empty starts them at the server default"
           {...appValidation.cwd}
         />
+        <p class="dialog-note" id="app-icon-preview">
+          <wa-icon id="app-icon-glyph" name="cubes"></wa-icon>
+          <span id="app-icon-name">suggested icon: cubes (from the name)</span>
+        </p>
       </form>
     </validation-enhancer-zod>
     <wa-button slot="footer" appearance="plain" data-dialog="close">cancel</wa-button>

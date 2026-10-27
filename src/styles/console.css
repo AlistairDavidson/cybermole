@@ -218,6 +218,12 @@ workspace-sidebar {
   letter-spacing: .08em; color: var(--wa-color-text-quiet);
   margin: var(--wa-space-s) var(--wa-space-2xs) var(--wa-space-3xs);
 }
+.nav .ws-group h2 .g-icon {
+  flex: none;
+  display: inline-flex; align-items: center;
+  color: var(--wa-color-text-quiet);
+  font-size: var(--wa-font-size-xs);
+}
 .nav .ws-group h2 .g-name {
   flex: 1; min-width: 0; /* the chevron + actions flank it; ellipsis needs the shrink */
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
