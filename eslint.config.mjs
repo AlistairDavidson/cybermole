@@ -34,7 +34,7 @@ export default [
       'src/**/*.ts',
       'server/**/*.ts',
       'cli/**/*.ts',
-      'packages/app-kit/**/*.ts',
+      'packages/app-kit/**/*.{ts,mts}',
       'tests/**/*.ts',
       'playwright.config.ts',
     ],

@@ -54,4 +54,6 @@ Answers a hello — the scaffolded example action, wired end to end.
   means the app host is unreachable (tell the user, don't hammer it).
 - Code changes in this tree belong to the root agent: report what you
   found, don't edit `src/` from an operator session. `npm run check` in
-  the tree is the same gate the root agent's check tool runs.
+  the tree is the same gate the root agent's check tool runs; the tree's
+  browser tests (`npm run test:e2e`, when it ships specs) are the
+  builder's loop too — not an operator's.

@@ -30,8 +30,10 @@ const PACKAGES = [
   '@xterm/xterm',
   '@xterm/addon-fit',
   'ws',
+  '@playwright/test',
+  'playwright',
 ];
-const BINS = ['astro', 'tsc'];
+const BINS = ['astro', 'tsc', 'playwright'];
 
 // Baked at scaffold time; CYBERMOLE_INSTALL_ROOT overrides it. The
 // unsubstituted template value fails the probe, and the walk-up takes over.

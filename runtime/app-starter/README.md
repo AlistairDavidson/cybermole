@@ -24,6 +24,7 @@ npm run setup     # once (and after image upgrades): link the core stack
 npm run check     # THE gate: astro check + tsc + unit tests + build
 npm run build     # the build half alone (route-table.json + self-containment gate)
 npm run test      # just the unit tests
+npm run test:e2e  # the browser half: Playwright over the BUILT app (below)
 ```
 
 The same loop runs through the root agent's `cybermole-apps` MCP
@@ -35,6 +36,30 @@ app's own action tools under the app's slug: the shim binary
 
 `AGENTS.md` in this tree is the operator's manual for agents working
 here — read it first.
+
+## End-to-end tests (`npm run test:e2e`)
+
+Separate from `npm run check` on purpose: the gate stays fast and
+offline-safe, while e2e proves the BUILT app in a real browser. The
+console's own hermetic Playwright pattern, app-side: the kit's harness
+(`@cybermole/app-kit/testing`) boots this tree's `dist/server/entry.mjs`
+(the handler the app host mounts) on an ephemeral loopback server with a
+throwaway data dir — the tree's real `data/` is never touched
+(`CYBERMOLE_APP_DATA_DIR`, honored by the kit's `appDataDir()`).
+`playwright.config.ts` is two lines on the kit's factory; each spec starts
+from `createAppTest(import.meta.url)` and navigates with `app.baseURL`.
+
+- **when to run it**: whenever page-level behavior changed — islands
+  upgrading, forms, navigation — before handing the change over. The unit
+  tests cover the actions; this covers the loop between them.
+- needs Playwright's chromium; when it isn't installed the run fails with
+  one clear message instead of a stack trace (`npx playwright install
+  chromium` on a networked host; in fleet sandboxes the browser cache is
+  host-mounted — ask the host to install once).
+- the harness mounts the app's own handler only: no console login, no
+  session gate, no WS tunnel — those faces stay with the console's own
+  `apps-*` specs. HTTP only; an app's optional `ws.mjs` entry is not
+  mounted.
 
 ## The agent drawer
 

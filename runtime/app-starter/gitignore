@@ -8,3 +8,7 @@ data/*
 
 # astro check/sync content types
 .astro/
+
+# playwright e2e output (npm run test:e2e)
+test-results/
+playwright-report/

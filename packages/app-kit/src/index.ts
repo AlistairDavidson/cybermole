@@ -11,3 +11,4 @@ export * from './terminal-protocol';
 export * from './web/responses.service';
 export * from './db/sqlite';
 export * from './storage';
+export * from './app-data';
