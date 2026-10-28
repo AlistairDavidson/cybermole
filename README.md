@@ -1281,7 +1281,8 @@ standalone-workspace install above (`CYBERMOLE_AGENT_COMMAND`).
 - `src/components` — web components: `<console-app>` (the orchestrator,
   both pages: console scope on `/`, builder scope on `/builder`),
   `<workspace-sidebar>` (the workspace switcher, scope-split),
-  `<terminal-tabs>`, `<agent-terminal>` (xterm.js island); each static
+  `<terminal-tabs>`, `<agent-terminal>` (xterm.js — the classic client-side
+  exception, CODE_STYLE §7); each static
   shell is SSR'd by an Astro wrapper (`ConsoleApp.astro`,
   `AgentTerminal.astro`)
 - `src/lib` — shared strict TS: auth (scrypt + persisted sessions + rate
