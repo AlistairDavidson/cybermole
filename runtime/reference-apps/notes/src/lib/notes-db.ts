@@ -2,11 +2,9 @@
 // comma-joined, archived a 0/1 flag (archive never deletes). The only
 // module besides the binder glue that imports the kit at runtime, so the
 // actions stay plain-node testable.
-import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { type Generated, sql } from 'kysely';
-import { createQb, SqliteDb } from '@cybermole/app-kit';
+import { appDataDir, createQb, SqliteDb } from '@cybermole/app-kit';
 import { LIST_LIMIT, type ListFilter, type NoteRow, type NotesStore } from './notes-core';
 
 /** For kysely's typing: the AUTOINCREMENT id is `Generated`. */
@@ -105,15 +103,9 @@ export function getAppDb(): SqlNotesStore {
 }
 
 /** Found by walking up from this file to app.json, which works from src/
- *  and from the built chunks alike. Opening is lazy, so importing never
- *  touches the disk. */
+ *  and from the built chunks alike (the kit's appDataDir); the e2e harness
+ *  redirects it through CYBERMOLE_APP_DATA_DIR. Opening is lazy, so
+ *  importing never touches the disk. */
 function dataFile(): string {
-  let dir = path.dirname(fileURLToPath(import.meta.url));
-  for (;;) {
-    if (fs.existsSync(path.join(dir, 'app.json'))) return path.join(dir, 'data', 'app.db');
-    const parent = path.dirname(dir);
-    if (parent === dir)
-      throw new Error(`no app.json above ${import.meta.url} — not running inside the app tree`);
-    dir = parent;
-  }
+  return path.join(appDataDir(import.meta.url), 'app.db');
 }

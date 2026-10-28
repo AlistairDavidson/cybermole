@@ -63,6 +63,7 @@ starter template new apps scaffold from stays blank.
 ```text
 scaffold  (already done — this tree IS the scaffold, grown)
 check     the tree's own gate: astro check + tsc + unit tests + build
+test:e2e  the browser half (below) — outside the gate on purpose
 register  the db row (the privileged act)
 reload    the app host's sync point — the mount appears
 ```
@@ -71,3 +72,16 @@ In the tree itself: `npm run setup` (link the core stack — the
 per-package node_modules symlinks into the install), `npm run check`
 (the gate), `npm run build` (dist/ + route-table.json + the
 self-containment gate).
+
+## End-to-end tests (`npm run test:e2e`)
+
+The app-side e2e twin of the console's `apps-notes` spec: the kit's
+harness (`@cybermole/app-kit/testing`) boots this tree's built
+`dist/server/entry.mjs` on an ephemeral loopback server — ephemeral port,
+throwaway data dir (`appDataDir()` honors `CYBERMOLE_APP_DATA_DIR`, so the
+tree's real `data/` is never touched) — and Playwright walks the use loop
+against the pages directly (`tests/e2e/notes.spec.ts`: capture → find →
+open → edit → archive, plus the empty-title error face). No console origin,
+login or session gate, and no WS tunnel — those faces stay with the
+console's own suite; a reload stands in for the live list's nudge. Needs
+Playwright's chromium (the run says so, clearly, when it's missing).

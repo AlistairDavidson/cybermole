@@ -33,6 +33,11 @@ server-compiled code uses:
   PRAGMAs, schema+migrate+version at open, cached statements, typed
   `all/get/run`), `createQb()` (compile-only Kysely query builder), and
   the `databaseRead`/`databaseUpdate` boundary Results.
+- **`app-data`** — the app-tree conventions: `appRootFrom(from)` (the
+  nearest ancestor holding app.json — `from` is any file in the tree,
+  `import.meta.url` from src/ and the built chunks alike) and
+  `appDataDir(from)` (the app's gitignored `data/`), overridable wholesale
+  with `CYBERMOLE_APP_DATA_DIR` — the e2e harness's hermeticity seam.
 - **`storage`** — the S3-compatible object-storage client (`ObjectStore`,
   the store/stat/fetch families) with a `setStorageLogger()` seam.
 - **`route-table`** — the binder: `defineRoute()` + `handleApiRequest()` /
@@ -58,6 +63,23 @@ the root):
   (dist/route-table.json) plus `writeWsEntry()` (the optional
   dist/server/ws.mjs WS entry — see the app-starter README's § WebSocket
   routes for the whole contract).
+- **`@cybermole/app-kit/testing`** — the per-app e2e harness, the
+  app-side twin of the console's hermetic Playwright pattern:
+  `startAppServer({ appRoot, dir? })` boots the tree's BUILT
+  `dist/server/entry.mjs` (the @astrojs/node middleware handler the app
+  host mounts — client files first, then the handler, the host's security
+  headers included) on an ephemeral loopback HTTP server and answers
+  `{ baseURL, origin, base, dir, close() }`; `dir` is a per-run temp dir
+  whose `data/` the app is pointed at through `CYBERMOLE_APP_DATA_DIR`
+  (`appDataDir`), so a run never touches the tree's real data. The
+  Playwright glue: `appPlaywrightConfig()` (an app's whole
+  playwright.config.ts) and `createAppTest(import.meta.url)` (a `test`
+  with a worker-scoped `app` fixture). Needs `@playwright/test` (peer
+  dep); the config's global setup fails loud and clean when chromium
+  isn't installed, and builds the tree when dist/ is missing. HTTP only —
+  an app's optional WS entry is not mounted. NOT part of `npm run check`:
+  apps wire their own `test:e2e` script (the app-starter template ships
+  the shape; runtime/reference-apps/notes the worked example).
 
 ## Deferred
 

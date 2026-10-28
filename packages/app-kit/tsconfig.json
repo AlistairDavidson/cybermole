@@ -1,6 +1,6 @@
 {
   "extends": "../../tsconfig.server.json",
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "src/**/*.mts"],
   "exclude": ["node_modules"],
   "compilerOptions": {
     "noEmit": true,

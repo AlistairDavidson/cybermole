@@ -530,6 +530,14 @@ MCP (its tools 1:1 with the route table, registered by the tree's
 face — the pages, the app's tools, the root agent's `describe`/`call` —
 answers the same Result JSON with the same closed error codes.
 
+A tree's test story has a second, optional half outside the gate: `npm run
+test:e2e` — the kit's per-app harness (`@cybermole/app-kit/testing`) boots
+the built handler on an ephemeral loopback server against a throwaway data
+dir and drives the pages with Playwright, app-side. The
+[`runtime/app-starter/`](runtime/app-starter/) template ships the two-line shape and a
+sample spec (its README § End-to-end tests tells the app-side agent when
+to run it); [`runtime/reference-apps/notes`](runtime/reference-apps/notes/) walks a real use-loop slice.
+
 The image ships one finished tree as living documentation:
 **`runtime/reference-apps/notes`** — the notes/journal reference app, built
 through the verbs as the epic's acceptance run (capture, search + tag
