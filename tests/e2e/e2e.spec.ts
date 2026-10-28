@@ -251,6 +251,9 @@ test('the login form validates in the browser: empty fields show their messages,
 test('login lands on the console with the fixture workspace tree in the sidebar', async ({
   page,
 }) => {
+  // Under full-suite load the fixture terminal's first live poll can take
+  // longer than the default 30 s budget (see the badge wait below).
+  test.setTimeout(120_000);
   await login(page);
   await expect(page.locator('console-app wa-page')).toHaveCount(1);
 
@@ -282,9 +285,10 @@ test('login lands on the console with the fixture workspace tree in the sidebar'
   await expect(page.locator('workspace-sidebar #new-app')).toHaveCount(0);
   // One live-terminal badge per row (scratch's second tab is the dead fixture).
   // Live status heals on the sidebar's 15 s poll, so the window must cover a
-  // full cycle — under suite load the first render can miss it (5 s flaked).
+  // full cycle — under full-suite load even two cycles can pass before the
+  // poll lands (5 s flaked, then 20 s under load); 35 s covers three.
   await expect(groups.first().locator('li[data-ws] wa-badge')).toHaveCount(2, {
-    timeout: 20_000,
+    timeout: 75_000,
   });
   await expect(groups.first().locator('li[data-ws].active')).toHaveCount(1);
 
