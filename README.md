@@ -361,6 +361,7 @@ directly.
 | `CYBERMOLE_LOKI_URL` | *(unset: console-only)* | push URL of a Grafana Loki for the server's operational logs (`http://loki:3100` when the compose `observability` profile runs). Unset — the default, and the dev profile and plain hosts — logging is console-only, identical to before observability existed. A set-but-malformed value stops the server at boot, like the S3 vars |
 | `CYBERMOLE_LOKI_JOB` | `cybermole` | the `job` label every pushed log line carries — identifies this deployment in Loki's stream selectors. Letters, digits, `_`, `-`, max 64 chars |
 | `CYBERMOLE_GRAFANA_URL` | *(unset: logs page off)* | the **browser-reachable** Grafana URL the header's **logs** link frames (`http://127.0.0.1:3300` when the compose `observability` profile runs — the value must be routable from the operator's browser, not the compose network; a Grafana under a subpath works too). Unset — the default — there is no logs link and `/logs` answers 404, so compose interpolates it **default-off**: grafana exists only under the opt-in profile, and a default-on link would frame a dead port for every plain-stack user. Set, `/logs` embeds Grafana Explore with the provisioned Loki datasource preselected ([Observability](#observability-logs--loki-dashboards--grafana)). A malformed value stops the server at boot, like the S3 vars |
+| `CYBERMOLE_JOB_WEBHOOK_URL` | *(unset: notifications off)* | the default webhook URL for job-run finish notifications — one fire-and-forget `POST` per observed run finish ([Scheduled jobs](#scheduled-jobs-jobs--the-in-process-scheduler): the payload and precedence are there). Unset — the default — notifications are off unless the `/settings` override (job notifications card) sets one; the override wins over this. A malformed value stops the server at boot, like the S3 vars |
 
 Run under a dedicated unprivileged user (the app spawns a terminal — treat
 it as a web shell by design). Don't run it as root, don't put a sudo-wielding
@@ -396,6 +397,31 @@ jobs work in every install shape, the container included.
   (`GET /api/jobs/:name/runs`, `GET /api/jobs/:name/runs/:fired_at/log`,
   the newest 1 MiB, text/plain). History is capped at 20 runs per job —
   pruning unlinks the pruned runs' log files before deleting their rows.
+- **Notifications (webhook)**: every observed run finish fires one
+  fire-and-forget `POST` (JSON, `application/json`, 5 s timeout — a slow
+  or dead receiver costs at most one warn line per 10 minutes and never
+  delays or breaks the scheduler's tick) to the configured webhook URL.
+  It fires for **successes too** — receivers filter on `exitCode` to tell
+  them apart. The body:
+
+  ```json
+  {
+    "event": "job_run_finished",
+    "job": "nightly-build",
+    "origin": "schedule | catchup | manual",
+    "firedAt": 1767225600000,
+    "finishedAt": 1767225665000,
+    "exitCode": 2
+  }
+  ```
+
+  `firedAt`/`finishedAt` are epoch ms; `exitCode` is `null` when the run
+  ended without a readable exit file (unknown, never guessed). The URL
+  resolves **db override → `CYBERMOLE_JOB_WEBHOOK_URL` → off**, re-read
+  per finish: the **/settings** field (job notifications card) applies
+  without a restart, and clearing it falls back to the env default (or
+  off). Delivery is best-effort — no retries, no queue; the webhook is a
+  tap, not a pipeline.
 - **The job page (`/jobs/:name`)** — the job's definition with its edit
   entry, its run history (fired-at, origin, duration, exit), the
   log-tail viewer and the live-run link. It updates **live**: the
@@ -772,8 +798,10 @@ What is logged, and at which level (`winston`'s npm set):
 In Loki, each line carries exactly three stream labels — `job`
 (`CYBERMOLE_LOKI_JOB`), `level`, `component` (`boot`, `http`, `auth`, `ws`,
 `tmux`, `scheduler`, `update`, `storage`, `shutdown`) — and everything
-else (paths, durations, session names) rides in the line's JSON, so
-labels stay low-cardinality. A few log sites deliberately stay on
+else (paths, durations, session names, the job-finish fields below) rides
+the line's JSON: every Loki line is a JSON object — `message` plus the
+log call's structured fields — so a LogQL `| json` parses every line
+while labels stay low-cardinality. A few log sites deliberately stay on
 `console.*`, commented in place: `set-password` (a one-shot CLI prompting
 a human) and the Astro-bundled code — `zod.service.ts` and the `.astro`
 render guards (`settings.astro`, the `jobs-list` and `settings`
@@ -806,6 +834,34 @@ rejects oversized/too-old entries and overlong labels
 {job="cybermole", component="http"}   # the access log
 {job="cybermole"} |= "login failed"   # auth failures
 ```
+
+**Job alerts (provisioned).** The same provisioning tree ships one alert
+rule (`deploy/grafana/provisioning/alerting/jobs.yaml`, folder `cybermole`):
+**job run failed** — any job with a run that finished **non-zero in the
+last 10 minutes** alerts, one alert instance per job, evaluated once a
+minute. A failed run is observed at the scheduler's ~30 s tick, so the
+alert lands within ~1.5 minutes of the finish; the 10 m window keeps one
+instance per failed run (it auto-resolves when the run leaves the window
+— one page per failure, no re-page noise) while still catching a burst.
+The rule's thresholds and that reasoning live in its annotations. The
+query deliberately adds no Loki labels: the finish log line carries
+`jobName` and `exitCode` as JSON *fields* (parsed at query time) —
+
+```
+sum by (jobName) (count_over_time(
+  {job="cybermole", component="scheduler"}
+  |= "run finished" | json | exitCode != `0` | exitCode != `` [10m]))
+```
+
+— so the stream-label cardinality stays exactly `job/level/component`.
+Runs whose exit code is *unknown* (no readable exit file) are excluded
+by the second filter, on purpose. The rule hard-codes the default `job`
+label value: overriding `CYBERMOLE_LOKI_JOB` means adjusting the
+`{job="cybermole"}` selector to match. Alerts surface in Grafana's
+**Alerting** page; the rule's annotations say what fired. No contact
+point (email/Slack/…) is provisioned — the receiver is site-local — so
+the `admin` account (default password changed on first login) attaches
+one and routes the `topic: jobs` label.
 
 **The logs page (`/logs`).** The header grows a **logs** link — a page
 that frames Grafana's *Explore* with the provisioned Loki datasource

@@ -1888,6 +1888,74 @@ test('terminal defaults: the /settings form validates, saves, and the override p
   db.close();
 });
 
+test('job webhook: the /settings field validates, saves, and clears the override (db → env → off)', async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto('/settings');
+  await page.waitForFunction(() => customElements.get('validation-enhancer-zod') !== undefined);
+  await page.waitForFunction(
+    () =>
+      typeof (
+        document.querySelector('wa-input#job-webhook-url') as unknown as { value?: string | null }
+      )?.value === 'string',
+  );
+
+  // Off by default in this suite (no env default, no override).
+  expect(await page.locator('#job-webhook-source').textContent()).toContain('off');
+
+  // A non-http(s) value never leaves the browser (the schema's regex).
+  const posts: string[] = [];
+  page.on('request', r => {
+    if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/settings')
+      posts.push(new URL(r.url()).pathname);
+  });
+  await page.evaluate(() => {
+    // Setting the host property bypasses the input's pattern, like a pasting script.
+    (document.querySelector('wa-input#job-webhook-url') as unknown as { value: string }).value =
+      'ftp://example.com/hook';
+  });
+  await page.click('#save-job-webhook');
+  await expect(page.locator('#job-webhook-url-error')).toHaveText('must be an http(s) URL');
+  await expect(page.locator('wa-input#job-webhook-url input')).toHaveAccessibleDescription(
+    /http\(s\) URL/,
+  );
+  expect(posts).toEqual([]);
+
+  // A valid URL saves; the source line and the API agree.
+  await page.fill('wa-input#job-webhook-url input', 'http://127.0.0.1:9/hook');
+  await page.click('#save-job-webhook');
+  await expect(page.locator('#job-webhook-result:not(.hidden)')).toContainText('saved');
+  await expect(page.locator('#job-webhook-source')).toContainText('http://127.0.0.1:9/hook');
+  await expect(page.locator('#job-webhook-source')).toContainText('(override saved)');
+  const st = (await api(page, 'GET', '/api/settings')).json;
+  expect(st.jobWebhook).toMatchObject({ url: 'http://127.0.0.1:9/hook', overridden: true });
+  // The webhook form's POST keeps the terminal defaults (absent keeps).
+  expect(st.terminalDefaults.shellCommand).toBe(`${WORKSPACE}/cmd.sh`);
+
+  // The server validates with the same schema.
+  const tooLong = await api(page, 'POST', '/api/settings', {
+    jobWebhookUrl: `http://x/${'a'.repeat(500)}`,
+  });
+  expect(tooLong.status).toBe(400);
+  expect(tooLong.json.issues.jobWebhookUrl).toContain('too long');
+  const badScheme = await api(page, 'POST', '/api/settings', { jobWebhookUrl: 'nope' });
+  expect(badScheme.status).toBe(400);
+  expect(badScheme.json.issues.jobWebhookUrl).toContain('http(s)');
+
+  // Emptying the field clears the override — back to off (no env default here).
+  await page.fill('wa-input#job-webhook-url input', '');
+  await page.click('#save-job-webhook');
+  await expect(page.locator('#job-webhook-source')).toContainText('off');
+  const after = (await api(page, 'GET', '/api/settings')).json.jobWebhook;
+  expect(after).toMatchObject({ url: null, overridden: false });
+  const db = new DatabaseSync(`${WORKSPACE}/cybermole.db`);
+  expect(
+    db.prepare("SELECT count(*) c FROM settings WHERE key = 'jobs.webhookUrl'").get(),
+  ).toMatchObject({ c: 0 });
+  db.close();
+});
+
 // ---------- browser hardening ----------
 
 const CSP =

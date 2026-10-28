@@ -186,3 +186,25 @@ export const terminalDefaultsBody = z.object({
     .nullable()
     .optional(),
 });
+
+export const MAX_WEBHOOK_URL = 500;
+/** Empty (an emptied wa-input) parses so it can clear: the alternative
+ *  matches an empty string OR an http(s) URL. */
+const HTTP_URL = /^(|https?:\/\/\S+)$/;
+
+/** The /settings job-webhook field: a non-empty string sets the override,
+ *  null or '' clears it, absent keeps. */
+export const jobWebhookBody = z.object({
+  jobWebhookUrl: z
+    .string()
+    .trim()
+    .max(MAX_WEBHOOK_URL, `URL is too long (max ${MAX_WEBHOOK_URL})`)
+    .regex(HTTP_URL, 'must be an http(s) URL')
+    .transform(v => (v === '' ? null : v))
+    .nullable()
+    .optional(),
+});
+
+/** The whole POST /api/settings body: either form may send only its own
+ *  fields — absent fields keep their stored override. */
+export const settingsOverridesBody = terminalDefaultsBody.extend(jobWebhookBody.shape);

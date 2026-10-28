@@ -8,6 +8,7 @@ import type {
   TmuxSessionName,
   WorkspaceId,
 } from '@cybermole/app-kit';
+import type { JobWebhook } from '../jobs/notify';
 
 // ---- GET /api/state ----
 
@@ -144,6 +145,8 @@ export interface SettingsState {
   npmAvailable: boolean;
   /** `command` above duplicates shellCommand for the configuration card. */
   terminalDefaults: TerminalDefaults;
+  /** Effective job-run webhook (null = off), db override → env → off. */
+  jobWebhook: JobWebhook;
   piAutoUpdate: {
     enabled: boolean;
     lastCheck: AutoUpdateCheck | null;

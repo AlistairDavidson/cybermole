@@ -10,6 +10,7 @@ import { autoUpdateEnabled, lastCheck, lastUpdate } from './auto-update';
 import type { StateDb } from './db';
 import { APP_ROOT } from './env';
 import { checkCron, type Scheduler } from '../jobs/jobs';
+import { jobWebhook, saveJobWebhook, type SaveJobWebhookResult } from '../jobs/notify';
 import { Apps } from '../apps/apps';
 import { Workspaces } from '../terminals/workspaces';
 import type { ObjectStore } from './storage';
@@ -116,6 +117,8 @@ export interface CybermoleServices {
     agentCommand?: string | null;
     shellCommand?: string | null;
   }): SaveTerminalDefaultsResult;
+  /** Same contract for the job-run webhook URL. */
+  saveJobWebhook(input: { jobWebhookUrl?: string | null }): SaveJobWebhookResult;
   /** Shares runPiUpdate's busy guard with the auto-updater. */
   runPiUpdate(dryRun: boolean): Promise<PiUpdateResult>;
   /** Here so routes never import jobs.ts. */
@@ -286,6 +289,8 @@ export function createServices(deps: ServiceDeps): CybermoleServices {
       const defaults = terminalDefaults(stateDb);
       if (!defaults.ok)
         return fail(defaults.errorMessage ?? 'could not read the terminal defaults');
+      const webhook = jobWebhook(stateDb);
+      if (!webhook.ok) return fail(webhook.errorMessage ?? 'could not read the job webhook');
       return {
         ok: true,
         resultType: 'settings_state',
@@ -308,6 +313,7 @@ export function createServices(deps: ServiceDeps): CybermoleServices {
           piInstalled: piInstalled(APP_ROOT),
           npmAvailable: npmPath() !== null,
           terminalDefaults: defaults.data,
+          jobWebhook: webhook.data.value,
           piAutoUpdate: {
             enabled: enabled.data.value,
             lastCheck: checked.data.value,
@@ -318,6 +324,8 @@ export function createServices(deps: ServiceDeps): CybermoleServices {
     },
 
     saveTerminalDefaults: input => saveTerminalDefaults(stateDb, input),
+
+    saveJobWebhook: input => saveJobWebhook(stateDb, input),
 
     runPiUpdate: dryRun => runPiUpdate(APP_ROOT, dryRun),
     checkCron: schedule => checkCron(schedule),

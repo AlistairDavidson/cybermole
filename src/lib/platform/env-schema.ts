@@ -54,6 +54,14 @@ export const envSchema = {
   CYBERMOLE_JOB_LOG_DIR: { type: 'string', context: 'server', access: 'secret', optional: true },
   // Write-time cap per run log, in bytes.
   CYBERMOLE_JOB_LOG_MAX: { type: 'number', context: 'server', access: 'secret', default: 20971520 },
+  // Default webhook URL for job-run finish notifications (README →
+  // Scheduled jobs). Unset: off unless the /settings db override sets one.
+  CYBERMOLE_JOB_WEBHOOK_URL: {
+    type: 'string',
+    context: 'server',
+    access: 'secret',
+    optional: true,
+  },
   CYBERMOLE_COMMAND: { type: 'string', context: 'server', access: 'secret', optional: true },
   // The agent slot's command; a /settings override wins.
   CYBERMOLE_AGENT_COMMAND: { type: 'string', context: 'server', access: 'secret', optional: true },

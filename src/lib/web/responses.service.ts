@@ -43,6 +43,7 @@ import type {
   SaveTerminalDefaultsFailure,
   TerminalDefaultsFailure,
 } from '../terminals/terminal-defaults';
+import type { SaveJobWebhookFailure } from '../jobs/notify';
 import type {
   FetchedObject,
   FetchObjectFailure,
@@ -384,6 +385,11 @@ export function settingsStateFailureResponse(f: SettingsStateFailure): Response 
 export function terminalDefaultsFailureResponse(
   f: TerminalDefaultsFailure | SaveTerminalDefaultsFailure,
 ): Response {
+  const code: 'database_error' = f.errorCode;
+  return jsonResponse({ error: f.errorMessage ?? 'database error', code }, 500);
+}
+
+export function jobWebhookFailureResponse(f: SaveJobWebhookFailure): Response {
   const code: 'database_error' = f.errorCode;
   return jsonResponse({ error: f.errorMessage ?? 'database error', code }, 500);
 }

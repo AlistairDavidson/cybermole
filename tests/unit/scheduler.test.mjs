@@ -228,11 +228,14 @@ const { Scheduler } = require(process.cwd() + '/dist-server/src/lib/jobs/jobs.js
 const { StateDb } = require(process.cwd() + '/dist-server/src/lib/platform/db.js');
 const { JobSaveSchema } = require(process.cwd() + '/dist-server/src/schemas/jobs.js');
 const db = new StateDb(path.join(dir, 'cybermole.db'));
+const notified = [];
 const s = new Scheduler(db, {
   cwd: dir,
   env: {},
   logDir: path.join(dir, 'job-logs'),
   logMaxBytes: 20 * 1024 * 1024,
+  // The webhook seam: record what the finish observation fires.
+  notifyRunFinished: (payload) => fs.appendFileSync(path.join(dir, 'notified.jsonl'), JSON.stringify(payload) + '\\n'),
 });
 // No process.exit: it can truncate buffered output; exitCode lets it drain.
 (async () => {
@@ -313,6 +316,38 @@ test(
       /info +\[scheduler\] job nightly run finished \(run session cybermole-nightly gone, exit unknown\)/,
       'no exit file under the fake (it never runs the wrapper) → unknown',
     );
+    // The finish line carries its structured fields (Loki `| json` parses
+    // them; the provisioned Grafana alert filters on them) — jobName is the
+    // JSON field, the stream `job` label stays the deployment id.
+    assert.match(
+      finishes[0],
+      /\{"jobName":"nightly","exitCode":null,"origin":"catchup","firedAt":\d+\}$/,
+      'structured finish fields on the line',
+    );
+    assert.match(
+      finishes[1],
+      /"origin":"manual","firedAt":\d+\}$/,
+      'the run-now finish carries its own origin',
+    );
+    // The webhook seam fired once per observed finish, after the exit code
+    // was recorded — the payloads mirror the log line's fields.
+    const notified = fs
+      .readFileSync(path.join(fakeDir, 'notified.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .map(l => JSON.parse(l));
+    assert.equal(notified.length, 2, 'one notification per observed finish');
+    assert.deepEqual(
+      notified.map(n => [n.event, n.job, n.origin, n.exitCode]),
+      [
+        ['job_run_finished', 'nightly', 'catchup', null],
+        ['job_run_finished', 'nightly', 'manual', null],
+      ],
+    );
+    for (const n of notified) {
+      assert.ok(Number.isInteger(n.firedAt));
+      assert.ok(Number.isInteger(n.finishedAt));
+    }
     assert.match(
       out,
       /CHILD-RUNS catchup,manual,schedule/,

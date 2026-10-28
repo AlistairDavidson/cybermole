@@ -36,6 +36,23 @@ const serializeErrors = winston.format(info => {
   return info;
 })();
 
+/** The loki line as a pure JSON object — `message` plus the call's
+ *  structured fields — so a LogQL `| json` parses every line (the Grafana
+ *  job alert, deploy/grafana/provisioning/alerting/, relies on it). The
+ *  stream labels (job/level/component) and the entry's own timestamp stay
+ *  out of the line: they are already stream-level facts. The console keeps
+ *  its human format; this shapes only the loki line. */
+export function lokiLine(info: winston.Logform.TransformableInfo): string {
+  // A plain record so the deletes below type as optional; the
+  // stream-level facts stay out of the line (they are labels and the
+  // entry's own timestamp).
+  const fields: Record<string, unknown> = { ...info };
+  delete fields.level;
+  delete fields.timestamp;
+  delete fields.labels;
+  return JSON.stringify({ ...fields, message: String(info.message) });
+}
+
 /** console.warn, not the logger: logging through the failing transport
  *  would feed the batch that just failed. */
 function lokiDownWarner(): (err: unknown) => void {
@@ -62,6 +79,7 @@ export function createLogger(loki: LokiConfig | null): winston.Logger {
         interval: LOKI_INTERVAL_S,
         timeout: LOKI_TIMEOUT_MS,
         json: true, // avoids the snappy build
+        format: winston.format.printf(lokiLine),
         batching: true,
         clearOnError: true, // bounded memory while loki is down
         replaceTimestamp: false,

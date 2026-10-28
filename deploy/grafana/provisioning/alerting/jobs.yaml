@@ -1,0 +1,86 @@
+# Grafana alert provisioning (compose `observability` profile): one rule
+# over the labels cybermole already pushes. The finish log line keeps its
+# stream labels low-cardinality (job/level/component — see
+# deploy/loki/config.yaml) and carries the job name + exit code as JSON
+# *fields* on the line, parsed at query time with `| json` — never as new
+# stream labels. Grafana keeps no state volume, so provisioning files are
+# the whole alerting configuration; alerts surface in Grafana's Alerting
+# page, and contact points (email/slack/…) are added in the UI by the
+# admin account — none is provisioned, because the receiver is site-local.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: cybermole jobs
+    folder: cybermole
+    interval: 1m
+    rules:
+      - uid: cybermole-job-run-failed
+        title: 'cybermole: job run failed'
+        condition: B
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: 'Job {{ $labels.jobName }} finished with a non-zero exit code'
+          description: >-
+            One or more runs of job {{ $labels.jobName }} finished with a
+            non-zero exit code in the last 10 minutes. Why these knobs: a
+            failed run is observed at the scheduler's ~30 s tick, so a 1 m
+            evaluation interval reports it within ~1.5 minutes of the
+            finish; the 10 m window keeps one alert instance per failed run
+            (it auto-resolves when the run leaves the window — no re-page
+            noise) while still catching a burst. Runs whose exit code is
+            unknown (no readable exit file) are deliberately excluded: the
+            filter matches exitCode present and not "0". The query stays off
+            new Loki labels on purpose: jobName/exitCode are parsed from the
+            line's JSON at query time. If CYBERMOLE_LOKI_JOB is overridden,
+            adjust the {job="cybermole"} selector to match.
+        labels:
+          topic: jobs
+        data:
+          # A: count, per job, of finish lines whose parsed exitCode is
+          # present and not "0" over the last 10 minutes (instant query).
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: cybermole-loki
+            model:
+              datasource:
+                type: loki
+                uid: cybermole-loki
+              editorMode: code
+              expr: >-
+                sum by (jobName) (count_over_time({job="cybermole", component="scheduler"} |= "run finished" | json | exitCode != `0` | exitCode != `` [10m]))
+              queryType: instant
+              refId: A
+          # B: any such count above zero means a failed run.
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+              type: threshold
