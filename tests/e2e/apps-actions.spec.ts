@@ -162,7 +162,8 @@ test('the extended loop: scaffold → add_action → check green → register + 
     'src/routes.ts',
     'tests/note.test.mjs',
     'src/store/note.ts',
-    'src/components/note.ts',
+    'src/components/Note/Note.astro',
+    'src/components/Note/note.ts',
     'src/pages/index.astro',
     'AGENTS.md',
   ]);

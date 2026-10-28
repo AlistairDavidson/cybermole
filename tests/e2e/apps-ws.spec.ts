@@ -4,7 +4,7 @@
 // checked green, registered and reloaded — then a page in the console
 // origin has its store dial a WebSocket to its own /apps/<slug>/… endpoint
 // through browser → session gate → /apps WS tunnel → app host unix socket →
-// the app's ws entry and back, the <slug>-echo enhancer rendering the log.
+// the app's ws entry and back, the <slug>-echo component rendering the log.
 // The rejection face too: without a session the upgrade dies (401), and an
 // app-side unrouted path 404s (the app is the router).
 //
@@ -149,13 +149,25 @@ createAppSocket({
 });
 `;
 
-/** The <slug>-echo enhancer: the aria-live line is SSR'd; the effect is the
- *  only thing that touches it. */
+/** The echo component's SSR half: the aria-live line is server-rendered
+ *  (native elements, so the component owns no wa-* halves). */
+const ECHO_ASTRO = `---
+// The echo element's UI (SSR): the ${SLUG}-echo host with its live log
+// line. The enhancer (echo.ts, this directory) wires it; the store
+// (src/store/echo.ts) holds the live state.
+---
+<${SLUG}-echo>
+  <p class="ws-status" aria-live="polite">dialing</p>
+</${SLUG}-echo>
+`;
+
+/** The echo component's enhancer half: the effect is the only thing that
+ *  touches the SSR'd line. */
 const ECHO_ENHANCER = `import { effect } from '@preact/signals-core';
 import { defineElement } from '@cybermole/app-kit/element';
-import { echoLog } from '../store/echo';
+import { echoLog } from '../../store/echo';
 
-defineElement('${SLUG}-echo', (host) => {
+defineElement('${SLUG}-echo', host => {
   const out = host.querySelector('p[aria-live]');
   return effect(() => {
     if (out !== null) out.textContent = echoLog.value;
@@ -204,18 +216,21 @@ test('the README recipe: scaffold → grow a ws entry → check green → regist
 }
 `,
     );
-    // The store dials from the page; the enhancer renders its log line.
+    // The store dials from the page; the component directory renders the
+    // log line (SSR .astro + enhancer).
     fs.mkdirSync(path.join(tree, 'src', 'store'), { recursive: true });
     fs.writeFileSync(path.join(tree, 'src', 'store', 'echo.ts'), ECHO_STORE);
-    fs.mkdirSync(path.join(tree, 'src', 'components'), { recursive: true });
-    fs.writeFileSync(path.join(tree, 'src', 'components', 'echo.ts'), ECHO_ENHANCER);
-    // The page hosting them (outside the template's generated markers).
+    fs.mkdirSync(path.join(tree, 'src', 'components', 'Echo'), { recursive: true });
+    fs.writeFileSync(path.join(tree, 'src', 'components', 'Echo', 'Echo.astro'), ECHO_ASTRO);
+    fs.writeFileSync(path.join(tree, 'src', 'components', 'Echo', 'echo.ts'), ECHO_ENHANCER);
+    // The page hosting it (outside the template's generated markers).
     fs.writeFileSync(
       path.join(tree, 'src', 'pages', 'ws.astro'),
       `---
-// These wa-* imports only SSR; the client script re-imports them so they
-// upgrade (see @cybermole/app-kit/wa-client).
+// The page owns its page-level wa-* halves (the card); the component owns
+// its own — here none, the echo element is native elements.
 import '@awesome.me/webawesome/dist/components/card/card.js';
+import Echo from '../components/Echo/Echo.astro';
 ---
 <!doctype html>
 <html lang="en">
@@ -228,16 +243,14 @@ import '@awesome.me/webawesome/dist/components/card/card.js';
     <main style="font-family: system-ui; max-width: 40rem; margin: 3rem auto; padding: 0 1rem;">
       <wa-card>
         <h1 slot="header">WS Echo</h1>
-        <${SLUG}-echo>
-          <p class="ws-status" aria-live="polite">dialing</p>
-        </${SLUG}-echo>
+        <Echo />
       </wa-card>
     </main>
     <script>
-      // wa-client must precede the wa-* imports, or SSR'd elements render twice.
+      // The page's own wa-* halves (the card); the component imports its own.
       import '@cybermole/app-kit/wa-client';
       import '@awesome.me/webawesome/dist/components/card/card.js';
-      import '../components/echo';
+      import '../components/Echo/echo';
     </script>
   </body>
 </html>

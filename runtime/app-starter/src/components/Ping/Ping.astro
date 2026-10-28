@@ -1,0 +1,12 @@
+---
+// The ping action's UI (SSR): the <__APP_SLUG__-ping> host with its
+// controls. The enhancer (ping.ts, this directory) wires them; the store
+// (src/store/ping.ts) holds the live state.
+import '@awesome.me/webawesome/dist/components/input/input.js';
+import '@awesome.me/webawesome/dist/components/button/button.js';
+---
+<__APP_SLUG__-ping>
+  <wa-input label="name" value="world"></wa-input>{' '}
+  <wa-button variant="brand">ping</wa-button>
+  <p aria-live="polite">— not pinged yet —</p>
+</__APP_SLUG__-ping>

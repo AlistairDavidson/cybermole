@@ -1,9 +1,12 @@
 ---
-// These wa-* imports only SSR; the client script re-imports them so they
-// upgrade (see @cybermole/app-kit/wa-client).
+// The home page: the card (the page's one page-level wa-* half) hosting
+// the ping action's component. The components own their wa-* halves; the
+// client script imports enhancers, nothing else wa-*. add_action appends
+// inside the three marker pairs below.
 import '@awesome.me/webawesome/dist/components/card/card.js';
-import '@awesome.me/webawesome/dist/components/button/button.js';
-import '@awesome.me/webawesome/dist/components/input/input.js';
+// BEGIN ACTION IMPORTS (generated — add_action appends one import per action)
+import Ping from '../components/Ping/Ping.astro';
+// END ACTION IMPORTS
 const builtAt = new Date().toISOString();
 ---
 <!doctype html>
@@ -19,16 +22,12 @@ const builtAt = new Date().toISOString();
       <wa-card>
         <h1 slot="header">__APP_NAME__</h1>
         <p>__APP_DESCRIPTION__</p>
-        <!-- The action elements: SSR'd light-DOM children that an enhancer
-             (src/components/*.ts) wires from connectedCallback — enhance,
-             never render (CODE_STYLE.md §7). add_action appends one
-             element section per action inside the markers below. -->
+        <!-- The action components: each a directory owning its SSR (.astro)
+             and its enhancer (.ts) — enhance, never render (CODE_STYLE.md §7).
+             add_action appends one component usage per action inside the
+             markers below. -->
         <!-- BEGIN ACTION MOUNTS (generated — add_action appends one element section per action) -->
-        <__APP_SLUG__-ping>
-          <wa-input label="name" value="world"></wa-input>
-          <wa-button variant="brand">ping</wa-button>
-          <p aria-live="polite">— not pinged yet —</p>
-        </__APP_SLUG__-ping>
+        <Ping />
         <!-- END ACTION MOUNTS -->
         <p style="opacity: 0.6">built at {builtAt}</p>
       </wa-card>
@@ -38,17 +37,15 @@ const builtAt = new Date().toISOString();
          substituted at scaffold time. -->
     <agent-console slug="__APP_SLUG__"></agent-console>
     <script>
-      // wa-client must precede the wa-* imports, or SSR'd elements render twice.
+      // The page's own wa-* halves (the card); the components import theirs.
       import '@cybermole/app-kit/wa-client';
       import '@awesome.me/webawesome/dist/components/card/card.js';
-      import '@awesome.me/webawesome/dist/components/button/button.js';
-      import '@awesome.me/webawesome/dist/components/input/input.js';
       // The agent drawer (client-only; it imports its own wa-* halves).
       import '@cybermole/app-kit/agent-console';
 
       // add_action appends one enhancer import per action inside these markers.
       // BEGIN ACTION ENHANCERS (generated — add_action appends one import per action)
-      import '../components/ping';
+      import '../components/Ping/ping';
       // END ACTION ENHANCERS
     </script>
   </body>
