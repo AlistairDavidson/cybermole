@@ -1,8 +1,8 @@
 // The notes reference app's use loop, on the shipped tree. Seeds
 // runtime/reference-apps/notes into the hermetic apps root, re-bakes this
 // checkout's install root, runs the check gate, registers and reloads, then
-// walks it through the console origin: create via the island, the page's
-// API and `call` (one Result JSON on every face); list via the page and
+// walks it through the console origin: create via the page's editor, the
+// page's API and `call` (one Result JSON on every face); list via the page and
 // describe/call; archive hides from the default list without deleting; and
 // an empty title answers the same error code on every face, the MCP shim
 // included.
@@ -251,16 +251,16 @@ test('the use loop through the console origin: list, capture on every face, find
   // The list page renders through the console origin, behind the session gate.
   await page.goto(`/apps/${SLUG}/`);
   await expect(page.locator('wa-card h1')).toHaveText('Notes');
-  await expect(page.locator('.note-editor wa-button')).toHaveText('save note');
+  await expect(page.locator('notes-editor wa-button')).toHaveText('save note');
 
-  // ---- note_create via the UI island ----
-  await page.locator('.note-editor wa-input').nth(0).locator('input').fill('UI-created note');
+  // ---- note_create via the UI editor ----
+  await page.locator('notes-editor wa-input').nth(0).locator('input').fill('UI-created note');
   await page
-    .locator('.note-editor wa-textarea textarea')
-    .fill('captured through the island in a real browser');
-  await page.locator('.note-editor wa-input').nth(1).locator('input').fill('standup, journal');
-  await page.locator('.note-editor wa-button').click();
-  await expect(page.locator('.note-editor p[aria-live="polite"]')).toHaveText(
+    .locator('notes-editor wa-textarea textarea')
+    .fill('captured through the editor in a real browser');
+  await page.locator('notes-editor wa-input').nth(1).locator('input').fill('standup, journal');
+  await page.locator('notes-editor wa-button').click();
+  await expect(page.locator('notes-editor p[aria-live="polite"]')).toHaveText(
     /saved: UI-created note \(#\d+\)/,
   );
 
@@ -344,22 +344,22 @@ test('the use loop through the console origin: list, capture on every face, find
     resultType: 'note_create',
     errorCode: 'invalid_title',
   });
-  // …including the island's own line.
-  await page.locator('.note-editor wa-input').nth(0).locator('input').fill('   ');
-  await page.locator('.note-editor wa-button').click();
-  await expect(page.locator('.note-editor p[aria-live="polite"]')).toHaveText(
+  // …including the editor's own line.
+  await page.locator('notes-editor wa-input').nth(0).locator('input').fill('   ');
+  await page.locator('notes-editor wa-button').click();
+  await expect(page.locator('notes-editor p[aria-live="polite"]')).toHaveText(
     'error: title is required',
   );
 
-  // ---- note_edit through the island on the note page ----
+  // ---- note_edit through the editor on the note page ----
   const toEdit = listed.body.data.notes.find((n: { title: string }) => n.title === 'from-call') as {
     id: number;
   };
   await page.goto(`/apps/${SLUG}/notes/${toEdit.id}`);
   await expect(page.locator('wa-card h1')).toHaveText('from-call');
-  await page.locator('.note-editor wa-input').nth(0).locator('input').fill('from-call, edited');
-  await page.locator('.note-editor wa-button').first().click();
-  await expect(page.locator('.note-editor p[aria-live="polite"]')).toHaveText(
+  await page.locator('notes-editor wa-input').nth(0).locator('input').fill('from-call, edited');
+  await page.locator('notes-editor wa-button').first().click();
+  await expect(page.locator('notes-editor p[aria-live="polite"]')).toHaveText(
     'saved: from-call, edited',
   );
   const reread = await tool(
@@ -465,7 +465,7 @@ test("the WS example: a write in one tab updates another tab's list without a re
 
   // Any writer — here the page API — broadcasts notes_changed; both tabs'
   // lists refresh on their own (the capturing tab's own list included,
-  // which the island's save used to leave stale until a manual reload).
+  // which a save used to leave stale until a manual reload).
   const made = await api(page, 'POST', `/apps/${SLUG}/api/notes`, {
     title: 'live-list note',
     body: 'created from another tab',

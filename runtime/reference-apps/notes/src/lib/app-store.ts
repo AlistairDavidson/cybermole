@@ -1,4 +1,4 @@
-// routes.ts reaches the browser (islands import the table), so its handlers
+// routes.ts reaches the browser (the stores import the table), so its handlers
 // can't import the sqlite half; they read the store from this slot, which
 // server-only modules bind (src/pages/api/[...path].ts).
 import type { NotesStore } from './notes-core.ts';

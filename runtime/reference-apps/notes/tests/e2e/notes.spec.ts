@@ -20,13 +20,13 @@ test('capture, find, open, edit, archive — one note through the pages', async 
   await expect(page.locator('wa-card h1')).toHaveText('Notes');
   await expect(page.locator('wa-card')).toContainText('no notes yet — capture one below.');
 
-  // Capture through the island: the wa-* controls upgrade, .value rides
-  // the shadow DOM, the save goes through the route table.
-  await page.locator('.note-editor wa-input').nth(0).locator('input').fill('e2e standup');
-  await page.locator('.note-editor wa-textarea textarea').fill('captured by the app-side e2e');
-  await page.locator('.note-editor wa-input').nth(1).locator('input').fill('standup, journal');
-  await page.locator('.note-editor wa-button', { hasText: 'save note' }).click();
-  await expect(page.locator('.note-editor p[aria-live="polite"]')).toHaveText(
+  // Capture through the editor component: the wa-* controls upgrade,
+  // .value rides the shadow DOM, the save goes through the route table.
+  await page.locator('notes-editor wa-input').nth(0).locator('input').fill('e2e standup');
+  await page.locator('notes-editor wa-textarea textarea').fill('captured by the app-side e2e');
+  await page.locator('notes-editor wa-input').nth(1).locator('input').fill('standup, journal');
+  await page.locator('notes-editor wa-button', { hasText: 'save note' }).click();
+  await expect(page.locator('notes-editor p[aria-live="polite"]')).toHaveText(
     /saved: e2e standup \(#1\)/,
   );
 
@@ -45,21 +45,21 @@ test('capture, find, open, edit, archive — one note through the pages', async 
   await expect(page.locator('.notes a')).toHaveCount(1);
   await expect(page.locator('.notes a')).toHaveText('e2e standup');
 
-  // Open: the note page SSRs note_get, the editor island carries the note.
+  // Open: the note page SSRs note_get, the editor carries the note.
   await page.locator('.notes a').click();
   await expect(page.locator('wa-card h1')).toHaveText('e2e standup');
-  await expect(page.locator('.note-editor wa-input').nth(0).locator('input')).toHaveValue(
+  await expect(page.locator('notes-editor wa-input').nth(0).locator('input')).toHaveValue(
     'e2e standup',
   );
 
-  // Edit through the island, then archive: back on the list, gone from
+  // Edit through the editor, then archive: back on the list, gone from
   // the live view, kept whole in the archive (a flag, never a delete).
-  await page.locator('.note-editor wa-input').nth(0).locator('input').fill('e2e standup, edited');
-  await page.locator('.note-editor wa-button', { hasText: 'save changes' }).click();
-  await expect(page.locator('.note-editor p[aria-live="polite"]')).toHaveText(
+  await page.locator('notes-editor wa-input').nth(0).locator('input').fill('e2e standup, edited');
+  await page.locator('notes-editor wa-button', { hasText: 'save changes' }).click();
+  await expect(page.locator('notes-editor p[aria-live="polite"]')).toHaveText(
     'saved: e2e standup, edited',
   );
-  await page.locator('.note-editor wa-button', { hasText: 'archive' }).click();
+  await page.locator('notes-editor wa-button', { hasText: 'archive' }).click();
   await page.waitForURL(`${app.baseURL}/`);
   await expect(page.locator('.notes a')).toHaveCount(1);
   await expect(page.locator('.notes a')).toHaveText('shopping list');
@@ -78,9 +78,9 @@ test('capture, find, open, edit, archive — one note through the pages', async 
 
 test('an empty title answers invalid_title on both faces', async ({ page, app }) => {
   await page.goto(app.baseURL);
-  await page.locator('.note-editor wa-input').nth(0).locator('input').fill('   ');
-  await page.locator('.note-editor wa-button', { hasText: 'save note' }).click();
-  await expect(page.locator('.note-editor p[aria-live="polite"]')).toHaveText(
+  await page.locator('notes-editor wa-input').nth(0).locator('input').fill('   ');
+  await page.locator('notes-editor wa-button', { hasText: 'save note' }).click();
+  await expect(page.locator('notes-editor p[aria-live="polite"]')).toHaveText(
     'error: title is required',
   );
 

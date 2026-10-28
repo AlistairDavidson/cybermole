@@ -1,5 +1,5 @@
 // The route table: each action is one entry, and the kit binds it to the
-// HTTP route, the islands' typed client, the MCP shim and
+// HTTP route, the typed client the components' stores use, the MCP shim and
 // dist/route-table.json. These entries started as add_action stubs.
 //
 // The schemas judge shape only; everything a user can get wrong (empty

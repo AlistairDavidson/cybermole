@@ -1,8 +1,9 @@
 ---
-// The list page: note_list rendered server-side, the editor island for
-// capture, and the starter's ping island. The find form uses native
-// controls so it works without JS. The wa-* imports here only SSR; the
-// client script re-imports them (see @cybermole/app-kit/wa-client).
+// The list page: note_list rendered server-side, the capture editor's
+// host, and the ping action's host. The live list is <notes-list> — its
+// enhancer owns the WS doorbell. The find form uses native controls so it
+// works without JS. The wa-* imports here only SSR; the client script
+// re-imports them (see @cybermole/app-kit/wa-client).
 import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/input/input.js';
@@ -56,43 +57,45 @@ const base = import.meta.env.BASE_URL;
         {notes.length === 0 && (
           <p>{archivedView ? 'nothing archived yet.' : 'no notes yet — capture one below.'}</p>
         )}
-        <ul class="notes" style="list-style: none; padding: 0;">
-          {notes.map(note => (
-            <li style="margin: 0.5rem 0;">
-              <a href={`${base}/notes/${note.id}`}>{note.title}</a>
-              {note.archived && <wa-badge>archived</wa-badge>}
-              {note.body !== '' && (
-                <p style="margin: 0.1rem 0; opacity: 0.75;">
-                  {note.body.slice(0, 160)}
-                  {note.body.length > 160 ? '…' : ''}
-                </p>
-              )}
-              {note.tags.map(t => (
-                <wa-badge>{t}</wa-badge>
-              ))}
-            </li>
-          ))}
-        </ul>
+        <notes-list>
+          <ul class="notes" style="list-style: none; padding: 0;">
+            {notes.map(note => (
+              <li style="margin: 0.5rem 0;">
+                <a href={`${base}/notes/${note.id}`}>{note.title}</a>
+                {note.archived && <wa-badge>archived</wa-badge>}
+                {note.body !== '' && (
+                  <p style="margin: 0.1rem 0; opacity: 0.75;">
+                    {note.body.slice(0, 160)}
+                    {note.body.length > 160 ? '…' : ''}
+                  </p>
+                )}
+                {note.tags.map(t => (
+                  <wa-badge>{t}</wa-badge>
+                ))}
+              </li>
+            ))}
+          </ul>
+        </notes-list>
 
-        <!-- The islands' hosts: SSR'd initial content the islands take
-             over. add_action appends one section per action inside the
-             markers below. -->
+        <!-- The components' hosts: SSR'd content the enhancers wire from
+             connectedCallback. add_action appends one section per action
+             inside the markers below. -->
         <!-- BEGIN ACTION MOUNTS (generated — add_action appends one section per action) -->
         {!archivedView && (
-          <section class="note-editor">
+          <notes-editor data-mode="create">
             <h2>capture a note</h2>
             <wa-input label="title"></wa-input>
             <wa-textarea label="body"></wa-textarea>
             <wa-input label="tags (comma-separated)"></wa-input>
             <wa-button variant="brand">save note</wa-button>
             <p aria-live="polite">— nothing saved yet —</p>
-          </section>
+          </notes-editor>
         )}
-        <section class="ping-island">
+        <notes-ping>
           <wa-input label="name" value="world"></wa-input>{' '}
           <wa-button variant="brand">ping</wa-button>
           <p aria-live="polite">— not pinged yet —</p>
-        </section>
+        </notes-ping>
         <!-- END ACTION MOUNTS -->
       </wa-card>
     </main>
@@ -107,62 +110,20 @@ const base = import.meta.env.BASE_URL;
       import '@awesome.me/webawesome/dist/components/input/input.js';
       import '@awesome.me/webawesome/dist/components/textarea/textarea.js';
       import '@awesome.me/webawesome/dist/components/badge/badge.js';
-      import { mountIsland } from '@cybermole/app-kit/island';
       // The agent drawer (client-only; it imports its own wa-* halves).
       import '@cybermole/app-kit/agent-console';
 
-      // add_action appends one import + mount per action inside these markers.
-      // BEGIN ACTION ISLANDS (generated — add_action appends one import + mount per action)
-      import PingIsland from '../islands/PingIsland';
+      // add_action appends one import per action inside these markers.
+      // BEGIN ACTION ENHANCERS (generated — add_action appends one import per action)
+      import '../components/notes-ping';
+      import '../components/notes-editor';
+      // END ACTION ENHANCERS
 
-      mountIsland('.ping-island', PingIsland, {});
-
-      import NoteEditorIsland, { type NoteEditorProps } from '../islands/NoteEditorIsland';
-
-      mountIsland('.note-editor', NoteEditorIsland, {
-        mode: 'create',
-      } satisfies NoteEditorProps);
-      // END ACTION ISLANDS
-
-      // ---- the live list (the app's WS example) ----
-      // /apps/notes/ws signals notes_changed on every store write; answer
-      // by re-fetching this page and swapping just the list (never the form
-      // or the islands, so typing survives). The socket is one-way: data
-      // still moves over the HTTP actions. The host cuts tunnels on logout
-      // or token expiry without a close handshake, so reconnect with a
-      // capped backoff.
-      const liveList = document.querySelector('.notes');
-      if (liveList !== null) {
-        let delay = 1000;
-        const connect = (): void => {
-          const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-          const ws = new WebSocket(`${proto}://${location.host}/apps/notes/ws`);
-          ws.onopen = () => {
-            delay = 1000;
-          };
-          ws.onmessage = async event => {
-            let msg: { type?: string };
-            try {
-              msg = JSON.parse(String(event.data)) as { type?: string };
-            } catch {
-              return;
-            }
-            if (msg.type !== 'notes_changed') return;
-            // no-store: the swap must always see the committed store, never
-            // a cached copy of an earlier signal's fetch.
-            const r = await fetch(location.href, { cache: 'no-store' });
-            if (!r.ok) return;
-            const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
-            const fresh = doc.querySelector('.notes');
-            if (fresh !== null) liveList.innerHTML = fresh.innerHTML;
-          };
-          ws.onclose = () => {
-            setTimeout(connect, delay);
-            delay = Math.min(delay * 2, 15000);
-          };
-        };
-        connect();
-      }
+      // The live list (the app's WS example): <notes-list>'s enhancer
+      // dials /apps/notes/ws (the kit's socket client owns the capped
+      // backoff) and refreshes through the typed note_list client on
+      // notes_changed — WS carries the nudge, HTTP carries the data.
+      import '../components/notes-list';
     </script>
   </body>
 </html>

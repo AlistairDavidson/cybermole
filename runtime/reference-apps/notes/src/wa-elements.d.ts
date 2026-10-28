@@ -1,21 +1,16 @@
-// Web Awesome elements used in preact islands, declared on preact's JSX
-// namespace. Every element an island renders needs an entry here.
-import 'preact';
+// Web Awesome controls the enhancers reach by tag selector: the tag map
+// types plain tag queries, and WaValueHost is the .value the editor writes
+// when it clears the create form (the kit's waValue is the reading half).
+// Declarations only, no code.
+export {};
 
-declare module 'preact' {
-  namespace JSX {
-    interface IntrinsicElements {
-      'wa-input': preact.JSX.HTMLAttributes<HTMLElement> & {
-        label?: string;
-        value?: string;
-      };
-      'wa-textarea': preact.JSX.HTMLAttributes<HTMLElement> & {
-        label?: string;
-        value?: string;
-      };
-      'wa-button': preact.JSX.HTMLAttributes<HTMLElement> & {
-        variant?: string;
-      };
-    }
+export interface WaValueHost extends HTMLElement {
+  value: string | null;
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'wa-input': WaValueHost;
+    'wa-textarea': WaValueHost;
   }
 }

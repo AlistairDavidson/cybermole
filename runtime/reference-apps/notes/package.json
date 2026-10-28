@@ -6,10 +6,11 @@
   "description": "a cybermole app on @cybermole/app-kit — scaffolded from the image's app-starter template",
   "scripts": {
     "setup": "node scripts/setup-node-modules.mjs",
+    "lint:arch": "node node_modules/@cybermole/app-kit/scripts/arch-check.mjs src",
     "typecheck": "astro check && tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "build": "astro build && node scripts/check-selfcontained.mjs dist/server/entry.mjs",
-    "check": "npm run typecheck && npm run test && npm run build",
+    "check": "npm run lint:arch && npm run typecheck && npm run test && npm run build",
     "test:e2e": "playwright test"
   },
   "dependencies": {
@@ -21,7 +22,7 @@
     "@lit-labs/ssr-dom-shim": "^1.6.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
-    "@preact/signals": "^2.3.1",
+    "@preact/signals-core": "^1.14.5",
     "@types/node": "^26.0.0",
     "astro": "^7.0.0",
     "kysely": "^0.29.6",
@@ -29,7 +30,6 @@
     "lit-element": "^4.2.1",
     "parse5": "^7.3.0",
     "ws": "^8.18.0",
-    "preact": "^10.27.2",
     "typescript": "^5.8.0",
     "zod": "^4.6.5"
   },
