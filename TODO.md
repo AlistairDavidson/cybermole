@@ -11,9 +11,12 @@ main.ts static+middleware factoring (the app host carries its own small serve he
 
 job exit-code notification hooks (webhook, Grafana alerting on the Loki labels)
 
-## Git
+## Worktrees
 ability to make a workspace a worktree
 ability to merge
+  what happens on merge? does workspace archive or does it become a main-branch workspace?
+implies app preview of some kind
+have to be able to run worktrees
 
 ## Human UX tasks
 Review the notes app, finalise technical and stylistic decisions 
