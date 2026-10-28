@@ -1,8 +1,8 @@
 // The build loop plus the generator: scaffold an app, add_action a 'note'
-// action, check green (grown tests, a two-action route table), register and
-// reload, then every face answers the same Result JSON: describe, the UI
-// island in a real browser, `call` in-process, and one stdio spawn of the
-// per-app MCP shim.
+// action, check green (grown tests, the architecture lint, a two-action
+// route table), register and reload, then every face answers the same
+// Result JSON: describe, the UI enhancer in a real browser, `call`
+// in-process, and one stdio spawn of the per-app MCP shim.
 //
 // Apps-spec discipline: see apps-notes.spec.ts.
 import { expect, test } from '@playwright/test';
@@ -161,7 +161,8 @@ test('the extended loop: scaffold → add_action → check green → register + 
     'src/lib/note.ts',
     'src/routes.ts',
     'tests/note.test.mjs',
-    'src/islands/NoteIsland.tsx',
+    'src/store/note.ts',
+    'src/components/note.ts',
     'src/pages/index.astro',
     'AGENTS.md',
   ]);
@@ -172,7 +173,8 @@ test('the extended loop: scaffold → add_action → check green → register + 
   const agents = fs.readFileSync(path.join(tree, 'AGENTS.md'), 'utf8');
   expect(agents.match(/### note[\s\S]*?POST \/apps\/actions-probe\/api\/note/)).toBeTruthy();
 
-  // The gate: the grown unit tests (3 ping + 3 note) and a two-action route table.
+  // The gate: the grown unit tests (3 ping + 3 note), the architecture
+  // lint over the generated store + component, and a two-action route table.
   const checked: Json = await checkApp({ appsRoot: APPS_ROOT, run: runChild }, SLUG);
   expect(checked.ok, JSON.stringify(checked)).toBe(true);
   if (!checked.ok) return;
@@ -217,7 +219,7 @@ async function ensureRegisteredAndMounted(): Promise<void> {
   ).toContain(SLUG);
 }
 
-test('every face of the one vocabulary: describe, the UI island, call, and one shim round-trip', async ({
+test('every face of the one vocabulary: describe, the UI enhancer, call, and one shim round-trip', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -238,12 +240,14 @@ test('every face of the one vocabulary: describe, the UI island, call, and one s
   ]);
   expect(described.body[1].input.required).toEqual(['text']);
 
-  // The page serves the new island; driving it in the browser works end to end.
+  // The page serves the SSR'd section; its enhancer drives it end to end.
   await page.goto(`/apps/${SLUG}/`);
-  await expect(page.locator('.note-island p[aria-live="polite"]')).toHaveText('— not sent yet —');
-  await page.fill('.note-island wa-input input', 'from-the-ui');
-  await page.click('.note-island wa-button');
-  await expect(page.locator('.note-island p[aria-live="polite"]')).toHaveText(
+  await expect(page.locator('actions-probe-note p[aria-live="polite"]')).toHaveText(
+    '— not sent yet —',
+  );
+  await page.fill('actions-probe-note wa-input input', 'from-the-ui');
+  await page.click('actions-probe-note wa-button');
+  await expect(page.locator('actions-probe-note p[aria-live="polite"]')).toHaveText(
     'ok: received from-the-ui',
   );
 

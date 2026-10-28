@@ -1,8 +1,10 @@
 // check/build for an app tree: runs the tree's own npm scripts and answers
 // one quiet envelope (the cybermole-dev tools' shape). check = links +
-// typecheck + unit tests + build; build is the last stage alone. The links
-// stage first verifies every dependency resolves, so a broken install fails
-// here with the fix in the message, not later as a compiler error.
+// typecheck + architecture lint + unit tests + build; build is the last
+// stage alone. A stage whose npm script the tree doesn't have is skipped
+// (a pre-standard tree keeps passing; the note says what was skipped). The
+// links stage first verifies every dependency resolves, so a broken install
+// fails here with the fix in the message, not later as a compiler error.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ResultFailure, ResultSuccess } from '@cybermole/app-kit';
@@ -61,11 +63,12 @@ interface StageSpec {
 
 const CHECK_STAGES: StageSpec[] = [
   { script: 'typecheck', label: 'astro check + tsc' },
+  { script: 'lint:arch', label: 'architecture lint' },
   { script: 'test', label: 'unit tests', args: ['--test-reporter=tap'] },
   { script: 'build', label: 'astro build + route-table + self-containment' },
 ];
 
-const BUILD_STAGES: StageSpec[] = [CHECK_STAGES[2]!];
+const BUILD_STAGES: StageSpec[] = [CHECK_STAGES[3]!];
 
 // eslint-disable-next-line no-control-regex -- stripping ANSI color codes is the point
 const ANSI_RE = /\u001b\[[0-9;]*[A-Za-z]/g;
@@ -91,6 +94,18 @@ function parseTapCounts(stdout: string): GateTestCounts | undefined {
     fail: Math.max(0, counts.fail),
     skipped: Math.max(0, counts.skipped),
   };
+}
+
+/** The tree's npm script names, for the skip rule below. */
+function treeScripts(tree: string): Set<string> {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(tree, 'package.json'), 'utf8')) as {
+      scripts?: Record<string, string>;
+    };
+    return new Set(Object.keys(pkg.scripts ?? {}));
+  } catch {
+    return new Set();
+  }
 }
 
 /** Declared dependencies and the astro/tsc bins that don't resolve in the tree. */
@@ -129,7 +144,12 @@ export async function runGate(
     } satisfies AppGateFailure;
   }
   const failures: GateFailure[] = [];
-  const stageNames = ['links', ...stages.map(s => s.label)];
+  // Stages whose npm script the tree doesn't have never run: a pre-standard
+  // tree must keep passing, with the skipped scripts named in the output.
+  const scripts = treeScripts(tree);
+  const skipped = stages.filter(s => !scripts.has(s.script)).map(s => s.script);
+  const active = stages.filter(s => scripts.has(s.script));
+  const stageNames = ['links', ...active.map(s => s.label)];
   const counts: GateCounts = { stages: { total: stageNames.length, passed: 0, failed: 0 } };
   let returncode = 0;
   let timedOut = false;
@@ -147,7 +167,7 @@ export async function runGate(
     returncode = 1;
   } else {
     counts.stages.passed = 1;
-    for (const stage of stages) {
+    for (const stage of active) {
       let run: ChildRun;
       try {
         run = await deps.run(
@@ -198,7 +218,11 @@ export async function runGate(
     duration_s: Number(((Date.now() - startedAt) / 1000).toFixed(1)),
     quiet: true,
     timed_out: timedOut,
-    output: passed ? `${stageNames.join(' → ')} — all green` : failures[0]!.error,
+    output: passed
+      ? `${stageNames.join(' → ')} — all green${
+          skipped.length > 0 ? ` (${skipped.join(', ')} not in tree — pre-standard tree)` : ''
+        }`
+      : failures[0]!.error,
     counts: tests !== undefined ? { ...counts, tests } : counts,
     ...(failures.length > 0 ? { failures } : {}),
   };

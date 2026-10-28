@@ -1,9 +1,10 @@
 // The apps WS surface end to end, through the shared webServer's whole
-// stack: the scaffolded template grown a ws entry (exactly the app-starter
-// README's § WebSocket routes recipe), checked green, registered and
-// reloaded — then a page in the console origin opens a WebSocket to its own
-// /apps/<slug>/… endpoint and echoes through browser → session gate →
-// /apps WS tunnel → app host unix socket → the app's ws entry and back.
+// stack: the scaffolded template grown a ws entry (the app-starter README's
+// § WebSocket routes recipe, its frames typed per the doorbell contract),
+// checked green, registered and reloaded — then a page in the console
+// origin has its store dial a WebSocket to its own /apps/<slug>/… endpoint
+// through browser → session gate → /apps WS tunnel → app host unix socket →
+// the app's ws entry and back, the <slug>-echo enhancer rendering the log.
 // The rejection face too: without a session the upgrade dies (401), and an
 // app-side unrouted path 404s (the app is the router).
 //
@@ -126,47 +127,40 @@ function wsEntrySource(): string {
   ].join('\n');
 }
 
-const ECHO_ISLAND = `import { useEffect, useRef } from 'preact/hooks';
-import { signal } from '@preact/signals';
+/** The echo store: dials the app's own /apps/<slug>/ws (the doorbell
+ *  client — typed frames, reconnect) and keeps the log signal the enhancer
+ *  renders. No route client: this is a raw echo socket, not an action. */
+const ECHO_STORE = `import { signal } from '@preact/signals-core';
+import { z } from 'zod';
+import { createAppSocket } from '@cybermole/app-kit/live';
 
-const log = signal('idle');
-let sock: WebSocket | null = null;
-const say = (line: string): void => {
-  log.value = log.value === 'idle' ? line : \`\${log.value} | \${line}\`;
+export const echoLog = signal('dialing');
+
+const line = (text: string): void => {
+  echoLog.value = \`\${echoLog.value} | \${text}\`;
 };
 
-export default function EchoIsland() {
-  const draft = useRef<HTMLInputElement | null>(null);
-  useEffect(() => {
-    say('dialing');
-    const base = import.meta.env.BASE_URL.replace(/\\/+$/, '');
-    sock = new WebSocket(\`\${location.origin}\${base}/ws\`);
-    sock.onopen = () => {
-      say('open');
-      sock?.send('hello through the tunnel');
-    };
-    sock.onmessage = e => say(\`echo: \${String(e.data)}\`);
-    sock.onclose = () => say('closed');
-    sock.onerror = () => say('error');
-    return () => {
-      sock?.close();
-      sock = null;
-    };
-  }, []);
-  const send = () => {
-    const text = draft.current?.value ?? '';
-    if (sock !== null && sock.readyState === WebSocket.OPEN && text !== '') sock.send(text);
-  };
-  return (
-    <>
-      <p class="ws-status" aria-live="polite">{log.value}</p>
-      <input class="ws-draft" ref={draft} value="a second message" />
-      <button class="ws-send" type="button" onClick={send}>
-        send
-      </button>
-    </>
-  );
-}
+const base = import.meta.env.BASE_URL.replace(/\\/+$/, '');
+createAppSocket({
+  url: () => \`\${location.origin}\${base}/ws\`,
+  frame: z.object({ type: z.string() }),
+  onOpen: () => line('open'),
+  onFrame: (frame: { type: string }) => line(\`echo: \${frame.type}\`),
+});
+`;
+
+/** The <slug>-echo enhancer: the aria-live line is SSR'd; the effect is the
+ *  only thing that touches it. */
+const ECHO_ENHANCER = `import { effect } from '@preact/signals-core';
+import { defineElement } from '@cybermole/app-kit/element';
+import { echoLog } from '../store/echo';
+
+defineElement('${SLUG}-echo', (host) => {
+  const out = host.querySelector('p[aria-live]');
+  return effect(() => {
+    if (out !== null) out.textContent = echoLog.value;
+  });
+});
 `;
 
 test('the README recipe: scaffold → grow a ws entry → check green → register + reload', async ({
@@ -197,19 +191,25 @@ test('the README recipe: scaffold → grow a ws entry → check green → regist
 
   if (!fs.existsSync(path.join(tree, 'src', 'ws.mjs'))) {
     // The ws entry: the README's example, this tree's slug baked in, plus
-    // the echo wiring the island exercises.
+    // the greeting frame and echo the store exercises.
     fs.writeFileSync(
       path.join(tree, 'src', 'ws.mjs'),
       `${wsEntrySource()}
   wss.handleUpgrade(req, socket, head, ws => {
-    ws.on('message', data => ws.send(data.toString())); // echo, as text
+    // The doorbell contract: frames are small typed JSON events. This entry
+    // greets on connect, then echoes every message back as a frame.
+    ws.send(JSON.stringify({ type: 'hello through the tunnel' }));
+    ws.on('message', data => ws.send(JSON.stringify({ type: data.toString() })));
   });
 }
 `,
     );
-    // The island: dials the app's own /apps/<slug>/ws from the page.
-    fs.writeFileSync(path.join(tree, 'src', 'islands', 'EchoIsland.tsx'), ECHO_ISLAND);
-    // The page hosting it (outside the template's generated markers).
+    // The store dials from the page; the enhancer renders its log line.
+    fs.mkdirSync(path.join(tree, 'src', 'store'), { recursive: true });
+    fs.writeFileSync(path.join(tree, 'src', 'store', 'echo.ts'), ECHO_STORE);
+    fs.mkdirSync(path.join(tree, 'src', 'components'), { recursive: true });
+    fs.writeFileSync(path.join(tree, 'src', 'components', 'echo.ts'), ECHO_ENHANCER);
+    // The page hosting them (outside the template's generated markers).
     fs.writeFileSync(
       path.join(tree, 'src', 'pages', 'ws.astro'),
       `---
@@ -228,20 +228,16 @@ import '@awesome.me/webawesome/dist/components/card/card.js';
     <main style="font-family: system-ui; max-width: 40rem; margin: 3rem auto; padding: 0 1rem;">
       <wa-card>
         <h1 slot="header">WS Echo</h1>
-        <section class="echo-island">
-          <p class="ws-status" aria-live="polite">idle</p>
-        </section>
+        <${SLUG}-echo>
+          <p class="ws-status" aria-live="polite">dialing</p>
+        </${SLUG}-echo>
       </wa-card>
     </main>
     <script>
       // wa-client must precede the wa-* imports, or SSR'd elements render twice.
       import '@cybermole/app-kit/wa-client';
       import '@awesome.me/webawesome/dist/components/card/card.js';
-      import { mountIsland } from '@cybermole/app-kit/island';
-
-      import EchoIsland from '../islands/EchoIsland';
-
-      mountIsland('.echo-island', EchoIsland, {});
+      import '../components/echo';
     </script>
   </body>
 </html>
@@ -343,8 +339,9 @@ test('the use loop: a page echo round trip through the whole stack, and the app 
 
   await page.goto(`/apps/${SLUG}/ws`);
   await expect(page.locator('wa-card h1')).toHaveText('WS Echo');
-  // The island dials on mount and the echo comes back through the tunnel.
-  await expect(page.locator('.ws-status')).toHaveText(
+  // The store dials on load (createAppSocket) and the app's greeting frame
+  // comes back through the tunnel; the enhancer renders the log line.
+  await expect(page.locator(`${SLUG}-echo p.ws-status`)).toHaveText(
     'dialing | open | echo: hello through the tunnel',
   );
 

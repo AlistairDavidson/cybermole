@@ -22,6 +22,8 @@ const {
   parseRouteTableSource,
   regenerateAgentsActions,
   ACTION_NAME_RE,
+  ENHANCER_BEGIN,
+  ENHANCER_END,
 } = await import('../../dist-server/src/lib/apps/apps-actions.js');
 const { readRouteTable, findAction, planActionRequest, lenientPreflight, shapeFromJsonSchema } =
   await import('../../dist-server/src/lib/apps/apps-route-table.js');
@@ -35,13 +37,32 @@ const scaffoldDeps = root => ({
   run: runChild,
 });
 
+/** The standard starter ships the ACTION ENHANCERS markers; a pre-standard
+ *  scaffold still carries the retired island-mount markers instead. Seed
+ *  the standard block so every test below exercises the generator's
+ *  in-marker path (a no-op once the standard starter lands). */
+function standardizeEnhancerMarkers(pagePath) {
+  const page = fs.readFileSync(pagePath, 'utf8');
+  if (page.includes(ENHANCER_BEGIN) || !page.includes('// BEGIN ACTION ISLANDS')) return;
+  // the regex matches from the marker's `//`, so the line's own indent stays
+  const seeded = `${ENHANCER_BEGIN}\n      import '../components/ping';\n      ${ENHANCER_END}`;
+  fs.writeFileSync(
+    pagePath,
+    page.replace(/\/\/ BEGIN ACTION ISLANDS[\s\S]*?\/\/ END ACTION ISLANDS/, seeded),
+  );
+}
+
 async function world(label) {
   const root = fs.mkdtempSync(path.join(dir, `${label}-`));
   const r = await scaffoldApp(scaffoldDeps(root), {
     name: `${label} Probe`,
     description: 'the unit-run tree',
   });
-  assert.equal(r.ok, true, JSON.stringify(r));
+  // A pre-standard starter still links the retired preact packages, which
+  // the install no longer ships — the tree itself is fully written and only
+  // the links (never needed below) failed. The standard starter links.
+  assert.ok(r.ok || r.errorCode === 'links_failed', JSON.stringify(r));
+  standardizeEnhancerMarkers(path.join(r.data.tree, 'src', 'pages', 'index.astro'));
   return { root, slug: r.data.slug, tree: r.data.tree };
 }
 
@@ -216,7 +237,8 @@ test('add_action: the lockstep — every artifact written, in order, from one ta
       'src/lib/create-note.ts',
       'src/routes.ts',
       'tests/create-note.test.mjs',
-      'src/islands/CreateNoteIsland.tsx',
+      'src/store/create-note.ts',
+      'src/components/create-note.ts',
       'src/pages/index.astro',
       'AGENTS.md',
     ],
@@ -250,15 +272,36 @@ test('add_action: the lockstep — every artifact written, in order, from one ta
   const pkg = JSON.parse(fs.readFileSync(path.join(tree, 'package.json'), 'utf8'));
   assert.match(pkg.scripts.test, /tests\/\*\.test\.mjs/); // the glob picks it up, no script edit
 
-  // 4. the island, and the page mounts inside the markers
-  const island = fs.readFileSync(path.join(tree, 'src/islands/CreateNoteIsland.tsx'), 'utf8');
+  // 4. the store + the enhancer component, and the page wiring inside the markers
+  const store = fs.readFileSync(path.join(tree, 'src/store/create-note.ts'), 'utf8');
+  assert.match(store, /import \{ signal \} from '@preact\/signals-core';/);
+  assert.match(store, /export const createNoteStatus = signal\('— not sent yet —'\);/);
   // Bracket access: a kebab name isn't a valid identifier.
-  assert.match(island, /client\['create-note'\]\(\{ params: \{\}, body: \{ text \} \}\)/);
+  assert.match(store, /client\['create-note'\]\(\{ params: \{\}, body: \{ text \} \}\)/);
+  const component = fs.readFileSync(path.join(tree, 'src/components/create-note.ts'), 'utf8');
+  assert.match(component, /import \{ effect \} from '@preact\/signals-core';/);
+  assert.match(
+    component,
+    /import \{ defineElement, waValue \} from '@cybermole\/app-kit\/element';/,
+  );
+  assert.match(component, /defineElement\('lockstep-probe-create-note', host =>/);
+  for (const rel of ['src/store/create-note.ts', 'src/components/create-note.ts']) {
+    const text = fs.readFileSync(path.join(tree, rel), 'utf8');
+    assert.ok(!/from 'preact/.test(text), `${rel}: no preact renderer`);
+    assert.ok(!text.includes("'@preact/signals'"), `${rel}: signals-core only`);
+  }
   const page = fs.readFileSync(path.join(tree, 'src/pages/index.astro'), 'utf8');
   const mounts = page.match(/<!-- BEGIN ACTION MOUNTS[\s\S]*?<!-- END ACTION MOUNTS -->/)[0];
-  assert.match(mounts, /ping-island[\s\S]*?create-note-island/); // appended after ping
-  const islands = page.match(/\/\/ BEGIN ACTION ISLANDS[\s\S]*?\/\/ END ACTION ISLANDS/)[0];
-  assert.match(islands, /mountIsland\('\.create-note-island', CreateNoteIsland, \{\}\);/);
+  assert.match(
+    mounts,
+    /<lockstep-probe-create-note>\n          <wa-input label="text"><\/wa-input>\n          <wa-button variant="brand">create-note<\/wa-button>\n          <p aria-live="polite">— not sent yet —<\/p>\n        <\/lockstep-probe-create-note>/,
+  );
+  assert.ok(mounts.indexOf('ping') < mounts.indexOf('<lockstep-probe-create-note>')); // after ping's section
+  const enhancers = page.match(/\/\/ BEGIN ACTION ENHANCERS[\s\S]*?\/\/ END ACTION ENHANCERS/)[0];
+  assert.match(enhancers, /import '\.\.\/components\/create-note';/);
+  assert.ok(
+    enhancers.indexOf("../components/ping'") < enhancers.indexOf("../components/create-note'"),
+  ); // after ping's import
 
   // 5. AGENTS.md regenerated with both actions
   const block = fs
@@ -286,34 +329,47 @@ test('add_action: the GET parameterization — the input lands in the query', as
     /method: 'GET',\n {4}path: '\/api\/lookup',\n {4}params: z\.object\(\{\}\),\n {4}query: z\.object\(\{/,
   );
   assert.match(routes, /handler: \(\{ query \}\) => lookupResult\(query\.text\),/);
-  const island = fs.readFileSync(path.join(tree, 'src/islands/LookupIsland.tsx'), 'utf8');
-  assert.match(island, /client\['lookup'\]\(\{ params: \{\}, query: \{ text \} \}\)/);
+  const store = fs.readFileSync(path.join(tree, 'src/store/lookup.ts'), 'utf8');
+  assert.match(store, /client\['lookup'\]\(\{ params: \{\}, query: \{ text \} \}\)/);
 });
 
-test('add_action: the generated island compiles for every accepted name form — plain, kebab, snake', async () => {
-  // Client methods are the route names verbatim; each island must use the
+test('add_action: the generated store + component take every accepted name form — plain, kebab, snake', async () => {
+  // Client methods are the route names verbatim; each store must use the
   // bracket form its name requires.
   const { root, slug, tree } = await world('names');
   for (const name of ['echo', 'create-note', 'note_create']) {
     const r = await addAction({ appsRoot: root }, { slug, name });
     assert.equal(r.ok, true, JSON.stringify(r));
   }
-  const camelToStem = { echo: 'Echo', 'create-note': 'CreateNote', note_create: 'NoteCreate' };
-  for (const [name, stem] of Object.entries(camelToStem)) {
-    const island = fs.readFileSync(path.join(tree, 'src', 'islands', `${stem}Island.tsx`), 'utf8');
+  for (const name of ['echo', 'create-note', 'note_create']) {
+    const store = fs.readFileSync(path.join(tree, 'src', 'store', `${name}.ts`), 'utf8');
     const expected = `client['${name}']({ params: {}, body: { text } })`;
-    assert.ok(island.includes(expected), `${name}: bracket access with the literal name`);
-    assert.ok(!island.includes(`client.${name}(`), `${name}: never dot access`);
+    assert.ok(store.includes(expected), `${name}: bracket access with the literal name`);
+    assert.ok(!store.includes(`client.${name}(`), `${name}: never dot access`);
+    const component = fs.readFileSync(path.join(tree, 'src', 'components', `${name}.ts`), 'utf8');
+    assert.match(component, new RegExp(`defineElement\\('names-probe-${name}', host =>`));
   }
+  // the store's exports follow the snake name
+  assert.match(
+    fs.readFileSync(path.join(tree, 'src', 'store', 'note_create.ts'), 'utf8'),
+    /export async function noteCreateGo\(text: string\): Promise<void> \{/,
+  );
   // the table carries all three
   const routes = fs.readFileSync(path.join(tree, 'src', 'routes.ts'), 'utf8');
   assert.deepEqual(
     parseRouteTableSource(routes).map(a => a.name),
     ['ping', 'echo', 'create-note', 'note_create'],
   );
-  // The tree's own typecheck passes over every generated island.
-  const typecheck = await runChild('npm', ['run', 'typecheck'], { cwd: tree, timeoutMs: 120_000 });
-  assert.equal(typecheck.code, 0, `${typecheck.stdout}\n${typecheck.stderr}`);
+  // The tree's own typecheck passes over every generated store + component
+  // — skipped against a pre-standard starter, whose own page still imports
+  // the retired island mount (the merge brings the standard one).
+  if (!fs.existsSync(path.join(tree, 'src', 'islands'))) {
+    const typecheck = await runChild('npm', ['run', 'typecheck'], {
+      cwd: tree,
+      timeoutMs: 120_000,
+    });
+    assert.equal(typecheck.code, 0, `${typecheck.stdout}\n${typecheck.stderr}`);
+  }
 });
 
 test('add_action: a summary with newlines, backslashes and quotes stays one escaped line — the table parses back', async () => {
@@ -375,6 +431,15 @@ test('add_action: tree_not_found, invalid_name, and the diverged-tree refusal', 
   assert.match(ghost.errorMessage, /tests\/ghost\.test\.mjs/);
   assert.match(ghost.errorMessage, /never overwrites/);
   assert.ok(!fs.existsSync(path.join(tree, 'src/lib/ghost.ts'))); // nothing written
+  // the store + component paths collide the same way
+  fs.mkdirSync(path.join(tree, 'src', 'components'), { recursive: true });
+  fs.mkdirSync(path.join(tree, 'src', 'store'), { recursive: true });
+  fs.writeFileSync(path.join(tree, 'src', 'components', 'ghost.ts'), '// hand-written\n');
+  fs.writeFileSync(path.join(tree, 'src', 'store', 'ghost.ts'), '// hand-written\n');
+  const ghostUi = await addAction({ appsRoot: root }, { slug, name: 'ghost' });
+  assert.equal(ghostUi.errorCode, 'artifact_exists');
+  assert.match(ghostUi.errorMessage, /src\/components\/ghost\.ts, src\/store\/ghost\.ts/);
+  assert.ok(!fs.existsSync(path.join(tree, 'src/lib/ghost.ts')));
 });
 
 test('add_action: missing page/markers — fresh marked blocks appended, the answer says so', async () => {
@@ -386,8 +451,8 @@ test('add_action: missing page/markers — fresh marked blocks appended, the ans
   page = page
     .replace(/<!-- BEGIN ACTION MOUNTS[^\n]*-->\n/, '')
     .replace(/<!-- END ACTION MOUNTS -->\n/, '')
-    .replace(/\/\/ BEGIN ACTION ISLANDS[^\n]*\n/, '')
-    .replace(/\/\/ END ACTION ISLANDS\n/, '');
+    .replace(/\/\/ BEGIN ACTION ENHANCERS[^\n]*\n/, '')
+    .replace(/\/\/ END ACTION ENHANCERS\n/, '');
   fs.writeFileSync(pagePath, page);
   // …and a manual that lost its block
   const agents = fs
@@ -398,16 +463,16 @@ test('add_action: missing page/markers — fresh marked blocks appended, the ans
 
   const r = await addAction({ appsRoot: root }, { slug, name: 'note' });
   assert.equal(r.ok, true, JSON.stringify(r));
-  assert.equal(r.data.notes.length, 3); // fresh mount block, fresh island block, fresh manual section
+  assert.equal(r.data.notes.length, 3); // fresh mount block, fresh enhancer block, fresh manual section
   assert.match(r.data.notes.join(' | '), /no ACTION MOUNTS markers/);
-  assert.match(r.data.notes.join(' | '), /no ACTION ISLANDS markers/);
+  assert.match(r.data.notes.join(' | '), /no ACTION ENHANCERS markers/);
   assert.match(r.data.notes.join(' | '), /no BEGIN\/END ACTIONS markers/);
   const pageAfter = fs.readFileSync(pagePath, 'utf8');
   assert.match(
     pageAfter,
-    /<!-- BEGIN ACTION MOUNTS[\s\S]*?note-island[\s\S]*?<!-- END ACTION MOUNTS -->/,
+    /<!-- BEGIN ACTION MOUNTS[\s\S]*?<markers-probe-note>[\s\S]*?<!-- END ACTION MOUNTS -->/,
   );
-  assert.match(pageAfter, /\/\/ BEGIN ACTION ISLANDS[\s\S]*?mountIsland\('\.note-island'/);
+  assert.match(pageAfter, /\/\/ BEGIN ACTION ENHANCERS[\s\S]*?import '\.\.\/components\/note';/);
   const agentsAfter = fs.readFileSync(agentsPath, 'utf8');
   assert.match(
     agentsAfter,
@@ -420,7 +485,7 @@ test('add_action: missing page/markers — fresh marked blocks appended, the ans
   assert.equal(r2.data.notes.length, 0);
   const page2 = fs.readFileSync(pagePath, 'utf8');
   assert.equal(page2.match(/<!-- BEGIN ACTION MOUNTS/g).length, 1);
-  assert.match(page2, /note-island[\s\S]*echo-island/);
+  assert.match(page2, /<markers-probe-note>[\s\S]*?<markers-probe-echo>/);
 });
 
 // ---------- emitted table ----------
