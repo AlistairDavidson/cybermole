@@ -1,5 +1,5 @@
 // Writes dist/route-table.json at build time. Kept apart so route-table.ts
-// stays node-free for islands.
+// stays node-free for the browser.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { serializeRouteTable, type RouteTable } from './route-table';

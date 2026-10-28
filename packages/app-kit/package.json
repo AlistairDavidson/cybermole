@@ -12,7 +12,8 @@
     "./route-table": "./src/route-table.ts",
     "./route-table-emit": "./src/route-table-emit.ts",
     "./wa-client": "./src/wa-client.ts",
-    "./island": "./src/island.ts",
+    "./element": "./src/element.ts",
+    "./live": "./src/live.ts",
     "./agent-console": "./src/agent-console.ts",
     "./testing": "./src/testing/index.mts"
   },
@@ -22,8 +23,8 @@
     "@aws-sdk/lib-storage": "^3.1149.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
+    "@preact/signals-core": "^1.14.5",
     "kysely": "^0.29.6",
-    "preact": "^10.27.2",
     "zod": "^4.6.5"
   },
   "peerDependencies": {

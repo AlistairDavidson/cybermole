@@ -3,7 +3,8 @@
 //
 //   (a) handleApiRequest()/astroApiHandlers(): the Astro catch-all API.
 //   (b) toMcpToolShapes(): MCP tool shapes, schemas converted to JSON schema.
-//   (c) createRouteClient(): a typed client issuing the same HTTP requests.
+//   (c) createRouteClient(): a typed client issuing the same HTTP requests
+//       (the components' enhancers and stores call it in the browser).
 //   (d) serializeRouteTable(): dist/route-table.json, for describe/call and
 //       the app's MCP shim.
 //

@@ -22,8 +22,9 @@
     "src/schemas/**/*.ts",
     "packages/app-kit/src/**/*.ts"
   ],
-  "exclude": ["packages/app-kit/src/island.ts", "packages/app-kit/src/agent-console.ts"]
-  // ^ client-only modules (the DOM/xterm libraries and preact's jsx types
-  // pollute this node-typed program — FormData/RequestInit clashes). The
-  // kit's own tsconfig.json checks them, with DOM libs.
+  "exclude": ["packages/app-kit/src/element.ts", "packages/app-kit/src/agent-console.ts"]
+  // ^ client-only modules (the DOM and xterm libraries pollute this
+  // node-typed program). The kit's own tsconfig.json checks them, with DOM
+  // libs. live.ts stays in: @types/node declares WebSocket, so the doorbell
+  // compiles for its unit tests.
 }

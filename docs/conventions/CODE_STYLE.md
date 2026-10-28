@@ -1,6 +1,6 @@
 # CODE_STYLE.md
 
-Correctness conventions for cybermole. This file is about **using the type system and boundaries correctly**, not formatting: match the formatting of the code around you, and keep comments short (see AGENTS.md). Read it before touching `src/lib`, `src/schemas`, an API route, or a form. Porting old code into these conventions: `docs/conventions/REFACTOR_STYLE.md`.
+Correctness conventions for cybermole. This file is about **using the type system and boundaries correctly**, not formatting: match the formatting of the code around you, and keep comments short (see AGENTS.md). Read it before touching `src/lib`, `src/schemas`, an API route, a form, a page or a component. Porting old code into these conventions: `docs/conventions/REFACTOR_STYLE.md`.
 
 ---
 
@@ -153,22 +153,91 @@ is a type error.
   - The WebSocket upgrade, login, logout and log-out-everywhere stay in
     main.ts: rate limiter, fail2ban's 401 semantics, socket tracking.
 
-## 7. Pages: server-rendered first, enhanced by HTML web components
+## 7. Components: Astro SSR first, enhanced by HTML web components, live through signals
 
-- Render data in the page's frontmatter so it arrives as HTML: get the
-  services with `assertCybermoleLocals(Astro.locals)` — the render throws
-  without them (the gate is the only renderer that has them; in dev,
-  browse the `dev:server` process), never a placeholder the element
-  fills in. A failed service call renders its error message instead. A
-  custom element (light DOM, `connectedCallback`) enhances that markup:
-  wiring buttons, polling, dialogs.
-- Refresh by fetching a server-rendered partial (`src/pages/partials/*`,
-  `export const partial = true`) and swapping it in. Don't template HTML
-  strings in the browser.
-- Guard every registration:
-  `if (!customElements.get('x-y')) customElements.define('x-y', XY);`.
-- Every SSR'd `wa-*` component must also be imported client-side, after
-  the astro-lit support modules (AGENTS.md has the details).
+The component architecture, one line each:
+
+- **The Astro component (`.astro`) is THE component.** Structure, content,
+  styling, props — all server-rendered, zero JS by default. There is no
+  mechanism by which app code renders initial content in the browser.
+- **An HTML web component (Jeremy Keith's sense) adds behaviour.** The custom
+  element *is* the host: the server renders real light-DOM children inside
+  it, and `connectedCallback` wires them up. **Enhance, never render** — the
+  element never generates its initial content, and its children are the
+  content, present and correct before JS runs.
+- **`@preact/signals-core` is the reactive state layer** (no preact, no vdom,
+  no hydration, ever). Signals live in module-scoped stores, effects update
+  the DOM.
+
+Say "component", never "island" — there are no islands in this
+architecture, and the word is banned from new code and docs.
+
+### HTML web components: the rules
+
+- Declare with `defineElement(name, setup)` (`@cybermole/app-kit/element`):
+  it carries the `customElements.get` guard (a re-running script never
+  double-defines) and the connect/disconnect lifecycle. `setup` returns an
+  optional teardown function; `effect()`'s disposer is exactly that.
+- **Light DOM only.** App-authored elements never `attachShadow`. Shadow DOM
+  belongs to third-party leaves (wa-*, below) and to exactly one first-party
+  exception: the agent console/terminal, which is classic client-side JS by
+  nature — a terminal cannot be SSR'd.
+- Element names are `<slug>-<thing>` in apps (unique tags per install), and
+  prefixed names in the console. Pairing: `<Name>.astro` + `<name>.ts`
+  (`ConsoleApp.astro` / `console-app.ts`).
+- Effects and handlers update the DOM **surgically**: `createElement`,
+  property and `textContent` writes, toggling elements the server rendered.
+  Never build markup from HTML strings — no `innerHTML` writes with
+  interpolated data, no client-side template literals of HTML. Both are
+  enforced by the architecture lint. If a frontend ever truly outgrows
+  surgical updates, revise the standard then; do not preemptively.
+
+### Signals: the rules
+
+- `@preact/signals-core` only — `preact`, `preact/hooks` and
+  `@preact/signals` (the preact-integrated build) are banned imports.
+- App state lives in `src/store/*.ts` (the console: a store module per
+  concern): module-scoped signals, node-free, imported by enhancers and page
+  scripts. An enhancer never holds private signal state another surface
+  might need.
+- A signal's effect is the only thing that touches the DOM for that signal;
+  handlers write signals, effects read them.
+
+### Live updates: the WS is a doorbell, actions carry the data
+
+- A WS frame is a small typed event (`notes_changed`), validated by a zod
+  schema. `createAppSocket` (`@cybermole/app-kit/live`) owns the connection:
+  capped-backoff reconnect (the host cuts tunnels on logout or token expiry
+  without a close handshake), frame parse, dispatch.
+- An event bumps a store signal; an effect refreshes the data **via the
+  typed route client** — the same action the API and MCP tool serve — and
+  updates the DOM surgically. The socket never carries domain state; data
+  flows through actions so the trinity (HTTP / MCP / UI, one code path)
+  stays literally true.
+
+### Pages and data
+
+- Render data in the page's (or component's) frontmatter so it arrives as
+  HTML: call the action's own logic (`src/lib/*`) — on the server it runs
+  against the store directly, in the browser through the route client; one
+  code path either way. In the console, `assertCybermoleLocals` (the gate is
+  the only renderer that has the services) throws without them — never a
+  placeholder the element fills in; a failed call renders its error message.
+- **No-JS baseline:** reading and navigation always work without JS; a GET
+  action's form degrades to a native GET; an action whose UI needs
+  JSON-body semantics may require JS — and its docs say so.
+- Every SSR'd `wa-*` component must also be imported client-side, after the
+  astro-lit support modules (AGENTS.md has the details); import
+  `@cybermole/app-kit/wa-client` first in any client script that re-imports
+  wa-* halves.
+
+### Enforcement
+
+The mechanical rules (banned imports, `attachShadow`, `innerHTML` writes,
+unguarded `customElements.define`) are checked by the architecture lint
+(`@cybermole/app-kit`'s `scripts/arch-check.mjs`): it runs in every app's
+`npm run check` (the `lint:arch` stage of the apps `check` verb) and can be
+run anywhere with `node <kit>/scripts/arch-check.mjs <dirs>`.
 
 ## 8. Forms
 

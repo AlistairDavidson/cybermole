@@ -27,8 +27,8 @@ export default [
   ...tseslint.configs.strict,
 
   // Both tsconfigs listed: the project service only discovers tsconfig.json.
-  // packages/app-kit has its own (the island module needs DOM libs, which
-  // the node-typed server build excludes).
+  // packages/app-kit has its own (the browser modules need DOM libs,
+  // which the node-typed server build excludes).
   {
     files: [
       'src/**/*.ts',

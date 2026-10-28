@@ -49,8 +49,16 @@ the root):
 
 - **`@cybermole/app-kit/wa-client`** — the wa-* client-import boilerplate;
   import it FIRST in any client script that uses SSR'd wa-* components.
-- **`@cybermole/app-kit/island`** — `mountIsland()`, the preact-signals
-  island convention.
+- **`@cybermole/app-kit/element`** — the HTML web component convention:
+  `defineElement(name, setup)` (guard + connect/disconnect lifecycle, the
+  returned teardown runs on disconnect) and `waValue()` for reading an
+  un-upgraded-or-not wa-* control. Enhance, never render (CODE_STYLE.md §7).
+- **`@cybermole/app-kit/live`** — `createAppSocket()`: the WS doorbell
+  client (zod-validated frames, capped-backoff reconnect) + `backoffDelay()`.
+- **`scripts/arch-check.mjs`** (not an export — run it with node) — the
+  architecture lint: banned imports (preact renderer, direct lit, htmx),
+  `attachShadow`, `innerHTML`/`outerHTML` writes, unguarded
+  `customElements.define`. An app's `lint:arch` script runs it over `src`.
 - **`@cybermole/app-kit/agent-console`** — the app pages' agent drawer
   (`<agent-console slug=…>`): the wa-drawer + ONE lean xterm over the
   console's /ws bridge, the operator-workspace open flow and the builder
