@@ -10,11 +10,20 @@ behind the console's login once it is registered and built.
   client the components' stores use, the MCP shim's tools and
   `dist/route-table.json` (emitted by the build — `astro.config.mjs`'s
   emit integration).
-- `src/components/*.ts` — HTML web component enhancers: the element wraps
-  the page's SSR'd light-DOM children and wires them from
-  `connectedCallback` — enhance, never render (CODE_STYLE.md §7). Element
-  names are `<slug>-<thing>` (unique per install; after scaffold, e.g.
-  `<__APP_SLUG__-ping>`); `ping.ts` is the worked example.
+- `src/components/<Name>/` — one directory per component: `<Name>.astro`
+  (the SSR, owning the component's wa-* SSR halves) + `<name>.ts` (the
+  enhancer: first imports `@cybermole/app-kit/wa-client`, then the client
+  halves of exactly what the `.astro` SSRs — it wires the SSR'd light-DOM
+  children from `connectedCallback`; enhance, never render, CODE_STYLE.md
+  §7). `Ping/` is the scaffolded example; repeated markup is templated in
+  the `.astro` (`<template data-item>` — §7; the notes app's `NotesList/`
+  is the worked example). Element names are `<slug>-<thing>` (unique per
+  install; after scaffold, e.g. `<__APP_SLUG__-ping>`).
+- `src/pages/` — the pages: a page owns only its page-level wa-* halves
+  (e.g. the card), and its client script imports enhancers, nothing else
+  wa-*. `index.astro` carries three generated marker pairs — ACTION
+  IMPORTS (frontmatter), ACTION MOUNTS (body), ACTION ENHANCERS (client
+  script); `add_action` appends one action inside each.
 - `src/store/*.ts` — the signals stores (`@preact/signals-core`):
   module-scoped live client state, refreshed through the typed route
   client — the same route table the API serves.
