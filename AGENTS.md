@@ -170,6 +170,13 @@ Testing), not just in the SSR HTML.
 
 ## UI conventions
 
+- cybermole apps follow the component architecture of
+  `docs/conventions/CODE_STYLE.md` §7 — Astro components SSR'd, enhanced by
+  HTML web component enhancers, live state in `@preact/signals-core` stores;
+  say "component", never "island". The architecture lint (the `lint:arch`
+  stage of an app's `check`) enforces the mechanical rules. The console's own
+  `workspace-sidebar` `innerHTML` re-render (below) is legacy-to-migrate onto
+  signals, not the pattern.
 - New UI goes on Web Awesome components/utilities/tokens, not hand-rolled
   HTML/CSS (`.agents/skills/webawesome*` are the references). The app's
   identity lives in the `:root` semantic-token overrides in
