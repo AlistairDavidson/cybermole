@@ -19,11 +19,18 @@ behind the console's login once it is registered and built.
   the store as a parameter so the unit tests run against an in-memory
   fake), `notes-db.ts` (the sqlite half — `data/app.db`, gitignored).
 - `src/pages/` — the list page (SSR over `note_list`, a no-JS search
-  form, the capture island) and the note page (SSR over `note_get`, the
-  editor island for `note_edit`/`note_archive`). Both embed the agent
-  drawer (`<agent-console slug="notes">` — the app-starter README §
+  form, the capture editor) and the note page (SSR over `note_get`, the
+  editor for `note_edit`/`note_archive`). Both embed the agent drawer
+  (`<agent-console slug="notes">` — the app-starter README §
   The agent drawer has the contract): one terminal in this tree's
   operator workspace, plus the builder deep link.
+- `src/components/` + `src/store/` — the interactive half (CODE_STYLE.md
+  §7): Astro SSR components enhanced by HTML web components
+  (`<notes-ping>`, `<notes-editor>`, `<notes-list>` — the enhancers wire
+  the SSR'd children from `connectedCallback`) over signals stores
+  (`@preact/signals-core`) that act through the typed route client. The
+  tree's `lint:arch` check (part of `npm run check`) enforces the
+  component standard's mechanical rules.
 - `AGENTS.md` — the operator's manual for agents working in this tree.
 
 ## The live list (the WS example)
@@ -36,16 +43,19 @@ route (the app-starter README § WebSocket routes has the contract):
   It watches `data/` and broadcasts `{"type":"notes_changed"}` on any
   `app.db*` touch (debounced). One-way, self-contained — no `src/lib`
   imports, `node:` builtins and `ws` only.
-- The list page's client (`src/pages/index.astro`) dials
-  `/apps/notes/ws`, and on the signal re-fetches the page over HTTP and
-  swaps only the `.notes` region — the find form and the islands keep
-  their state. Reconnects with capped backoff (the host cuts tunnels on
-  logout/expiry without a close handshake).
+- `<notes-list>` (the page's live-list component) owns the doorbell: its
+  enhancer dials `/apps/notes/ws` through the kit's `createAppSocket`
+  (zod-validated frames, capped-backoff reconnect — the host cuts
+  tunnels on logout/expiry without a close handshake) and answers
+  `notes_changed` by refreshing through the typed `note_list` client —
+  the same action every face serves — then rebuilding the list's items
+  surgically from the store's signal. The find form and the editor keep
+  their state; the SSR list stands until the first refresh.
 
 The split is the point: **WS carries the nudge, HTTP actions carry the
  data.** The same signal makes the capturing tab's own list refresh
- after a save (the island's save previously left the SSR list stale
- until a manual reload).
+ after a save (a save used to leave the SSR list stale until a manual
+ reload).
 
 ## The seeding contract
 
@@ -62,7 +72,7 @@ starter template new apps scaffold from stays blank.
 
 ```text
 scaffold  (already done — this tree IS the scaffold, grown)
-check     the tree's own gate: astro check + tsc + unit tests + build
+check     the tree's own gate: lint:arch + astro check + tsc + unit tests + build
 test:e2e  the browser half (below) — outside the gate on purpose
 register  the db row (the privileged act)
 reload    the app host's sync point — the mount appears

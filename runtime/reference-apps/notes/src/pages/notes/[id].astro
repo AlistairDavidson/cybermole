@@ -1,5 +1,5 @@
 ---
-// The note page: note_get rendered server-side, with the editor island. A
+// The note page: note_get rendered server-side, with the editor's host. A
 // missing note answers 404. The wa-* imports here only SSR; the client
 // script re-imports them.
 import '@awesome.me/webawesome/dist/components/card/card.js';
@@ -41,16 +41,17 @@ const base = import.meta.env.BASE_URL;
                 <wa-badge>{t}</wa-badge>
               ))}
             </p>
-            <!-- The editor island's host: the note rides in data-note for
-                 the island's props. Without JS the note still reads. -->
-            <section class="note-editor" data-note={JSON.stringify(note)}>
+            <!-- The editor's host: the note's values ride in the SSR'd
+                 controls (data-note-id names the note); the enhancer reads
+                 them from there. Without JS the note still reads. -->
+            <notes-editor data-mode="edit" data-note-id={note.id}>
               <wa-input label="title" value={note.title}></wa-input>
               <wa-textarea label="body" value={note.body}></wa-textarea>
               <wa-input label="tags (comma-separated)" value={note.tags.join(', ')}></wa-input>
               <wa-button variant="brand">save changes</wa-button>
               <wa-button variant="danger">archive</wa-button>
               <p aria-live="polite">— nothing saved yet —</p>
-            </section>
+            </notes-editor>
             <p>
               <a href={`${base}/`}>back to the list</a>
             </p>
@@ -69,21 +70,10 @@ const base = import.meta.env.BASE_URL;
       import '@awesome.me/webawesome/dist/components/input/input.js';
       import '@awesome.me/webawesome/dist/components/textarea/textarea.js';
       import '@awesome.me/webawesome/dist/components/badge/badge.js';
-      import { mountIsland } from '@cybermole/app-kit/island';
       // The agent drawer (client-only; it imports its own wa-* halves).
       import '@cybermole/app-kit/agent-console';
 
-      import NoteEditorIsland from '../../islands/NoteEditorIsland';
-      import type { NoteEditorProps } from '../../islands/NoteEditorIsland';
-      import type { Note } from '../../lib/notes-core';
-
-      const host = document.querySelector<HTMLElement>('.note-editor');
-      if (host?.dataset.note !== undefined) {
-        mountIsland('.note-editor', NoteEditorIsland, {
-          mode: 'edit',
-          note: JSON.parse(host.dataset.note) as Note,
-        } satisfies NoteEditorProps);
-      }
+      import '../../components/notes-editor';
     </script>
   </body>
 </html>
