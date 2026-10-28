@@ -1,0 +1,43 @@
+---
+// The list (SSR): the live notes, plus the skeleton the enhancer stamps.
+// This file is the single authoring surface for item markup — the loop
+// renders data, and the <template data-item> beside it is the inert
+// maximal item (every optional element present, data-field hooks, a
+// nested template for the variable-count tags) the enhancer clones per
+// note. Keep the two mirrors beside each other.
+import '@awesome.me/webawesome/dist/components/badge/badge.js';
+import { noteExcerpt } from '../../lib/notes-core';
+import type { Note } from '../../lib/notes-core';
+
+interface Props {
+  notes: Note[];
+}
+const { notes } = Astro.props;
+const base = import.meta.env.BASE_URL;
+---
+<notes-list>
+  <ul class="notes" style="list-style: none; padding: 0;">
+    {notes.map(note => (
+      <li style="margin: 0.5rem 0;">
+        <a href={`${base}/notes/${note.id}`}>{note.title}</a>
+        {note.archived && <wa-badge>archived</wa-badge>}
+        {note.body !== '' && (
+          <p style="margin: 0.1rem 0; opacity: 0.75;">{noteExcerpt(note.body)}</p>
+        )}
+        {note.tags.map(t => (
+          <wa-badge>{t}</wa-badge>
+        ))}
+      </li>
+    ))}
+  </ul>
+  <template data-item>
+    <li style="margin: 0.5rem 0;">
+      <a data-field="link"></a>
+      <wa-badge data-optional="archived">archived</wa-badge>
+      <p data-field="excerpt" style="margin: 0.1rem 0; opacity: 0.75;"></p>
+      <template data-field="tag">
+        <wa-badge></wa-badge>
+      </template>
+    </li>
+  </template>
+</notes-list>

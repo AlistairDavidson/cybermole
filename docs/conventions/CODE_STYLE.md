@@ -183,15 +183,28 @@ architecture, and the word is banned from new code and docs.
   exception: the agent console/terminal, which is classic client-side JS by
   nature — a terminal cannot be SSR'd.
 - Element names are `<slug>-<thing>` in apps (unique tags per install), and
-  prefixed names in the console. Pairing: `<Name>.astro` + `<name>.ts`
-  (`ConsoleApp.astro` / `console-app.ts`).
-- Effects and handlers update the DOM **surgically**: `createElement`,
-  property and `textContent` writes, toggling elements the server rendered.
-  Never build markup from HTML strings — no `innerHTML`/`outerHTML` writes,
-  no `insertAdjacentHTML`/`setHTMLUnsafe`, no client-side template literals
-  of HTML, no renderer or html-template library. All of it is enforced by
-  the architecture lint. If a frontend ever truly outgrows surgical
-  updates, revise the standard then; do not preemptively.
+  prefixed names in the console.
+- **A component is a directory**: `src/components/<Name>/<Name>.astro` (the
+  SSR) + `<name>.ts` (the enhancer), plus whatever partials belong to it.
+  The directory owns its wa-* halves — the SSR import in the `.astro`
+  frontmatter, the client re-import (after `@cybermole/app-kit/wa-client`)
+  at the top of the enhancer. A page owns only its page-level elements'
+  halves; its client script imports enhancers, nothing else wa-*.
+- Effects and handlers update the DOM **surgically**: fill/toggle/clone,
+  never build markup from strings. All of it is enforced by the
+  architecture lint (no `innerHTML`/`outerHTML` writes, no
+  `insertAdjacentHTML`/`setHTMLUnsafe`, no client-side template literals of
+  HTML, no renderer or html-template library). If a frontend ever truly
+  outgrows surgical updates, revise the standard then; not preemptively.
+- **Repeated markup is templated in the .astro file, not constructed in
+  TS.** When an enhancer must build repeated structures (a list rebuilt on
+  a live update), the component's `.astro` ships an inert skeleton beside
+  the SSR'd data: a `<template data-item>` with `data-field` hooks, and a
+  nested `<template>` for variable-count children. The enhancer clones the
+  template, fills `[data-field]` elements, toggles optional elements,
+  clones the nested template per child — it knows field names, never
+  markup structure. The skeleton mirrors the SSR loop's structure; keeping
+  them beside each other in one file is what holds them honest.
 
 ### Signals: the rules
 

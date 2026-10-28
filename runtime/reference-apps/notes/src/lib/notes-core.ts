@@ -130,6 +130,12 @@ export function rowToNote(row: NoteRow): Note {
   };
 }
 
+/** The list's excerpt rule, shared by the SSR loop and the list enhancer —
+ *  one definition so the two mirrors can't disagree on the cap. */
+export function noteExcerpt(body: string): string {
+  return body.length > 160 ? `${body.slice(0, 160)}…` : body;
+}
+
 // ---------- db boundary ----------
 
 /** The kit's databaseRead/Update pattern, written locally so action modules

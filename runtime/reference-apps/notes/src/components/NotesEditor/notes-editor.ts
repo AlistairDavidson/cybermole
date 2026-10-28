@@ -1,14 +1,16 @@
-// The editor enhancer (CODE_STYLE.md §7): <notes-editor> wraps the SSR'd
-// controls and the aria-live line — create mode (data-mode="create") on the
-// list page, edit mode (data-mode="edit" + data-note-id) on the note page.
-// This wires save/archive to the notes store and mirrors editorStatus into
-// the line; a create success clears the controls for the next capture.
-// Enhance, never render — the controls are the content, with the note's
-// values already in them.
+// The editor enhancer (CODE_STYLE.md §7): wires the SSR'd controls
+// (NotesEditor.astro, this directory) to the notes store — save/archive
+// through the typed client, editorStatus into the aria-live line; a create
+// success clears the controls for the next capture. The directory owns its
+// wa-* halves: wa-client first, then the client-side re-imports.
+import '@cybermole/app-kit/wa-client';
+import '@awesome.me/webawesome/dist/components/input/input.js';
+import '@awesome.me/webawesome/dist/components/textarea/textarea.js';
+import '@awesome.me/webawesome/dist/components/button/button.js';
 import { effect } from '@preact/signals-core';
 import { defineElement, waValue } from '@cybermole/app-kit/element';
-import { archiveNote, editorStatus, saveNote } from '../store/notes';
-import type { WaValueHost } from '../wa-elements';
+import { archiveNote, editorStatus, saveNote } from '../../store/notes';
+import type { WaValueHost } from '../../wa-elements';
 
 defineElement('notes-editor', host => {
   const mode = host.dataset.mode === 'edit' ? 'edit' : 'create';

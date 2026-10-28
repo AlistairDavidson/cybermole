@@ -1,16 +1,17 @@
 ---
-// The list page: note_list rendered server-side, the capture editor's
-// host, and the ping action's host. The live list is <notes-list> — its
-// enhancer owns the WS doorbell. The find form uses native controls so it
-// works without JS. The wa-* imports here only SSR; the client script
-// re-imports them (see @cybermole/app-kit/wa-client).
+// The list page: note_list rendered server-side, the capture editor, and
+// the ping action — each a component directory that owns its SSR and its
+// enhancer. The find form uses native controls so it works without JS.
+// The page owns its page-level wa-* halves (the card); the components own
+// theirs. add_action appends inside the three marker pairs below.
 import '@awesome.me/webawesome/dist/components/card/card.js';
-import '@awesome.me/webawesome/dist/components/button/button.js';
-import '@awesome.me/webawesome/dist/components/input/input.js';
-import '@awesome.me/webawesome/dist/components/textarea/textarea.js';
-import '@awesome.me/webawesome/dist/components/badge/badge.js';
 import { getAppDb } from '../lib/notes-db';
 import { noteListResult } from '../lib/note_list';
+import NotesList from '../components/NotesList/NotesList.astro';
+// BEGIN ACTION IMPORTS (generated — add_action appends one import per action)
+import NotesEditor from '../components/NotesEditor/NotesEditor.astro';
+import NotesPing from '../components/NotesPing/NotesPing.astro';
+// END ACTION IMPORTS
 
 const sp = Astro.url.searchParams;
 const search = sp.get('search') ?? '';
@@ -57,45 +58,11 @@ const base = import.meta.env.BASE_URL;
         {notes.length === 0 && (
           <p>{archivedView ? 'nothing archived yet.' : 'no notes yet — capture one below.'}</p>
         )}
-        <notes-list>
-          <ul class="notes" style="list-style: none; padding: 0;">
-            {notes.map(note => (
-              <li style="margin: 0.5rem 0;">
-                <a href={`${base}/notes/${note.id}`}>{note.title}</a>
-                {note.archived && <wa-badge>archived</wa-badge>}
-                {note.body !== '' && (
-                  <p style="margin: 0.1rem 0; opacity: 0.75;">
-                    {note.body.slice(0, 160)}
-                    {note.body.length > 160 ? '…' : ''}
-                  </p>
-                )}
-                {note.tags.map(t => (
-                  <wa-badge>{t}</wa-badge>
-                ))}
-              </li>
-            ))}
-          </ul>
-        </notes-list>
+        <NotesList notes={notes} />
 
-        <!-- The components' hosts: SSR'd content the enhancers wire from
-             connectedCallback. add_action appends one section per action
-             inside the markers below. -->
         <!-- BEGIN ACTION MOUNTS (generated — add_action appends one element section per action) -->
-        {!archivedView && (
-          <notes-editor data-mode="create">
-            <h2>capture a note</h2>
-            <wa-input label="title"></wa-input>
-            <wa-textarea label="body"></wa-textarea>
-            <wa-input label="tags (comma-separated)"></wa-input>
-            <wa-button variant="brand">save note</wa-button>
-            <p aria-live="polite">— nothing saved yet —</p>
-          </notes-editor>
-        )}
-        <notes-ping>
-          <wa-input label="name" value="world"></wa-input>{' '}
-          <wa-button variant="brand">ping</wa-button>
-          <p aria-live="polite">— not pinged yet —</p>
-        </notes-ping>
+        {!archivedView && <NotesEditor mode="create" />}
+        <NotesPing />
         <!-- END ACTION MOUNTS -->
       </wa-card>
     </main>
@@ -103,27 +70,23 @@ const base = import.meta.env.BASE_URL;
          this app's operator workspace, plus the builder deep link. -->
     <agent-console slug="notes"></agent-console>
     <script>
-      // wa-client must precede the wa-* imports, or SSR'd elements render twice.
+      // The page's own wa-* halves (the card); the components import theirs.
       import '@cybermole/app-kit/wa-client';
       import '@awesome.me/webawesome/dist/components/card/card.js';
-      import '@awesome.me/webawesome/dist/components/button/button.js';
-      import '@awesome.me/webawesome/dist/components/input/input.js';
-      import '@awesome.me/webawesome/dist/components/textarea/textarea.js';
-      import '@awesome.me/webawesome/dist/components/badge/badge.js';
       // The agent drawer (client-only; it imports its own wa-* halves).
       import '@cybermole/app-kit/agent-console';
 
+      // The live list (the app's WS example): its enhancer dials
+      // /apps/notes/ws (the kit's socket client owns the capped backoff)
+      // and refreshes through the typed note_list client on
+      // notes_changed — WS carries the nudge, HTTP carries the data.
+      import '../components/NotesList/notes-list';
+
       // add_action appends one import per action inside these markers.
       // BEGIN ACTION ENHANCERS (generated — add_action appends one import per action)
-      import '../components/notes-ping';
-      import '../components/notes-editor';
+      import '../components/NotesEditor/notes-editor';
+      import '../components/NotesPing/notes-ping';
       // END ACTION ENHANCERS
-
-      // The live list (the app's WS example): <notes-list>'s enhancer
-      // dials /apps/notes/ws (the kit's socket client owns the capped
-      // backoff) and refreshes through the typed note_list client on
-      // notes_changed — WS carries the nudge, HTTP carries the data.
-      import '../components/notes-list';
     </script>
   </body>
 </html>

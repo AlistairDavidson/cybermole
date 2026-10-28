@@ -1,0 +1,28 @@
+---
+// The editor (SSR): <notes-editor> with the note's values already in the
+// controls — create mode on the list page, edit mode when a note rides
+// along. The enhancer (notes-editor.ts, this directory) wires save/archive;
+// the store (src/store/notes.ts) holds the status line. Without JS the
+// controls still read.
+import '@awesome.me/webawesome/dist/components/input/input.js';
+import '@awesome.me/webawesome/dist/components/textarea/textarea.js';
+import '@awesome.me/webawesome/dist/components/button/button.js';
+import type { Note } from '../../lib/notes-core';
+
+interface Props {
+  mode: 'create' | 'edit';
+  /** edit mode only: the note whose values ride in the controls */
+  note?: Note | undefined;
+}
+const { mode, note } = Astro.props;
+const noteId = mode === 'edit' && note !== undefined ? String(note.id) : undefined;
+---
+<notes-editor data-mode={mode} {...(noteId !== undefined ? { 'data-note-id': noteId } : {})}>
+  {mode === 'create' && <h2>capture a note</h2>}
+  <wa-input label="title" value={note?.title ?? ''}></wa-input>
+  <wa-textarea label="body" value={note?.body ?? ''}></wa-textarea>
+  <wa-input label="tags (comma-separated)" value={note?.tags.join(', ') ?? ''}></wa-input>
+  <wa-button variant="brand">{mode === 'edit' ? 'save changes' : 'save note'}</wa-button>
+  {mode === 'edit' && <wa-button variant="danger">archive</wa-button>}
+  <p aria-live="polite">— nothing saved yet —</p>
+</notes-editor>
