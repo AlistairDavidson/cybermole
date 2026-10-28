@@ -228,7 +228,6 @@ const { Scheduler } = require(process.cwd() + '/dist-server/src/lib/jobs/jobs.js
 const { StateDb } = require(process.cwd() + '/dist-server/src/lib/platform/db.js');
 const { JobSaveSchema } = require(process.cwd() + '/dist-server/src/schemas/jobs.js');
 const db = new StateDb(path.join(dir, 'cybermole.db'));
-const notified = [];
 const s = new Scheduler(db, {
   cwd: dir,
   env: {},

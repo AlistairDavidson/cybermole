@@ -159,7 +159,7 @@ test('alert provisioning: fires on any non-zero finish, states its reasoning', (
   assert.equal(rule.labels.topic, 'jobs');
 });
 
-test("alert provisioning: the query rides the finish line's JSON fields, not new labels", () => {
+test("alert provisioning: the query rides the finish line's fields, not new labels", () => {
   assert.equal(query.datasourceUid, 'cybermole-loki', 'the provisioned datasource uid');
   assert.equal(query.model.queryType, 'instant');
   assert.ok(
@@ -168,8 +168,11 @@ test("alert provisioning: the query rides the finish line's JSON fields, not new
   );
   assert.ok(query.model.expr.includes('|= "run finished"'), 'line filter on the finish line');
   assert.ok(query.model.expr.includes('| json'), 'fields parsed at query time');
-  // Non-zero, and unknown (null → empty) exits excluded.
+  // The filters read winston-loki's structured-metadata copy (the
+  // line-parsed one is renamed _extracted on collision): not success, not
+  // unknown (null stringifies to "null"), present.
   assert.ok(query.model.expr.includes('exitCode != `0`'));
+  assert.ok(query.model.expr.includes('exitCode != `null`'));
   assert.ok(query.model.expr.includes('exitCode != ``'));
   assert.ok(
     query.model.expr.includes('count_over_time(') && query.model.expr.includes('[10m]'),

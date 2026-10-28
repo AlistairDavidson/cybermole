@@ -801,7 +801,8 @@ In Loki, each line carries exactly three stream labels — `job`
 else (paths, durations, session names, the job-finish fields below) rides
 the line's JSON: every Loki line is a JSON object — `message` plus the
 log call's structured fields — so a LogQL `| json` parses every line
-while labels stay low-cardinality. A few log sites deliberately stay on
+while labels stay low-cardinality (winston-loki also ships those fields
+as Loki structured metadata, stringified). A few log sites deliberately stay on
 `console.*`, commented in place: `set-password` (a one-shot CLI prompting
 a human) and the Astro-bundled code — `zod.service.ts` and the `.astro`
 render guards (`settings.astro`, the `jobs-list` and `settings`
@@ -845,17 +846,23 @@ instance per failed run (it auto-resolves when the run leaves the window
 — one page per failure, no re-page noise) while still catching a burst.
 The rule's thresholds and that reasoning live in its annotations. The
 query deliberately adds no Loki labels: the finish log line carries
-`jobName` and `exitCode` as JSON *fields* (parsed at query time) —
+`jobName` and `exitCode` as JSON *fields*, and winston-loki mirrors the
+same fields into Loki **structured metadata**, stringified (`0` → `"0"`,
+missing/unknown `null` → `"null"`). A LogQL label filter on `exitCode`
+resolves that metadata copy (the line-parsed one is renamed
+`exitCode_extracted` on collision) —
 
 ```
 sum by (jobName) (count_over_time(
   {job="cybermole", component="scheduler"}
-  |= "run finished" | json | exitCode != `0` | exitCode != `` [10m]))
+  |= "run finished" | json
+  | exitCode != `0` | exitCode != `null` | exitCode != `` [10m]))
 ```
 
 — so the stream-label cardinality stays exactly `job/level/component`.
-Runs whose exit code is *unknown* (no readable exit file) are excluded
-by the second filter, on purpose. The rule hard-codes the default `job`
+The three filters read: not success (`"0"`), not unknown (`"null"` — a
+run with no readable exit file is deliberately excluded), present. The
+rule hard-codes the default `job`
 label value: overriding `CYBERMOLE_LOKI_JOB` means adjusting the
 `{job="cybermole"}` selector to match. Alerts surface in Grafana's
 **Alerting** page; the rule's annotations say what fired. No contact

@@ -30,12 +30,18 @@ groups:
             evaluation interval reports it within ~1.5 minutes of the
             finish; the 10 m window keeps one alert instance per failed run
             (it auto-resolves when the run leaves the window — no re-page
-            noise) while still catching a burst. Runs whose exit code is
-            unknown (no readable exit file) are deliberately excluded: the
-            filter matches exitCode present and not "0". The query stays off
-            new Loki labels on purpose: jobName/exitCode are parsed from the
-            line's JSON at query time. If CYBERMOLE_LOKI_JOB is overridden,
-            adjust the {job="cybermole"} selector to match.
+            noise) while still catching a burst. Data path: the finish log
+            line is a pure JSON object carrying jobName/exitCode/origin as
+            fields (no new stream labels — those stay job/level/component),
+            and winston-loki mirrors the same fields into Loki structured
+            metadata, stringified (0 becomes "0", null becomes "null"). A
+            label filter on exitCode resolves the metadata copy (the
+            line-parsed one is renamed exitCode_extracted on collision),
+            so the filters read: not success (!= `0`), not unknown
+            (!= `null` — runs with no readable exit file), present
+            (!= ``). Runs with an unknown exit are deliberately excluded.
+            If CYBERMOLE_LOKI_JOB is overridden, adjust the
+            {job="cybermole"} selector to match.
         labels:
           topic: jobs
         data:
@@ -52,7 +58,7 @@ groups:
                 uid: cybermole-loki
               editorMode: code
               expr: >-
-                sum by (jobName) (count_over_time({job="cybermole", component="scheduler"} |= "run finished" | json | exitCode != `0` | exitCode != `` [10m]))
+                sum by (jobName) (count_over_time({job="cybermole", component="scheduler"} |= "run finished" | json | exitCode != `0` | exitCode != `null` | exitCode != `` [10m]))
               queryType: instant
               refId: A
           # B: any such count above zero means a failed run.

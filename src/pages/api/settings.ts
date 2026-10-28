@@ -24,6 +24,9 @@ export const POST: APIRoute = async ({ locals, request }) => {
   const parsed = await parseAndValidateAPIRequest(request, settingsOverridesBody);
   if (!parsed.ok) return failureResponse(parsed);
   // Each form may send only its own fields; absent fields keep their row.
+  // Sequential saves on one sqlite connection: a failure between them is a
+  // broken-invariant case and the 500 leaves the earlier field applied —
+  // the next save re-writes both.
   const saved = cybermole.saveTerminalDefaults(parsed.data);
   if (!saved.ok) return terminalDefaultsFailureResponse(saved);
   const savedWebhook = cybermole.saveJobWebhook(parsed.data);
