@@ -211,8 +211,11 @@ test('the scaffolded app serves through the console origin, and /api/state repor
   // The SSR page, through the origin and behind the session gate.
   await page.goto(`/apps/${SLUG}/`);
   await expect(page.locator('wa-card h1')).toHaveText('Loop Probe');
-  // The island upgraded: its own rendering replaces the SSR'd content.
-  await expect(page.locator('.ping-island p[aria-live="polite"]')).toHaveText('— not pinged yet —');
+  // The SSR'd content stands; the enhancer element (not a re-render) keeps
+  // it live — the ping status is the SSR'd text until an action changes it.
+  await expect(page.locator('loop-probe-ping p[aria-live="polite"]')).toHaveText(
+    '— not pinged yet —',
+  );
   const ping = await api(page, 'GET', `/apps/${SLUG}/api/ping?name=loop`);
   expect(ping.status, JSON.stringify(ping.json)).toBe(200);
   expect(ping.json).toMatchObject({ ok: true, resultType: 'ping', data: { hello: 'loop' } });
