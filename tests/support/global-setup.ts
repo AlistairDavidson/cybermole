@@ -10,6 +10,7 @@ import { Apps } from '../../src/lib/apps/apps';
 import { Workspaces } from '../../src/lib/terminals/workspaces';
 import { terminalSessionName } from '../../src/lib/terminals/tmux';
 import { asAppId, asTerminalId } from '@cybermole/app-kit';
+import { writeFixtureSessions, type FixtureSession } from './fixtures';
 import {
   AGENT_MARKER,
   APPS_ROOT,
@@ -170,6 +171,7 @@ export default async function globalSetup(): Promise<void> {
   // because it's auto-selected at login. -f on the first session loads the
   // app's tmux.conf, whose terminal-overrides the backfill tests rely on.
   let first = true;
+  const liveFixtures: FixtureSession[] = [];
   for (const [group, index] of [
     [scratch, 0],
     [deploy, 0],
@@ -177,6 +179,7 @@ export default async function globalSetup(): Promise<void> {
   ] as const) {
     const id = group.terminals[index];
     if (!id) throw new Error('global-setup: fixture terminal missing');
+    const session = terminalSessionName(asTerminalId(id));
     execFileSync('tmux', [
       '-L',
       TMUX_SOCKET,
@@ -184,14 +187,19 @@ export default async function globalSetup(): Promise<void> {
       'new-session',
       '-d',
       '-s',
-      terminalSessionName(asTerminalId(id)),
+      session,
       '-c',
       group.cwd,
       '--',
       cmd,
     ]);
     first = false;
+    liveFixtures.push({ session, cwd: group.cwd });
   }
+  // e2e.spec's beforeAll heals these against out-of-band death: a fixture
+  // session nothing attaches (deploy's) is never respawned by the app, and
+  // the sidebar's live-badge contract would be unrecoverable.
+  writeFixtureSessions(liveFixtures);
 
   // The server serves dist/ + dist-server/ — build if they're missing.
   if (!fs.existsSync('dist/server/entry.mjs') || !fs.existsSync('dist-server/server/main.js')) {

@@ -14,6 +14,7 @@ import { expect, test, type Cookie, type Locator, type Page } from '@playwright/
 import { WebSocket as NodeWebSocket } from 'ws';
 import { setCredential } from '../../src/lib/platform/auth';
 import { StateDb } from '../../src/lib/platform/db';
+import { ensureFixtureSessions } from '../support/fixtures';
 import {
   AGENT_MARKER,
   MARKER,
@@ -174,6 +175,18 @@ async function refreshState(page: Page): Promise<void> {
   );
 }
 
+// The fixture terminals went live in global-setup, minutes and many specs
+// ago. A session that dies out-of-band in between is never retried by the
+// app (only an attach respawns): scratch's tab heals itself through the
+// apps specs' page attaches, but deploy's is attached by nothing — so its
+// live badge would be gone forever. Re-establish the fixture world here,
+// once, before the first test needs it; the healed names are the
+// diagnostic when the suite's environment is killing sessions.
+test.beforeAll(() => {
+  const healed = ensureFixtureSessions();
+  if (healed.length > 0) console.log(`e2e fixtures: re-spawned ${healed.join(', ')}`);
+});
+
 test('unauthenticated / serves the login page with upgraded wa-* controls', async ({ page }) => {
   await page.goto('/');
   // No redirect: the server renders login in place.
@@ -251,9 +264,9 @@ test('the login form validates in the browser: empty fields show their messages,
 test('login lands on the console with the fixture workspace tree in the sidebar', async ({
   page,
 }) => {
-  // Under full-suite load the fixture terminal's first live poll can take
-  // longer than the default 30 s budget (see the badge wait below).
-  test.setTimeout(120_000);
+  // Full-suite load can stretch this test's own waits (badge poll, WebGL)
+  // past the default 30 s budget.
+  test.setTimeout(60_000);
   await login(page);
   await expect(page.locator('console-app wa-page')).toHaveCount(1);
 
@@ -283,12 +296,12 @@ test('login lands on the console with the fixture workspace tree in the sidebar'
   await expect(groups.first()).toContainText('scratch');
   await expect(groups.first()).toContainText('deploy checklist');
   await expect(page.locator('workspace-sidebar #new-app')).toHaveCount(0);
-  // One live-terminal badge per row (scratch's second tab is the dead fixture).
-  // Live status heals on the sidebar's 15 s poll, so the window must cover a
-  // full cycle — under full-suite load even two cycles can pass before the
-  // poll lands (5 s flaked, then 20 s under load); 35 s covers three.
+  // One live-terminal badge per row (scratch's second tab is the dead
+  // fixture). The beforeAll heal guarantees the sessions exist now, so
+  // the live flags arrive with the first /api/state; the window only
+  // covers the sidebar's 10 s liveness re-poll under load.
   await expect(groups.first().locator('li[data-ws] wa-badge')).toHaveCount(2, {
-    timeout: 75_000,
+    timeout: 35_000,
   });
   await expect(groups.first().locator('li[data-ws].active')).toHaveCount(1);
 
