@@ -10,7 +10,7 @@
  *  double-wire if the element is moved in the DOM — always return one. */
 export function defineElement(
   name: string,
-  setup: (host: HTMLElement) => void | (() => void),
+  setup: (host: HTMLElement) => (() => void) | undefined,
 ): void {
   if (customElements.get(name) !== undefined) return;
   customElements.define(

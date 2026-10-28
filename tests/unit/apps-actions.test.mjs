@@ -294,7 +294,7 @@ test('add_action: the lockstep — every artifact written, in order, from one ta
   const mounts = page.match(/<!-- BEGIN ACTION MOUNTS[\s\S]*?<!-- END ACTION MOUNTS -->/)[0];
   assert.match(
     mounts,
-    /<lockstep-probe-create-note>\n          <wa-input label="text"><\/wa-input>\n          <wa-button variant="brand">create-note<\/wa-button>\n          <p aria-live="polite">— not sent yet —<\/p>\n        <\/lockstep-probe-create-note>/,
+    /<lockstep-probe-create-note>\n {10}<wa-input label="text"><\/wa-input>\n {10}<wa-button variant="brand">create-note<\/wa-button>\n {10}<p aria-live="polite">— not sent yet —<\/p>\n {8}<\/lockstep-probe-create-note>/,
   );
   assert.ok(mounts.indexOf('ping') < mounts.indexOf('<lockstep-probe-create-note>')); // after ping's section
   const enhancers = page.match(/\/\/ BEGIN ACTION ENHANCERS[\s\S]*?\/\/ END ACTION ENHANCERS/)[0];

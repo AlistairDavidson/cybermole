@@ -414,7 +414,7 @@ defineElement('${slug}-${name}', host => {
 // ---------- page mount blocks ----------
 
 export const MOUNT_BEGIN =
-  '<!-- BEGIN ACTION MOUNTS (generated — add_action appends one section per action) -->';
+  '<!-- BEGIN ACTION MOUNTS (generated — add_action appends one element section per action) -->';
 export const MOUNT_END = '<!-- END ACTION MOUNTS -->';
 export const ENHANCER_BEGIN =
   '// BEGIN ACTION ENHANCERS (generated — add_action appends one import per action)';

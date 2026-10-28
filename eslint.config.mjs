@@ -52,7 +52,13 @@ export default [
   },
 
   {
-    files: ['tools/**/*.mjs', 'tests/**/*.mjs', 'astro.config.mjs', 'eslint.config.mjs'],
+    files: [
+      'tools/**/*.mjs',
+      'tests/**/*.mjs',
+      'packages/app-kit/scripts/**/*.mjs',
+      'astro.config.mjs',
+      'eslint.config.mjs',
+    ],
     languageOptions: { globals: { ...globals.node } },
   },
 
