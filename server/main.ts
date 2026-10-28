@@ -24,6 +24,14 @@ import {
   readEditorUpstream,
 } from '../src/lib/platform/env';
 import { componentLogger, closeLogger } from '../src/lib/platform/logger';
+import {
+  hardenResponse,
+  logAccess,
+  resolveUnderDir,
+  securityHeaderBlock,
+  send,
+  sendStaticFile,
+} from '../src/lib/platform/http-serve';
 import * as jobs from '../src/lib/jobs/jobs';
 import { startLivenessWatch } from '../src/lib/terminals/liveness';
 import { seedRootAgentsFile } from '../src/lib/platform/root-agents';
@@ -306,42 +314,13 @@ const MAX_LOGIN_VERIFY = 4;
 let loginVerifying = 0;
 
 // ---------- helpers ----------
-const MIME: Record<string, string> = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.webmanifest': 'application/manifest+json; charset=utf-8',
-  '.woff2': 'font/woff2',
-};
-
-function send(
-  res: http.ServerResponse,
-  code: number,
-  body: string,
-  headers?: Record<string, string>,
-): void {
-  res.writeHead(code, { 'Cache-Control': 'no-store', ...headers });
-  res.end(body);
-}
 function sendClientFile(res: http.ServerResponse, rel: string, cache: boolean): void {
-  const file = path.normalize(path.join(CFG.clientDir, rel));
-  if (!file.startsWith(CFG.clientDir + path.sep) && file !== CFG.clientDir) {
+  const file = resolveUnderDir(CFG.clientDir, rel);
+  if (file === null) {
     send(res, 404, 'not found');
     return;
   }
-  fs.readFile(file, (err, data) => {
-    if (err) {
-      send(res, 404, 'not found');
-      return;
-    }
-    res.writeHead(200, {
-      'Content-Type': MIME[path.extname(file)] ?? 'application/octet-stream',
-      'Cache-Control': cache ? 'public, max-age=3600' : 'no-store',
-    });
-    res.end(data);
-  });
+  sendStaticFile(res, file, cache);
 }
 /** JSON request body, capped at 10 KiB. Anything but a JSON object (array,
  *  string, null, …) is a bad request, so handlers can read fields freely. */
@@ -540,45 +519,6 @@ function renderAstro(
     });
 }
 
-// ---------- security headers ----------
-// xterm and Lit inject <style> at runtime, hence 'unsafe-inline' styles;
-// wss: is for older Safari, where 'self' doesn't cover it.
-const SECURITY_HEADERS: Record<string, string> = {
-  'Content-Security-Policy':
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-    "connect-src 'self' wss:; frame-ancestors 'none'",
-  'X-Frame-Options': 'DENY',
-  'X-Content-Type-Options': 'nosniff',
-  'Referrer-Policy': 'same-origin',
-};
-
-/** For upgrade rejections, written straight to the socket. */
-function securityHeaderBlock(): string {
-  return Object.entries(SECURITY_HEADERS)
-    .map(([n, v]) => `${n}: ${v}\r\n`)
-    .join('');
-}
-
-/** Apply the security headers on writeHead or end, whichever comes first,
- *  without overriding any a handler set itself. */
-function hardenResponse(res: http.ServerResponse): void {
-  const apply = (): void => {
-    for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
-      if (!res.hasHeader(name)) res.setHeader(name, value);
-    }
-  };
-  const writeHead = res.writeHead.bind(res) as (...args: unknown[]) => http.ServerResponse;
-  const end = res.end.bind(res) as (...args: unknown[]) => http.ServerResponse;
-  res.writeHead = ((...args: unknown[]) => {
-    apply();
-    return writeHead(...args);
-  }) as typeof res.writeHead;
-  res.end = ((...args: unknown[]) => {
-    apply();
-    return end(...args);
-  }) as typeof res.end;
-}
-
 // ---------- editor reverse proxy ----------
 // ${BASE}/editor/* → CYBERMOLE_EDITOR_UPSTREAM (HTTP + WS), behind the usual
 // session gate. Decisions live in src/lib/terminals/editor.ts.
@@ -739,20 +679,10 @@ const quietAccessPath = (p: string): boolean =>
   p.startsWith(route('/editor/')) ||
   p.startsWith(route('/apps/'));
 
-function logAccess(req: http.IncomingMessage, res: http.ServerResponse): void {
-  const start = Date.now();
-  res.on('finish', () => {
-    const p = (req.url ?? '').split('?')[0] ?? '';
-    const line = `${req.method} ${p} ${res.statusCode} in ${Date.now() - start}ms`;
-    if (quietAccessPath(p)) httpLog.debug(line);
-    else httpLog.http(line);
-  });
-}
-
 // A synchronous throw in a route costs one 500, not the process (and every tmux session with it).
 const server = http.createServer((req, res) => {
   hardenResponse(res);
-  logAccess(req, res);
+  logAccess(req, res, httpLog, quietAccessPath);
   try {
     handle(req, res);
   } catch (err) {

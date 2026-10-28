@@ -18,6 +18,15 @@ import { readAppsSocket, readInternalApiSocket } from '../src/lib/platform/env';
 import { requestInternalApi } from '../src/lib/platform/internal-api-client';
 import { AppSlugSchema } from '@cybermole/app-kit';
 import { debounceTrailing } from '../src/lib/platform/debounce';
+import {
+  hardenResponse,
+  logAccess,
+  resolveUnderDir,
+  securityHeaderBlock,
+  sendStaticFile,
+  sendJSON,
+  sendText,
+} from '../src/lib/platform/http-serve';
 import { probeSocketFile } from './internal-api';
 
 const log = componentLogger('app-host');
@@ -145,73 +154,7 @@ export class AppsSocketOwnedError extends Error {
   }
 }
 
-// ---------- plumbing ----------
-const MIME: Record<string, string> = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.webmanifest': 'application/manifest+json; charset=utf-8',
-  '.woff2': 'font/woff2',
-};
-
-function send(res: http.ServerResponse, code: number, body: string): void {
-  res.writeHead(code, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
-  res.end(body);
-}
-
-function sendJSON(res: http.ServerResponse, code: number, body: unknown): void {
-  res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(body));
-}
-
-// Only filled in where absent, so an app's own CSP wins.
-const SECURITY_HEADERS: Record<string, string> = {
-  'Content-Security-Policy':
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-    "connect-src 'self' wss:; frame-ancestors 'none'",
-  'X-Frame-Options': 'DENY',
-  'X-Content-Type-Options': 'nosniff',
-  'Referrer-Policy': 'same-origin',
-};
-
-/** Fills in absent security headers at writeHead or end. */
-function hardenResponse(res: http.ServerResponse): void {
-  const apply = (): void => {
-    for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
-      if (!res.hasHeader(name)) res.setHeader(name, value);
-    }
-  };
-  const writeHead = res.writeHead.bind(res) as (...args: unknown[]) => http.ServerResponse;
-  const end = res.end.bind(res) as (...args: unknown[]) => http.ServerResponse;
-  res.writeHead = ((...args: unknown[]) => {
-    apply();
-    return writeHead(...args);
-  }) as typeof res.writeHead;
-  res.end = ((...args: unknown[]) => {
-    apply();
-    return end(...args);
-  }) as typeof res.end;
-}
-
-/** For upgrade rejections, written straight to the socket. */
-function securityHeaderBlock(): string {
-  return Object.entries(SECURITY_HEADERS)
-    .map(([n, v]) => `${n}: ${v}\r\n`)
-    .join('');
-}
-
-function logAccess(req: http.IncomingMessage, res: http.ServerResponse): void {
-  const start = Date.now();
-  res.on('finish', () => {
-    log.http(
-      `${req.method} ${(req.url ?? '').split('?')[0]} ${res.statusCode} in ${Date.now() - start}ms`,
-    );
-  });
-}
+// ---------- admin body policy ----------
 
 // The reload body is just an optional {slug}.
 const BODY_MAX_BYTES = 10 * 1024;
@@ -729,8 +672,8 @@ class AppHost {
   /** Served before the middleware; hashed _astro/ assets are cacheable. */
   serveClientFile(res: http.ServerResponse, m: MountedApp, url: string): boolean {
     const rel = url.slice(m.base.length);
-    const file = path.normalize(path.join(m.clientDir, rel));
-    if (!file.startsWith(m.clientDir + path.sep)) return false; // traversal
+    const file = resolveUnderDir(m.clientDir, rel);
+    if (file === null) return false; // traversal
     let stat: fs.Stats;
     try {
       stat = fs.statSync(file);
@@ -738,18 +681,7 @@ class AppHost {
       return false;
     }
     if (!stat.isFile()) return false;
-    const hashed = rel.startsWith('/_astro/');
-    fs.readFile(file, (err, data) => {
-      if (err) {
-        send(res, 404, 'not found');
-        return;
-      }
-      res.writeHead(200, {
-        'Content-Type': MIME[path.extname(file)] ?? 'application/octet-stream',
-        'Cache-Control': hashed ? 'public, max-age=3600' : 'no-store',
-      });
-      res.end(data);
-    });
+    sendStaticFile(res, file, rel.startsWith('/_astro/'), res2 => sendText(res2, 404, 'not found'));
     return true;
   }
 }
@@ -769,10 +701,10 @@ export async function startAppHost(deps: AppHostDeps): Promise<AppHostHandle> {
   const upgradeSockets = new Set<Duplex>();
   const server = http.createServer((req, res) => {
     hardenResponse(res);
-    logAccess(req, res);
+    logAccess(req, res, log);
     dispatch(host, req, res).catch(err => {
       log.error('request handler error', { error: err });
-      if (!res.headersSent) send(res, 500, 'internal error');
+      if (!res.headersSent) sendText(res, 500, 'internal error');
       else res.destroy();
     });
   });
@@ -876,16 +808,16 @@ async function dispatch(
     mount.handler(req, res, err => {
       if (err) {
         log.error(`app ${mount.slug} handler passed an error`, { error: err });
-        if (!res.headersSent) send(res, 500, 'app error');
+        if (!res.headersSent) sendText(res, 500, 'app error');
         else res.destroy();
         return;
       }
       // next() without an error: the app has no such route.
-      send(res, 404, 'not found');
+      sendText(res, 404, 'not found');
     });
   } catch (err) {
     log.error(`app ${mount.slug} handler threw`, { error: err });
-    if (!res.headersSent) send(res, 500, 'app error');
+    if (!res.headersSent) sendText(res, 500, 'app error');
     else res.destroy();
   }
 }

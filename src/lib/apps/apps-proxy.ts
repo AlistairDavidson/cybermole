@@ -6,6 +6,7 @@
 // Host unreachable or wedged → a fast 502.
 import * as http from 'node:http';
 import { AppSlugSchema, type AppSlug } from '@cybermole/app-kit';
+import { sendJSON, sendText } from '../platform/http-serve';
 
 export const APPS_HOP_BY_HOP_HEADERS = [
   'connection',
@@ -61,15 +62,9 @@ export function appsBodyCapStatus(req: {
   return Number(declared) <= APPS_BODY_MAX_BYTES ? null : 413;
 }
 
-function send(res: http.ServerResponse, code: number, body: string): void {
-  res.writeHead(code, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
-  res.end(body);
-}
-
 /** The API's notFound shape, never HTML. */
 function sendAppsNotFound(res: http.ServerResponse): void {
-  res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ error: 'not found', detail: null, code: 'not_found' }));
+  sendJSON(res, 404, { error: 'not found', detail: null, code: 'not_found' });
 }
 
 /** The session gate has already run. */
@@ -90,7 +85,7 @@ export function handleAppsRequest(
   }
   const known = deps.registered(slug.data);
   if (known === null) {
-    send(res, 503, 'state store unavailable, try again');
+    sendText(res, 503, 'state store unavailable, try again');
     return;
   }
   if (!known) {
@@ -99,11 +94,11 @@ export function handleAppsRequest(
   }
   const capped = appsBodyCapStatus(req);
   if (capped === 413) {
-    send(res, 413, 'request body too large');
+    sendText(res, 413, 'request body too large');
     return;
   }
   if (capped === 411) {
-    send(res, 411, 'request body needs a Content-Length');
+    sendText(res, 411, 'request body needs a Content-Length');
     return;
   }
   proxyAppsRequest(deps.socketPath, req, res, deps.idleTimeoutMs);
@@ -141,7 +136,7 @@ function proxyAppsRequest(
   );
   proxied.on('error', () => {
     // The console's serving flag is the visible signal for this.
-    if (!res.headersSent) send(res, 502, 'app host unavailable');
+    if (!res.headersSent) sendText(res, 502, 'app host unavailable');
     else res.destroy();
   });
   req.pipe(proxied);
