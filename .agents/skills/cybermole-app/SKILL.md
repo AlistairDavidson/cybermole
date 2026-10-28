@@ -27,6 +27,8 @@ is `packages/app-kit/README.md`.
    SSR, owning its wa-* SSR halves) + `<name>.ts` (the enhancer, owning
    `@cybermole/app-kit/wa-client` + its client halves); repeated markup is
    templated in the `.astro` (`<template data-item>`), never createElement'd
+   in TS; styling is Web Awesome layout components + utility classes +
+   tokens — inline `style` attributes are banned (the lint enforces both)
    (§7); live state in `src/store/<name>.ts`; every call through
    `createRouteClient` — the same code path the API and MCP tool serve.
 6. `check` — the gate: typecheck + `lint:arch` + unit + build +

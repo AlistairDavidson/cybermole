@@ -209,6 +209,24 @@ architecture, and the word is banned from new code and docs.
   markup structure. The skeleton mirrors the SSR loop's structure; keeping
   them beside each other in one file is what holds them honest.
 
+### Styling: Web Awesome layout components, utilities and tokens
+
+- App UI is built on Web Awesome — layout components (`wa-stack`,
+  `wa-cluster`, `wa-grid`, …) for structure, the utility classes and design
+  tokens for spacing, type and color — not inline `style` attributes and
+  not hand-rolled CSS. The references are the webawesome skills
+  (`.agents/skills/webawesome*`); the notes app is the worked example.
+- Inline `style` attributes (static or bound) are banned in app `.astro`
+  markup, and the architecture lint enforces it. A genuine one-off need is
+  a token or a utility class waiting to be added, not an exception.
+- SSR layout components in the `.astro` (their styles ride the declarative
+  shadow root, so layout holds before JS), and import their client halves
+  under the same ownership rule as any wa-* leaf — the component that
+  renders them owns them, and an enhancer that clones them (the template
+  skeleton) imports the halves its clones need.
+- The template skeleton mirrors the SSR loop's classes exactly — the same
+  parity rule as structure.
+
 ### Signals: the rules
 
 - `@preact/signals-core` only — `preact`, `preact/hooks` and

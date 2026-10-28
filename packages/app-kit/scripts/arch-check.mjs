@@ -50,6 +50,8 @@ const CREATE_ELEMENT_RE = /\bdocument\.createElement\s*\(/;
 /** Whole-source (multi-line writes too); line numbers mapped after. */
 const HTML_WRITE_RE =
   /\.(?:innerHTML|outerHTML)\s*\+?=(?!=)|\.(?:insertAdjacentHTML|setHTMLUnsafe)\s*\(|\bdocument\.write\s*\(/g;
+/** Inline style attributes in .astro markup — Web Awesome or tokens, not style=. */
+const STYLE_ATTR_RE = /\sstyle\s*=\s*["{]/;
 const CLIENT_DIRECTIVE_RE = /\bclient:(?:load|visible|idle|only|media)\b/;
 const DEFINE_RE = /\bcustomElements\.define\s*\(/;
 const GUARD_RE = /\bcustomElements\.get\s*\(/;
@@ -88,6 +90,11 @@ export function scanSource(rel, source) {
     if (CREATE_ELEMENT_RE.test(line)) {
       violations.push(
         `${rel}:${lineNo}: document.createElement — repeated markup is templated in the .astro (<template> + fill/clone), never constructed in TS (CODE_STYLE.md §7)`,
+      );
+    }
+    if (/\.astro$/.test(rel) && STYLE_ATTR_RE.test(line)) {
+      violations.push(
+        `${rel}:${lineNo}: inline style attribute — Web Awesome layout components, utility classes and tokens are the styling surface (CODE_STYLE.md §7)`,
       );
     }
     if (/\.astro$/.test(rel) && CLIENT_DIRECTIVE_RE.test(line)) {

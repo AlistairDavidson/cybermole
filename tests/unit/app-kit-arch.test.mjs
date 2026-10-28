@@ -154,3 +154,12 @@ test('arch-check: document.createElement is not the pattern in app code', () => 
   assert.equal(out.length, 1);
   assert.match(out[0], /templated in the \.astro/);
 });
+
+test('arch-check: inline style attributes are banned in .astro markup', () => {
+  const out = scanSource(
+    'src/pages/index.astro',
+    '<wa-card style="margin: 1rem;">x</wa-card>\n<p style={{ color: c }}>y</p>\n<p>plain</p>\n',
+  );
+  assert.equal(out.length, 2);
+  for (const v of out) assert.match(v, /Web Awesome layout components/);
+});
