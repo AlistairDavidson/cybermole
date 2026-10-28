@@ -475,6 +475,11 @@ test("the WS example: a write in one tab updates another tab's list without a re
   await expect(p2.locator('.notes a', { hasText: 'live-list note' })).toHaveCount(1);
   await expect(p2.locator('.notes a')).toHaveCount(before + 1);
   await expect(page.locator('.notes a', { hasText: 'live-list note' })).toHaveCount(1);
+  // The stamped item mirrors its SSR twin: the tag badge and the body
+  // excerpt came from the .astro template, not the server.
+  const stamped = p2.locator('.notes li', { hasText: 'live-list note' });
+  await expect(stamped.locator('wa-badge')).toHaveText('ws');
+  await expect(stamped.locator('p')).toHaveText('created from another tab');
   // And it really was push: neither tab reloaded.
   expect(await p2.evaluate(() => document.body.dataset.liveSentinel ?? '')).toBe('alive');
 

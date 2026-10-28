@@ -590,6 +590,10 @@ export async function addAction(
     path.join('src', 'lib', `${name}.ts`),
     path.join('tests', `${name}.test.mjs`),
     path.join('src', 'components', pascal),
+    // the pre-directory shapes: a hand-flattened tree would otherwise get
+    // a fresh directory written beside the stale flat file
+    path.join('src', 'components', `${name}.ts`),
+    path.join('src', 'components', `${pascal}.astro`),
     path.join('src', 'store', `${name}.ts`),
   ].filter(rel => fs.existsSync(path.join(tree, rel)));
   if (collisions.length > 0) {

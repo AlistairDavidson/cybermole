@@ -29,6 +29,8 @@ function stampItem(skeleton: HTMLTemplateElement, note: Note, base: string): HTM
       badge.textContent = tag;
       li.insertBefore(badge, tagTemplate);
     }
+    // The stamped item must mirror its SSR twin exactly — no scaffolding.
+    tagTemplate.remove();
   }
   return li;
 }

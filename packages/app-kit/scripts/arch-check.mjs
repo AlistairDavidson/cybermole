@@ -46,6 +46,7 @@ const IMPORT_RE = /^\s*import\s+(?:[^'";]*?\sfrom\s+)?['"]([^'"]+)['"]/;
 const EXPORT_FROM_RE = /^\s*export\s+[^'";]*?\sfrom\s+['"]([^'"]+)['"]/;
 const DYNAMIC_IMPORT_RE = /\bimport\(\s*['"]([^'"]+)['"]\s*\)/g;
 const ATTACH_SHADOW_RE = /\.attachShadow\s*\(/;
+const CREATE_ELEMENT_RE = /\bdocument\.createElement\s*\(/;
 /** Whole-source (multi-line writes too); line numbers mapped after. */
 const HTML_WRITE_RE =
   /\.(?:innerHTML|outerHTML)\s*\+?=(?!=)|\.(?:insertAdjacentHTML|setHTMLUnsafe)\s*\(|\bdocument\.write\s*\(/g;
@@ -84,6 +85,11 @@ export function scanSource(rel, source) {
         `${rel}:${lineNo}: attachShadow — app-authored elements are light DOM only (CODE_STYLE.md §7)`,
       );
     }
+    if (CREATE_ELEMENT_RE.test(line)) {
+      violations.push(
+        `${rel}:${lineNo}: document.createElement — repeated markup is templated in the .astro (<template> + fill/clone), never constructed in TS (CODE_STYLE.md §7)`,
+      );
+    }
     if (/\.astro$/.test(rel) && CLIENT_DIRECTIVE_RE.test(line)) {
       violations.push(
         `${rel}:${lineNo}: client:* directive — hydration is banned; SSR the content and enhance it (CODE_STYLE.md §7)`,
@@ -108,6 +114,33 @@ export function scanSource(rel, source) {
 const SCAN_EXT = new Set(['.ts', '.tsx', '.mts', '.mjs', '.js', '.astro']);
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'dist-server', '.astro', 'vendor', '.git']);
 
+/** §7's component-directory rule, checked structurally: a component is a
+ *  directory src/components/<Name>/ holding <Name>.astro + <name>.ts. */
+export function scanComponentDir(componentsDir) {
+  const violations = [];
+  let entries;
+  try {
+    entries = fs.readdirSync(componentsDir, { withFileTypes: true });
+  } catch {
+    return violations;
+  }
+  for (const entry of entries) {
+    const p = path.join(componentsDir, entry.name);
+    if (entry.isFile() && SCAN_EXT.has(path.extname(entry.name))) {
+      violations.push(
+        `${p}: a flat file in components/ — a component is a directory <Name>/ holding <Name>.astro + <name>.ts (CODE_STYLE.md §7)`,
+      );
+    } else if (entry.isDirectory() && !SKIP_DIRS.has(entry.name)) {
+      if (!fs.existsSync(path.join(p, `${entry.name}.astro`))) {
+        violations.push(
+          `${p}: a component directory without ${entry.name}.astro — the SSR half of the pair is missing (CODE_STYLE.md §7)`,
+        );
+      }
+    }
+  }
+  return violations;
+}
+
 function walk(dir, violations) {
   let entries;
   try {
@@ -118,6 +151,9 @@ function walk(dir, violations) {
   for (const entry of entries) {
     const p = path.join(dir, entry.name);
     if (entry.isDirectory()) {
+      if (entry.name === 'components') {
+        violations.push(...scanComponentDir(p));
+      }
       if (!SKIP_DIRS.has(entry.name)) walk(p, violations);
     } else if (entry.isFile() && SCAN_EXT.has(path.extname(entry.name))) {
       violations.push(...scanSource(p, fs.readFileSync(p, 'utf8')));

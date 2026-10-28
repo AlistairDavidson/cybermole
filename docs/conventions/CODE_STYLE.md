@@ -185,13 +185,16 @@ architecture, and the word is banned from new code and docs.
 - Element names are `<slug>-<thing>` in apps (unique tags per install), and
   prefixed names in the console.
 - **A component is a directory**: `src/components/<Name>/<Name>.astro` (the
-  SSR) + `<name>.ts` (the enhancer), plus whatever partials belong to it.
-  The directory owns its wa-* halves — the SSR import in the `.astro`
-  frontmatter, the client re-import (after `@cybermole/app-kit/wa-client`)
-  at the top of the enhancer. A page owns only its page-level elements'
-  halves; its client script imports enhancers, nothing else wa-*.
-- Effects and handlers update the DOM **surgically**: fill/toggle/clone,
-  never build markup from strings. All of it is enforced by the
+  SSR) + `<name>.ts` (the enhancer), plus whatever partials belong to it
+  (the app convention, checked by the lint; the console's flat component
+  files are its acknowledged legacy set, migrating). The directory owns its
+  wa-* halves — the SSR import in the `.astro` frontmatter, the client
+  re-import (after `@cybermole/app-kit/wa-client`) at the top of the
+  enhancer. A page owns only its page-level elements' halves; its client
+  script imports enhancers, nothing else wa-*.
+- Effects and handlers update the DOM **surgically**: fill/toggle/clone —
+  `createElement` is not the pattern (a structure worth constructing is a
+  template), and markup is never built from strings. All of it is enforced by the
   architecture lint (no `innerHTML`/`outerHTML` writes, no
   `insertAdjacentHTML`/`setHTMLUnsafe`, no client-side template literals of
   HTML, no renderer or html-template library). If a frontend ever truly

@@ -5,7 +5,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { backoffDelay } from '../../dist-server/packages/app-kit/src/live.js';
-import { scanSource } from '../../packages/app-kit/scripts/arch-check.mjs';
+import { scanComponentDir, scanSource } from '../../packages/app-kit/scripts/arch-check.mjs';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 // ---------- backoffDelay ----------
 
@@ -118,4 +121,36 @@ test('arch-check: customElements.define needs its guard (defineElement has one)'
   const guarded = `if (!customElements.get('x-good')) customElements.define('x-good', X);
 `;
   assert.deepEqual(scanSource('src/define.ts', guarded), []);
+});
+
+// ---------- the component-directory rule (structural) ----------
+
+test('arch-check: components/ must be directories with their .astro half', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'arch-components-'));
+  // A conforming pair.
+  fs.mkdirSync(path.join(root, 'Good', ''), { recursive: true });
+  fs.writeFileSync(path.join(root, 'Good', 'Good.astro'), '');
+  fs.writeFileSync(path.join(root, 'Good', 'good.ts'), '');
+  assert.deepEqual(scanComponentDir(root), []);
+
+  // A flat enhancer file.
+  fs.writeFileSync(path.join(root, 'flat.ts'), 'export {};\n');
+  // A directory missing its SSR half.
+  fs.mkdirSync(path.join(root, 'Orphan'));
+  fs.writeFileSync(path.join(root, 'Orphan', 'orphan.ts'), '');
+  const out = scanComponentDir(root);
+  assert.equal(out.length, 2);
+  const flat = out.find(v => v.includes('flat.ts'));
+  const orphan = out.find(v => v.includes('Orphan'));
+  assert.match(flat ?? '', /a flat file in components/);
+  assert.match(orphan ?? '', /Orphan: a component directory without Orphan\.astro/);
+});
+
+test('arch-check: document.createElement is not the pattern in app code', () => {
+  const out = scanSource(
+    'src/components/Thing/thing.ts',
+    'const p = document.createElement("p");\n',
+  );
+  assert.equal(out.length, 1);
+  assert.match(out[0], /templated in the \.astro/);
 });
