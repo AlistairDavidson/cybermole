@@ -498,16 +498,19 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
     'add_action',
     {
       description:
-        'THE action generator (route + MCP tool + a signals store + an HTML web component ' +
-        "enhancer + its SSR'd page section + test stub + the AGENTS.md action section, all " +
-        "from one table entry): append one entry to the app's route table (src/routes.ts — a " +
-        'working echo stub with a `text` input field, GET/POST as asked) and write every other ' +
-        'face from it in lockstep — src/lib/<name>.ts (the Result family), tests/<name>.test.mjs ' +
-        "(the tree's test glob runs it as-is), the store + enhancer component + the page's " +
-        'section and import inside the generated markers, and the AGENTS.md BEGIN/END ACTIONS ' +
-        'block regenerated from the table. Does NOT build or register — the loop stays ' +
-        'agent-driven: check → build → reload. Idempotent by refusal: an existing action name ' +
-        'answers action_exists, never a mangled file.',
+        'THE action generator (route + MCP tool + a signals store + a component ' +
+        'directory (SSR .astro + enhancer) + its page wiring + test stub + the ' +
+        'AGENTS.md action section, all from one table entry): append one entry to ' +
+        "the app's route table (src/routes.ts — a working echo stub with a `text` " +
+        'input field, GET/POST as asked) and write every other face from it in ' +
+        'lockstep — src/lib/<name>.ts (the Result family), tests/<name>.test.mjs ' +
+        "(the tree's test glob runs it as-is), the store + the component directory " +
+        "(src/components/<Pascal>/ — the .astro SSR + its enhancer) + the page's " +
+        'import, mount and enhancer import inside the generated markers, and the ' +
+        'AGENTS.md BEGIN/END ACTIONS block regenerated from the table. Does NOT ' +
+        'build or register — the loop stays agent-driven: check → build → ' +
+        'reload. Idempotent by refusal: an existing action name answers ' +
+        'action_exists, never a mangled file.',
       inputSchema: {
         slug: AppSlugSchema.describe('the app, by its slug'),
         name: ActionNameSchema.describe(

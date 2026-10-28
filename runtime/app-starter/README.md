@@ -10,11 +10,12 @@ behind the console's login once it is registered and built.
   client the components' stores use, the MCP shim's tools and
   `dist/route-table.json` (emitted by the build — `astro.config.mjs`'s
   emit integration).
-- `src/components/*.ts` — HTML web component enhancers: the element wraps
-  the page's SSR'd light-DOM children and wires them from
-  `connectedCallback` — enhance, never render (CODE_STYLE.md §7). Element
-  names are `<slug>-<thing>` (unique per install; after scaffold, e.g.
-  `<__APP_SLUG__-ping>`); `ping.ts` is the worked example.
+- `src/components/<Name>/` — one directory per component: `<Name>.astro`
+  (the SSR) + `<name>.ts` (the enhancer), each owning the wa-* halves it
+  renders. The element wraps the page's SSR'd light-DOM children and wires
+  them from `connectedCallback` — enhance, never render (CODE_STYLE.md
+  §7). Element names are `<slug>-<thing>` (unique per install; after
+  scaffold, e.g. `<__APP_SLUG__-ping>`); `Ping/` is the worked example.
 - `src/store/*.ts` — the signals stores (`@preact/signals-core`):
   module-scoped live client state, refreshed through the typed route
   client — the same route table the API serves.
