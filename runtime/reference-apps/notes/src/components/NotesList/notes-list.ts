@@ -3,7 +3,9 @@
 // NotesList.astro once per note — clone, fill the data-fields, toggle the
 // optional elements, clone the tag template per tag. Markup knowledge stays
 // in the .astro; this knows field names only. The directory owns its wa-*
-// halves (the badge leaves the clones carry upgrade client-side).
+// halves (the badge leaves the clones carry upgrade client-side; the
+// wa-cluster/wa-list-plain/wa-caption classes are CSS utilities, they ride
+// the page's webawesome.css with no client half).
 import '@cybermole/app-kit/wa-client';
 import '@awesome.me/webawesome/dist/components/badge/badge.js';
 import { effect } from '@preact/signals-core';
@@ -22,12 +24,13 @@ function stampItem(skeleton: HTMLTemplateElement, note: Note, base: string): HTM
   const excerpt = li.querySelector('p[data-field="excerpt"]');
   if (note.body === '') excerpt?.remove();
   else if (excerpt !== null) excerpt.textContent = noteExcerpt(note.body);
+  if (note.tags.length === 0) li.querySelector('[data-optional="tags"]')?.remove();
   const tagTemplate = li.querySelector<HTMLTemplateElement>('template[data-field="tag"]');
   if (tagTemplate !== null) {
     for (const tag of note.tags) {
       const badge = tagTemplate.content.firstElementChild!.cloneNode(true) as HTMLElement;
       badge.textContent = tag;
-      li.insertBefore(badge, tagTemplate);
+      tagTemplate.parentElement!.insertBefore(badge, tagTemplate);
     }
     // The stamped item must mirror its SSR twin exactly — no scaffolding.
     tagTemplate.remove();

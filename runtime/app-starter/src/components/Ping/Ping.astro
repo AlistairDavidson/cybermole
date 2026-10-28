@@ -5,8 +5,10 @@
 import '@awesome.me/webawesome/dist/components/input/input.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 ---
-<__APP_SLUG__-ping>
-  <wa-input label="name" value="world"></wa-input>{' '}
-  <wa-button variant="brand">ping</wa-button>
-  <p aria-live="polite">— not pinged yet —</p>
+<__APP_SLUG__-ping class="wa-stack wa-gap-s">
+  <div class="wa-cluster wa-gap-s">
+    <wa-input label="name" value="world"></wa-input>
+    <wa-button variant="brand">ping</wa-button>
+  </div>
+  <p aria-live="polite" class="wa-caption">— not pinged yet —</p>
 </__APP_SLUG__-ping>

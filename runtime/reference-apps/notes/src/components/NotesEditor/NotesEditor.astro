@@ -17,12 +17,18 @@ interface Props {
 const { mode, note } = Astro.props;
 const noteId = mode === 'edit' && note !== undefined ? String(note.id) : undefined;
 ---
-<notes-editor data-mode={mode} {...(noteId !== undefined ? { 'data-note-id': noteId } : {})}>
+<notes-editor
+  class="wa-stack wa-gap-s"
+  data-mode={mode}
+  {...(noteId !== undefined ? { 'data-note-id': noteId } : {})}
+>
   {mode === 'create' && <h2>capture a note</h2>}
   <wa-input label="title" value={note?.title ?? ''}></wa-input>
   <wa-textarea label="body" value={note?.body ?? ''}></wa-textarea>
   <wa-input label="tags (comma-separated)" value={note?.tags.join(', ') ?? ''}></wa-input>
-  <wa-button variant="brand">{mode === 'edit' ? 'save changes' : 'save note'}</wa-button>
-  {mode === 'edit' && <wa-button variant="danger">archive</wa-button>}
-  <p aria-live="polite">— nothing saved yet —</p>
+  <div class="wa-cluster wa-gap-s">
+    <wa-button variant="brand">{mode === 'edit' ? 'save changes' : 'save note'}</wa-button>
+    {mode === 'edit' && <wa-button variant="danger">archive</wa-button>}
+  </div>
+  <p aria-live="polite" class="wa-caption">— nothing saved yet —</p>
 </notes-editor>

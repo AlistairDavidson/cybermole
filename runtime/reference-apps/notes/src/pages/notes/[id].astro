@@ -1,7 +1,9 @@
 ---
 // The note page: note_get rendered server-side, the editor component. A
 // missing note answers 404. The page owns its page-level wa-* halves (the
-// card, the header's badges); the editor directory owns its own.
+// card, the header's badges) and its stylesheet (webawesome.css: tokens,
+// utilities, native styles); the editor directory owns its own.
+import '@awesome.me/webawesome/dist/styles/webawesome.css';
 import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/badge/badge.js';
 import { getAppDb } from '../../lib/notes-db';
@@ -24,7 +26,7 @@ const base = import.meta.env.BASE_URL;
     <link rel="icon" type="image/svg+xml" href="/apps/notes/favicon.svg" />
   </head>
   <body>
-    <main style="font-family: system-ui; max-width: 40rem; margin: 3rem auto; padding: 0 1rem;">
+    <main>
       <wa-card>
         <h1 slot="header">{note !== null ? note.title : 'note not found'}</h1>
         {note === null ? (
@@ -33,7 +35,7 @@ const base = import.meta.env.BASE_URL;
           </p>
         ) : (
           <>
-            <p style="margin: 0.1rem 0;">
+            <p class="wa-cluster wa-gap-2xs">
               {note.archived && <wa-badge>archived</wa-badge>}
               {note.tags.map(t => (
                 <wa-badge>{t}</wa-badge>
@@ -50,6 +52,16 @@ const base = import.meta.env.BASE_URL;
         )}
       </wa-card>
     </main>
+    <style>
+      /* The page column — the one shape the utility set has no class for;
+       * tokens only, defined once (the design skill's content-column rule). */
+      main {
+        max-inline-size: calc(var(--wa-space-4xl) * 10);
+        margin-block: var(--wa-space-3xl);
+        margin-inline: auto;
+        padding-inline: var(--wa-space-m);
+      }
+    </style>
     <!-- The agent drawer (see the app-starter README): one terminal in
          this app's operator workspace, plus the builder deep link. -->
     <agent-console slug="notes"></agent-console>

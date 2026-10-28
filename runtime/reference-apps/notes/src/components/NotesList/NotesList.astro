@@ -16,28 +16,36 @@ const { notes } = Astro.props;
 const base = import.meta.env.BASE_URL;
 ---
 <notes-list>
-  <ul class="notes" style="list-style: none; padding: 0;">
+  <ul class="notes wa-list-plain wa-stack wa-gap-xs">
     {notes.map(note => (
-      <li style="margin: 0.5rem 0;">
-        <a href={`${base}/notes/${note.id}`}>{note.title}</a>
-        {note.archived && <wa-badge>archived</wa-badge>}
-        {note.body !== '' && (
-          <p style="margin: 0.1rem 0; opacity: 0.75;">{noteExcerpt(note.body)}</p>
+      <li class="wa-stack wa-gap-2xs">
+        <div class="wa-cluster wa-gap-2xs">
+          <a href={`${base}/notes/${note.id}`}>{note.title}</a>
+          {note.archived && <wa-badge>archived</wa-badge>}
+        </div>
+        {note.body !== '' && <p class="wa-caption">{noteExcerpt(note.body)}</p>}
+        {note.tags.length > 0 && (
+          <div class="wa-cluster wa-gap-2xs">
+            {note.tags.map(t => (
+              <wa-badge>{t}</wa-badge>
+            ))}
+          </div>
         )}
-        {note.tags.map(t => (
-          <wa-badge>{t}</wa-badge>
-        ))}
       </li>
     ))}
   </ul>
   <template data-item>
-    <li style="margin: 0.5rem 0;">
-      <a data-field="link"></a>
-      <wa-badge data-optional="archived">archived</wa-badge>
-      <p data-field="excerpt" style="margin: 0.1rem 0; opacity: 0.75;"></p>
-      <template data-field="tag">
-        <wa-badge></wa-badge>
-      </template>
+    <li class="wa-stack wa-gap-2xs">
+      <div class="wa-cluster wa-gap-2xs">
+        <a data-field="link"></a>
+        <wa-badge data-optional="archived">archived</wa-badge>
+      </div>
+      <p data-field="excerpt" class="wa-caption"></p>
+      <div class="wa-cluster wa-gap-2xs" data-optional="tags">
+        <template data-field="tag">
+          <wa-badge></wa-badge>
+        </template>
+      </div>
     </li>
   </template>
 </notes-list>
