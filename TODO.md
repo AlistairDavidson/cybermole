@@ -14,10 +14,6 @@ commits
 How to scaffold an app eg write its AGENTS.md, always make an mcp with tools that match every user action
 
 
-
-
-
-
 ## Deferred, ignore
 
 ### Db
