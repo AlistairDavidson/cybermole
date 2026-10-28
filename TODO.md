@@ -1,9 +1,6 @@
 ## Apps
 cross-app MCP registration (siblings talk plain HTTP through the host)
 
-
-## Workspaces follow-ups
-
 ## Worktrees
 ability to make a workspace a worktree
 ability to merge
