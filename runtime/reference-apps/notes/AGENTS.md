@@ -53,6 +53,7 @@ answers a hello — the scaffolded example action, wired end to end
 capture a note — title, body and tags
 - call: the `note_create` MCP tool, or the page's note_create affordance, or `POST /apps/notes/api/notes`
 - input: `title` (string, required), `body` (string, optional), `tags` (string, optional)
+- ui: requires JS (a JSON body — no native-form fallback)
 
 ### note_list
 
@@ -71,12 +72,14 @@ one note by its id
 edit a note — any of title, body or tags, merged
 - call: the `note_edit` MCP tool, or the page's note_edit affordance, or `PATCH /apps/notes/api/notes/:id`
 - input: `id` (number, required), `title` (string, optional), `body` (string, optional), `tags` (string, optional)
+- ui: requires JS (a JSON body — no native-form fallback)
 
 ### note_archive
 
 archive a note — a flag, never a delete
 - call: the `note_archive` MCP tool, or the page's note_archive affordance, or `POST /apps/notes/api/notes/:id/archive`
 - input: `id` (number, required)
+- ui: requires JS (a JSON body — no native-form fallback)
 <!-- END ACTIONS -->
 
 Tags are lowercase, comma-free, at most ten per note; `note_list`'s
