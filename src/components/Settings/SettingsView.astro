@@ -12,7 +12,7 @@ import '@awesome.me/webawesome/dist/components/details/details.js';
 import '@awesome.me/webawesome/dist/components/switch/switch.js';
 import WaField from '../form/WaField.astro';
 import { zodSchemaToHTMLAttributes } from '../../lib/web/zod.service';
-import { terminalDefaultsBody } from '../../schemas/api';
+import { jobWebhookBody, terminalDefaultsBody } from '../../schemas/api';
 import type { SettingsState } from '../../lib/platform/types';
 
 interface Props {
@@ -42,9 +42,11 @@ const iso = (at: number): string => new Date(at).toISOString();
 const flag = (name: string, on: boolean): Record<string, true> => (on ? { [name]: true } : {});
 const npmMissing = !state || !state.npmAvailable;
 const defaultsValidation = zodSchemaToHTMLAttributes(terminalDefaultsBody);
+const webhookValidation = zodSchemaToHTMLAttributes(jobWebhookBody);
 // Which source each effective value came from. Also carries the values for
 // the client-side prefill, since wa-input's value is a property, not an attribute.
 const td = state?.terminalDefaults ?? null;
+const jw = state?.jobWebhook ?? null;
 const source = (overridden: boolean): string => (overridden ? 'override saved' : 'default');
 ---
 <main class="settings-main wa-stack wa-gap-m">
@@ -113,6 +115,49 @@ const source = (overridden: boolean): string => (overridden ? 'override saved' :
         : 'terminal defaults unavailable'}
     </span>
     <wa-callout id="terminal-defaults-result" class="hidden"></wa-callout>
+  </wa-card>
+
+  <wa-card class="settings-card" with-header>
+    <div slot="header" class="wa-split">
+      <strong class="card-title">job notifications</strong>
+      <span class="hint">one webhook POST per finished job run — receivers filter by exitCode</span>
+    </div>
+    <!-- Same shape as the terminal-defaults form above: prefill with the
+         effective value, a save writes it as shown, an emptied field clears
+         the override (back to the env default, or off). -->
+    <validation-enhancer-zod>
+      <form id="job-webhook-form" class="wa-stack wa-gap-s" novalidate>
+        <WaField
+          id="job-webhook-url"
+          name="jobWebhookUrl"
+          label="webhook URL"
+          hint="POSTs the run-finished payload (README → Scheduled jobs); fires for successes too, 5 s timeout"
+          {...webhookValidation.jobWebhookUrl}
+        />
+        <div class="wa-cluster wa-gap-2xs">
+          <wa-button id="save-job-webhook" type="button" variant="brand" size="s">
+            <wa-icon slot="start" name="paper-plane"></wa-icon>
+            save
+          </wa-button>
+          <wa-button id="reset-job-webhook" type="button" size="s" appearance="plain">
+            reset to default
+          </wa-button>
+        </div>
+      </form>
+    </validation-enhancer-zod>
+    <span
+      id="job-webhook-source"
+      class="hint"
+      data-refresh
+      data-job-webhook-url={jw?.url ?? ''}
+    >
+      {jw
+        ? jw.url
+          ? `POSTing every finished run to ${jw.url} (${source(jw.overridden)})`
+          : `off — no URL configured (${source(jw.overridden)})`
+        : 'job webhook unavailable'}
+    </span>
+    <wa-callout id="job-webhook-result" class="hidden"></wa-callout>
   </wa-card>
 
   <wa-card class="settings-card" with-header>

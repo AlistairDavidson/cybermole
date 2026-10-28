@@ -211,6 +211,19 @@ export function readObjectStoreConfig(): ObjectStoreConfig | null {
   };
 }
 
+/** null when unset/empty (job-finish webhook off). A function, like
+ *  readGrafanaUrl below, so entry points that never fire it (set-password)
+ *  don't trip on a malformed value; the boot and every notifier call read
+ *  it fresh, and a malformed value stops the boot (main.ts logs it). */
+export function readJobWebhookUrl(): string | null {
+  const raw = RAW_ENV.CYBERMOLE_JOB_WEBHOOK_URL;
+  if (raw === undefined || raw.trim() === '') return null;
+  if (!URL.canParse(raw) || !/^https?:$/.test(new URL(raw).protocol)) {
+    throw new Error(`CYBERMOLE_JOB_WEBHOOK_URL=${JSON.stringify(raw)} is not an http(s) URL`);
+  }
+  return raw;
+}
+
 /** null when unset/empty (editor off). Must be a bare origin: the proxy
  *  forwards paths verbatim and would drop a path/query silently. */
 export function readEditorUpstream(): EditorUpstream | null {

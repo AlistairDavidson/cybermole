@@ -8,7 +8,7 @@ import {
   zodSchemaToHTMLAttributes,
 } from '../../dist-server/src/lib/web/zod.service.js';
 import { JobSaveSchema } from '../../dist-server/src/schemas/jobs.js';
-import { loginForm } from '../../dist-server/src/schemas/api.js';
+import { jobWebhookBody, loginForm } from '../../dist-server/src/schemas/api.js';
 import { UUID_RE } from '../../dist-server/packages/app-kit/src/schemas/patterns.js';
 import {
   JobNameSchema,
@@ -80,12 +80,17 @@ test('the app’s form schemas: the attributes the forms render', () => {
     username: { required: true, minlength: 1 },
     password: { required: true, minlength: 1 },
   });
+  assert.deepEqual(zodSchemaToHTMLAttributes(jobWebhookBody), {
+    // Optional (an emptied field clears), just shaped + capped.
+    jobWebhookUrl: { maxlength: 500, pattern: '^(|https?:\\/\\/\\S+)$' },
+  });
 });
 
 test('every pattern an app schema emits compiles under the v flag', () => {
   const schemas = [
     JobSaveSchema,
     loginForm,
+    jobWebhookBody,
     z.object({ a: JobNameSchema, b: TmuxSessionNameSchema }),
   ];
   for (const schema of schemas) {

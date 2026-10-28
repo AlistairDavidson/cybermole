@@ -7,7 +7,7 @@ import { BASE } from '../../base';
 import { signedInFetch, type SignedInFetchFailure } from '../signed-in-fetch';
 import 'validation-enhancer/zod';
 import type { ValidationEnhancerZod } from 'validation-enhancer/zod';
-import { terminalDefaultsBody } from '../../schemas/api';
+import { jobWebhookBody, terminalDefaultsBody } from '../../schemas/api';
 import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
@@ -49,6 +49,8 @@ export class SettingsApp extends HTMLElement {
       const button = (e.target as HTMLElement).closest('wa-button');
       if (button?.id === 'update-pi') void this.updatePi();
       else if (button?.id === 'logout-all') void this.logoutAll();
+      else if (button?.id === 'save-job-webhook') this.webhookForm()?.requestSubmit();
+      else if (button?.id === 'reset-job-webhook') void this.resetWebhook();
     });
     // Click handlers on the buttons themselves: inside the form, a native
     // submit would race the validated one. Save requestSubmits so the
@@ -67,20 +69,25 @@ export class SettingsApp extends HTMLElement {
     // Above the enhancer: it stops invalid submits, and a listener on the
     // form itself would fire before validation.
     this.addEventListener('submit', e => {
-      if ((e.target as HTMLElement).id !== 'terminal-defaults-form') return;
-      e.preventDefault();
-      void this.saveDefaults();
+      if ((e.target as HTMLElement).id === 'terminal-defaults-form') {
+        e.preventDefault();
+        void this.saveDefaults();
+      } else if ((e.target as HTMLElement).id === 'job-webhook-form') {
+        e.preventDefault();
+        void this.saveWebhook();
+      }
     });
     // wa-input's value is a property the server can't render, so prefill
-    // once it has upgraded.
-    void customElements
-      .whenDefined('validation-enhancer-zod')
-      .then(() =>
-        (this.querySelector('validation-enhancer-zod') as ValidationEnhancerZod).setZodSchema(
-          terminalDefaultsBody,
-        ),
-      );
+    // once it has upgraded. One enhancer per form, each with its own schema.
+    void customElements.whenDefined('validation-enhancer-zod').then(() => {
+      for (const enhancer of this.querySelectorAll('validation-enhancer-zod')) {
+        const form = enhancer.querySelector('form');
+        const schema = form?.id === 'job-webhook-form' ? jobWebhookBody : terminalDefaultsBody;
+        (enhancer as ValidationEnhancerZod).setZodSchema(schema);
+      }
+    });
     void customElements.whenDefined('wa-input').then(() => this.prefillDefaults());
+    void customElements.whenDefined('wa-input').then(() => this.prefillWebhook());
     // A blocked submit leaves setCustomValidity on the wa-input host, and
     // requestSubmit then silently refuses. Clear it on every edit, before
     // the enhancer re-marks a still-invalid value.
@@ -89,6 +96,9 @@ export class SettingsApp extends HTMLElement {
         this.setCustomValidity('');
       });
     }
+    this.webhookField()?.addEventListener('input', function (this: WaInputLike) {
+      this.setCustomValidity('');
+    });
     this.localizeTimes();
   }
 
@@ -238,6 +248,116 @@ export class SettingsApp extends HTMLElement {
     });
   }
 
+  // ---- job webhook ----
+
+  /** What we last put in the field, to tell user edits apart. */
+  private appliedWebhook: string | null = null;
+
+  private webhookForm(): HTMLFormElement | null {
+    return this.querySelector('#job-webhook-form');
+  }
+
+  private webhookField(): WaInputLike | null {
+    return this.querySelector('wa-input[name="jobWebhookUrl"]');
+  }
+
+  private webhookError(control: WaInputLike): HTMLElement | null {
+    const id = control.getAttribute('aria-errormessage');
+    return id ? this.querySelector(`#${CSS.escape(id)}`) : null;
+  }
+
+  private clearWebhookError(): void {
+    const control = this.webhookField();
+    if (!control) return;
+    control.setCustomValidity('');
+    control.classList.remove('valid', 'invalid');
+    control.removeAttribute('aria-invalid');
+    const message = this.webhookError(control);
+    if (message) message.textContent = '';
+  }
+
+  private showWebhookError(text: string): void {
+    const control = this.webhookField();
+    if (!control) return;
+    control.setCustomValidity(text);
+    control.classList.add('invalid');
+    control.setAttribute('aria-invalid', 'true');
+    const message = this.webhookError(control);
+    if (message) message.textContent = text;
+  }
+
+  /** Same edit-protection rule as the defaults prefill: never overwrite a
+   *  field the user edited since we last filled it. */
+  private prefillWebhook(): void {
+    const source = this.$('job-webhook-source');
+    const field = this.webhookField();
+    if (!source || !field) return;
+    const next = source.dataset.jobWebhookUrl ?? '';
+    if (this.appliedWebhook !== null && (field.value ?? '') !== this.appliedWebhook) return;
+    field.value = next;
+    this.appliedWebhook = next;
+  }
+
+  private async saveWebhook(): Promise<void> {
+    const result = this.$<WaCalloutLike>('job-webhook-result');
+    const field = this.webhookField();
+    if (!field) return;
+    result.classList.add('hidden');
+    // An emptied field is null (or ''); the schema turns either into a clear.
+    const sent = await signedInFetch(`${BASE}/api/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobWebhookUrl: field.value ?? null }),
+    });
+    if (!sent.ok) {
+      this.notAnswered(result, sent, 'could not save the webhook');
+      return;
+    }
+    const res = sent.data.response;
+    const body = (await res.json().catch(() => null)) as {
+      issues?: Record<string, string>;
+      error?: string;
+    } | null;
+    if (!res.ok) {
+      if (body?.issues?.jobWebhookUrl) this.showWebhookError(body.issues.jobWebhookUrl);
+      this.showError(result, body?.error ?? `could not save (HTTP ${res.status})`);
+      return;
+    }
+    this.clearWebhookError();
+    result.variant = 'success';
+    result.textContent = 'saved — the next finished run posts to it';
+    result.classList.remove('hidden');
+    this.appliedWebhook = field.value ?? '';
+    void this.refresh();
+  }
+
+  /** Clear: back to the env default, or off when there is none. */
+  private async resetWebhook(): Promise<void> {
+    const result = this.$<WaCalloutLike>('job-webhook-result');
+    result.classList.add('hidden');
+    const sent = await signedInFetch(`${BASE}/api/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobWebhookUrl: null }),
+    });
+    if (!sent.ok) {
+      this.notAnswered(result, sent, 'could not reset the webhook');
+      return;
+    }
+    const res = sent.data.response;
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      this.showError(result, body.error ?? `could not reset (HTTP ${res.status})`);
+      return;
+    }
+    this.clearWebhookError();
+    result.variant = 'success';
+    result.textContent = 'back to the default (env URL, or off)';
+    result.classList.remove('hidden');
+    this.appliedWebhook = null; // refill the field from the server
+    void this.refresh();
+  }
+
   private showError(callout: WaCalloutLike, message: string): void {
     callout.variant = 'danger';
     callout.textContent = message;
@@ -274,6 +394,7 @@ export class SettingsApp extends HTMLElement {
     });
     this.localizeTimes();
     this.prefillDefaults();
+    this.prefillWebhook();
     const flags = this.$('pi-flags').dataset;
     const npmAvailable = flags.npmAvailable === 'true';
     this.$<WaButtonLike>('update-pi').disabled = !npmAvailable;

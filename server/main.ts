@@ -22,6 +22,7 @@ import {
   readInternalApiSocket,
   readObjectStoreConfig,
   readEditorUpstream,
+  readJobWebhookUrl,
 } from '../src/lib/platform/env';
 import { componentLogger, closeLogger } from '../src/lib/platform/logger';
 import {
@@ -33,6 +34,7 @@ import {
   sendStaticFile,
 } from '../src/lib/platform/http-serve';
 import * as jobs from '../src/lib/jobs/jobs';
+import { createRunFinishNotifier } from '../src/lib/jobs/notify';
 import { startLivenessWatch } from '../src/lib/terminals/liveness';
 import { seedRootAgentsFile } from '../src/lib/platform/root-agents';
 import { EventsRelay, checkEventsUpgrade } from '../src/lib/platform/events-ws';
@@ -190,11 +192,15 @@ const route = (p: string): string => (CFG.base === '/' ? p : CFG.base + p);
 
 const stateDb = new StateDb(CFG.dbFile);
 const auth: AuthType = new Auth(stateDb);
+// The notifier returns a delivery promise (awaitable in tests); the
+// scheduler's seam is fire-and-forget, so hand it a void wrapper.
+const notifyRunFinished = createRunFinishNotifier({ db: stateDb });
 const scheduler = new jobs.Scheduler(stateDb, {
   cwd: CFG.newSessionCwd,
   env: sessionEnv,
   logDir: CFG.jobLogDir,
   logMaxBytes: ENV.CYBERMOLE_JOB_LOG_MAX,
+  notifyRunFinished: payload => void notifyRunFinished(payload),
 });
 scheduler.start();
 // The console page has no state poll anymore: sidebar liveness heals on
@@ -220,6 +226,12 @@ bootLog.info(
   CFG.grafanaExploreUrl === null
     ? 'logs: not configured (CYBERMOLE_GRAFANA_URL unset) — /logs answers 404'
     : `logs: framing Grafana Explore (${CFG.grafanaExploreUrl})`,
+);
+const jobWebhookUrl = readJobWebhookUrl();
+bootLog.info(
+  jobWebhookUrl === null
+    ? 'job webhook: off (CYBERMOLE_JOB_WEBHOOK_URL unset) — a /settings override can set one'
+    : `job webhook: env default ${jobWebhookUrl} (a /settings override wins)`,
 );
 
 // ---------- apps surface ----------

@@ -31,6 +31,7 @@ import {
   type TmuxSessionName,
 } from '@cybermole/app-kit';
 import { MAX_SCHEDULE, type SaveInput } from '../../schemas/jobs';
+import type { RunFinishedWebhook } from './notify';
 
 // ---------- results (HTTP statuses are mapped in the HTTP layer) ----------
 
@@ -232,6 +233,10 @@ export interface JobContext {
   logDir: string;
   /** Write-time log cap; the appender keeps draining output past it. */
   logMaxBytes: number;
+  /** Fired once per observed run finish, after the exit code is recorded
+   *  (src/lib/jobs/notify.ts). Absent = notifications off (tests). Never
+   *  awaited: delivery must not hold the tick. */
+  notifyRunFinished?: (payload: RunFinishedWebhook) => void;
 }
 
 // Domain events are emitted only inside the service functions below, which
@@ -499,7 +504,7 @@ export class Scheduler {
           ? this.db.get(
               qb
                 .selectFrom('job_runs')
-                .select(['fired_at', 'log'])
+                .select(['fired_at', 'origin', 'log'])
                 .where('job', '=', armed.job)
                 .orderBy('fired_at', 'desc')
                 .limit(1),
@@ -507,7 +512,7 @@ export class Scheduler {
           : this.db.get(
               qb
                 .selectFrom('job_runs')
-                .select(['fired_at', 'log'])
+                .select(['fired_at', 'origin', 'log'])
                 .where('job', '=', armed.job)
                 .where('fired_at', '=', armed.firedAt),
             )) ?? null,
@@ -526,27 +531,47 @@ export class Scheduler {
       }
     }
     if (run !== null) {
+      const finishedAt = Date.now();
       const updated = databaseUpdate('could not record the run finish', () =>
         this.db.run(
           qb
             .updateTable('job_runs')
-            .set({ exit_code: exitCode, finished_at: Date.now() })
+            .set({ exit_code: exitCode, finished_at: finishedAt })
             .where('job', '=', armed.job)
             .where('fired_at', '=', run.fired_at),
         ),
       );
       if (!updated.ok) log.error(`job ${armed.job}: ${updated.errorMessage}`);
-      else
+      else {
         emitDomainEvent({
           topic: 'jobs',
           type: 'run_finished',
           job: armed.job,
           firedAt: run.fired_at,
         });
+        void this.ctx.notifyRunFinished?.({
+          event: 'job_run_finished',
+          job: armed.job,
+          origin: run.origin,
+          firedAt: run.fired_at,
+          finishedAt,
+          exitCode,
+        });
+      }
     }
     log.info(
       `job ${armed.job} run finished (run session ${session} gone, ` +
         `exit ${exitCode === null ? 'unknown' : exitCode})`,
+      // Structured fields, not Loki labels (those stay low-cardinality by
+      // design): the provisioned Grafana job alert parses these with
+      // `| json` — deploy/grafana/provisioning/alerting/. jobName is the
+      // JSON field; the stream's `job` label stays the deployment id.
+      {
+        jobName: armed.job,
+        exitCode,
+        origin: run?.origin ?? null,
+        firedAt: run?.fired_at ?? null,
+      },
     );
   }
 

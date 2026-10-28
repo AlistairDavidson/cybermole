@@ -118,3 +118,80 @@ test('compose: the logs link is default-off; grafana allows the frame', () => {
   // Without this grafana answers X-Frame-Options: deny and the iframe stays blank.
   assert.equal(compose.services.grafana.environment.GF_SECURITY_ALLOW_EMBEDDING, 'true');
 });
+
+// ---------- the provisioned job-run alert ----------
+
+const alerting = parse(
+  readFileSync(
+    path.join(root, 'deploy', 'grafana', 'provisioning', 'alerting', 'jobs.yaml'),
+    'utf8',
+  ),
+);
+const group = alerting.groups[0];
+const rule = group.rules[0];
+const query = rule.data.find(d => d.refId === 'A');
+const threshold = rule.data.find(d => d.refId === 'B');
+
+/** The repo-wide job label the logger pushes (env-overridable; the rule's
+ *  annotation says to adjust the selector when it is). */
+const DEFAULT_LOKI_JOB = 'cybermole';
+
+test('alert provisioning: one group, one rule, in its own folder, in the alerting tree', () => {
+  assert.equal(alerting.apiVersion, 1);
+  assert.equal(group.orgId, 1);
+  assert.match(group.name, /jobs/);
+  assert.equal(group.folder, 'cybermole');
+  assert.equal(group.interval, '1m');
+  assert.equal(group.rules.length, 1);
+  assert.match(rule.uid, /^[a-zA-Z0-9_-]{1,40}$/, 'uid: Grafana caps at 40 of [A-Za-z0-9_-]');
+  assert.ok(rule.title.length > 0);
+});
+
+test('alert provisioning: fires on any non-zero finish, states its reasoning', () => {
+  assert.equal(rule.condition, threshold.refId, 'the threshold node is the condition');
+  assert.equal(rule.for, '0s', 'a single failed run alerts on its first evaluation');
+  // No finish lines in the window is the healthy case, not NoData.
+  assert.equal(rule.noDataState, 'OK');
+  assert.equal(rule.execErrState, 'Error');
+  assert.ok(rule.annotations.summary);
+  assert.match(rule.annotations.description, /10 minutes/);
+  assert.match(rule.annotations.description, /unknown/, 'the unknown-exit exclusion is stated');
+  assert.equal(rule.labels.topic, 'jobs');
+});
+
+test("alert provisioning: the query rides the finish line's fields, not new labels", () => {
+  assert.equal(query.datasourceUid, 'cybermole-loki', 'the provisioned datasource uid');
+  assert.equal(query.model.queryType, 'instant');
+  assert.ok(
+    query.model.expr.includes(`{job="${DEFAULT_LOKI_JOB}", component="scheduler"}`),
+    'selects the scheduler component of the default job label',
+  );
+  assert.ok(query.model.expr.includes('|= "run finished"'), 'line filter on the finish line');
+  assert.ok(query.model.expr.includes('| json'), 'fields parsed at query time');
+  // The filters read winston-loki's structured-metadata copy (the
+  // line-parsed one is renamed _extracted on collision): not success, not
+  // unknown (null stringifies to "null"), present.
+  assert.ok(query.model.expr.includes('exitCode != `0`'));
+  assert.ok(query.model.expr.includes('exitCode != `null`'));
+  assert.ok(query.model.expr.includes('exitCode != ``'));
+  assert.ok(
+    query.model.expr.includes('count_over_time(') && query.model.expr.includes('[10m]'),
+    'a windowed count',
+  );
+  assert.ok(query.model.expr.includes('sum by (jobName)'), 'one alert instance per job');
+  assert.ok(
+    threshold.model.type === 'threshold' &&
+      threshold.model.expression === query.refId &&
+      threshold.model.conditions[0].evaluator.type === 'gt' &&
+      threshold.model.conditions[0].evaluator.params[0] === 0,
+    'threshold: any count above zero',
+  );
+  assert.equal(threshold.datasourceUid, '__expr__');
+});
+
+test('compose: the job webhook env default is interpolatable and default-off', () => {
+  assert.equal(
+    compose.services.cybermole.environment.CYBERMOLE_JOB_WEBHOOK_URL,
+    '${CYBERMOLE_JOB_WEBHOOK_URL:-}',
+  );
+});

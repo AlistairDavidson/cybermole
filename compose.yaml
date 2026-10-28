@@ -176,6 +176,10 @@ services:
       # (the internal http://grafana:3000 is not routable from outside).
       # Unset/empty: no logs link, /logs answers 404.
       CYBERMOLE_GRAFANA_URL: ${CYBERMOLE_GRAFANA_URL:-}
+      # Job-run finish notifications (README → Scheduled jobs): the env
+      # default for the webhook URL; the /settings db override wins.
+      # Unset/empty: off unless the override sets one.
+      CYBERMOLE_JOB_WEBHOOK_URL: ${CYBERMOLE_JOB_WEBHOOK_URL:-}
       # task/ws-editor (docs/guides/editor-webapp.md): the editor webapp's
       # upstream on the compose network — THE single switch. The stack
       # ships the editor container (header note), so the default wires the

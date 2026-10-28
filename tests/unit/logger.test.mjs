@@ -15,7 +15,7 @@ import * as path from 'node:path';
 delete process.env.CYBERMOLE_LOKI_URL;
 delete process.env.CYBERMOLE_LOKI_JOB;
 
-const { createLogger, logger, CONSOLE_LEVEL, LOKI_LEVEL, closeLogger } =
+const { createLogger, logger, CONSOLE_LEVEL, LOKI_LEVEL, closeLogger, lokiLine } =
   await import('../../dist-server/src/lib/platform/logger.js');
 
 const transportOf = (log, i) => log.transports[i];
@@ -51,7 +51,42 @@ test('with loki env: console + winston-loki, batched JSON push, static job label
   );
   assert.equal(lokiT.batcher.options.gracefulShutdown, false, 'the server owns the SIGTERM path');
   assert.equal(lokiT.batcher.url.toString(), 'http://loki:3100/loki/api/v1/push');
+  // The loki line is shaped by a transport format (pure JSON — below).
+  assert.ok(lokiT.format, 'the loki line is JSON via a transport format');
   closeLogger(log);
+});
+
+test('the loki line is pure JSON: message + fields, never the stream-label keys', () => {
+  const line = lokiLine({
+    level: 'info',
+    message: 'job nightly run finished (run session gone, exit 0)',
+    timestamp: '2026-01-01T00:00:00.000Z',
+    labels: { component: 'scheduler', job: 'cybermole' },
+    jobName: 'nightly',
+    exitCode: 0,
+    origin: 'catchup',
+    firedAt: 1712_345_678_901,
+  });
+  const parsed = JSON.parse(line);
+  // `| json` parses this: the Grafana job alert filters on exitCode/jobName.
+  assert.deepEqual(Object.keys(parsed), ['message', 'jobName', 'exitCode', 'origin', 'firedAt']);
+  assert.equal(parsed.message, 'job nightly run finished (run session gone, exit 0)');
+  assert.equal(parsed.jobName, 'nightly');
+  assert.equal(parsed.exitCode, 0);
+  // An unknown exit stays an explicit null (not dropped, not "unknown").
+  const unknown = JSON.parse(
+    lokiLine({
+      level: 'info',
+      message: 'job x run finished (gone, exit unknown)',
+      timestamp: '',
+      labels: {},
+      jobName: 'x',
+      exitCode: null,
+      origin: null,
+      firedAt: null,
+    }),
+  );
+  assert.equal(unknown.exitCode, null);
 });
 
 test('the module-level logger is the console-only shape on a plain host', () => {
