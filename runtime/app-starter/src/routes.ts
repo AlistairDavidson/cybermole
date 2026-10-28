@@ -1,7 +1,7 @@
 // The route table: each action is one entry, and the kit binds it to the
-// HTTP route, the islands' typed client, the MCP shim and
-// dist/route-table.json. Add an action by adding an entry (plus its logic
-// under src/lib, its UI and its test); `npm run check` is the gate.
+// HTTP route, the typed client the components' stores use, the MCP shim
+// and dist/route-table.json. add_action grows the table (entry plus logic
+// under src/lib, UI and test); `npm run check` is the gate.
 import { z } from 'zod';
 import { defineRoute, type RouteTable } from '@cybermole/app-kit/route-table';
 import { pingResult } from './lib/ping';

@@ -19,15 +19,16 @@ const builtAt = new Date().toISOString();
       <wa-card>
         <h1 slot="header">__APP_NAME__</h1>
         <p>__APP_DESCRIPTION__</p>
-        <!-- The islands' hosts: SSR'd initial content the islands take
-             over. add_action appends one section per action inside the
-             markers below. -->
-        <!-- BEGIN ACTION MOUNTS (generated — add_action appends one section per action) -->
-        <section class="ping-island">
+        <!-- The action elements: SSR'd light-DOM children that an enhancer
+             (src/components/*.ts) wires from connectedCallback — enhance,
+             never render (CODE_STYLE.md §7). add_action appends one
+             element section per action inside the markers below. -->
+        <!-- BEGIN ACTION MOUNTS (generated — add_action appends one element section per action) -->
+        <__APP_SLUG__-ping>
           <wa-input label="name" value="world"></wa-input>
           <wa-button variant="brand">ping</wa-button>
           <p aria-live="polite">— not pinged yet —</p>
-        </section>
+        </__APP_SLUG__-ping>
         <!-- END ACTION MOUNTS -->
         <p style="opacity: 0.6">built at {builtAt}</p>
       </wa-card>
@@ -42,16 +43,13 @@ const builtAt = new Date().toISOString();
       import '@awesome.me/webawesome/dist/components/card/card.js';
       import '@awesome.me/webawesome/dist/components/button/button.js';
       import '@awesome.me/webawesome/dist/components/input/input.js';
-      import { mountIsland } from '@cybermole/app-kit/island';
       // The agent drawer (client-only; it imports its own wa-* halves).
       import '@cybermole/app-kit/agent-console';
 
-      // add_action appends one import + mount per action inside these markers.
-      // BEGIN ACTION ISLANDS (generated — add_action appends one import + mount per action)
-      import PingIsland from '../islands/PingIsland';
-
-      mountIsland('.ping-island', PingIsland, {});
-      // END ACTION ISLANDS
+      // add_action appends one enhancer import per action inside these markers.
+      // BEGIN ACTION ENHANCERS (generated — add_action appends one import per action)
+      import '../components/ping';
+      // END ACTION ENHANCERS
     </script>
   </body>
 </html>

@@ -7,8 +7,17 @@ behind the console's login once it is registered and built.
 
 - `src/routes.ts` — THE route table: every action is one entry, bound by
   the kit to the HTTP route (`src/pages/api/[...path].ts`), the typed
-  client the island uses, the MCP shim's tools and `dist/route-table.json`
-  (emitted by the build — `astro.config.mjs`'s emit integration).
+  client the components' stores use, the MCP shim's tools and
+  `dist/route-table.json` (emitted by the build — `astro.config.mjs`'s
+  emit integration).
+- `src/components/*.ts` — HTML web component enhancers: the element wraps
+  the page's SSR'd light-DOM children and wires them from
+  `connectedCallback` — enhance, never render (CODE_STYLE.md §7). Element
+  names are `<slug>-<thing>` (unique per install; after scaffold, e.g.
+  `<__APP_SLUG__-ping>`); `ping.ts` is the worked example.
+- `src/store/*.ts` — the signals stores (`@preact/signals-core`):
+  module-scoped live client state, refreshed through the typed route
+  client — the same route table the API serves.
 - `src/lib/` — the app's domain code (one Result family per concern);
   `data/` — the app's own sqlite (gitignored).
 - `scripts/setup-node-modules.mjs` — the per-package node_modules symlinks
@@ -21,11 +30,17 @@ behind the console's login once it is registered and built.
 
 ```sh
 npm run setup     # once (and after image upgrades): link the core stack
-npm run check     # THE gate: astro check + tsc + unit tests + build
+npm run check     # THE gate: astro check + tsc + lint:arch + unit tests + build
 npm run build     # the build half alone (route-table.json + self-containment gate)
 npm run test      # just the unit tests
 npm run test:e2e  # the browser half: Playwright over the BUILT app (below)
 ```
+
+The `lint:arch` stage is the architecture lint
+(`@cybermole/app-kit`'s `arch-check.mjs`): the component standard's
+mechanical rules — no preact renderer (only `@preact/signals-core`), no
+`attachShadow`, no `innerHTML`/`outerHTML` writes, element defines only
+through the kit's `defineElement`.
 
 The same loop runs through the root agent's `cybermole-apps` MCP
 (`add_action`/`check`/`build`/`register`/`reload`) — this tree's `.pi/mcp.json`
@@ -49,9 +64,9 @@ throwaway data dir — the tree's real `data/` is never touched
 `playwright.config.ts` is two lines on the kit's factory; each spec starts
 from `createAppTest(import.meta.url)` and navigates with `app.baseURL`.
 
-- **when to run it**: whenever page-level behavior changed — islands
-  upgrading, forms, navigation — before handing the change over. The unit
-  tests cover the actions; this covers the loop between them.
+- **when to run it**: whenever page-level behavior changed — enhancer
+  elements wiring up, forms, navigation — before handing the change over.
+  The unit tests cover the actions; this covers the loop between them.
 - needs Playwright's chromium; when it isn't installed the run fails with
   one clear message instead of a stack trace (`npx playwright install
   chromium` on a networked host; in fleet sandboxes the browser cache is
@@ -145,12 +160,12 @@ const emitWsEntry = () => ({
 // … integrations: [lit(), emitRouteTable(), emitWsEntry()],
 ```
 
-The browser half is an ordinary same-origin dial from a page or island —
+The browser half is an ordinary same-origin dial from a page or enhancer —
 with the usual `onopen`/`onmessage`/`onclose` handling; nothing about
 the proxy is visible to the client:
 
 ```js
-// In an island (or page script): the baked base carries no trailing
+// In an enhancer (or page script): the baked base carries no trailing
 // slash — the kit's route client joins paths the same way.
 const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
 const ws = new WebSocket(`${location.origin}${base}/ws`);

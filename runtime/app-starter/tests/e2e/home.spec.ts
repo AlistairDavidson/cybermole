@@ -9,14 +9,15 @@ import { createAppTest } from '@cybermole/app-kit/testing';
 
 const test = createAppTest(import.meta.url);
 
-test('the home page renders and the ping island answers end to end', async ({ page, app }) => {
+test('the home page renders and the ping element answers end to end', async ({ page, app }) => {
   await page.goto(app.baseURL);
   await expect(page.getByRole('heading', { level: 1, name: '__APP_NAME__' })).toBeVisible();
 
-  // One real behavior, browser-real: the wa-* island upgrades, calls the
-  // action through the route table, and the page answers.
-  await page.locator('.ping-island wa-button', { hasText: 'ping' }).click();
-  await expect(page.locator('.ping-island p[aria-live="polite"]')).toHaveText(
-    'pong — hello, world',
+  // One real behavior, browser-real: the enhancer element wires the SSR'd
+  // controls, calls the action through the route client, and the page answers.
+  await page.locator('__APP_SLUG__-ping wa-input input').fill('starter');
+  await page.locator('__APP_SLUG__-ping wa-button', { hasText: 'ping' }).click();
+  await expect(page.locator('__APP_SLUG__-ping p[aria-live="polite"]')).toHaveText(
+    'pong — hello, starter',
   );
 });
