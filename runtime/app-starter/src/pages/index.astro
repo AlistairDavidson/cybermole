@@ -1,8 +1,10 @@
 ---
 // The home page: the card (the page's one page-level wa-* half) hosting
-// the ping action's component. The components own their wa-* halves; the
-// client script imports enhancers, nothing else wa-*. add_action appends
-// inside the three marker pairs below.
+// the ping action's component. The page also owns the stylesheet
+// (webawesome.css: tokens, utilities, native styles); the components own
+// their wa-* halves, and the client script imports enhancers, nothing else
+// wa-*. add_action appends inside the three marker pairs below.
+import '@awesome.me/webawesome/dist/styles/webawesome.css';
 import '@awesome.me/webawesome/dist/components/card/card.js';
 // BEGIN ACTION IMPORTS (generated — add_action appends one import per action)
 import Ping from '../components/Ping/Ping.astro';
@@ -18,7 +20,7 @@ const builtAt = new Date().toISOString();
     <link rel="icon" type="image/svg+xml" href="/apps/__APP_SLUG__/favicon.svg" />
   </head>
   <body>
-    <main style="font-family: system-ui; max-width: 40rem; margin: 3rem auto; padding: 0 1rem;">
+    <main>
       <wa-card>
         <h1 slot="header">__APP_NAME__</h1>
         <p>__APP_DESCRIPTION__</p>
@@ -29,9 +31,19 @@ const builtAt = new Date().toISOString();
         <!-- BEGIN ACTION MOUNTS (generated — add_action appends one element section per action) -->
         <Ping />
         <!-- END ACTION MOUNTS -->
-        <p style="opacity: 0.6">built at {builtAt}</p>
+        <p class="wa-caption">built at {builtAt}</p>
       </wa-card>
     </main>
+    <style>
+      /* The page column — the one shape the utility set has no class for;
+       * tokens only, defined once (the design skill's content-column rule). */
+      main {
+        max-inline-size: calc(var(--wa-space-4xl) * 10);
+        margin-block: var(--wa-space-3xl);
+        margin-inline: auto;
+        padding-inline: var(--wa-space-m);
+      }
+    </style>
     <!-- The agent drawer: one terminal in this app's operator workspace
          (created on first open), plus the builder deep link. The slug is
          substituted at scaffold time. -->
