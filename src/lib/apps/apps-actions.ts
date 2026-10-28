@@ -157,13 +157,17 @@ export function renderActionSection(slug: string, action: ParsedAction): string 
       : action.fields
           .map(f => `\`${f.name}\` (${f.type}${f.optional ? ', optional' : ', required'})`)
           .join(', ');
-  return [
+  const lines = [
     `### ${action.name}`,
     '',
     action.description,
     `- call: the \`${action.name}\` MCP tool, or the page's ${action.name} affordance, or \`${action.method} /apps/${slug}${action.path}\``,
     `- input: ${fields}`,
-  ].join('\n');
+  ];
+  // §7's no-JS rule: an action whose UI posts JSON says so in its docs.
+  if (action.method !== 'GET')
+    lines.push('- ui: requires JS (a JSON body — no native-form fallback)');
+  return lines.join('\n');
 }
 
 export const ACTIONS_BEGIN_RE = /<!-- BEGIN ACTIONS[^\n]*-->/;
@@ -401,12 +405,18 @@ defineElement('${slug}-${name}', host => {
   const input = host.querySelector('wa-input');
   const button = host.querySelector('wa-button');
   const out = host.querySelector('p[aria-live]');
-  button?.addEventListener('click', () => {
+  const onClick = (): void => {
     void ${camel}Go(waValue(input));
-  });
-  return effect(() => {
+  };
+  button?.addEventListener('click', onClick);
+  const dispose = effect(() => {
     if (out !== null) out.textContent = ${camel}Status.value;
   });
+  // Full teardown: listeners off too, or a re-parented host double-wires.
+  return () => {
+    button?.removeEventListener('click', onClick);
+    dispose();
+  };
 });
 `;
 }

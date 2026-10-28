@@ -76,9 +76,9 @@ export function connectNotesSocket(): AppSocket {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
       return `${proto}://${location.host}${import.meta.env.BASE_URL}/ws`;
     },
-    frame: z.object({ type: z.string() }),
-    onFrame: frame => {
-      if (frame.type === 'notes_changed') void refreshNotes();
+    frame: z.object({ type: z.literal('notes_changed') }),
+    onFrame: () => {
+      void refreshNotes();
     },
   });
 }

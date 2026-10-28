@@ -8,10 +8,16 @@ defineElement('__APP_SLUG__-ping', host => {
   const input = host.querySelector('wa-input');
   const button = host.querySelector('wa-button');
   const out = host.querySelector('p[aria-live]');
-  button?.addEventListener('click', () => {
+  const onClick = (): void => {
     void pingGo(waValue(input));
-  });
-  return effect(() => {
+  };
+  button?.addEventListener('click', onClick);
+  const dispose = effect(() => {
     if (out !== null) out.textContent = pingStatus.value;
   });
+  // Full teardown: listeners off too, or a re-parented host double-wires.
+  return () => {
+    button?.removeEventListener('click', onClick);
+    dispose();
+  };
 });

@@ -15,37 +15,49 @@
 //     @cybermole/app-kit/element.
 // Skips node_modules, dist*, .astro, and vendor/ (vendored shims).
 // SANCTIONED: the agent console/terminal is the one first-party module of
-// classic client-side JS (a terminal cannot be SSR'd — CODE_STYLE.md §7);
-// its file names are exempt, and the exemption is code, not a marker an
-// agent could sprinkle.
+// classic client-side JS (a terminal cannot be SSR'd — CODE_STYLE.md §7).
+// The exemption matches FILE NAMES (agent-console*.ts), not substrings —
+// code, not a marker an agent could sprinkle.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-const SANCTIONED_RE = /agent-console/;
+const SANCTIONED_RE = /(?:^|[\\/])agent-console[-.]/;
 
 const BANNED_IMPORTS = [
   {
-    re: /^(preact|preact\/.*)$/,
+    re: /^(preact|preact\/.*|@preact\/signals)$/,
     why: 'preact the renderer is banned — Astro components + HTML web components + @preact/signals-core (CODE_STYLE.md §7)',
   },
   {
-    re: /^@preact\/signals$/,
-    why: 'use @preact/signals-core — the preact-integrated build pulls the renderer',
+    re: /^(@astrojs\/react|@astrojs\/preact|@astrojs\/svelte|@astrojs\/solid-js|@astrojs\/vue)$/,
+    why: 'renderer integrations are banned — SSR is Astro itself; client behaviour is HTML web components',
+  },
+  {
+    re: /^(react|react-dom|svelte|solid-js|vue|htmx(\.org)?|htm|uhtml)$/,
+    why: 'client renderers/templates are banned — effects update the DOM surgically, never from HTML strings',
   },
   {
     re: /^(lit|lit-html|lit-element|@lit-labs\/.*)$/,
     why: 'lit directly is banned — wa-* leaves come from @awesome.me/webawesome component paths',
   },
-  { re: /^htmx(\.org)?$/, why: 'no fetch-and-swap — enhancers update the DOM surgically' },
 ];
 
 const IMPORT_RE = /^\s*import\s+(?:[^'";]*?\sfrom\s+)?['"]([^'"]+)['"]/;
 const EXPORT_FROM_RE = /^\s*export\s+[^'";]*?\sfrom\s+['"]([^'"]+)['"]/;
 const DYNAMIC_IMPORT_RE = /\bimport\(\s*['"]([^'"]+)['"]\s*\)/g;
 const ATTACH_SHADOW_RE = /\.attachShadow\s*\(/;
-const HTML_WRITE_RE = /\.(?:innerHTML|outerHTML)\s*=[^=]/;
+/** Whole-source (multi-line writes too); line numbers mapped after. */
+const HTML_WRITE_RE =
+  /\.(?:innerHTML|outerHTML)\s*\+?=(?!=)|\.(?:insertAdjacentHTML|setHTMLUnsafe)\s*\(|\bdocument\.write\s*\(/g;
+const CLIENT_DIRECTIVE_RE = /\bclient:(?:load|visible|idle|only|media)\b/;
 const DEFINE_RE = /\bcustomElements\.define\s*\(/;
 const GUARD_RE = /\bcustomElements\.get\s*\(/;
+
+function lineOf(source, index) {
+  let line = 1;
+  for (let i = 0; i < index; i++) if (source[i] === '\n') line++;
+  return line;
+}
 
 /** One file's violations, `${rel}:${line}: why` per line. */
 export function scanSource(rel, source) {
@@ -72,12 +84,19 @@ export function scanSource(rel, source) {
         `${rel}:${lineNo}: attachShadow — app-authored elements are light DOM only (CODE_STYLE.md §7)`,
       );
     }
-    if (HTML_WRITE_RE.test(line)) {
+    if (/\.astro$/.test(rel) && CLIENT_DIRECTIVE_RE.test(line)) {
       violations.push(
-        `${rel}:${lineNo}: innerHTML/outerHTML write — update the DOM surgically, never from HTML strings`,
+        `${rel}:${lineNo}: client:* directive — hydration is banned; SSR the content and enhance it (CODE_STYLE.md §7)`,
       );
     }
   });
+  // HTML writes match whole-source (multi-line assignments too), reported
+  // at the line each match starts on.
+  for (const m of source.matchAll(HTML_WRITE_RE)) {
+    violations.push(
+      `${rel}:${lineOf(source, m.index ?? 0)}: HTML-string write (innerHTML/outerHTML/insertAdjacentHTML/setHTMLUnsafe/document.write) — update the DOM surgically, never from HTML strings`,
+    );
+  }
   if (DEFINE_RE.test(source) && !GUARD_RE.test(source)) {
     violations.push(
       `${rel}: customElements.define without a customElements.get guard — use defineElement from @cybermole/app-kit/element`,

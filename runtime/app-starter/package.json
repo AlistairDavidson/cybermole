@@ -3,14 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "a cybermole app on @cybermole/app-kit — scaffolded from the image's app-starter template",
+  "description": "a cybermole app on @cybermole/app-kit \u2014 scaffolded from the image's app-starter template",
   "scripts": {
     "setup": "node scripts/setup-node-modules.mjs",
     "typecheck": "astro check && tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "build": "astro build && node scripts/check-selfcontained.mjs dist/server/entry.mjs",
     "check": "npm run typecheck && npm run lint:arch && npm run test && npm run build",
-    "lint:arch": "node node_modules/@cybermole/app-kit/scripts/arch-check.mjs src",
+    "lint:arch": "node node_modules/@cybermole/app-kit/scripts/arch-check.mjs src astro.config.mjs",
     "test:e2e": "playwright test"
   },
   "dependencies": {

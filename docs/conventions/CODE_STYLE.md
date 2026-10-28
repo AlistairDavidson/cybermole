@@ -187,10 +187,11 @@ architecture, and the word is banned from new code and docs.
   (`ConsoleApp.astro` / `console-app.ts`).
 - Effects and handlers update the DOM **surgically**: `createElement`,
   property and `textContent` writes, toggling elements the server rendered.
-  Never build markup from HTML strings — no `innerHTML` writes with
-  interpolated data, no client-side template literals of HTML. Both are
-  enforced by the architecture lint. If a frontend ever truly outgrows
-  surgical updates, revise the standard then; do not preemptively.
+  Never build markup from HTML strings — no `innerHTML`/`outerHTML` writes,
+  no `insertAdjacentHTML`/`setHTMLUnsafe`, no client-side template literals
+  of HTML, no renderer or html-template library. All of it is enforced by
+  the architecture lint. If a frontend ever truly outgrows surgical
+  updates, revise the standard then; do not preemptively.
 
 ### Signals: the rules
 
@@ -233,8 +234,9 @@ architecture, and the word is banned from new code and docs.
 
 ### Enforcement
 
-The mechanical rules (banned imports, `attachShadow`, `innerHTML` writes,
-unguarded `customElements.define`) are checked by the architecture lint
+The mechanical rules (banned imports and renderer integrations,
+`attachShadow`, HTML-string writes, `client:*` directives, unguarded
+`customElements.define`) are checked by the architecture lint
 (`@cybermole/app-kit`'s `scripts/arch-check.mjs`): it runs in every app's
 `npm run check` (the `lint:arch` stage of the apps `check` verb) and can be
 run anywhere with `node <kit>/scripts/arch-check.mjs <dirs>`.

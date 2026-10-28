@@ -370,7 +370,11 @@ export async function callActionTool(
 // ---------- server ----------
 
 export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
-  const gateDeps = { appsRoot: deps.appsRoot, run: deps.run ?? runChild };
+  const gateDeps = {
+    appsRoot: deps.appsRoot,
+    installRoot: deps.installRoot,
+    run: deps.run ?? runChild,
+  };
   const scaffoldDeps = {
     appsRoot: deps.appsRoot,
     templateDir: deps.templateDir ?? path.join(deps.installRoot, 'runtime', 'app-starter'),

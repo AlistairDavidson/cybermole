@@ -22,11 +22,6 @@ behalf; the human does the same through the app's pages.
   — it is the user's data.
 - the actions live in `src/routes.ts` (the route table) — every tool
   below is one table entry, the same one the app's pages call.
-- the UI is Astro components enhanced by HTML web components
-  (`src/components/*.ts` wiring SSR'd children) over signals stores
-  (`src/store/*.ts`) — the component standard in
-  docs/conventions/CODE_STYLE.md §7, enforced by the `lint:arch` stage
-  of `npm run check` in this tree.
 
 ## What this app is for
 

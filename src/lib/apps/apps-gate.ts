@@ -2,9 +2,10 @@
 // one quiet envelope (the cybermole-dev tools' shape). check = links +
 // typecheck + architecture lint + unit tests + build; build is the last
 // stage alone. A stage whose npm script the tree doesn't have is skipped
-// (a pre-standard tree keeps passing; the note says what was skipped). The
-// links stage first verifies every dependency resolves, so a broken install
-// fails here with the fix in the message, not later as a compiler error.
+// (a pre-standard tree keeps passing; the note says what was skipped) —
+// EXCEPT lint:arch: a tree with a component layer (src/components or
+// src/store) gets the kit's arch-check run host-side whether it declares
+// the script or not, so deleting the script line can't silence the gate.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ResultFailure, ResultSuccess } from '@cybermole/app-kit';
@@ -48,6 +49,8 @@ export type AppGateResult = AppGateSuccess | AppGateFailure;
 
 export interface GateDeps {
   appsRoot: string;
+  /** the install root (the kit's arch-check lives under it) */
+  installRoot: string;
   run: RunChildFn;
   /** Per stage. Default 300 s (astro build of a real app). */
   timeoutMs?: number;
@@ -59,6 +62,8 @@ interface StageSpec {
   /** extra args after `--` (e.g. a TAP reporter for parsing) */
   args?: string[];
   label: string;
+  /** run the kit's arch-check directly (a tree that deleted its script) */
+  hostArch?: boolean;
 }
 
 const CHECK_STAGES: StageSpec[] = [
@@ -144,11 +149,24 @@ export async function runGate(
     } satisfies AppGateFailure;
   }
   const failures: GateFailure[] = [];
-  // Stages whose npm script the tree doesn't have never run: a pre-standard
-  // tree must keep passing, with the skipped scripts named in the output.
+  // Stages whose npm script the tree doesn't have never run — a pre-standard
+  // tree keeps passing, the skipped scripts named in the output — except
+  // lint:arch under a component layer, which the gate runs itself: the
+  // architecture rules are not opt-out (the standard is imposed, not offered).
   const scripts = treeScripts(tree);
-  const skipped = stages.filter(s => !scripts.has(s.script)).map(s => s.script);
-  const active = stages.filter(s => scripts.has(s.script));
+  const hasComponentLayer =
+    fs.existsSync(path.join(tree, 'src', 'components')) ||
+    fs.existsSync(path.join(tree, 'src', 'store'));
+  const skipped = stages
+    .filter(s => !scripts.has(s.script) && !(s.script === 'lint:arch' && hasComponentLayer))
+    .map(s => s.script);
+  const active = stages
+    .map(s =>
+      s.script === 'lint:arch' && !scripts.has('lint:arch') && hasComponentLayer
+        ? { ...s, hostArch: true, label: 'architecture lint (host-run)' }
+        : s,
+    )
+    .filter(s => scripts.has(s.script) || s.hostArch === true);
   const stageNames = ['links', ...active.map(s => s.label)];
   const counts: GateCounts = { stages: { total: stageNames.length, passed: 0, failed: 0 } };
   let returncode = 0;
@@ -170,11 +188,22 @@ export async function runGate(
     for (const stage of active) {
       let run: ChildRun;
       try {
-        run = await deps.run(
-          'npm',
-          ['run', stage.script, ...(stage.args ? ['--', ...stage.args] : [])],
-          { cwd: tree, timeoutMs: deps.timeoutMs ?? 300_000 },
-        );
+        run =
+          stage.hostArch === true
+            ? await deps.run(
+                'node',
+                [
+                  path.join(deps.installRoot, 'packages', 'app-kit', 'scripts', 'arch-check.mjs'),
+                  'src',
+                  'astro.config.mjs',
+                ],
+                { cwd: tree, timeoutMs: deps.timeoutMs ?? 300_000 },
+              )
+            : await deps.run(
+                'npm',
+                ['run', stage.script, ...(stage.args ? ['--', ...stage.args] : [])],
+                { cwd: tree, timeoutMs: deps.timeoutMs ?? 300_000 },
+              );
       } catch (err) {
         const why =
           err instanceof CommandNotFoundError

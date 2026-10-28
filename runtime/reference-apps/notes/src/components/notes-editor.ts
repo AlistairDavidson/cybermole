@@ -44,13 +44,20 @@ defineElement('notes-editor', host => {
     if (await archiveNote(id)) location.href = `${import.meta.env.BASE_URL}/`;
   };
 
-  save?.addEventListener('click', () => {
+  const onGo = (): void => {
     void onSave();
-  });
-  archive?.addEventListener('click', () => {
+  };
+  const onBye = (): void => {
     void onArchive();
-  });
-  return effect(() => {
+  };
+  save?.addEventListener('click', onGo);
+  archive?.addEventListener('click', onBye);
+  const dispose = effect(() => {
     if (out !== null) out.textContent = editorStatus.value;
   });
+  return () => {
+    save?.removeEventListener('click', onGo);
+    archive?.removeEventListener('click', onBye);
+    dispose();
+  };
 });

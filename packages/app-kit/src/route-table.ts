@@ -405,7 +405,7 @@ export type RouteClientTransportFailure = {
 };
 
 export interface RouteClientOptions {
-  /** The app's base for islands, the host socket's origin for sibling calls. */
+  /** The app's base for app pages, the host socket's origin for sibling calls. */
   base: string | URL;
   headers?: Record<string, string>;
   /** for tests */

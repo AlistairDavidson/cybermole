@@ -761,3 +761,27 @@ test("callActionTool: THE request against the apps socket, the app's Result JSON
 
   await new Promise(resolve => server.close(resolve));
 });
+
+// ---------- the marker contract, character-exact across artifacts ----------
+
+// The generator matches marker strings verbatim; a near-miss in any copy of
+// the page shape (the starter template, the worked example) silently forks
+// the tree from add_action forever. This asserts the exact exported
+// constants appear in every page that carries markers.
+test('the marker constants appear character-exact in the starter template and the notes pages', async () => {
+  const { MOUNT_BEGIN, MOUNT_END, ENHANCER_BEGIN, ENHANCER_END } =
+    await import('../../dist-server/src/lib/apps/apps-actions.js');
+  const pages = [
+    path.join(REPO, 'runtime', 'app-starter', 'src', 'pages', 'index.astro'),
+    path.join(REPO, 'runtime', 'reference-apps', 'notes', 'src', 'pages', 'index.astro'),
+  ];
+  for (const page of pages) {
+    const text = fs.readFileSync(page, 'utf8');
+    for (const marker of [MOUNT_BEGIN, MOUNT_END, ENHANCER_BEGIN, ENHANCER_END]) {
+      assert.ok(
+        text.includes(marker),
+        `${page} is missing the exact marker ${JSON.stringify(marker)} — a near-miss forks the page from add_action`,
+      );
+    }
+  }
+});

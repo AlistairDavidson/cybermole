@@ -36,11 +36,10 @@ npm run test      # just the unit tests
 npm run test:e2e  # the browser half: Playwright over the BUILT app (below)
 ```
 
-The `lint:arch` stage is the architecture lint
-(`@cybermole/app-kit`'s `arch-check.mjs`): the component standard's
-mechanical rules — no preact renderer (only `@preact/signals-core`), no
-`attachShadow`, no `innerHTML`/`outerHTML` writes, element defines only
-through the kit's `defineElement`.
+The `lint:arch` stage is the architecture lint: the component
+standard's mechanical rules from CODE_STYLE.md §7, run by the kit's
+`arch-check.mjs` (its header comment is the rule list — the only copy that
+can't drift from the enforcement).
 
 The same loop runs through the root agent's `cybermole-apps` MCP
 (`add_action`/`check`/`build`/`register`/`reload`) — this tree's `.pi/mcp.json`

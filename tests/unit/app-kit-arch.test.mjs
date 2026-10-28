@@ -55,23 +55,57 @@ import { z } from 'zod';
   assert.deepEqual(scanSource('src/good.ts', clean), []);
 });
 
-test('arch-check: attachShadow and innerHTML writes are violations; reads are not', () => {
+test('arch-check: HTML-string writes in every idiom are violations; reads are not', () => {
   const out = scanSource(
     'src/dom.ts',
     `this.attachShadow({ mode: 'open' });
 el.innerHTML = '<p>hi</p>';
+el.innerHTML += more;
+el.outerHTML =
+  built();
+el.insertAdjacentHTML('beforeend', row);
+el.setHTMLUnsafe(payload);
+document.write(page);
 if (el.innerHTML === '<p>hi</p>') return;
 const t = el.outerHTML;
 `,
   );
-  assert.equal(out.length, 2);
+  assert.equal(out.length, 7);
   assert.match(out[0] ?? '', /light DOM only/);
-  assert.match(out[1] ?? '', /surgically/);
+  for (const v of out.slice(1)) assert.match(v, /HTML-string write/);
+  assert.match(out[2] ?? '', /src\/dom\.ts:3/);
+  assert.match(out[3] ?? '', /src\/dom\.ts:4/); // multi-line write reported at its start line
 });
 
-test('arch-check: the agent console is the sanctioned exception', () => {
-  const out = scanSource('src/agent-console.ts', 'el.innerHTML = buildMarkup();\n');
-  assert.deepEqual(out, []);
+test('arch-check: renderer integrations, renderers and html-template libs are banned imports', () => {
+  const out = scanSource(
+    'src/render.ts',
+    `import react from '@astrojs/react';
+import { el } from 'htm';
+import { html } from 'uhtml';
+import React from 'react';
+import App from './App.vue';
+`,
+  );
+  assert.equal(out.length, 4);
+  assert.match(out[0] ?? '', /@astrojs\/react/);
+  assert.match(out[1] ?? '', /'htm'/);
+});
+
+test('arch-check: client:* directives are violations in .astro files only', () => {
+  const astro = scanSource('src/pages/index.astro', '<Counter client:load />\n');
+  assert.equal(astro.length, 1);
+  assert.match(astro[0] ?? '', /hydration is banned/);
+  // the same words in a .ts comment are not a directive
+  assert.deepEqual(scanSource('src/t.ts', '// client:load is banned\n'), []);
+});
+
+test('arch-check: the agent console is the sanctioned exception (by file name)', () => {
+  assert.deepEqual(scanSource('src/agent-console.ts', 'el.innerHTML = buildMarkup();\n'), []);
+  assert.deepEqual(scanSource('src/agent-console-flow.ts', 'el.innerHTML = buildMarkup();\n'), []);
+  // a substring lookalike does not escape the rules
+  const impostor = scanSource('src/my-agent-console-thing.ts', 'el.innerHTML = x;\n');
+  assert.equal(impostor.length, 1);
 });
 
 test('arch-check: customElements.define needs its guard (defineElement has one)', () => {
