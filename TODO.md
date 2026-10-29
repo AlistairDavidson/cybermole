@@ -1,9 +1,4 @@
 ## Human tasks
-lit? preact?
-
-Review the notes app, finalise technical and stylistic decisions 
-Discuss with AI how to turn that into skills and linting
-Skills and other methods to enforce my coding patterns
 Write a refined agent workflow
 HIG skill
 
