@@ -37,7 +37,7 @@
     "runtime/reference-apps/notes/.pi/mcp.json"
   ],
   "dependencies": {
-    "@astrojs/node": "^11.1.6",
+    "@astrojs/node": "^11.1.9",
     "@awesome.me/astro-lit": "^5.0.4",
     "@awesome.me/webawesome": "^3.14.0",
     "@earendil-works/pi-coding-agent": "^1.0.1",
