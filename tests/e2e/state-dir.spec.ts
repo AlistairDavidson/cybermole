@@ -142,6 +142,34 @@ test('CYBERMOLE_STATE_DIR moves the layout; CYBERMOLE_DB_FILE still outranks it'
   expect(fs.statSync(path.join(state, 'cybermole.db')).mtimeMs).toBe(before); // untouched
 });
 
+test('boot seeds the default pi packages at the key level; an existing packages list always wins', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-state-home-'));
+  const agent = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-agent-dir-'));
+  const settings = path.join(agent, 'settings.json');
+  const templatePackages = (
+    JSON.parse(
+      fs.readFileSync(path.join(ROOT, 'runtime', 'pi-agent-dir', 'settings.json'), 'utf8'),
+    ) as { packages: string[] }
+  ).packages;
+
+  // a settings.json from before the default shipped: no packages key
+  fs.writeFileSync(settings, `${JSON.stringify({ quietStartup: 'header' }, null, 2)}\n`);
+  await bootServer({ CYBERMOLE_HOME: home, CYBERMOLE_AGENT_DIR: agent });
+  const merged = JSON.parse(fs.readFileSync(settings, 'utf8')) as Record<string, unknown>;
+  expect(merged.quietStartup).toBe('header'); // the operator's settings survive
+  expect(merged.packages).toEqual(templatePackages);
+
+  // the opt-out sticks: `pi remove` persists packages: [] — a boot never re-adds
+  fs.writeFileSync(
+    settings,
+    `${JSON.stringify({ quietStartup: 'header', packages: [] }, null, 2)}\n`,
+  );
+  await bootServer({ CYBERMOLE_HOME: home, CYBERMOLE_AGENT_DIR: agent });
+  expect(
+    (JSON.parse(fs.readFileSync(settings, 'utf8')) as { packages: string[] }).packages,
+  ).toEqual([]);
+});
+
 test('--if-unset seeds a fresh state dir once, never over an existing credential', () => {
   // The dev profile's seed: lands in CYBERMOLE_STATE_DIR despite the short
   // password, and a later human password survives the seed re-running.

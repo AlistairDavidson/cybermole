@@ -66,6 +66,17 @@ if [ -d "$TEMPLATE" ]; then
   done
 fi
 
+# Default pi packages (the template settings.json's `packages`, e.g.
+# pi-hermes-memory): the file walk above is only-where-absent and so cannot
+# land a NEW key inside an existing settings.json — the web server merges at
+# the KEY level in single-user shapes (server/main.ts, same lib), and this is
+# the split's half over the same compiled CLI so the write stays
+# workspace-owned. An existing `packages` always wins — including the empty
+# array `pi remove` persists, the deliberate opt-out. Best-effort: a failure
+# warns and continues, never keeps the tmux server from starting.
+node /opt/cybermole/dist-server/server/seed-agent-packages.js "$AGENT_DIR" "$TEMPLATE/settings.json" ||
+  echo "cybermole workspace: could not seed the default pi packages — continuing" >&2
+
 # jobs-agent-plan §9: the workspace-root AGENTS.md — the root agent's
 # standing instructions (scheduled work belongs in jobs; a fired run is
 # started-not-finished; the CLI + MCP surface) — seeded from the repo's

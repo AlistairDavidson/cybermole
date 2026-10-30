@@ -36,6 +36,7 @@ import {
 import * as jobs from '../src/lib/jobs/jobs';
 import { createRunFinishNotifier } from '../src/lib/jobs/notify';
 import { startLivenessWatch } from '../src/lib/terminals/liveness';
+import { seedAgentPackages as seedAgentPackagesLib } from '../src/lib/platform/agent-packages';
 import { seedRootAgentsFile } from '../src/lib/platform/root-agents';
 import { EventsRelay, checkEventsUpgrade } from '../src/lib/platform/events-ws';
 import { TunnelTracker } from '../src/lib/platform/ws-tunnels';
@@ -111,6 +112,7 @@ if (PI_AGENT_DIR && !RAW_ENV.CYBERMOLE_AGENT_DIR) {
   );
 }
 const agentTemplate = path.join(APP_ROOT, 'runtime', 'pi-agent-dir');
+const agentSettingsTemplate = path.join(agentTemplate, 'settings.json');
 const rootAgentsTemplate = path.join(APP_ROOT, 'runtime', 'workspace-root', 'AGENTS.md');
 
 const CFG: ServerConfig = {
@@ -152,6 +154,21 @@ function seedAgentDir(): void {
     bootLog.warn(`could not seed pi agent dir (${CFG.agentDir}): ${(err as Error).message}`);
   }
 }
+/** Add the template's default pi packages (settings.json `packages`) where
+ *  the runtime settings.json has no such key — the file walk above can't
+ *  land a new key in an existing file. Any list already there wins. */
+function seedAgentPackages(): void {
+  const seeded = seedAgentPackagesLib(CFG.agentDir, agentSettingsTemplate);
+  if (seeded.ok) {
+    if (seeded.data.seeded)
+      bootLog.info(
+        `pi agent dir: seeded the default pi packages into ${seeded.data.target} ` +
+          '(only where the packages key is absent — an existing list always wins)',
+      );
+    return;
+  }
+  bootLog.warn(`could not seed the default pi packages: ${seeded.errorMessage}`);
+}
 function seedRootAgents(): void {
   const seeded = seedRootAgentsFile(CFG.newSessionCwd, rootAgentsTemplate);
   if (seeded.ok) {
@@ -169,6 +186,7 @@ function seedRootAgents(): void {
 // so files aren't left owned by this uid.
 if (tmux.forksServer(tmux.SOCKET)) {
   seedAgentDir();
+  seedAgentPackages();
   seedRootAgents();
 } else
   bootLog.info(

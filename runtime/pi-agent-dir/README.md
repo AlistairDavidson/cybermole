@@ -16,7 +16,7 @@ Layout mirrors pi's agent directory (`pi docs: configuration.md`):
 
 | Path                    | Purpose                                  |
 |-------------------------|------------------------------------------|
-| `settings.json`         | pi settings (docs: settings.md)          |
+| `settings.json`         | pi settings (docs: settings.md), incl. the default `packages` |
 | `mcp.json`              | MCP servers every session can use        |
 | `models.json`           | compatible endpoints / model overrides   |
 | `AGENTS.md`             | user instructions applied across cwds    |
@@ -59,6 +59,34 @@ boot — an existing runtime file always wins over the template.
 Template updates here reach the runtime dir at the next seeding boot
 and an open session only via `/reload`.
 
+## Default packages — pi-hermes-memory
+
+Pi is the agent every cybermole terminal runs, so the template ships a
+default set of pi **packages** (`settings.json`'s `packages`) — currently
+one, pinned: `npm:pi-hermes-memory@0.9.11` (persistent memory, session
+search, secret scanning; its data lives under the agent dir —
+`pi-hermes-memory/`, `projects-memory/`, pi's `sessions/` — so it rides
+the same persistent volume and never touches app trees).
+
+A declared package **auto-installs at the first session start**: pi fetches
+it into `<agent dir>/npm/` on its own (it carries `better-sqlite3`, a
+native addon — the image's toolchain covers a source build if the prebuild
+misses). That needs registry access from the workspace container; with
+`PI_OFFLINE` set, pi skips the install and the session starts without it.
+
+Seeding is only-where-absent **at the file level** everywhere except the
+`packages` key, which merges at the **key level** (both seeder halves —
+the server's boot and the workspace entrypoint, over
+`server/seed-agent-packages.ts` and the same lib): the default list lands
+only when the runtime `settings.json` has no `packages` key at all. The
+reason is that a new key can't land in an existing file, and `settings.json`
+is exactly the file pi itself rewrites (`/settings`, `pi install`). Any
+list already there always wins — the operator's own, or the empty one
+`pi remove npm:pi-hermes-memory` persists, which is the deliberate
+opt-out (pi writes `packages: []`, the key stays present, reseeding never
+re-adds). The flip side: a pin bump here reaches only installs that never
+set their own `packages` — everyone else updates with `pi update`.
+
 ## The workspace-root AGENTS.md — a sibling one-file template
 
 The root agent's standing instructions are NOT part of this dir: they
@@ -79,6 +107,8 @@ cybermole-jobs MCP tools registered by the `mcp.json` above.
   `{"mcpServers": {"name": {"command": "…", "args": […]}}}` (pi docs:
   mcp.md). Available in every cybermole session — only add servers whose
   credentials you're happy exposing to everything a session can do.
+- **Packages** — `settings.json`'s `packages` (see the section above): the
+  default set every session loads, pinned and key-level seeded.
 - **Skills** — `skills/<name>/SKILL.md` (+ supporting files), loaded by
   every session.
 - **Extensions** — `extensions/*.js`, loaded as ES modules at startup.
