@@ -326,7 +326,26 @@ needs it. Note the /settings page can pin per-install shell/agent
 commands in the db (`CYBERMOLE_COMMAND` / `CYBERMOLE_AGENT_COMMAND`
 overrides).
 
-### B6. Updating
+### B6. App agents can run app e2e (one-time)
+
+On a host install the agents' browser for app e2e is not installed for
+you — the compose image ships Playwright's chromium baked (see the app
+build loop's note), the host path needs it once, from the install dir so
+the pinned browser build matches the install's playwright:
+
+```sh
+cd <install dir>          # where node_modules has playwright
+sudo -u <app user> -H npx playwright install chromium
+```
+
+That lands in `<app user>'s ~/.cache/ms-playwright`. If the launch then
+complains about missing libraries, `npx playwright install-deps
+chromium` names them (install with apt and rerun the browser step — the
+verify probe is a two-line launch script). Without it, an app agent's
+`npm run test:e2e` (its own tree's gate) fails at browser resolution, not
+at any assertion.
+
+### B7. Updating
 
 ```sh
 npm i -g cybermole@latest        # or: sudo npm i -g cybermole@latest on a root-owned prefix
@@ -338,7 +357,7 @@ pi (the vendored agent) updates separately from `/settings` (the
 @earendil-works/pi-coding-agent@latest` in the install dir — README
 "Updating".
 
-### B7. Uninstall
+### B8. Uninstall
 
 ```sh
 sh deploy/uninstall-host.sh            # unit + package; state KEPT
