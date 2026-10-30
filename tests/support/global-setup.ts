@@ -1,6 +1,6 @@
 // Hermetic workspace for the e2e run. The webServer boots first, which is
 // fine: it opens the state db and tmux socket lazily.
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { setCredential } from '../../src/lib/platform/auth';
@@ -21,6 +21,25 @@ import {
   WORKSPACE,
   writeSharedSessionCookie,
 } from './env';
+
+/** Pre-run residue sweep (tools/test-cleanup.mjs): a killed run's
+ *  afterAll never fires, so its private tmux servers and mkdtemp dirs
+ *  linger — worst case with live panes still writing. The sweep kills
+ *  every `cybermole-*` tmux socket except the shared `cybermole-itest`
+ *  (already up) and clears the swept /tmp dirs, so the last crashed run
+ *  self-heals here. Best-effort: a nonzero exit is logged, not fatal. */
+function sweepResidue(): void {
+  const swept = spawnSync(
+    'node',
+    [path.resolve(__dirname, '..', '..', 'tools', 'test-cleanup.mjs'), '--quiet'],
+    {
+      encoding: 'utf8',
+    },
+  );
+  if (swept.status !== 0) {
+    console.log(`e2e residue sweep: ${((swept.stdout ?? '') + (swept.stderr ?? '')).trim()}`);
+  }
+}
 
 /** Rebuilt when dist/ is missing or older than its sources; every real
  *  build runs the self-containment gate. */
@@ -60,6 +79,10 @@ function buildFixtureApp(): void {
 }
 
 export default async function globalSetup(): Promise<void> {
+  // Before anything of THIS run exists: sweep the residue of runs that
+  // died without their teardown (the shared webServer is already up, and
+  // the sweep never touches its `cybermole-itest` socket or workspace).
+  sweepResidue();
   buildFixtureApp();
   fs.rmSync(WORKSPACE, { recursive: true, force: true });
   fs.mkdirSync(WORKSPACE, { recursive: true });
@@ -198,7 +221,7 @@ export default async function globalSetup(): Promise<void> {
   }
   // e2e.spec's beforeAll heals these against out-of-band death: a fixture
   // session nothing attaches (deploy's) is never respawned by the app, and
-  // the sidebar's live-badge contract would be unrecoverable.
+  // the tab dots' liveness contract would be unrecoverable.
   writeFixtureSessions(liveFixtures);
 
   // The server serves dist/ + dist-server/ — build if they're missing.

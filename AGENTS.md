@@ -62,6 +62,18 @@ For authenticated API calls use in-page `fetch` (`page.evaluate`), not
 cookie over the suite's plain-http origin. Build first (`npm run build`)
 or let global-setup do it when dist/ is missing.
 
+Test residue self-heals: teardowns never run when a run is killed or
+crashes, and several specs boot private servers whose tmux panes (an
+auto-opened agent tab's pi/npm install) keep writing into their state
+dirs after the server dies. `tools/test-cleanup.mjs` is the janitor —
+every `cybermole-*` tmux socket except the shared `cybermole-itest` is
+kill-servered (plus fixture-looking sessions on the default `cybermole`
+socket, the operator's own), and every swept `cybermole-*` /tmp directory
+is removed, protected: `cybermole-itest*` (the live hermetic world) and
+`cybermole-dev-e2e-*` (the dev MCP's report dir). The e2e global-setup
+runs it before spawning fixtures, so a crashed run cleans up on the next
+one; `npm run test:cleanup` (or `--dry-run`) does it standalone.
+
 The `tests/e2e/apps-*.spec.ts` files add the apps-e2e discipline: the whole suite's login budget is
 shared through the cookie file in `tests/support/env.ts` (readSharedSessionCookie
 — the first apps spec to need a browser signs in, the rest reuse the

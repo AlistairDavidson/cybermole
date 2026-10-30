@@ -22,6 +22,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:e2e": "playwright test",
+    "test:cleanup": "node tools/test-cleanup.mjs",
     "test:unit": "tsc -p tsconfig.server.json && node tools/place-kit-manifest.mjs && node --test tests/unit/*.test.mjs",
     "prepack": "npm run build && node tools/prepack.mjs"
   },
