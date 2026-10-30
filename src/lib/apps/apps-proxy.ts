@@ -1,6 +1,6 @@
-// The /apps/* reverse proxy: `${BASE}/apps/<slug>/*` forwarded verbatim (the
-// app's base is baked in at build) to the app host's unix socket, behind
-// main.ts's session gate. HTTP only.
+// The /apps/* reverse proxy: `${BASE}/apps/<slug>/*` forwarded verbatim
+// (the app's base — console base included — is baked in at build) to the
+// app host's unix socket, behind main.ts's session gate. HTTP only.
 //
 // Apps off → JSON 404. Unregistered slug → 404 before touching the host.
 // Host unreachable or wedged → a fast 502.

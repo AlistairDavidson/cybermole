@@ -1,8 +1,10 @@
-// A cybermole app's build config. The base '/apps/<slug>' is baked in at
-// scaffold time (slugs never change; the host forwards paths verbatim). The
-// node adapter runs in middleware mode for the app host, and the build emits
-// dist/route-table.json. Core dependencies resolve through per-package
-// node_modules symlinks into the cybermole install.
+// A cybermole app's build config. The base here is '/apps/notes' because the
+// reference runs against a site-root console; a scaffolded app bakes
+// '<console base>/apps/<slug>' (and the build verb re-bakes this line if the
+// console's base changes — see apps-gate.ts). The node adapter runs in
+// middleware mode for the app host, and the build emits dist/route-table.json.
+// Core dependencies resolve through per-package node_modules symlinks into
+// the cybermole install.
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'astro/config';
@@ -23,7 +25,7 @@ const emitRouteTable = () => ({
   name: 'emit-route-table',
   hooks: {
     'astro:build:done': () => {
-      writeRouteTable(routes, path.join(appRoot, 'dist', 'route-table.json'));
+      writeRouteTable(routes, path.join(appRoot, 'dist', 'route-table.json'), base);
     },
   },
 });

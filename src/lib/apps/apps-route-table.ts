@@ -64,16 +64,21 @@ export function readRouteTable(tree: string): ReadRouteTable {
       errorMessage: `dist/route-table.json at ${tablePath} is not valid JSON (${(err as Error).message}) — rebuild the app`,
     };
   }
-  const table = Array.isArray(parsed)
-    ? parsed.filter(
-        (e): e is SerializedAction =>
-          typeof e === 'object' &&
-          e !== null &&
-          typeof (e as SerializedAction).name === 'string' &&
-          typeof (e as SerializedAction).method === 'string' &&
-          typeof (e as SerializedAction).path === 'string',
-      )
-    : [];
+  // The emitted shape is { base, actions: [...] } since base-aware builds;
+  // the bare array is the legacy shape, still read.
+  const listed: unknown[] = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray((parsed as { actions?: unknown }).actions)
+      ? (parsed as { actions: unknown[] }).actions
+      : [];
+  const table = listed.filter(
+    (e): e is SerializedAction =>
+      typeof e === 'object' &&
+      e !== null &&
+      typeof (e as SerializedAction).name === 'string' &&
+      typeof (e as SerializedAction).method === 'string' &&
+      typeof (e as SerializedAction).path === 'string',
+  );
   return { ok: true, table, tablePath, tree };
 }
 

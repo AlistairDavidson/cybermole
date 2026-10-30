@@ -150,7 +150,7 @@ export function parseRouteTableSource(source: string): ParsedAction[] {
   return actions;
 }
 
-export function renderActionSection(slug: string, action: ParsedAction): string {
+export function renderActionSection(slug: string, action: ParsedAction, base = '/'): string {
   const fields =
     action.fields.length === 0
       ? 'none'
@@ -161,7 +161,7 @@ export function renderActionSection(slug: string, action: ParsedAction): string 
     `### ${action.name}`,
     '',
     action.description,
-    `- call: the \`${action.name}\` MCP tool, or the page's ${action.name} affordance, or \`${action.method} /apps/${slug}${action.path}\``,
+    `- call: the \`${action.name}\` MCP tool, or the page's ${action.name} affordance, or \`${action.method} ${base === '/' ? '' : base}/apps/${slug}${action.path}\``,
     `- input: ${fields}`,
   ];
   // §7's no-JS rule: an action whose UI posts JSON says so in its docs.
@@ -173,8 +173,8 @@ export function renderActionSection(slug: string, action: ParsedAction): string 
 export const ACTIONS_BEGIN_RE = /<!-- BEGIN ACTIONS[^\n]*-->/;
 export const ACTIONS_END_RE = /<!-- END ACTIONS[^\n]*-->/;
 
-export function renderActionsBlock(slug: string, actions: ParsedAction[]): string {
-  return `${actions.map(a => renderActionSection(slug, a)).join('\n\n')}\n`;
+export function renderActionsBlock(slug: string, actions: ParsedAction[], base = '/'): string {
+  return `${actions.map(a => renderActionSection(slug, a, base)).join('\n\n')}\n`;
 }
 
 export const ACTIONS_INTRO = [
@@ -199,8 +199,9 @@ export function regenerateAgentsActions(
   agentsText: string,
   slug: string,
   actions: ParsedAction[],
+  base = '/',
 ): AgentsRegen {
-  const content = renderActionsBlock(slug, actions);
+  const content = renderActionsBlock(slug, actions, base);
   const begin = ACTIONS_BEGIN_RE.exec(agentsText);
   const end = ACTIONS_END_RE.exec(agentsText);
   if (begin !== null && end !== null && begin.index < end.index) {
@@ -253,6 +254,9 @@ export type AddActionResult = AddActionSuccess | AddActionFailure;
 
 export interface AddActionDeps {
   appsRoot: string;
+  /** The console's normalized URL base (readBase() shape), so the AGENTS.md
+   *  action docs name the real console-origin URL. Default: site root. */
+  base?: string;
 }
 
 const fail = (errorCode: AddActionErrorCode, errorMessage: string): AddActionFailure => ({
@@ -705,6 +709,7 @@ export async function addAction(
       agentsText,
       input.slug,
       parseRouteTableSource(fs.readFileSync(routesPath, 'utf8')),
+      deps.base ?? '/',
     );
     fs.writeFileSync(agentsPath, regen.text);
     if (regen.appendedFresh)

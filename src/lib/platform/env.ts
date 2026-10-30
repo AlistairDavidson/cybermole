@@ -118,6 +118,22 @@ export function appsSocketDefault(stateDir: string, runCybermoleExists: boolean)
   return runCybermoleExists ? '/run/cybermole/apps.sock' : path.join(stateDir, 'apps.sock');
 }
 
+/** '/' or '/foo', no trailing slash. Must match the base astro.config.mjs
+ *  built with. Every server-side consumer of CYBERMOLE_BASE normalizes
+ *  through this so the web server, the app host and the app build loop
+ *  (the base apps bake) can't drift apart. */
+export function normalizeBase(raw: string): string {
+  let b = (raw || '/').trim();
+  if (!b.startsWith('/')) b = '/' + b;
+  if (b.length > 1 && b.endsWith('/')) b = b.slice(0, -1);
+  return b;
+}
+
+/** The normalized CYBERMOLE_BASE, as above ('' never appears: root is '/'). */
+export function readBase(): string {
+  return normalizeBase(RAW_ENV.CYBERMOLE_BASE);
+}
+
 /** null when CYBERMOLE_APPS_SOCK is empty (apps off). Same rules as readInternalApiSocket. */
 export function readAppsSocket(): string | null {
   const raw = RAW_ENV.CYBERMOLE_APPS_SOCK;

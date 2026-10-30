@@ -1,7 +1,9 @@
-// A cybermole app's build config. The base '/apps/<slug>' is baked in at
-// scaffold time (slugs never change; the host forwards paths verbatim). The
-// node adapter runs in middleware mode for the app host, and the build emits
-// dist/route-table.json. Core dependencies resolve through per-package
+// A cybermole app's build config. The base '__APP_BASE__/apps/__APP_SLUG__'
+// is baked in at scaffold time (slugs never change; the console's URL base
+// rides every request the proxy forwards, so the app bakes it too — the
+// build verb re-normalizes this line whenever the console base changes).
+// The node adapter runs in middleware mode for the app host, and the build
+// emits dist/route-table.json. Core dependencies resolve through per-package
 // node_modules symlinks into the cybermole install.
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,7 +17,7 @@ const appRoot = path.dirname(fileURLToPath(import.meta.url));
 // Every alias below resolves through the app's own links.
 const link = (...rest) => path.join(appRoot, 'node_modules', ...rest);
 
-const base = '/apps/__APP_SLUG__';
+const base = '__APP_BASE__/apps/__APP_SLUG__';
 
 // Emitted from here because astro's config loader compiles TS: a plain-node
 // post-build script couldn't import the kit's TS sources from node_modules.
@@ -23,7 +25,7 @@ const emitRouteTable = () => ({
   name: 'emit-route-table',
   hooks: {
     'astro:build:done': () => {
-      writeRouteTable(routes, path.join(appRoot, 'dist', 'route-table.json'));
+      writeRouteTable(routes, path.join(appRoot, 'dist', 'route-table.json'), base);
     },
   },
 });

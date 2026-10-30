@@ -19,6 +19,7 @@ import {
   PI_SESSION_DIR,
   readAppsSocket,
   readAppsRoot,
+  readBase,
   readInternalApiSocket,
   readObjectStoreConfig,
   readEditorUpstream,
@@ -92,14 +93,6 @@ const authLog = componentLogger('auth');
 const wsLog = componentLogger('ws');
 const shutdownLog = componentLogger('shutdown');
 
-// '/' or '/foo', no trailing slash. Must match the base astro.config.mjs built with.
-function normalizeBase(raw: string): string {
-  let b = (raw || '/').trim();
-  if (!b.startsWith('/')) b = '/' + b;
-  if (b.length > 1 && b.endsWith('/')) b = b.slice(0, -1);
-  return b;
-}
-
 const home = ENV.CYBERMOLE_HOME;
 
 // The server's own PI_CODING_AGENT_DIR is deliberately not a fallback: on an
@@ -118,7 +111,7 @@ const rootAgentsTemplate = path.join(APP_ROOT, 'runtime', 'workspace-root', 'AGE
 const CFG: ServerConfig = {
   host: ENV.CYBERMOLE_HOST,
   port: ENV.CYBERMOLE_PORT,
-  base: normalizeBase(ENV.CYBERMOLE_BASE),
+  base: readBase(),
   home,
   agentDir,
   dbFile: ENV.CYBERMOLE_DB_FILE,

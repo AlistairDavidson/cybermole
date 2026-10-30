@@ -30,6 +30,7 @@ async function bootWorld({
   watch = false,
   watchDebounceMs,
   watchFactory,
+  base,
 } = {}) {
   const root = fs.mkdtempSync(path.join(dir, 'case-'));
   const db = new StateDb(path.join(root, 'cybermole.db'));
@@ -50,6 +51,7 @@ async function bootWorld({
     retryDelayMs: 25,
     discoveryTimeoutMs: 2000,
     watch,
+    ...(base !== undefined ? { base } : {}),
     ...(watch ? { watchDebounceMs: watchDebounceMs ?? 30 } : {}),
     ...(watchFactory ? { watchFactory } : {}),
   });
@@ -114,6 +116,16 @@ function makeAppTree(root, slug, opts = {}) {
     }
     fs.writeFileSync(path.join(cwd, 'dist', 'client', '_astro', 'app.HASH.css'), 'body{}');
     fs.writeFileSync(path.join(cwd, 'dist', 'client', 'favicon.svg'), '<svg/>');
+    // A base-aware build's route table records its baked base; a bare array
+    // is the legacy shape; none at all leaves the base unknown.
+    if (opts.tableBase !== undefined) {
+      fs.writeFileSync(
+        path.join(cwd, 'dist', 'route-table.json'),
+        JSON.stringify({ base: opts.tableBase, actions: [] }),
+      );
+    } else if (opts.legacyTable === true) {
+      fs.writeFileSync(path.join(cwd, 'dist', 'route-table.json'), '[]');
+    }
   }
   return cwd;
 }
@@ -229,6 +241,87 @@ test('a complete tree mounts: pages through the middleware, assets from dist/cli
 
     const notApp = await call(w.host.socketPath, 'GET', '/somewhere/else');
     assert.equal(notApp.status, 404);
+  } finally {
+    await w.host.close();
+    await w.internalApi.close();
+  }
+});
+
+// ---------- console base ----------
+
+/** Answers with the exact req.url it saw, so tests assert the rewrite. */
+const echoEntry = [
+  'export const handler = (req, res, next) => {',
+  '  if (req.url === undefined) { next(); return; }',
+  "  res.writeHead(200, { 'content-type': 'text/plain' });",
+  '  res.end(req.url);',
+  '};',
+].join('\n');
+
+test('a subpath console: apps mount at <base>/apps/<slug>; the internal root shape is rewritten onto it', async () => {
+  const w = await bootWorld({ base: '/console' });
+  try {
+    const cwd = makeAppTree(w.root, 'based-app', {
+      entry: echoEntry,
+      tableBase: '/console/apps/based-app',
+    });
+    await w.apps.saveApp('Based App', cwd);
+    const report = await w.host.reload();
+    assert.deepEqual(report.mounted, ['based-app']);
+
+    // the status names the based mount
+    const st = await status(w.host.socketPath);
+    assert.equal(st.mounted[0].base, '/console/apps/based-app');
+
+    // the browser shape (what the web proxy forwards verbatim) passes through
+    const browser = await call(w.host.socketPath, 'GET', '/console/apps/based-app/page?q=1');
+    assert.equal(browser.status, 200);
+    assert.equal(browser.text, '/console/apps/based-app/page?q=1');
+
+    // the internal canonical shape is rewritten onto the mount base, query kept
+    const internal = await call(w.host.socketPath, 'GET', '/apps/based-app/page?q=1');
+    assert.equal(internal.status, 200);
+    assert.equal(internal.text, '/console/apps/based-app/page?q=1');
+
+    // assets resolve from the rewritten URL too
+    const hashed = await call(w.host.socketPath, 'GET', '/apps/based-app/_astro/app.HASH.css');
+    assert.equal(hashed.status, 200);
+    assert.equal(hashed.headers['content-type'], 'text/css; charset=utf-8');
+
+    // neither shape may address another path's apps
+    const alien = await call(w.host.socketPath, 'GET', '/other/apps/based-app/');
+    assert.equal(alien.status, 404);
+  } finally {
+    await w.host.close();
+    await w.internalApi.close();
+  }
+});
+
+test('a build whose baked base disagrees with the console is skipped with the repair named', async () => {
+  const w = await bootWorld({ base: '/console' });
+  try {
+    // built for the site root, console serves /console
+    const rootBuilt = makeAppTree(w.root, 'root-built', { tableBase: '/apps/root-built' });
+    await w.apps.saveApp('Root Built', rootBuilt);
+    // a build that predates base-aware tables
+    const legacy = makeAppTree(w.root, 'legacy', { legacyTable: true });
+    await w.apps.saveApp('Legacy', legacy);
+    // no table at all: the base is unknown, not wrong — it mounts
+    const unknown = makeAppTree(w.root, 'unknown');
+    await w.apps.saveApp('Unknown', unknown);
+
+    const report = await w.host.reload();
+    assert.deepEqual(report.mounted, ['unknown']);
+    const bySlug = Object.fromEntries(report.skipped.map(s => [s.slug, s.reason]));
+    assert.match(
+      bySlug['root-built'],
+      /built with base "\/apps\/root-built" .* "\/console\/apps\/root-built" .*rebuild/s,
+    );
+    assert.match(bySlug.legacy, /predates base-aware .*rebuild the app/s);
+
+    // the skipped app answers app_not_mounted, not a wrong-base mount
+    const gone = await call(w.host.socketPath, 'GET', '/console/apps/root-built/');
+    assert.equal(JSON.parse(gone.text).code, 'app_not_mounted');
   } finally {
     await w.host.close();
     await w.internalApi.close();
@@ -1018,6 +1111,16 @@ test('readAppsSocket: empty = off (null), unset = the shape default, absolute wi
 
 /** A ws entry that answers 101 with its marker and echoes `marker:` + bytes;
  *  /unrouted refuses app-side (the app is the router). */
+/** Answers 101 with the exact req.url it saw in X-Marker, so tests assert the rewrite. */
+function wsEchoUrlSource() {
+  return [
+    'export function handleUpgrade(req, socket, head) {',
+    '  socket.write(`HTTP/1.1 101 Switching Protocols\\r\\nX-Marker: ${req.url}\\r\\nConnection: Upgrade\\r\\nUpgrade: websocket\\r\\n\\r\\n`);',
+    "  socket.on('data', d => socket.write(d));",
+    '}',
+  ].join('\n');
+}
+
 function wsEntrySource(marker) {
   return [
     `const marker = ${JSON.stringify(marker)};`,
@@ -1095,6 +1198,29 @@ test('an app with a ws entry: upgrades reach it, verbatim path; without one they
     // The HTTP face is unaffected.
     const page = await call(w.host.socketPath, 'GET', '/apps/app-ws/page');
     assert.equal(page.status, 200);
+  } finally {
+    await w.host.close();
+    await w.internalApi.close();
+  }
+});
+
+test('a subpath console: ws upgrades reach the entry in the base-independent shape', async () => {
+  const w = await bootWorld({ base: '/console' });
+  try {
+    // the entry answers with the req.url it saw, so the test asserts the strip
+    const withWs = makeAppTree(w.root, 'app-ws', {
+      tableBase: '/console/apps/app-ws',
+      wsEntry: wsEchoUrlSource(),
+    });
+    await w.apps.saveApp('App WS', withWs);
+    await w.host.reload();
+
+    // the browser shape (based, what the proxy forwards) …
+    const browser = await rawUpgrade(w.host.socketPath, '/console/apps/app-ws/ws?x=1');
+    assert.equal(browser.status, 101);
+    // … arrives at the entry base-independent, query kept
+    assert.equal(browser.marker, '/apps/app-ws/ws?x=1');
+    browser.socket.destroy();
   } finally {
     await w.host.close();
     await w.internalApi.close();

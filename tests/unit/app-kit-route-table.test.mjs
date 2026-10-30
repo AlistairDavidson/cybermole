@@ -324,6 +324,23 @@ test('writeRouteTable: writes pretty JSON (dir created) that round-trips', () =>
   assert.deepEqual(read[1].input.properties.id, { type: 'integer', minimum: 1 });
 });
 
+test('writeRouteTable: a base rides the table as { base, actions }; without one the legacy array', () => {
+  const withBase = path.join(
+    fs.mkdtempSync(path.join(os.tmpdir(), 'kit-routes-')),
+    'dist',
+    'route-table.json',
+  );
+  writeRouteTable(table, withBase, '/console/apps/notes');
+  const shaped = JSON.parse(fs.readFileSync(withBase, 'utf8'));
+  assert.equal(shaped.base, '/console/apps/notes');
+  assert.equal(shaped.actions.length, 4);
+  assert.deepEqual(shaped.actions[1].input.properties.id, { type: 'integer', minimum: 1 });
+
+  const bare = path.join(path.dirname(withBase), 'bare-route-table.json');
+  writeRouteTable(table, bare);
+  assert.equal(Array.isArray(JSON.parse(fs.readFileSync(bare, 'utf8'))), true);
+});
+
 test('defineRoute: the fixture handlers still run directly (the table stays plain data)', async () => {
   // the binder never wraps handlers: entries are callable as-is
   assert.equal(

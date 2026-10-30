@@ -131,7 +131,7 @@ the app host's status route — so a dead host is visible, not
 mysterious: the builder page's open link dims with the reason); each page
 filters the tree by owner (console: `app_id` null, builder: set). Each app
 group on the builder page has an **open** link to its app at
-`/apps/<slug>/` (same-tab navigation — the PWA has no tabs; registered apps only) — registered apps are reachable only
+`<base>/apps/<slug>/` (same-tab navigation — the PWA has no tabs; registered apps only) — registered apps are reachable only
 through that proxy, behind the session gate (a host that is down
 answers 502 through the proxy; an unregistered slug 404s). The rest are thin Astro routes: `POST /api/apps` (an optional
 `cwd` — where the app's in-tree workspaces start) + `PATCH`/
@@ -346,7 +346,7 @@ directly.
 | `CYBERMOLE_JOB_LOG_DIR` | `/workspace/.cybermole/job-logs` | root under which job runs persist their logs + exit files (`<dir>/<job>/<fired-at>.{log,exit}`) — a path that exists in both containers of the compose split (laid out by `workspace-init`); point it somewhere writable in other split shapes |
 | `CYBERMOLE_JOB_LOG_MAX` | `20971520` (20 MiB) | write-time cap on each job run's log — past it the run wrapper's appender stops writing (one `[truncated at N bytes]` marker line) but keeps draining the job's output, so a chatty or runaway job can neither fill the disk mid-run nor die of a broken pipe. A non-integer or negative value stops the server at boot |
 | `CYBERMOLE_SOCK` | `/run/cybermole/cybermole.sock` when `/run/cybermole` exists (the compose split), else `<state dir>/cybermole.sock` | the [internal jobs API](#scheduled-jobs-jobs--the-in-process-scheduler)'s unix socket: a second HTTP listener in the same server process serving the workspace side (agents) — see the jobs section. **Empty = the listener is off**; a set-but-non-absolute value stops the server at boot, like the S3 vars. The socket file is created `0660` — the file mode (the shared `cybermole` group in the split shape) is the only auth |
-| `CYBERMOLE_APPS_SOCK` | `/run/cybermole/apps.sock` when `/run/cybermole` exists, else `<state dir>/apps.sock` | the **app host**'s unix socket (`server/app-host.ts`): mounts registered apps' built Astro middlewares and serves them at `/apps/<slug>/*` through the console's proxy (behind the login, same session gate as everything else). The env var decides ownership too: **unset** = the single-user shape, where the web server spawns and supervises `dist-server/server/app-host.js` as a child (restarting it with backoff if it crashes); **set** = the split (compose) or an operator-owned process — the web server is only a client on the socket and never spawns; **empty** = the apps surface is off (`/apps/*` answers 404, every app row reports `serving: false` in `/api/state`). A set-but-non-absolute value stops the boot, like `CYBERMOLE_SOCK` |
+| `CYBERMOLE_APPS_SOCK` | `/run/cybermole/apps.sock` when `/run/cybermole` exists, else `<state dir>/apps.sock` | the **app host**'s unix socket (`server/app-host.ts`): mounts registered apps' built Astro middlewares and serves them at `<CYBERMOLE_BASE>/apps/<slug>/*` through the console's proxy (behind the login, same session gate as everything else; apps bake the console base at build — [The base path](#the-base-path)). The env var decides ownership too: **unset** = the single-user shape, where the web server spawns and supervises `dist-server/server/app-host.js` as a child (restarting it with backoff if it crashes); **set** = the split (compose) or an operator-owned process — the web server is only a client on the socket and never spawns; **empty** = the apps surface is off (`/apps/*` answers 404, every app row reports `serving: false` in `/api/state`). A set-but-non-absolute value stops the boot, like `CYBERMOLE_SOCK` |
 | `CYBERMOLE_TMUX_SOCKET` | `cybermole` | the tmux socket the app uses. A relative *name* is the single-user shape: the app's own server, forked on the first session-creating call, under the per-uid default dir. An **absolute path** switches on the privilege split ([below](#the-privilege-split-two-containers)): tmux runs as another uid/container on that shared socket (`-S` instead of `-L` — a relative name resolves per-uid and cannot be shared), and terminal spawns, job runs and attaches refuse to fork a server, erroring with "workspace tmux server not running" instead. The server lifecycle is then the workspace side's job (`docker-workspace-entrypoint.sh`, or the host-install equivalent below) |
 | `CYBERMOLE_TMUX_CONF` | `<app root>/runtime/tmux.conf` | tmux server config, applied when the tmux server starts (escape-time, scrollback, truecolour — see the file) |
 | `CYBERMOLE_DB_FILE` | `<state dir>/cybermole.db` | sqlite state db (0600): login credential, login sessions (`auth_sessions`), the workspace tree (`apps`, `workspaces`, `terminals`), scheduled-job tables (`jobs`, `job_runs` — the in-process scheduler + run logs), `settings` kv (the pi auto-update toggle + outcomes). Fresh setup: `npm run set-password` creates it |
@@ -511,7 +511,9 @@ webapp (same stack and standards as the console — Web Awesome, zod, the
 Result family, `node:sqlite`) that the **app host** — a second
 supervised Node process on the workspace side, uid 2000, a unix socket
 like the internal jobs API — mounts behind the console's session gate
-at `/apps/<slug>/`. The web container proxies and never imports app
+at `<base>/apps/<slug>/` (the console's URL base is baked into every app at
+scaffold/build — a subpath console serves subpath apps with no extra proxy
+rules). The web container proxies and never imports app
 code; a registered app is reachable only through that proxy (an
 unregistered slug 404s, a down host 502s — the sidebar's app group
 links what serves, with a dimmed reason when it doesn't).
@@ -1103,6 +1105,20 @@ replaces bullet 1 with the plain `CYBERMOLE_BASE` build-time + runtime env
 (no compose variable). With the default `/` — cybermole on its own hostname
 — none of this applies: proxy `location /` and the filter's POST path
 are `/` and `/login`.
+
+**Apps ride the base automatically.** Every cybermole app bakes
+`<base>/apps/<slug>` as its URL base at scaffold/build time (the
+`base` line in its `astro.config.mjs`; the build verb re-bakes it whenever
+it disagrees with the console), and the app host mounts each app there —
+the browser-facing app URLs are `<base>/apps/<slug>/…`, inside the one
+nginx location above (`proxy_pass` carries no URI part, so `<base>/apps/…`
+reaches the console unchanged — no extra location, no separate cookie
+path). The only operational rule: **after changing the base, rebuild every
+registered app** (the `build` verb per app, then `reload`) — the app host
+skips a build whose baked base disagrees, with the reason (and the repair)
+named in its status, which the console's app rows surface. Internal callers
+(the app MCP shim, `call`) keep using the base-independent `/apps/<slug>/…`
+shape; the host maps it onto the mount.
 
 ### Updating
 

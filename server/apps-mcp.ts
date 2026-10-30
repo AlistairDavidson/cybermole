@@ -18,6 +18,7 @@ import {
   APP_ROOT,
   readAppsRoot,
   readAppsSocket,
+  readBase,
   readInternalApiSocket,
 } from '../src/lib/platform/env';
 import { runChild } from '../src/lib/apps/apps-child';
@@ -103,6 +104,10 @@ export interface AppsMcpDeps {
   appsSocketPath: string | null;
   /** Holds the templates; scaffolded node_modules link into it. */
   installRoot: string;
+  /** The console's normalized URL base (readBase() shape). Scaffolds and
+   *  builds bake `<base>/apps/<slug>` so app URLs live under the console.
+   * Defaults to the env value. */
+  base?: string | undefined;
   templateDir?: string | undefined;
   agentTemplateFile?: string | undefined;
   run?: typeof runChild | undefined;
@@ -370,9 +375,11 @@ export async function callActionTool(
 // ---------- server ----------
 
 export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
+  const base = deps.base ?? readBase();
   const gateDeps = {
     appsRoot: deps.appsRoot,
     installRoot: deps.installRoot,
+    base,
     run: deps.run ?? runChild,
   };
   const scaffoldDeps = {
@@ -381,6 +388,7 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
     agentTemplateFile:
       deps.agentTemplateFile ?? path.join(deps.installRoot, 'runtime', 'app-agents', 'AGENTS.md'),
     installRoot: deps.installRoot,
+    base,
     run: deps.run ?? runChild,
   };
 
@@ -392,7 +400,8 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
       description:
         'Scaffold a new cybermole app at the apps root from the image starter template: ' +
         'a real minimal Astro app on @cybermole/app-kit with one example action (ping) wired end to end, ' +
-        "base '/apps/<slug>' baked, node_modules as per-package symlinks into the install's tree, a git repo " +
+        `base '${base === '/' ? '' : base}/apps/<slug>' baked (the console URL base included), ` +
+        "node_modules as per-package symlinks into the install's tree, a git repo " +
         "(first commit = the scaffold; agent undo is git clean) and the operator's AGENTS.md. The slug is " +
         'derived from the name like the console derives it, and is stable once created. Nothing registers or ' +
         'builds: check → register → reload is the loop.',
@@ -530,7 +539,7 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
       },
     },
     async ({ slug, name, summary, method }) =>
-      json(await addAction({ appsRoot: deps.appsRoot }, { slug, name, summary, method })),
+      json(await addAction({ appsRoot: deps.appsRoot, base }, { slug, name, summary, method })),
   );
 
   server.registerTool(

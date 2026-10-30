@@ -51,6 +51,11 @@ export interface GateDeps {
   appsRoot: string;
   /** the install root (the kit's arch-check lives under it) */
   installRoot: string;
+  /** The console's normalized URL base (readBase() shape: '/' at the site
+   *  root). The build's baked base is derived from it, so every gate run
+   *  re-normalizes the app's astro config first — a base change needs no
+   *  hand edits. Default '/': the site root. */
+  base?: string;
   run: RunChildFn;
   /** Per stage. Default 300 s (astro build of a real app). */
   timeoutMs?: number;
@@ -113,6 +118,40 @@ function treeScripts(tree: string): Set<string> {
   }
 }
 
+/** The app's reachability invariant: astro.config.mjs bakes `const base =
+ *  '<console base>/apps/<slug>'`. The scaffold writes it; a console base
+ *  change (or an app predating based consoles) leaves it stale, which is
+ *  exactly what makes an app unreachable at its console URL. Every gate
+ *  run re-bakes the line before building, so a rebuild is the only repair
+ *  a base change ever needs. A config without the line (heavily customized)
+ *  is left alone — the app host's mount check reports the mismatch. */
+const APP_BASE_LINE_RE = /^(const base = ')([^']*)(';.*)$/m;
+
+export function normalizeAppBase(
+  tree: string,
+  slug: string,
+  base = '/',
+): {
+  changed: boolean;
+  /** null: no scaffolded base line found (a customized config, untouched). */
+  from: string | null;
+  to: string;
+} {
+  const expected = `${(base ?? '/') === '/' ? '' : base}/apps/${slug}`;
+  const file = path.join(tree, 'astro.config.mjs');
+  let source: string;
+  try {
+    source = fs.readFileSync(file, 'utf8');
+  } catch {
+    return { changed: false, from: null, to: expected };
+  }
+  const match = APP_BASE_LINE_RE.exec(source);
+  if (match === null) return { changed: false, from: null, to: expected };
+  if (match[2] === expected) return { changed: false, from: expected, to: expected };
+  fs.writeFileSync(file, source.replace(APP_BASE_LINE_RE, `$1${expected}$3`));
+  return { changed: true, from: match[2] ?? '', to: expected };
+}
+
 /** Declared dependencies and the astro/tsc bins that don't resolve in the tree. */
 function missingLinks(tree: string): string[] {
   const pkgPath = path.join(tree, 'package.json');
@@ -148,6 +187,7 @@ export async function runGate(
       errorMessage: `no app tree at ${tree} — scaffold it first (the apps root is ${deps.appsRoot})`,
     } satisfies AppGateFailure;
   }
+  normalizeAppBase(tree, slug, deps.base);
   const failures: GateFailure[] = [];
   // Stages whose npm script the tree doesn't have never run — a pre-standard
   // tree keeps passing, the skipped scripts named in the output — except

@@ -157,7 +157,10 @@ The cookie is `Secure` and login POSTs must not cross plain HTTP.
 (WebSocket upgrade map included; allows the 5 GiB upload body), and
 `deploy/fail2ban/` watches failed logins. Compose already sets
 `CYBERMOLE_TRUST_PROXY=1` for that one hop. Subpath deployments have a
-three-file `CYBERMOLE_BASE` agreement — README "The base path".
+three-file `CYBERMOLE_BASE` agreement — README "The base path"; apps pick
+the base up automatically at scaffold/build (no extra nginx location —
+`<base>/apps/<slug>/` rides the one base location), and a base change
+means rebuilding each registered app (`build` + `reload`).
 
 ### A6. Terminal shell settings (zsh init)
 

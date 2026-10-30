@@ -14,7 +14,7 @@ import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Duplex } from 'node:stream';
 import { componentLogger } from '../src/lib/platform/logger';
-import { readAppsSocket, readInternalApiSocket } from '../src/lib/platform/env';
+import { readAppsSocket, readBase, readInternalApiSocket } from '../src/lib/platform/env';
 import { requestInternalApi } from '../src/lib/platform/internal-api-client';
 import { AppSlugSchema } from '@cybermole/app-kit';
 import { debounceTrailing } from '../src/lib/platform/debounce';
@@ -55,7 +55,8 @@ interface AppManifest {
 
 interface MountedApp {
   readonly slug: string;
-  /** '/apps/<slug>', baked in at build. */
+  /** `<console base>/apps/<slug>`, baked in at build (the gate re-bakes it
+   *  when the console base changes). */
   readonly base: string;
   readonly cwd: string;
   readonly manifest: AppManifest;
@@ -97,6 +98,11 @@ export interface AppHostDeps {
   watchDebounceMs?: number;
   /** Injectable fs.watch stand-in for the tests (errors, close tracking). */
   watchFactory?: AppWatchFactory;
+  /** The console's normalized URL base (readBase() shape: '/' at the site
+   *  root). Apps mount — and bake — at `<base>/apps/<slug>`, so a subpath
+   *  console serves subpath apps with no proxy or nginx gymnastics.
+   *  Default: the env value. */
+  base?: string;
 }
 
 export interface ReloadReport {
@@ -212,6 +218,11 @@ function inspectRow(row: AppRow):
       entryPath: string;
       clientDir: string;
       wsEntryPath: string | null;
+      /** The base the build baked in (dist/route-table.json), when the
+       *  build records one; null = unknown (legacy build, or no table). */
+      bakedBase: string | null;
+      /** A route-table.json exists (its base may still be unknown). */
+      hasTable: boolean;
     }
   | { ok: false; reason: string } {
   try {
@@ -229,6 +240,8 @@ function inspectRowChecked(row: AppRow):
       entryPath: string;
       clientDir: string;
       wsEntryPath: string | null;
+      bakedBase: string | null;
+      hasTable: boolean;
     }
   | { ok: false; reason: string } {
   if (row.cwd === null)
@@ -270,12 +283,30 @@ function inspectRowChecked(row: AppRow):
   }
   // The optional WS entry: dist/server/ws.mjs, emitted by the app's build.
   const wsEntryPath = path.join(row.cwd, 'dist', 'server', 'ws.mjs');
+  // What the build says about its own base — the { base, actions } shape
+  // every base-aware build emits; the legacy bare array records none.
+  let bakedBase: string | null = null;
+  let hasTable = false;
+  try {
+    const table = JSON.parse(
+      fs.readFileSync(path.join(row.cwd, 'dist', 'route-table.json'), 'utf8'),
+    ) as unknown;
+    hasTable = Array.isArray(table) || (typeof table === 'object' && table !== null);
+    if (!Array.isArray(table)) {
+      const base = (table as { base?: unknown }).base;
+      if (typeof base === 'string' && base !== '') bakedBase = base;
+    }
+  } catch {
+    // No table (or unreadable): the base is unknown, not wrong.
+  }
   return {
     ok: true,
     manifest: { name: raw.name.trim(), description, slug },
     entryPath,
     clientDir,
     wsEntryPath: fs.existsSync(wsEntryPath) ? wsEntryPath : null,
+    bakedBase,
+    hasTable,
   };
 }
 
@@ -322,6 +353,8 @@ class AppHost {
   private skipped: SkippedApp[] = [];
   private booted = false;
   private readonly startedAt = Date.now();
+  /** '' at the site root, else the console's base path ('/console'). */
+  private readonly base: string;
   /** Serializes reloads; chained as a function so it doesn't start early. */
   private reloadChain: Promise<unknown> = Promise.resolve();
   private importCounter = 0;
@@ -341,8 +374,15 @@ class AppHost {
   });
 
   constructor(private readonly deps: AppHostDeps) {
+    const base = deps.base ?? readBase();
+    this.base = base === '/' ? '' : base;
     this.watchEnabled = deps.watch ?? true;
     this.watchFactory = deps.watchFactory ?? nodeWatch;
+  }
+
+  /** The URL prefix an app is mounted (and baked) at. */
+  private appBase(slug: string): string {
+    return `${this.base}/apps/${slug}`;
   }
 
   private retrySleep(ms: number): Promise<void> {
@@ -493,6 +533,24 @@ class AppHost {
         report.skipped.push({ slug: row.slug, reason: inspected.reason });
         continue;
       }
+      // The mount and the build must agree on the base, or the app's baked
+      // URLs would point outside the console. A disagreement is a skip with
+      // the repair named, not a mount serving mysterious 404s.
+      const expectedBase = this.appBase(row.slug);
+      if (inspected.bakedBase !== null && inspected.bakedBase !== expectedBase) {
+        report.skipped.push({
+          slug: row.slug,
+          reason: `built with base "${inspected.bakedBase}" but this console serves "${expectedBase}" — rebuild the app (the build verb re-bakes the base)`,
+        });
+        continue;
+      }
+      if (inspected.bakedBase === null && inspected.hasTable && this.base !== '') {
+        report.skipped.push({
+          slug: row.slug,
+          reason: `its build predates base-aware app builds (dist/route-table.json records no base) and this console serves under "${this.base}" — rebuild the app`,
+        });
+        continue;
+      }
       if (existing) {
         try {
           const handler = await this.importHandler(inspected.entryPath);
@@ -513,7 +571,7 @@ class AppHost {
         const ws = await this.loadWsEntry(inspected.wsEntryPath);
         const mounted: MountedApp = {
           slug: row.slug,
-          base: `/apps/${row.slug}`,
+          base: this.appBase(row.slug),
           cwd: row.cwd as string,
           manifest: inspected.manifest,
           entryPath: inspected.entryPath,
@@ -663,10 +721,20 @@ class AppHost {
     };
   }
 
+  /** Both shapes address every app: the browser's `<base>/apps/<slug>/…`
+   *  (what the web proxy forwards verbatim) and the internal canonical
+   *  `/apps/<slug>/…` (the MCP shim, planActionRequest, the tests).
+   *  dispatch rewrites the latter onto the mount's base before the app
+   *  sees it, so one build serves both. */
   mountFor(url: string): MountedApp | null {
-    if (!url.startsWith('/apps/')) return null;
-    const slug = url.slice('/apps/'.length).split('/')[0] ?? '';
-    return this.mounted.get(slug) ?? null;
+    const base = this.base === '' ? '/apps/' : `${this.base}/apps/`;
+    const rest = url.startsWith(base)
+      ? url.slice(base.length)
+      : url.startsWith('/apps/')
+        ? url.slice('/apps/'.length)
+        : '';
+    if (rest === '') return null;
+    return this.mounted.get(rest.split('/')[0] ?? '') ?? null;
   }
 
   /** Served before the middleware; hashed _astro/ assets are cacheable. */
@@ -725,8 +793,9 @@ export async function startAppHost(deps: AppHostDeps): Promise<AppHostHandle> {
     });
   });
   fs.chmodSync(deps.socketPath, 0o660);
+  const base = deps.base ?? readBase();
   log.info(
-    `app host listening on ${deps.socketPath} (0660) — discovering apps via ${deps.internalSocketPath}`,
+    `app host listening on ${deps.socketPath} (0660, base ${base === '/' ? 'at the site root' : base}) — discovering apps via ${deps.internalSocketPath}`,
   );
   host.bootWithRetry();
   await host.firstSync;
@@ -751,6 +820,31 @@ export async function startAppHost(deps: AppHostDeps): Promise<AppHostHandle> {
       });
     },
   };
+}
+
+/** `/apps/<slug>/rest` → `<mount.base>/rest` (query kept); URLs already
+ *  under the mount's base pass through. One build therefore serves both
+ *  addressing shapes: the browser's `<base>/apps/<slug>/…` and the
+ *  internal canonical `/apps/<slug>/…`. */
+function toMountUrl(m: MountedApp, reqUrl: string): string {
+  const root = `/apps/${m.slug}`;
+  if (reqUrl === root || reqUrl.startsWith(`${root}/`) || reqUrl.startsWith(`${root}?`)) {
+    return m.base + reqUrl.slice(root.length);
+  }
+  return reqUrl;
+}
+
+/** WS entries get the base-independent internal shape `/apps/<slug>/…`
+ *  whatever the console's base: a browser upgrade arrives as
+ *  `<base>/apps/<slug>/…` (the proxy forwards verbatim) and is stripped
+ *  onto the internal shape, which is also what internal callers dial —
+ *  a hand-written ws.mjs therefore never depends on the deployment. */
+function toWsEntryUrl(m: MountedApp, reqUrl: string): string {
+  const root = `/apps/${m.slug}`;
+  if (reqUrl === m.base || reqUrl.startsWith(`${m.base}/`) || reqUrl.startsWith(`${m.base}?`)) {
+    return root + reqUrl.slice(m.base.length);
+  }
+  return reqUrl;
 }
 
 /** Admin routes, then the app's own HTTP forwarded verbatim. */
@@ -801,8 +895,12 @@ async function dispatch(
   if (mount === null) {
     return sendJSON(res, 404, { error: 'no such app', code: 'app_not_mounted' });
   }
+  // Internal root-shape paths (`/apps/<slug>/…`) are rewritten onto the
+  // mount's base — the shape the app was built with. Browser requests
+  // already arrive in that shape (the proxy forwards verbatim).
+  req.url = toMountUrl(mount, req.url ?? '/');
   if (req.method === 'GET' || req.method === 'HEAD') {
-    if (host.serveClientFile(res, mount, url)) return;
+    if (host.serveClientFile(res, mount, (req.url ?? '/').split('?')[0] ?? '/')) return;
   }
   try {
     mount.handler(req, res, err => {
@@ -841,6 +939,7 @@ function dispatchUpgrade(
     socket.destroy();
     return;
   }
+  req.url = toWsEntryUrl(mount, req.url ?? '/');
   if (mount.upgrade === null) {
     // An app that ships no ws entry 404s; a broken one 503s (refuse, never hang).
     const status = mount.upgradeError === null ? '404 Not Found' : '503 Service Unavailable';
@@ -888,7 +987,11 @@ export async function main(): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  const host = await startAppHost({ socketPath: appsSocket, internalSocketPath: internalSocket });
+  const host = await startAppHost({
+    socketPath: appsSocket,
+    internalSocketPath: internalSocket,
+    base: readBase(),
+  });
   const shutdown = (signal: string): void => {
     log.info(`${signal} received — shutting down`);
     void host

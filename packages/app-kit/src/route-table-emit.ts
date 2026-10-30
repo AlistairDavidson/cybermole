@@ -4,9 +4,15 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { serializeRouteTable, type RouteTable } from './route-table';
 
-export function writeRouteTable(table: RouteTable, out: string): void {
+/** `base` (the app's baked URL base) rides the table so the app host can
+ *  verify the build matches the console it serves — a mismatch is a skip
+ *  with a "rebuild" reason, not a mysterious 404. Without it the legacy
+ *  bare-array shape is written, which readers still accept. */
+export function writeRouteTable(table: RouteTable, out: string, base?: string): void {
   fs.mkdirSync(path.dirname(out), { recursive: true });
-  fs.writeFileSync(out, `${JSON.stringify(serializeRouteTable(table), null, 2)}\n`);
+  const body =
+    base === undefined ? serializeRouteTable(table) : { base, actions: serializeRouteTable(table) };
+  fs.writeFileSync(out, `${JSON.stringify(body, null, 2)}\n`);
 }
 
 /** Copies <appRoot>/src/ws.mjs, when present, to <appRoot>/dist/server/ws.mjs

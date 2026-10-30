@@ -10,7 +10,7 @@ import * as path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { readAppsRoot, readAppsSocket } from '../src/lib/platform/env';
+import { readAppsRoot, readAppsSocket, readBase } from '../src/lib/platform/env';
 import {
   requestInternalApi,
   type InternalApiAnswer,
@@ -56,6 +56,9 @@ export interface AppShimDeps {
   table: SerializedAction[];
   /** null: apps surface off (calls answer an error; the server still boots). */
   appsSocketPath: string | null;
+  /** The console's normalized URL base (readBase() shape), for the
+   *  console-origin URL in each tool's description. Default: the env value. */
+  base?: string | undefined;
   request?: typeof requestInternalApi;
   /** per-call timeout. Default 30 s. */
   timeoutMs?: number;
@@ -63,12 +66,14 @@ export interface AppShimDeps {
 
 /** The shim must never be stricter than the app it fronts. */
 export function createAppShimServer(deps: AppShimDeps): McpServer {
+  const base = deps.base ?? readBase();
+  const origin = (base === '/' ? '' : base) + '/apps/';
   const server = new McpServer({ name: `cybermole-app-${deps.slug}`, version: '0.1.0' });
   for (const entry of deps.table) {
     server.registerTool(
       entry.name,
       {
-        description: `${entry.description} — ${entry.method} /apps/${deps.slug}${entry.path} (this app's action; the answer is its Result JSON)`,
+        description: `${entry.description} — ${entry.method} ${origin}${deps.slug}${entry.path} (this app's action; the answer is its Result JSON)`,
         inputSchema: shapeFromJsonSchema(entry.input),
       },
       async (params): Promise<CallToolResult> => {
@@ -134,7 +139,7 @@ export async function main(argv: string[]): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  const server = createAppShimServer({ slug, table: read.table, appsSocketPath });
+  const server = createAppShimServer({ slug, table: read.table, appsSocketPath, base: readBase() });
   await server.connect(new StdioServerTransport());
 }
 

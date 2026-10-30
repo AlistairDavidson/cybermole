@@ -2,8 +2,11 @@
 
 This tree is a cybermole app (the image's app-starter
 template, baked by the `cybermole-apps` scaffold): an Astro SSR webapp on
-`@cybermole/app-kit`, served by the cybermole app host at `/apps/<slug>/`
-behind the console's login once it is registered and built.
+`@cybermole/app-kit`, served by the cybermole app host at
+`<console base>/apps/<slug>/` (the console's URL base — `CYBERMOLE_BASE`, e.g.
+`/console` — is baked into the app at scaffold/build time: it is the `base`
+in `astro.config.mjs`, and the build verb re-bakes it if the console's base
+ever changes) behind the console's login once it is registered and built.
 
 - `src/routes.ts` — THE route table: every action is one entry, bound by
   the kit to the HTTP route (`src/pages/api/[...path].ts`), the typed
@@ -108,7 +111,9 @@ frame is advisory. Keep it as-is; apps don't reimplement it.
 ## WebSocket routes
 
 An app can serve live sockets at its own paths: a page (or any same-origin
-client) dials `new WebSocket('/apps/<slug>/<path>')`. The console gates the
+client) dials `new WebSocket(`${baked base}/<path>`)` — the base the app was
+built with (`import.meta.env.BASE_URL` client-side; see the browser half
+below). The console gates the
 upgrade — valid session, same Origin, per-IP rate limit — strips the session
 cookie (apps get a terminal's powers, not the console's) and tunnels the
 socket to the app host, which hands the upgrade to the app's optional **WS
@@ -127,8 +132,10 @@ The contract:
   `@cybermole/app-kit/route-table-emit` in an `astro:build:done` hook copies
   `src/ws.mjs` when present (a no-op otherwise, so the hook can ship in every
 tree).
-- **Paths arrive verbatim with the baked base** (`/apps/<slug>/…`), queries
-  included — route them yourself and destroy unknowns.
+- **Paths arrive base-independent** (`/apps/<slug>/…`): the console's URL
+  base is stripped before your entry sees the URL, queries included, so the
+  entry works unchanged at any console base — route them yourself and
+  destroy unknowns.
 - **Lifecycle**: the host never pings and a quiet tunnel stays up, but
   logout, token expiry and shutdown cut tunnels without a close handshake —
   clients must reconnect, not assume.

@@ -182,7 +182,7 @@ test('the extended loop: scaffold → add_action → check green → register + 
   expect(checked.data.envelope.passed, checked.data.envelope.output).toBe(true);
   expect(checked.data.envelope.counts.tests).toEqual({ pass: 6, fail: 0, skipped: 0 });
   expect(
-    JSON.parse(fs.readFileSync(path.join(tree, 'dist', 'route-table.json'), 'utf8')).map(
+    JSON.parse(fs.readFileSync(path.join(tree, 'dist', 'route-table.json'), 'utf8')).actions.map(
       (e: { name: string }) => e.name,
     ),
   ).toEqual(['ping', 'note']);

@@ -88,6 +88,20 @@ test('scaffold: writes the baked tree, links node_modules, commits — the happy
   assert.ok(fs.existsSync(path.join(tree, 'data', '.gitkeep')));
 });
 
+test('scaffold: a subpath console bakes <base>/apps/<slug> into the app', async () => {
+  const root = fs.mkdtempSync(path.join(dir, 'case-'));
+  const r = await scaffoldApp(
+    { ...scaffoldDeps(root), base: '/console' },
+    {
+      name: 'Subpath Thing',
+    },
+  );
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const astro = fs.readFileSync(path.join(r.data.tree, 'astro.config.mjs'), 'utf8');
+  assert.ok(astro.includes(`const base = '/console/apps/${r.data.slug}'`), 'console base baked');
+  assert.ok(!astro.includes('__APP_BASE__'), 'no leftover base marker');
+});
+
 test('scaffold: an absent description becomes null in app.json', async () => {
   const root = fs.mkdtempSync(path.join(dir, 'case-'));
   const r = await scaffoldApp(scaffoldDeps(root), { name: 'quiet one' });

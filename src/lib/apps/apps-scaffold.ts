@@ -1,7 +1,9 @@
 // Scaffolds an app tree from the app-starter template: slug derived from the
-// name, base '/apps/<slug>' baked in, node_modules as per-package symlinks
-// into the install, AGENTS.md seeded, and a git repo whose first commit is
-// the scaffold (so agent undo is `git clean`). Never throws.
+// name, base '<console base>/apps/<slug>' baked in (the console's URL base is
+// part of the app's baked URLs, so a subpath console scaffolds subpath apps),
+// node_modules as per-package symlinks into the install, AGENTS.md seeded,
+// and a git repo whose first commit is the scaffold (so agent undo is
+// `git clean`). Never throws.
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { normalizeSlug, type ResultFailure, type ResultSuccess } from '@cybermole/app-kit';
@@ -51,6 +53,10 @@ export interface ScaffoldDeps {
   agentTemplateFile: string;
   /** node_modules links point into it; its dist-server has the app MCP shim */
   installRoot: string;
+  /** The console's normalized URL base (readBase() shape: '/' at the site
+   *  root) — baked into the app's astro config so its URLs live under the
+   *  console. Default '/': the site root, as before bases existed. */
+  base?: string;
   run: RunChildFn;
 }
 
@@ -58,11 +64,14 @@ export interface ScaffoldDeps {
 export function templateValues(
   input: ScaffoldAppInput & { slug: string },
   installRoot: string,
+  /** The console's normalized base (readBase() shape: '/' at the site root). */
+  base = '/',
 ): {
   [marker: string]: string;
 } {
   return {
     __APP_SLUG__: input.slug,
+    __APP_BASE__: base === '/' ? '' : base,
     __APP_NAME__: input.name,
     __APP_DESCRIPTION__: input.description?.trim() ?? '',
     __APP_MCP_SHIM__: path.join(installRoot, 'dist-server', 'server', 'app-mcp-shim.js'),
@@ -89,7 +98,7 @@ function writeTree(
   if (fs.existsSync(path.join(tree, 'gitignore'))) {
     fs.renameSync(path.join(tree, 'gitignore'), path.join(tree, '.gitignore'));
   }
-  const values = templateValues(input, deps.installRoot);
+  const values = templateValues(input, deps.installRoot, deps.base);
   const walk = (dir: string): void => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const p = path.join(dir, entry.name);
@@ -131,7 +140,9 @@ function writeAgentsMd(
 ): void {
   const template = fs.readFileSync(deps.agentTemplateFile, 'utf8');
   let text = template;
-  for (const [marker, value] of Object.entries(templateValues(input, deps.installRoot))) {
+  for (const [marker, value] of Object.entries(
+    templateValues(input, deps.installRoot, deps.base),
+  )) {
     if (text.includes(marker)) text = text.split(marker).join(value);
   }
   fs.writeFileSync(path.join(tree, 'AGENTS.md'), text);

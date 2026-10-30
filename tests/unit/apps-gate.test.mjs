@@ -11,7 +11,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
-const { checkApp } = await import('../../dist-server/src/lib/apps/apps-gate.js');
+const { checkApp, normalizeAppBase } = await import('../../dist-server/src/lib/apps/apps-gate.js');
 const { runChild } = await import('../../dist-server/src/lib/apps/apps-child.js');
 
 /** A stub tree: every stage script is a no-op, so only the lint decides. */
@@ -71,4 +71,39 @@ test('lint:arch: deleting the script cannot silence the gate under a component l
   assert.equal(legacyResult.ok, true);
   assert.equal(legacyResult.data.envelope.passed, true);
   assert.match(legacyResult.data.envelope.output, /lint:arch not in tree/);
+});
+
+// ---------- normalizeAppBase ----------
+
+test('normalizeAppBase: re-bakes the astro base line, idempotently; a config without the line is untouched', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-gate-base-'));
+  const tree = path.join(root, 'notes');
+  fs.mkdirSync(tree);
+  const config = path.join(tree, 'astro.config.mjs');
+  const write = text => fs.writeFileSync(config, text);
+  const read = () => fs.readFileSync(config, 'utf8');
+
+  // stale root base under a subpath console
+  write("// a config\nconst base = '/apps/notes';\nexport default { base };\n");
+  let r = normalizeAppBase(tree, 'notes', '/console');
+  assert.deepEqual(r, { changed: true, from: '/apps/notes', to: '/console/apps/notes' });
+  assert.ok(read().includes("const base = '/console/apps/notes';"), 'line re-baked');
+  // idempotent
+  r = normalizeAppBase(tree, 'notes', '/console');
+  assert.deepEqual(r, { changed: false, from: '/console/apps/notes', to: '/console/apps/notes' });
+
+  // the site root is the '' prefix
+  r = normalizeAppBase(tree, 'notes', '/');
+  assert.deepEqual(r, { changed: true, from: '/console/apps/notes', to: '/apps/notes' });
+
+  // a heavily customized config without the scaffolded line: never guessed at
+  write('export default { base: process.env.APP_BASE };\n');
+  r = normalizeAppBase(tree, 'notes', '/console');
+  assert.deepEqual(r, { changed: false, from: null, to: '/console/apps/notes' });
+  assert.equal(read(), 'export default { base: process.env.APP_BASE };\n');
+
+  // a missing file is the same non-answer
+  fs.rmSync(config);
+  r = normalizeAppBase(tree, 'notes', '/console');
+  assert.deepEqual(r, { changed: false, from: null, to: '/console/apps/notes' });
 });

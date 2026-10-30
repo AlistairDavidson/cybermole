@@ -592,6 +592,19 @@ test('readRouteTable: built / unbuilt / missing tree / malformed JSON', () => {
   assert.match(bad.errorMessage, /not valid JSON/);
 });
 
+test('readRouteTable: the { base, actions } shape reads like the legacy array', () => {
+  const root = fs.mkdtempSync(path.join(dir, 'rt-shaped-'));
+  synthTreeWithTable(root, 'shaped-app', emittedTable);
+  fs.writeFileSync(
+    path.join(root, 'shaped-app', 'dist', 'route-table.json'),
+    JSON.stringify({ base: '/console/apps/shaped-app', actions: emittedTable }, null, 2),
+  );
+  const shaped = readRouteTable(path.join(root, 'shaped-app'));
+  assert.equal(shaped.ok, true);
+  assert.equal(shaped.table.length, 2);
+  assert.equal(shaped.table[1].name, emittedTable[1].name);
+});
+
 test("lenientPreflight: presence-only — required keys must exist; types and extras are the app's to judge", () => {
   const input = emittedTable[1].input;
   const check = params => lenientPreflight(input).safeParse(params);
