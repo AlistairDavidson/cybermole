@@ -127,6 +127,19 @@ function treeScripts(tree: string): Set<string> {
  *  is left alone — the app host's mount check reports the mismatch. */
 const APP_BASE_LINE_RE = /^(const base = ')([^']*)(';.*)$/m;
 
+/** The baked base line in an app's astro.config.mjs, when present (null: a
+ *  customized config — the app host can't judge it, and mounts it). */
+export function readAppConfigBase(tree: string): string | null {
+  let source: string;
+  try {
+    source = fs.readFileSync(path.join(tree, 'astro.config.mjs'), 'utf8');
+  } catch {
+    return null;
+  }
+  const match = APP_BASE_LINE_RE.exec(source);
+  return match === null ? null : (match[2] ?? null);
+}
+
 export function normalizeAppBase(
   tree: string,
   slug: string,
@@ -139,17 +152,11 @@ export function normalizeAppBase(
 } {
   const expected = `${(base ?? '/') === '/' ? '' : base}/apps/${slug}`;
   const file = path.join(tree, 'astro.config.mjs');
-  let source: string;
-  try {
-    source = fs.readFileSync(file, 'utf8');
-  } catch {
-    return { changed: false, from: null, to: expected };
-  }
-  const match = APP_BASE_LINE_RE.exec(source);
-  if (match === null) return { changed: false, from: null, to: expected };
-  if (match[2] === expected) return { changed: false, from: expected, to: expected };
+  const from = readAppConfigBase(tree);
+  if (from === null || from === expected) return { changed: false, from, to: expected };
+  const source = fs.readFileSync(file, 'utf8');
   fs.writeFileSync(file, source.replace(APP_BASE_LINE_RE, `$1${expected}$3`));
-  return { changed: true, from: match[2] ?? '', to: expected };
+  return { changed: true, from, to: expected };
 }
 
 /** Declared dependencies and the astro/tsc bins that don't resolve in the tree. */

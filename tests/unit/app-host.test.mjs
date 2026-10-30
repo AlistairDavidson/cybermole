@@ -116,15 +116,13 @@ function makeAppTree(root, slug, opts = {}) {
     }
     fs.writeFileSync(path.join(cwd, 'dist', 'client', '_astro', 'app.HASH.css'), 'body{}');
     fs.writeFileSync(path.join(cwd, 'dist', 'client', 'favicon.svg'), '<svg/>');
-    // A base-aware build's route table records its baked base; a bare array
-    // is the legacy shape; none at all leaves the base unknown.
-    if (opts.tableBase !== undefined) {
+    // The astro config's baked base line is the reachability invariant
+    // (re-baked by the gate on every run); makeAppTree writes it on demand.
+    if (opts.configBase !== undefined) {
       fs.writeFileSync(
-        path.join(cwd, 'dist', 'route-table.json'),
-        JSON.stringify({ base: opts.tableBase, actions: [] }),
+        path.join(cwd, 'astro.config.mjs'),
+        `const base = '${opts.configBase}';\nexport default { base };\n`,
       );
-    } else if (opts.legacyTable === true) {
-      fs.writeFileSync(path.join(cwd, 'dist', 'route-table.json'), '[]');
     }
   }
   return cwd;
@@ -263,7 +261,7 @@ test('a subpath console: apps mount at <base>/apps/<slug>; the internal root sha
   try {
     const cwd = makeAppTree(w.root, 'based-app', {
       entry: echoEntry,
-      tableBase: '/console/apps/based-app',
+      configBase: '/console/apps/based-app',
     });
     await w.apps.saveApp('Based App', cwd);
     const report = await w.host.reload();
@@ -300,24 +298,20 @@ test('a subpath console: apps mount at <base>/apps/<slug>; the internal root sha
 test('a build whose baked base disagrees with the console is skipped with the repair named', async () => {
   const w = await bootWorld({ base: '/console' });
   try {
-    // built for the site root, console serves /console
-    const rootBuilt = makeAppTree(w.root, 'root-built', { tableBase: '/apps/root-built' });
+    // configured for the site root, console serves /console (never rebuilt)
+    const rootBuilt = makeAppTree(w.root, 'root-built', { configBase: '/apps/root-built' });
     await w.apps.saveApp('Root Built', rootBuilt);
-    // a build that predates base-aware tables
-    const legacy = makeAppTree(w.root, 'legacy', { legacyTable: true });
-    await w.apps.saveApp('Legacy', legacy);
-    // no table at all: the base is unknown, not wrong — it mounts
-    const unknown = makeAppTree(w.root, 'unknown');
-    await w.apps.saveApp('Unknown', unknown);
+    // a customized config without the base line: it can't be judged — it mounts
+    const custom = makeAppTree(w.root, 'custom');
+    await w.apps.saveApp('Custom', custom);
 
     const report = await w.host.reload();
-    assert.deepEqual(report.mounted, ['unknown']);
+    assert.deepEqual(report.mounted, ['custom']);
     const bySlug = Object.fromEntries(report.skipped.map(s => [s.slug, s.reason]));
     assert.match(
       bySlug['root-built'],
-      /built with base "\/apps\/root-built" .* "\/console\/apps\/root-built" .*rebuild/s,
+      /bakes base "\/apps\/root-built" .* "\/console\/apps\/root-built" .*rebuild/s,
     );
-    assert.match(bySlug.legacy, /predates base-aware .*rebuild the app/s);
 
     // the skipped app answers app_not_mounted, not a wrong-base mount
     const gone = await call(w.host.socketPath, 'GET', '/console/apps/root-built/');
@@ -1209,7 +1203,7 @@ test('a subpath console: ws upgrades reach the entry in the base-independent sha
   try {
     // the entry answers with the req.url it saw, so the test asserts the strip
     const withWs = makeAppTree(w.root, 'app-ws', {
-      tableBase: '/console/apps/app-ws',
+      configBase: '/console/apps/app-ws',
       wsEntry: wsEchoUrlSource(),
     });
     await w.apps.saveApp('App WS', withWs);

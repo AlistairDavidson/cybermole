@@ -18,6 +18,7 @@ import { readAppsSocket, readBase, readInternalApiSocket } from '../src/lib/plat
 import { requestInternalApi } from '../src/lib/platform/internal-api-client';
 import { AppSlugSchema } from '@cybermole/app-kit';
 import { debounceTrailing } from '../src/lib/platform/debounce';
+import { readAppConfigBase } from '../src/lib/apps/apps-gate';
 import {
   hardenResponse,
   logAccess,
@@ -218,11 +219,9 @@ function inspectRow(row: AppRow):
       entryPath: string;
       clientDir: string;
       wsEntryPath: string | null;
-      /** The base the build baked in (dist/route-table.json), when the
-       *  build records one; null = unknown (legacy build, or no table). */
+      /** The base the app's astro.config.mjs bakes (the line the gate
+       *  re-normalizes on every run); null = a config with no such line. */
       bakedBase: string | null;
-      /** A route-table.json exists (its base may still be unknown). */
-      hasTable: boolean;
     }
   | { ok: false; reason: string } {
   try {
@@ -241,7 +240,6 @@ function inspectRowChecked(row: AppRow):
       clientDir: string;
       wsEntryPath: string | null;
       bakedBase: string | null;
-      hasTable: boolean;
     }
   | { ok: false; reason: string } {
   if (row.cwd === null)
@@ -283,30 +281,13 @@ function inspectRowChecked(row: AppRow):
   }
   // The optional WS entry: dist/server/ws.mjs, emitted by the app's build.
   const wsEntryPath = path.join(row.cwd, 'dist', 'server', 'ws.mjs');
-  // What the build says about its own base — the { base, actions } shape
-  // every base-aware build emits; the legacy bare array records none.
-  let bakedBase: string | null = null;
-  let hasTable = false;
-  try {
-    const table = JSON.parse(
-      fs.readFileSync(path.join(row.cwd, 'dist', 'route-table.json'), 'utf8'),
-    ) as unknown;
-    hasTable = Array.isArray(table) || (typeof table === 'object' && table !== null);
-    if (!Array.isArray(table)) {
-      const base = (table as { base?: unknown }).base;
-      if (typeof base === 'string' && base !== '') bakedBase = base;
-    }
-  } catch {
-    // No table (or unreadable): the base is unknown, not wrong.
-  }
   return {
     ok: true,
     manifest: { name: raw.name.trim(), description, slug },
     entryPath,
     clientDir,
     wsEntryPath: fs.existsSync(wsEntryPath) ? wsEntryPath : null,
-    bakedBase,
-    hasTable,
+    bakedBase: readAppConfigBase(row.cwd),
   };
 }
 
@@ -535,19 +516,13 @@ class AppHost {
       }
       // The mount and the build must agree on the base, or the app's baked
       // URLs would point outside the console. A disagreement is a skip with
-      // the repair named, not a mount serving mysterious 404s.
+      // the repair named, not a mount serving mysterious 404s. A config
+      // without the line (heavily customized) can't be judged — it mounts.
       const expectedBase = this.appBase(row.slug);
       if (inspected.bakedBase !== null && inspected.bakedBase !== expectedBase) {
         report.skipped.push({
           slug: row.slug,
-          reason: `built with base "${inspected.bakedBase}" but this console serves "${expectedBase}" — rebuild the app (the build verb re-bakes the base)`,
-        });
-        continue;
-      }
-      if (inspected.bakedBase === null && inspected.hasTable && this.base !== '') {
-        report.skipped.push({
-          slug: row.slug,
-          reason: `its build predates base-aware app builds (dist/route-table.json records no base) and this console serves under "${this.base}" — rebuild the app`,
+          reason: `astro.config.mjs bakes base "${inspected.bakedBase}" but this console serves "${expectedBase}" — rebuild the app (the build verb re-bakes the base)`,
         });
         continue;
       }
