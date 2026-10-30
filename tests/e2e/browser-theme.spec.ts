@@ -157,6 +157,12 @@ test.describe('live scheme flip', () => {
 const ROOT = path.resolve(__dirname, '..', '..');
 const PORT = 3487; // clear of the shared :3470 and the specs' 3471–3486
 const BASE = `http://127.0.0.1:${PORT}`;
+// The private server's own tmux server. bareEnv strips CYBERMOLE_*, so
+// without this its terminals would land on the default `cybermole` socket —
+// the operator's own. The console-page load below auto-opens an agent tab,
+// whose pi/npm package install writes into the state dir for seconds after;
+// the teardown kills this server so those panes die before the rm.
+const TMUX_SOCKET = 'cybermole-theme-itest';
 
 /** The machine's and suite's CYBERMOLE_ / PI_CODING_AGENT_ settings must not leak in. */
 function bareEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
@@ -191,6 +197,7 @@ async function spawnServer(): Promise<void> {
       CYBERMOLE_HOST: '127.0.0.1',
       CYBERMOLE_STATE_DIR: dir,
       CYBERMOLE_APPS_SOCK: '',
+      CYBERMOLE_TMUX_SOCKET: TMUX_SOCKET,
       // configured, but nothing listens
       CYBERMOLE_EDITOR_UPSTREAM: 'http://127.0.0.1:1',
       CYBERMOLE_NEW_SESSION_CWD: dir,
@@ -242,8 +249,35 @@ test.afterAll(async () => {
       setTimeout(() => c.kill('SIGKILL'), 5_000).unref();
     });
   }
-  if (server) fs.rmSync(server.dir, { recursive: true, force: true });
+  // The agent tab's panes outlive the server (tmux, not children): kill
+  // their server first, or its npm install keeps writing into the state
+  // dir while the rm walks it — the ENOTEMPTY teardown flake. Best-effort:
+  // no server (no terminal ever spawned) is exit 1 here.
+  spawnSync('tmux', ['-L', TMUX_SOCKET, 'kill-server'], { stdio: 'ignore' });
+  if (server) await rmTree(server.dir);
 });
+
+/** rm -rf that tolerates a straggler writer: node's own maxRetries leaves
+ *  ENOTEMPTY un-retried on Linux (verified empirically), so the loop is
+ *  here. Panes die with their tmux server above; this absorbs only their
+ *  SIGHUP-to-exit lag. A tree that still won't go is logged, not thrown —
+ *  a leftover mkdtemp under /tmp must not redden the suite. */
+async function rmTree(dir: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (attempt >= 10 || (code !== 'ENOTEMPTY' && code !== 'EBUSY')) {
+        if (fs.existsSync(dir))
+          console.log(`browser-theme teardown: ${dir} still busy (${code}) — left for /tmp`);
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+}
 
 test.describe('editor pane (private server, dead upstream)', () => {
   test.use({ colorScheme: 'dark' });
