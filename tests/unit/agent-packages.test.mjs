@@ -145,8 +145,7 @@ test("the repo's own template ships the pinned default (runtime/pi-agent-dir/set
     'npm:@juicesharp/rpiv-ask-user-question@2.15.0',
     'npm:pi-web-access@0.46.0',
   ]); // bump deliberately
-  for (const spec of shipped.packages)
-    assert.match(spec, /^npm:[@a-z0-9-/~._]+@\d+\.\d+\.\d+$/); // exact pins
+  for (const spec of shipped.packages) assert.match(spec, /^npm:[@a-z0-9-/~._]+@\d+\.\d+\.\d+$/); // exact pins
 
   const agent = agentWith('repo-template', { quietStartup: 'header' });
   const r = seedAgentPackages(agent, repoTemplate);
