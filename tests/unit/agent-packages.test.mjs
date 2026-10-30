@@ -140,8 +140,13 @@ test("the repo's own template ships the pinned default (runtime/pi-agent-dir/set
     new URL('../../runtime/pi-agent-dir/settings.json', import.meta.url),
   );
   const shipped = JSON.parse(fs.readFileSync(repoTemplate, 'utf8'));
-  assert.deepEqual(shipped.packages, ['npm:pi-hermes-memory@0.9.11']); // bump deliberately
-  assert.match(shipped.packages[0], /^npm:pi-hermes-memory@\d+\.\d+\.\d+$/); // exact pin
+  assert.deepEqual(shipped.packages, [
+    'npm:pi-hermes-memory@0.9.11',
+    'npm:@juicesharp/rpiv-ask-user-question@2.15.0',
+    'npm:pi-web-access@0.46.0',
+  ]); // bump deliberately
+  for (const spec of shipped.packages)
+    assert.match(spec, /^npm:[@a-z0-9-/~._]+@\d+\.\d+\.\d+$/); // exact pins
 
   const agent = agentWith('repo-template', { quietStartup: 'header' });
   const r = seedAgentPackages(agent, repoTemplate);

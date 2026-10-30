@@ -1,4 +1,8 @@
 {
   "quietStartup": "header",
-  "packages": ["npm:pi-hermes-memory@0.9.11"]
+  "packages": [
+    "npm:pi-hermes-memory@0.9.11",
+    "npm:@juicesharp/rpiv-ask-user-question@2.15.0",
+    "npm:pi-web-access@0.46.0"
+  ]
 }

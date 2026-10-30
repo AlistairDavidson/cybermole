@@ -59,14 +59,19 @@ boot — an existing runtime file always wins over the template.
 Template updates here reach the runtime dir at the next seeding boot
 and an open session only via `/reload`.
 
-## Default packages — pi-hermes-memory
+## Default packages
 
 Pi is the agent every cybermole terminal runs, so the template ships a
-default set of pi **packages** (`settings.json`'s `packages`) — currently
-one, pinned: `npm:pi-hermes-memory@0.9.11` (persistent memory, session
-search, secret scanning; its data lives under the agent dir —
-`pi-hermes-memory/`, `projects-memory/`, pi's `sessions/` — so it rides
-the same persistent volume and never touches app trees).
+default set of pi **packages** (`settings.json`'s `packages`) — all
+pinned:
+
+- `npm:pi-hermes-memory@0.9.11` — persistent memory, session search,
+  secret scanning; its data lives under the agent dir
+  (`pi-hermes-memory/`, `projects-memory/`, pi's `sessions/`) so it rides
+  the same persistent volume and never touches app trees.
+- `npm:@juicesharp/rpiv-ask-user-question@2.15.0` — the structured
+  ask-user-question tool (options + previews) for terminals.
+- `npm:pi-web-access@0.46.0` — web fetch/search for sessions.
 
 A declared package **auto-installs at the first session start**: pi fetches
 it into `<agent dir>/npm/` on its own (it carries `better-sqlite3`, a

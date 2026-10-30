@@ -339,7 +339,7 @@ directly.
 | `CYBERMOLE_BASE` | `/` | URL base path for path-mounting on a dedicated vhost (the app wants its own hostname — [Security model](#security-model)); the files that must agree are listed in [The base path](#the-base-path). **Baked into the pages at build time** — set it before `npm run build` *and* at runtime |
 | `CYBERMOLE_HOME` | `os.homedir()` | `HOME` for spawned processes (tmux, the terminals' shells) |
 | `CYBERMOLE_STATE_DIR` | `$CYBERMOLE_HOME/.local/state/cybermole` | one directory for all cybermole state: the sqlite db (`cybermole.db`) and the runtime `pi-agent/` (pi credentials + its own sessions). Per-path overrides (`CYBERMOLE_DB_FILE`, `CYBERMOLE_AGENT_DIR`) still win. In the container compose points it at `/state` on a dedicated volume |
-| `CYBERMOLE_AGENT_DIR` | `<state dir>/pi-agent` | runtime pi agent dir (config, credentials, pi's own session store) — seeded from the repo's `runtime/pi-agent-dir/` template where absent, plus its default `packages` (pi-hermes-memory) where the runtime `settings.json` has no such key (a stray `PI_CODING_AGENT_DIR` in the server's env is ignored with an error logged). Every spawned terminal carries it as `PI_CODING_AGENT_DIR`, so a pi you run by hand stays on it |
+| `CYBERMOLE_AGENT_DIR` | `<state dir>/pi-agent` | runtime pi agent dir (config, credentials, pi's own session store) — seeded from the repo's `runtime/pi-agent-dir/` template where absent, plus its default `packages` (pi-hermes-memory, rpiv-ask-user-question, pi-web-access) where the runtime `settings.json` has no such key (a stray `PI_CODING_AGENT_DIR` in the server's env is ignored with an error logged). Every spawned terminal carries it as `PI_CODING_AGENT_DIR`, so a pi you run by hand stays on it |
 | `CYBERMOLE_NEW_SESSION_CWD` | `$CYBERMOLE_HOME` | default cwd for new workspaces — the fallback when the parent app has no `cwd` of its own (shown as the start-path hint in the new-workspace dialog). The workspace root's `AGENTS.md` (the root agent's standing jobs instructions) is seeded into it where absent — [jobs](#scheduled-jobs-jobs--the-in-process-scheduler), [`runtime/workspace-root/`](runtime/workspace-root/) |
 | `CYBERMOLE_COMMAND` | `$SHELL -l` (fallback `/bin/sh -l`); `zsh -l` in the shipped compose | the shell command every new terminal tab EXCEPT a new workspace's first runs (whitespace-split). Resolution is **db override → this env → built-in**: the writable *terminal defaults* card on `/settings` saves a per-install db value that wins over this (reset there clears it back) |
 | `CYBERMOLE_AGENT_COMMAND` | the vendored `<app root>/node_modules/.bin/pi` when the install has one, else `pi` on PATH | the command the **auto-opened first terminal of every new workspace** runs (whitespace-split) — the agent slot. Same db-override-on-`/settings` chain as `CYBERMOLE_COMMAND`. Point it at a different agent (compose wiring) or a deterministic test double |
@@ -556,10 +556,12 @@ config is project-controlled too:
 - [`runtime/pi-agent-dir/`](runtime/pi-agent-dir/) in the repo is the **template** — settings, `mcp.json`,
   skills, extensions; whatever the install should ship to every terminal.
   Its `settings.json` also ships a **default set of pi packages** (pinned
-  `npm:pi-hermes-memory@0.9.11`, auto-installed at a session's first
-  start): seeded at the key level — the default lands only where the
-  runtime `settings.json` has no `packages` key, so an operator's own
-  list (or the empty one `pi remove` persists) always wins.
+  `npm:pi-hermes-memory@0.9.11`,
+  `npm:@juicesharp/rpiv-ask-user-question@2.15.0`, `npm:pi-web-access@0.46.0`;
+  auto-installed at a session's first start): seeded at the key level — the
+  default lands only where the runtime `settings.json` has no `packages`
+  key, so an operator's own list (or the empty one `pi remove` persists)
+  always wins.
 - The **runtime agent dir** (default `<state dir>/pi-agent`) is
   seeded from it **only where absent**: existing files always
   win, so settings pi itself writes and operator edits are never clobbered,
