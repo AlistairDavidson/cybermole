@@ -525,8 +525,11 @@ the tree's own typecheck + unit tests + build + the self-containment
 check, one quiet envelope), `register` (the db row — the privileged
 act), `reload` (the host's sync point), then `add_action` to extend it:
 one route-table entry becomes the HTTP route, the UI stub, the shim
-tool and the manual's section in lockstep. **App agents operate, never
-build**: a pi session in a workspace under the app gets the app's own
+tool and the manual's section in lockstep. When the user asks for a new
+app, `build_session` hands it off: the app's builder workspace opens on
+the builder page with the brief as its builder agent's opening prompt,
+and the answer carries the deep link to watch it. **App agents operate,
+never build**: a pi session in a workspace under the app gets the app's own
 MCP (its tools 1:1 with the route table, registered by the tree's
 `.pi/mcp.json`; `cybermole-apps` is disabled there on purpose). Every
 face — the pages, the app's tools, the root agent's `describe`/`call` —

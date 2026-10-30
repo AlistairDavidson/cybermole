@@ -44,6 +44,9 @@ export type SaveWorkspaceData = {
   name: string;
   cwd: string;
   kind: WorkspaceKind;
+  /** Create only: the auto-opened agent tab's id (null when even its row
+   *  failed) — the deep link into the workspace. Update answers omit it. */
+  terminalId?: TerminalId | null;
 };
 /** invalid_cwd: not absolute or not an existing directory. invalid_kind:
  *  kind 'build' without an appId (the API schema rejects it first; this is
@@ -302,12 +305,15 @@ export class Workspaces {
    *  the root cwd, never the app tree). Validated either way, since the
    *  app's dir may have gone since it was saved. name: explicit wins
    *  verbatim; an empty one derives from the resolved cwd (uniquified
-   *  against the group's existing names — explicit names never uniquify). */
+   *  against the group's existing names — explicit names never uniquify).
+   *  brief: handed to the auto-opened agent tab as its opening prompt (the
+   *  agent command's first argument — pi takes it as the initial message). */
   async saveWorkspace(input: {
     appId?: AppId | null;
     name?: string;
     cwd?: string;
     kind?: 'build';
+    brief?: string;
   }): Promise<SaveWorkspaceResult> {
     const fail = (errorCode: SaveWorkspaceErrorCode, errorMessage: string) =>
       ({
@@ -387,7 +393,18 @@ export class Workspaces {
     // A new workspace auto-opens its agent tab. A failed spawn never fails
     // the create. The tab carries command 'agent' (and the workspace's
     // exact created_at, which is what marks the agent slot on pre-v7 rows).
-    const opened = await this.openTab(id, cwd.cwd, undefined, 'agent', now, focusEnv);
+    // The brief, when the create carries one, rides the agent argv as its
+    // opening prompt (one argument — never whitespace-split).
+    const brief = input.brief?.trim() ?? '';
+    const opened = await this.openTab(
+      id,
+      cwd.cwd,
+      undefined,
+      'agent',
+      now,
+      focusEnv,
+      brief === '' ? undefined : brief,
+    );
     if (!opened.ok)
       log.warn(
         `workspace "${name}": its first terminal did not start ` +
@@ -396,7 +413,7 @@ export class Workspaces {
     return {
       ok: true,
       resultType: 'save_workspace',
-      data: { id, appId, name, cwd: cwd.cwd, kind },
+      data: { id, appId, name, cwd: cwd.cwd, kind, terminalId: opened.data?.id ?? null },
     } satisfies SaveWorkspaceSuccess;
   }
 
@@ -528,7 +545,10 @@ export class Workspaces {
   }
 
   /** Row first, then the spawn. A failed command read returns before the
-   *  insert, so no row. */
+   *  insert, so no row. brief (agent tabs only) is appended as the command's
+   *  last argument — the opening prompt a pi command turns into the first
+   *  message. A respawn after the session dies runs the bare command: the
+   *  brief kicks off, it is not a standing instruction. */
   private async openTab(
     workspaceId: WorkspaceId,
     cwd: string,
@@ -536,6 +556,7 @@ export class Workspaces {
     command: TerminalCommand,
     createdAt: number,
     env: Record<string, string> | null = null,
+    brief?: string,
   ): Promise<NewTerminalResult> {
     const fail = (errorCode: NewTerminalErrorCode, errorMessage: string, data?: NewTerminalData) =>
       ({
@@ -549,6 +570,7 @@ export class Workspaces {
     if (!resolved.ok)
       return fail('database_error', resolved.errorMessage ?? 'could not read the terminal command');
     const argv = splitCommandLine(resolved.data.value);
+    const spawnArgv = command === 'agent' && brief !== undefined ? [...argv, brief] : argv;
     const actor = this.actor();
     if (!actor.ok) return fail('database_error', actor.errorMessage);
     const order = databaseRead(
@@ -585,7 +607,7 @@ export class Workspaces {
     const spawned = await this.deps.spawnSession(
       terminalSessionName(id),
       cwd,
-      argv,
+      spawnArgv,
       env === null ? undefined : env,
     );
     if (!spawned.ok) {

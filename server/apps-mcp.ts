@@ -183,6 +183,73 @@ function withDuplicateSlugRecovery(body: unknown): CallToolResult {
 
 // ---------- socket verbs ----------
 
+/** The app hand-off: a build session (a builder workspace, kind 'build',
+ *  framed at the app) whose auto-opened agent tab receives the brief as
+ *  its opening prompt, plus the deep link the human opens to watch it.
+ *  The app must be registered — the row is what the workspace attaches
+ *  to. */
+export async function buildSessionTool(
+  deps: AppsMcpDeps,
+  input: { slug: string; brief: string; name?: string | undefined },
+): Promise<CallToolResult> {
+  const rows = await fetchSocket(
+    deps.internalSocketPath,
+    INTERNAL_OFF,
+    { method: 'GET', path: '/apps' },
+    unreachable,
+  );
+  if (!rows.ok) return rows.result;
+  if (rows.status !== 200) return json(parseOrRaw(rows.body));
+  const rowList = parseOrRaw(rows.body) as { apps?: { slug?: unknown }[] };
+  const registered = Array.isArray(rowList.apps)
+    ? rowList.apps.some(a => a?.slug === input.slug)
+    : false;
+  if (!registered) {
+    return json({
+      ok: false,
+      resultType: 'build_session',
+      errorCode: 'app_not_registered',
+      errorMessage:
+        `the app ${input.slug} has no row — register it first (register + reload), then ` +
+        'hand it over. status shows the registered rows and the unregistered trees.',
+    });
+  }
+  const created = await fetchSocket(
+    deps.internalSocketPath,
+    INTERNAL_OFF,
+    {
+      method: 'POST',
+      path: '/workspaces',
+      body: JSON.stringify({
+        app: input.slug,
+        brief: input.brief,
+        ...(input.name === undefined ? {} : { name: input.name }),
+      }),
+    },
+    unreachable,
+  );
+  if (!created.ok) return created.result;
+  // 200 answers the workspace data itself (the browser verb's shape),
+  // errors the Result failure JSON.
+  const body = parseOrRaw(created.body) as { terminalId?: unknown };
+  if (created.status !== 200) return json(body);
+  const base = deps.base ?? readBase();
+  const prefix = base === '/' ? '' : base;
+  const terminalId = typeof body.terminalId === 'string' ? body.terminalId : null;
+  const deepLink =
+    terminalId === null
+      ? `${prefix}/builder`
+      : `${prefix}/builder?t=${encodeURIComponent(terminalId)}`;
+  return json({
+    ...body,
+    deepLink,
+    note:
+      'the build session is live — its builder agent received the brief as its opening ' +
+      `prompt. Send the human to ${deepLink} (or the builder page) to watch it; end your ` +
+      'turn with that link unless they asked to stay here.',
+  });
+}
+
 export async function reloadTool(
   deps: AppsMcpDeps,
   slug: string | undefined,
@@ -501,6 +568,37 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
       },
     },
     async ({ slug }) => statusTool(deps, slug),
+  );
+
+  server.registerTool(
+    'build_session',
+    {
+      description:
+        'THE hand-off when the user asks for a new app (or a rebuild): open the app’s build ' +
+        'session — a builder workspace on the builder page (kind build, framed at the app with ' +
+        'CYBERMOLE_WORKSPACE_FOCUS) whose auto-opened agent tab takes the brief as its opening ' +
+        'prompt and runs with it. The brief should carry the user’s ask verbatim plus what the ' +
+        'builder needs to know (the reference app, the check-green loop, anything settled). The ' +
+        'app must be REGISTERED first (register + reload). The answer carries the deep link — ' +
+        'send the human there (or to the builder page) and end your turn; the console also ' +
+        'toasts the session’s opening on any open console page.',
+      inputSchema: {
+        slug: AppSlugSchema.describe('the app, by its slug (registered)'),
+        brief: z
+          .string()
+          .min(1)
+          .max(4000)
+          .describe(
+            'the opening brief for the builder agent — the user’s ask plus the context it needs',
+          ),
+        name: z
+          .string()
+          .max(80)
+          .optional()
+          .describe('the workspace row’s name; omitted derives one'),
+      },
+    },
+    async ({ slug, brief, name }) => buildSessionTool(deps, { slug, brief, name }),
   );
 
   server.registerTool(

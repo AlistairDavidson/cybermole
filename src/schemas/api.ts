@@ -2,7 +2,12 @@
 // client-side against the same definitions. Cron validity and name
 // normalization stay server-side, in the domains.
 import { z } from 'zod';
-import { AppIdSchema, TerminalIdSchema, WorkspaceIdSchema } from '@cybermole/app-kit';
+import {
+  AppIdSchema,
+  AppSlugSchema,
+  TerminalIdSchema,
+  WorkspaceIdSchema,
+} from '@cybermole/app-kit';
 import { MAX_WORKSPACE_NAME } from '../lib/terminals/workspace-name';
 
 /** A parse failure answers 401, which fail2ban counts. Empty strings pass:
@@ -69,6 +74,19 @@ export const workspaceCreateBody = z
     message: "kind 'build' requires appId",
     path: ['kind'],
   });
+
+/** The workspace side's create (the internal API, agents): a BUILD
+ *  session for one app by slug — the kind is the point, so it is not a
+ *  field — with the brief the auto-opened agent tab receives as its
+ *  opening prompt. */
+export const internalWorkspaceCreateBody = z.object({
+  app: AppSlugSchema,
+  name: z
+    .string()
+    .max(MAX_WORKSPACE_NAME, `name is too long (max ${MAX_WORKSPACE_NAME})`)
+    .optional(),
+  brief: z.string().max(4000, 'brief is too long (max 4000)').optional(),
+});
 
 /** Absent fields keep. */
 export const workspacePatchBody = z.object({

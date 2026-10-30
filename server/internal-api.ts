@@ -9,6 +9,7 @@ import * as path from 'node:path';
 import { componentLogger } from '../src/lib/platform/logger';
 import { checkCron, type ListJobsFailure, type Scheduler } from '../src/lib/jobs/jobs';
 import type { Apps } from '../src/lib/apps/apps';
+import type { Workspaces } from '../src/lib/terminals/workspaces';
 import {
   appFailureResponse,
   appFilterNotFoundResponse,
@@ -18,9 +19,10 @@ import {
   invalidJobNameResponse,
   jobFailureResponse,
   runLogResponse,
+  workspaceFailureResponse,
 } from '../src/lib/web/responses.service';
 import { parseAndValidateAPIRequest } from '../src/lib/web/parsing.service';
-import { appCreateBody, appPatchBody } from '../src/schemas/api';
+import { appCreateBody, appPatchBody, internalWorkspaceCreateBody } from '../src/schemas/api';
 import {
   jsonResponse,
   AppSlugSchema,
@@ -46,6 +48,8 @@ export interface InternalApiDeps {
   /** Must be the same instance main.ts hands to Astro, never a second Scheduler. */
   scheduler: Scheduler;
   apps: Pick<Apps, 'listApps' | 'saveApp' | 'renameApp' | 'deleteApp'>;
+  /** The workspace half of the hand-off: build sessions for apps. */
+  workspaces: Pick<Workspaces, 'saveWorkspace'>;
 }
 
 export interface InternalApiHandle {
@@ -234,7 +238,7 @@ function notFoundResponse(): Response {
 function createRoutes(
   deps: InternalApiDeps,
 ): (req: http.IncomingMessage, res: http.ServerResponse) => Promise<void> {
-  const { scheduler, apps } = deps;
+  const { scheduler, apps, workspaces } = deps;
 
   async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const capped = bodyCapStatus(req);
@@ -277,6 +281,13 @@ function createRoutes(
       if (!slug.success) return sendWebResponse(res, invalidAppSlugResponse());
       if (req.method === 'PATCH') return patchApp(req, res, slug.data);
       if (req.method === 'DELETE') return deleteApp(res, slug.data);
+      return sendWebResponse(res, notFoundResponse());
+    }
+
+    // Build sessions for apps — the workspace side of the app hand-off
+    // (an agent scaffolds and registers, then opens the builder workspace).
+    if (segments.length === 1 && segments[0] === 'workspaces') {
+      if (req.method === 'POST') return createWorkspace(req, res);
       return sendWebResponse(res, notFoundResponse());
     }
 
@@ -353,6 +364,34 @@ function createRoutes(
     const deleted = await apps.deleteApp(slug);
     if (!deleted.ok) return sendWebResponse(res, appFailureResponse(deleted));
     return sendWebResponse(res, jsonResponse(deleted.data, 200));
+  }
+
+  /** POST /workspaces: a kind 'build' workspace for the app named by slug,
+   *  with the brief its auto-opened agent tab receives as the opening
+   *  prompt. The same service and mapper as the browser verb, so the body
+   *  is byte-identical apart from the create's extra (terminalId — the
+   *  deep link into the workspace). An unknown slug is a 404, like the
+   *  jobs app filter. */
+  async function createWorkspace(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<void> {
+    const body = await readRequest(req);
+    if (!body.ok) return sendWebResponse(res, body.response);
+    const parsed = await parseAndValidateAPIRequest(body.request, internalWorkspaceCreateBody);
+    if (!parsed.ok) return sendWebResponse(res, failureResponse(parsed));
+    const listed = apps.listApps();
+    if (!listed.ok) return sendWebResponse(res, appFailureResponse(listed));
+    const app = listed.data.apps.find(a => a.slug === parsed.data.app);
+    if (app === undefined) return sendWebResponse(res, appFilterNotFoundResponse());
+    const saved = await workspaces.saveWorkspace({
+      appId: app.id,
+      kind: 'build',
+      ...(parsed.data.name === undefined ? {} : { name: parsed.data.name }),
+      ...(parsed.data.brief === undefined ? {} : { brief: parsed.data.brief }),
+    });
+    if (!saved.ok) return sendWebResponse(res, workspaceFailureResponse(saved));
+    return sendWebResponse(res, jsonResponse(saved.data, 200));
   }
 
   /** ?app=<slug>: an unknown slug is a 404, not an empty list, so "no such

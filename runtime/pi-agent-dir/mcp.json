@@ -9,7 +9,7 @@
     "cybermole-apps": {
       "command": "node",
       "args": ["/opt/cybermole/dist-server/server/apps-mcp.js"],
-      "description": "cybermole's app build loop (root agents): scaffold an app from the image starter template, check it green (astro check + tsc + unit tests + build, one quiet envelope), build it, register/unregister its row, reload the app host (the sync point), and see per-app status (registered, mounted, serving reason, build-stale, unregistered trees).",
+      "description": "cybermole's app build loop (root agents): scaffold an app from the image starter template, check it green (astro check + tsc + unit tests + build, one quiet envelope), build it, register/unregister its row, reload the app host (the sync point), see per-app status (registered, mounted, serving reason, build-stale, unregistered trees), and hand an app to a builder (build_session: opens its builder workspace with your brief as the builder agent's opening prompt, answers the deep link).",
       "exposure": "direct"
     }
   }

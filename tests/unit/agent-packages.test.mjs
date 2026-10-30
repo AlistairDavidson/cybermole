@@ -154,6 +154,27 @@ test("the repo's own template ships the pinned default (runtime/pi-agent-dir/set
   assert.deepEqual(JSON.parse(readSettings(agent)).packages, shipped.packages);
 });
 
+test("the repo's own mcp.json registers both servers for every session (runtime/pi-agent-dir/mcp.json)", () => {
+  // Every pi session loads this — a builder session (cwd at the workspace
+  // root, no tree-level .pi to scope it) gets cybermole-apps here, which is
+  // the builder story's tool half. The description is the model's only
+  // hint of the hand-off before it reads the AGENTS.md.
+  const repoTemplate = fileURLToPath(
+    new URL('../../runtime/pi-agent-dir/mcp.json', import.meta.url),
+  );
+  const shipped = JSON.parse(fs.readFileSync(repoTemplate, 'utf8'));
+  assert.deepEqual(Object.keys(shipped.mcpServers).sort(), ['cybermole-apps', 'cybermole-jobs']);
+  assert.match(
+    shipped.mcpServers['cybermole-apps'].description,
+    /build_session/, // the hand-off is named in the tool surface
+  );
+  assert.match(shipped.mcpServers['cybermole-apps'].description, /builder workspace/);
+  for (const server of Object.values(shipped.mcpServers)) {
+    assert.equal(server.exposure, 'direct');
+    assert.equal(server.command, 'node');
+  }
+});
+
 test('the compiled CLI: seeds with a line on stdout, exits 1 on usage and failure', () => {
   const agent = agentWith('cli', { quietStartup: 'header' });
   const cli = path.join('dist-server', 'server', 'seed-agent-packages.js');

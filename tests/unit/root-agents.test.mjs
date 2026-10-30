@@ -102,4 +102,12 @@ test("the repo's own template seeds (runtime/workspace-root/AGENTS.md ships the 
   assert.match(seeded, /cybermole-jobs/);
   assert.match(seeded, /\/reload/);
   assert.match(seeded, /upward walk/);
+  // the apps half — the builder story: a session at this root (a build
+  // session's cwd IS this root) must learn the loop, the reference app,
+  // the hand-off and its own guard from this one file
+  assert.match(seeded, /cybermole-apps/);
+  assert.match(seeded, /build_session/);
+  assert.match(seeded, /apps\/notes/);
+  assert.match(seeded, /CYBERMOLE_WORKSPACE_FOCUS/);
+  assert.match(seeded, /never calls `?build_session/);
 });

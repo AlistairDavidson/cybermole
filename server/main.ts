@@ -314,7 +314,12 @@ if (INTERNAL_SOCK === null) {
     'internal API: off (CYBERMOLE_SOCK is empty) — the workspace side has no jobs socket',
   );
 } else {
-  startInternalApi({ socketPath: INTERNAL_SOCK, scheduler, apps: services.apps })
+  startInternalApi({
+    socketPath: INTERNAL_SOCK,
+    scheduler,
+    apps: services.apps,
+    workspaces: services.workspaces,
+  })
     .then(api => {
       internalApi = api;
     })

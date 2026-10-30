@@ -23,6 +23,8 @@ const { startInternalApi, probeSocketFile, InternalSocketOwnedError } =
 const { Scheduler, runLogPaths } = await import('../../dist-server/src/lib/jobs/jobs.js');
 const { StateDb } = await import('../../dist-server/src/lib/platform/db.js');
 const { Apps } = await import('../../dist-server/src/lib/apps/apps.js');
+const { Workspaces } = await import('../../dist-server/src/lib/terminals/workspaces.js');
+const tmux = await import('../../dist-server/src/lib/terminals/tmux.js');
 const { internalSocketDefault } = await import('../../dist-server/src/lib/platform/env.js');
 
 // Fake tmux (with kill-session): $dir/up marks the server up, $dir/sessions lists live sessions.
@@ -67,6 +69,23 @@ function appsFor(db) {
   });
 }
 
+/** The build-session half of the hand-off. The fake tmux stands in for the
+ *  spawns (new-session records into the shared session list). */
+function workspacesFor(db, root) {
+  const command = value => ({ ok: true, resultType: 'database_read', data: { value } });
+  return new Workspaces({
+    db,
+    username: () => ({ ok: true, data: { value: 'unit' } }),
+    killSession: async () => true,
+    defaultCwd: root,
+    appsRoot: path.join(root, 'apps'),
+    spawnSession: tmux.newSession,
+    liveSessionNames: async () => new Set(),
+    shellCommand: () => command('shell-cmd -l'),
+    agentCommand: () => command('agent-cmd --run'),
+  });
+}
+
 /** Fresh db, scheduler, apps domain and the API on its own socket. The fake
  *  tmux server starts up; cases wanting it down remove the marker. */
 async function boot() {
@@ -79,7 +98,12 @@ async function boot() {
   fs.writeFileSync(path.join(dir, 'sessions'), '');
   fs.writeFileSync(path.join(dir, 'up'), '');
   const socketPath = path.join(root, 'cybermole.sock');
-  const api = await startInternalApi({ socketPath, scheduler, apps });
+  const api = await startInternalApi({
+    socketPath,
+    scheduler,
+    apps,
+    workspaces: workspacesFor(db, root),
+  });
   return { root, logDir, db, scheduler, apps, api, socketPath };
 }
 
@@ -125,7 +149,12 @@ test('startInternalApi: creates a missing socket parent dir (the state-dir defau
   const scheduler = new Scheduler(db, { cwd: root, env: {}, logDir: path.join(root, 'job-logs') });
   const deep = path.join(root, 'state', 'cybermole', 'cybermole.sock');
   assert.ok(!fs.existsSync(path.dirname(deep)));
-  const api = await startInternalApi({ socketPath: deep, scheduler, apps: appsFor(db) });
+  const api = await startInternalApi({
+    socketPath: deep,
+    scheduler,
+    apps: appsFor(db),
+    workspaces: workspacesFor(db, root),
+  });
   try {
     assert.ok(fs.statSync(deep).isSocket(), 'listener bound on the created dir');
     const r = await call(deep, 'GET', '/jobs');
@@ -441,6 +470,40 @@ test("POST /apps creates (name + optional cwd), the browser verb's bodies verbat
     const malformed = await call(w.socketPath, 'POST', '/apps', {});
     assert.equal(malformed.status, 400);
     assert.equal(malformed.json.code, 'validation_failure');
+  } finally {
+    await w.api.close();
+  }
+});
+
+test('POST /workspaces: the app hand-off — a build session by slug with the brief; unknown slug the jobs-filter 404', async () => {
+  const w = await boot();
+  try {
+    const made = await call(w.socketPath, 'POST', '/apps', { name: 'Notes Standup' });
+    assert.equal(made.status, 200);
+
+    const session = await call(w.socketPath, 'POST', '/workspaces', {
+      app: 'notes-standup',
+      brief: 'build it like the reference app',
+    });
+    assert.equal(session.status, 200);
+    // the browser verb's success shape: the workspace data itself
+    assert.equal(session.json.kind, 'build');
+    assert.equal(session.json.appId, made.json.id);
+    assert.equal(session.json.cwd, w.root); // build kind: the default cwd, never the app tree
+    assert.ok(typeof session.json.terminalId === 'string', 'the deep-link id');
+    // the session's agent tab spawned (the fake tmux recorded it)
+    const sessions = fs.readFileSync(path.join(dir, 'sessions'), 'utf8').trim().split('\n');
+    assert.ok(sessions.some(s => s.startsWith('t-')));
+
+    // unknown slug: the same 404 the jobs app filter answers
+    const none = await call(w.socketPath, 'POST', '/workspaces', { app: 'no-such-app' });
+    assert.equal(none.status, 404);
+    assert.equal(none.json.code, 'app_not_found');
+
+    // a body without an app is the browser 400 validation shape
+    const bad = await call(w.socketPath, 'POST', '/workspaces', { brief: 'x' });
+    assert.equal(bad.status, 400);
+    assert.equal(bad.json.code, 'validation_failure');
   } finally {
     await w.api.close();
   }

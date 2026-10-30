@@ -343,6 +343,46 @@ test("save_workspace kind 'build': the default cwd (the parent app's cwd is skip
   assert.equal(spawned[spawned.length - 1].env, undefined);
 });
 
+test('save_workspace: the brief rides the auto-opened agent tab as one argument, and the answer carries its id', async () => {
+  const db = freshDb();
+  const { spawned, spawnSession } = spawner();
+  const w = domain(db, USERNAME, async () => true, os.tmpdir(), spawnSession);
+  const app = await appless(db);
+
+  const brief = 'build me a notes app — the reference tree is apps/notes';
+  const made = await w.saveWorkspace({ appId: app.id, kind: 'build', brief });
+  assert.equal(made.ok, true, made.errorMessage);
+  // one argument after the split command — the whole brief, never split
+  assert.deepEqual(spawned[spawned.length - 1].command, [...AGENT_CMD.split(' '), brief]);
+  // the deep-link id answers the row that was spawned
+  assert.equal(typeof made.data.terminalId, 'string');
+  const rows = termRows(db, made.data.id);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].id, made.data.terminalId);
+
+  // no brief (and blank counts as none): the bare command, terminalId still set
+  const bare = await w.saveWorkspace({ appId: app.id, kind: 'build', brief: '   ' });
+  assert.equal(bare.ok, true, bare.errorMessage);
+  assert.deepEqual(spawned[spawned.length - 1].command, AGENT_CMD.split(' '));
+  assert.equal(typeof bare.data.terminalId, 'string');
+
+  // a spawn failure never fails the create — and still answers the tab's
+  // row id (the tab is there, the first attach retries), so the deep link
+  // stays valid
+  const db2 = freshDb();
+  const app2 = await appless(db2);
+  const failed = await domain(
+    db2,
+    USERNAME,
+    async () => true,
+    os.tmpdir(),
+    spawnFail('server_not_running'),
+  ).saveWorkspace({ appId: app2.id, kind: 'build', brief });
+  assert.equal(failed.ok, true, failed.errorMessage);
+  assert.equal(typeof failed.data.id, 'string');
+  assert.equal(typeof failed.data.terminalId, 'string');
+});
+
 test("kind 'build' without an appId is invalid_kind; a patch never touches kind (it stays at birth)", async () => {
   const refused = await domain(freshDb()).saveWorkspace({ name: 'x', kind: 'build' });
   assert.equal(refused.ok, false);

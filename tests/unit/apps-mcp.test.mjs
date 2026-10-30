@@ -576,6 +576,7 @@ test("the MCP wiring: tools/list is exactly this branch's set; status answers th
     [
       'add_action',
       'build',
+      'build_session',
       'call',
       'check',
       'describe',
@@ -585,7 +586,7 @@ test("the MCP wiring: tools/list is exactly this branch's set; status answers th
       'status',
       'unregister',
     ],
-    "scaffold's seven + the action vocabulary (add_action/describe/call)",
+    "scaffold's seven + the action vocabulary (add_action/describe/call) + the hand-off",
   );
   const status = await call(client, 'status', {});
   assert.equal(status.isError, false);
@@ -644,4 +645,83 @@ test("the MCP wiring: tools/list is exactly this branch's set; status answers th
   await off.close();
   await new Promise(resolve => internal.close(resolve));
   await new Promise(resolve => host.close(resolve));
+});
+
+test('build_session: the registered hand-off answers the deep link; unregistered is a domain answer', async () => {
+  const root = fs.mkdtempSync(path.join(dir, 'handoff-'));
+  const appsRoot = path.join(root, 'apps');
+  const internalSocket = path.join(root, 'internal.sock');
+  const seen = [];
+  const internal = await new Promise(resolve => {
+    const server = http.createServer((req, res) => {
+      const key = `${req.method} ${(req.url ?? '').split('?')[0]}`;
+      let body = '';
+      req.on('data', c => {
+        body += c;
+      });
+      req.on('end', () => {
+        seen.push([key, body]);
+        if (key === 'GET /apps') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ apps: [{ slug: 'notes', id: 'app-1' }] }));
+          return;
+        }
+        if (key === 'POST /workspaces') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              id: 'ws-1',
+              appId: 'app-1',
+              name: 'build',
+              cwd: '/workspace',
+              kind: 'build',
+              terminalId: 'term-9',
+            }),
+          );
+          return;
+        }
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'not found' }));
+      });
+    });
+    server.listen(internalSocket, () => resolve(server));
+  });
+  const client = new Client({ name: 'apps-mcp-unit', version: '0' });
+  await client.connect(
+    new StdioClientTransport({
+      command: process.execPath,
+      args: [path.join(REPO, 'dist-server', 'server', 'apps-mcp.js')],
+      env: { CYBERMOLE_APPS_ROOT: appsRoot, CYBERMOLE_SOCK: internalSocket },
+    }),
+  );
+  const call = async (name, args) => {
+    const r = await client.callTool({ name, arguments: args });
+    return { isError: r.isError === true, text: r.content.map(c => c.text ?? '').join('') };
+  };
+
+  // Unregistered: a domain answer naming the recovery, not isError.
+  const no = await call('build_session', { slug: 'nope', brief: 'build me a thing' });
+  assert.equal(no.isError, false);
+  const noBody = JSON.parse(no.text);
+  assert.equal(noBody.errorCode, 'app_not_registered');
+  assert.match(noBody.errorMessage, /register it first/);
+
+  // Registered: the create carries slug + brief, and the answer frames the
+  // deep link and the send-the-human-there guidance.
+  const yes = await call('build_session', {
+    slug: 'notes',
+    brief: 'the user wants a notes app with search',
+  });
+  assert.equal(yes.isError, false, yes.text);
+  const yesBody = JSON.parse(yes.text);
+  assert.equal(yesBody.deepLink, '/builder?t=term-9');
+  assert.match(yesBody.note, new RegExp('/builder\\?t=term-9'));
+  const [, createBody] = seen.find(([key]) => key === 'POST /workspaces');
+  assert.deepEqual(JSON.parse(createBody), {
+    app: 'notes',
+    brief: 'the user wants a notes app with search',
+  });
+
+  await client.close();
+  await new Promise(resolve => internal.close(resolve));
 });

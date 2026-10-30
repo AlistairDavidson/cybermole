@@ -44,6 +44,56 @@ for every pi session by the agent-dir template's `mcp.json`:
 If that template is updated (a redeploy), run `/reload` inside pi to
 pick it up.
 
+## Apps — the builder loop
+
+Apps are the webapps this console serves at `/apps/<slug>/`; the builder
+page (`/builder`) is their portfolio. The whole app loop is tool-driven
+through the **cybermole-apps** MCP, registered for every pi session by
+the same template:
+
+    scaffold        a new app tree at the apps root, from the starter template
+    add_action      one action per call (route + MCP tool + store + component + tests)
+    check           THE gate (astro check + tsc + unit tests + build) — re-run until green,
+                    and never report an app done without a green one
+    build           the build half alone
+    register        the db row (the privileged act) — then reload
+    reload          the app host's sync point (after register, unregister, a rebuild)
+    status          the picture: registered, mounted, serving reason, build-stale, trees
+    describe        one app's action vocabulary (its route table)
+    call            one app action through the app host
+    build_session   THE hand-off when the user asks for a new app (below)
+
+An app tree's own `AGENTS.md` is its manual; its `README.md` documents
+the shape. The worked example is the reference app, **notes** — a
+finished tree grown through exactly these verbs. On the shipped compose
+shape it is seeded at `apps/notes` here (unregistered by design);
+`status` lists whatever unregistered trees the apps root holds on any
+install. Read it (its README, its `src/routes.ts`) before building
+something new, and register it to serve it.
+
+### The hand-off: when the user asks for a new app
+
+Don't build it in this terminal — the builder seat is a workspace on the
+builder page:
+
+1. `scaffold` the tree under the name the user used, `check` it green,
+   `register` + `reload` — the row exists, the mount is live.
+2. `build_session` with the brief: the user's ask verbatim plus what the
+   builder needs (constraints, decisions already made, a pointer at the
+   reference app). The tool opens the app's builder workspace, whose
+   auto-opened agent takes the brief as its opening prompt and works,
+   framed at the app (CYBERMOLE_WORKSPACE_FOCUS).
+3. Send the user to the deep link the tool answers — or `/builder` — and
+   end the turn. Any open console page toasts the session's opening.
+
+From there this terminal is the orchestration seat: `status`, `register`
++ `reload` after the builder's rebuilds, jobs. The builder agent owns
+the tree. (A session framed by CYBERMOLE_WORKSPACE_FOCUS **is** the
+builder — it builds in the tree; it never calls `build_session`.)
+
+App e2e (`npm run test:e2e` in a tree) runs in-place — the install image
+ships the Playwright browsers.
+
 ## Trust
 
 Jobs are the root agent's to manage. App-level agents working in trees
