@@ -8,8 +8,9 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /repo
-# The image never runs playwright (e2e lives on the host, AGENTS.md) — skip
-# its postinstall browser download (~300MB of fetch per build).
+# The BUILD stage never runs playwright — the runtime stage installs the
+# browser it ships (see the playwright install there), so the postinstall
+# download here (~300MB of fetch per build) is skipped.
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 COPY package.json package-lock.json ./
 # npm ci with workspaces links packages/* — the kit's manifest must be
@@ -66,6 +67,18 @@ COPY --from=build /repo /opt/cybermole
 COPY deploy/docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY deploy/docker/docker-workspace-entrypoint.sh /usr/local/bin/docker-workspace-entrypoint.sh
 RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh /usr/local/bin/docker-workspace-entrypoint.sh
+
+# In-container e2e: agents (and app trees) run `npm run test:e2e` from the
+# workspace container, where `playwright install` is not an option — the
+# browser download is fine but its system libs need apt, i.e. root the
+# workspace uid does not have. So the image ships Playwright's chromium
+# (full + headless shell, matching the lockfile's playwright version) with
+# `--with-deps` at a shared read-only path; PLAYWRIGHT_BROWSERS_PATH points
+# every process there (~450MB of image — the price of self-contained e2e).
+# A user wanting another browser/engine at runtime overrides the env to a
+# writable path and `playwright install`s into it (the baked set stays).
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN cd /opt/cybermole && ./node_modules/.bin/playwright install --with-deps chromium
 
 USER node
 # /app stays the dev profile's bind target (WORKDIR auto-creates it); the

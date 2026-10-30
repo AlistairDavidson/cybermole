@@ -81,7 +81,9 @@ from `createAppTest(import.meta.url)` and navigates with `app.baseURL`.
 - needs Playwright's chromium; when it isn't installed the run fails with
   one clear message instead of a stack trace (`npx playwright install
   chromium` on a networked host; in fleet sandboxes the browser cache is
-  host-mounted — ask the host to install once).
+  host-mounted — ask the host to install once). On a cybermole install
+  image the browser ships baked at `/opt/ms-playwright`
+  (PLAYWRIGHT_BROWSERS_PATH) — in-container sessions run e2e as-is.
 - the harness mounts the app's own handler only: no console login, no
   session gate, no WS tunnel — those faces stay with the console's own
   `apps-*` specs. HTTP only; an app's optional `ws.mjs` entry is not

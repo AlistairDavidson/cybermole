@@ -1,4 +1,9 @@
+## Live testing
+
+- unclear if a builder page agent would have found the example app without being told (the root AGENTS.md now tells it; verify the builder-side story too)
+
 ## Human tasks
+
 Write a refined agent workflow
 HIG skill
 
