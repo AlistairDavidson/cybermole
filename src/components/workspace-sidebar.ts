@@ -378,11 +378,8 @@ export class WorkspaceSidebar extends HTMLElement {
 
   private row(w: WorkspaceState): string {
     const cls = w.id === this.selected ? ' class="active"' : '';
-    const live = w.terminals.filter(t => t.live).length;
-    const badge =
-      live > 0
-        ? `<wa-badge pill variant="success" title="${live} live terminal${live === 1 ? '' : 's'}">${live}</wa-badge>`
-        : '';
+    // No live badge: the tab count is the row's one number, liveness stays
+    // on the tab dots (a green pill per row read as a notification).
     return (
       `<li${cls} data-ws="${esc(w.id)}" data-drawer="close" title="${esc(w.cwd)}" ` +
       `aria-keyshortcuts="Shift+ArrowUp Shift+ArrowDown">` +
@@ -394,7 +391,6 @@ export class WorkspaceSidebar extends HTMLElement {
       (w.terminals.length
         ? `<span class="ws-count" title="${w.terminals.length} terminal tab${w.terminals.length === 1 ? '' : 's'}">${w.terminals.length}</span>`
         : '') +
-      badge +
       `<wa-button class="del-ws-btn" data-del-ws="${esc(w.id)}" size="xs" appearance="plain" ` +
       `title="delete the workspace ${esc(w.name)} (and its terminals)">` +
       `<wa-icon name="trash-can" label="delete workspace"></wa-icon></wa-button>` +

@@ -296,13 +296,10 @@ test('login lands on the console with the fixture workspace tree in the sidebar'
   await expect(groups.first()).toContainText('scratch');
   await expect(groups.first()).toContainText('deploy checklist');
   await expect(page.locator('workspace-sidebar #new-app')).toHaveCount(0);
-  // One live-terminal badge per row (scratch's second tab is the dead
-  // fixture). The beforeAll heal guarantees the sessions exist now, so
-  // the live flags arrive with the first /api/state; the window only
-  // covers the sidebar's 10 s liveness re-poll under load.
-  await expect(groups.first().locator('li[data-ws] wa-badge')).toHaveCount(2, {
-    timeout: 35_000,
-  });
+  // No notification-style badges on the rows: the tab count is the row's
+  // one number, liveness stays on the tab dots below.
+  await expect(groups.first().locator('li[data-ws] wa-badge')).toHaveCount(0);
+  await expect(groups.first().locator('li[data-ws] .ws-count')).toHaveCount(2);
   await expect(groups.first().locator('li[data-ws].active')).toHaveCount(1);
 
   // scratch's two tabs; no editor tab (unconfigured here).

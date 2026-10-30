@@ -4,7 +4,7 @@
 // liveness run, and a session that dies out-of-band in between is never
 // retried by design (only an attach respawns) — scratch heals itself
 // through the apps specs' own page attaches, but deploy's tab is attached
-// by nothing, so its badge would be gone forever. The heal re-establishes
+// by nothing, so its liveness would be gone forever. The heal re-establishes
 // the precondition where the tests need it instead of waiting on a
 // liveness that can no longer return.
 import { spawnSync } from 'node:child_process';

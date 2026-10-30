@@ -2,7 +2,9 @@
 // reorders are optimistic and persist across a reload, the + button and the
 // caret menu open shell vs agent tabs (asserted through the pane's buffer
 // marker, not side channels), and ctrl-t / ctrl-shift-t do the same from
-// the keyboard — never while typing in a field or a dialog.
+// the keyboard — never while typing in a field or a dialog. The voice box:
+// the toolbar mic (narrow viewports) dictates into a plain textarea whose
+// send pastes into the pane.
 //
 // Apps-spec discipline: one login() through the shared cookie file (env.ts);
 // each test sweeps its own workspace and deletes it again, so the fixture
@@ -280,3 +282,58 @@ test('ctrl-t opens a shell tab and ctrl-shift-t an agent tab; neither fires in a
   expect(await tabIds(page)).toHaveLength(3);
   await deleteWorkspace(page, ws);
 });
+
+// ---------- the voice box ----------
+
+test('the voice box: the toolbar mic (narrow viewports) dictates into a plain textarea, send pastes into the pane', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await login(page);
+  const ws = await makeWorkspace(page, 'voice box ws');
+  await waitForTermText(page, AGENT_MARKER);
+
+  // Wide: the mic stays out of the toolbar — desktop keyboards paste
+  // straight into the terminal, the IME problem is a mobile one.
+  await expect(page.locator('agent-terminal .terminal-toolbar .tb-voice')).toBeHidden();
+
+  // Narrow: the mic appears in the pane's toolbar and opens the voice box
+  // focused on its plain textarea — the field a mobile IME will actually
+  // dictate into (xterm's offscreen helper textarea it will not).
+  await page.setViewportSize({ width: 600, height: 900 });
+  const mic = page.locator('agent-terminal:not(.hidden) .terminal-toolbar .tb-voice');
+  await expect(mic).toBeVisible();
+  await mic.click();
+  const dialog = page.locator('#voice-dialog');
+  await expect(dialog).toHaveAttribute('open', '');
+  const text = page.locator('#voice-text');
+  await expect(text).toBeFocused();
+
+  // Send pastes into the pane that opened the box: the pty echoes the
+  // dictated line into the buffer.
+  await text.fill('echo voice-box-pasted-marker');
+  await page.locator('#voice-send').click();
+  await expect(dialog).not.toHaveAttribute('open', '');
+  await waitForTermText(page, 'voice-box-pasted-marker');
+
+  // Cancel closes without pasting: the box's text never reaches the pane.
+  await mic.click();
+  await expect(dialog).toHaveAttribute('open', '');
+  await text.fill('echo voice-box-cancelled-marker');
+  await page.locator('#voice-dialog [data-dialog="close"]').click();
+  await expect(dialog).not.toHaveAttribute('open', '');
+  await page.waitForTimeout(500);
+  expect(await termText(page)).not.toContain('voice-box-cancelled-marker');
+
+  await deleteWorkspace(page, ws);
+});
+
+/** The visible pane's whole buffer as text (a one-shot read). */
+async function termText(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+      transcriptText?: () => string;
+    };
+    return el?.transcriptText?.() ?? '';
+  });
+}

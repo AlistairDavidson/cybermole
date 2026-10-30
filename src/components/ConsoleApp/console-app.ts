@@ -24,7 +24,7 @@ import {
 import { BASE } from '../../base';
 import { signedInFetch, type SignedInFetchFailure } from '../signed-in-fetch';
 import { subscribeConsoleEvents } from '../console-events';
-import { inTextField } from '../AgentTerminal/agent-terminal';
+import { inTextField, type AgentTerminal } from '../AgentTerminal/agent-terminal';
 import type { TerminalCommand } from '../../lib/terminals/tab-order';
 import 'validation-enhancer/zod';
 import type { ValidationEnhancerZod } from 'validation-enhancer/zod';
@@ -47,6 +47,9 @@ type WaToast = HTMLElement & {
 };
 
 type WaDialog = HTMLElement & { show(): void; open: boolean };
+
+/** wa-page's drawer control (the mobile nav); the element reflects nav-open. */
+type WaPage = HTMLElement & { toggleNavigation(): void };
 
 /** An empty wa-input's value is null, not ''. */
 type WaInput = HTMLElement & { value: string | null };
@@ -102,6 +105,10 @@ export class ConsoleApp extends HTMLElement {
     const v = new URLSearchParams(location.search).get('run') ?? '';
     return TMUX_SESSION_NAME_RE.test(v) ? asTmuxSessionName(v) : null;
   })();
+  /** Mirrors wa-page's nav-open onto the top bar's mobile toggle. */
+  private navOpenObserver: MutationObserver | null = null;
+  /** The pane whose mic opened the voice box; send pastes into it. */
+  private voicePane: AgentTerminal | null = null;
 
   connectedCallback(): void {
     // Ids come from server-rendered markup and are re-checked against state anyway.
@@ -120,6 +127,12 @@ export class ConsoleApp extends HTMLElement {
       this.openWorkspaceDialog();
     });
     this.addEventListener('new-app', () => this.openAppDialog());
+    // A pane's mic (the voice box): the IME-friendly textarea does the
+    // dictation, send carries the text back to the pane.
+    this.addEventListener('voice-typing', e => {
+      const pane = (e as CustomEvent<{ pane?: unknown }>).detail.pane;
+      if (pane instanceof HTMLElement) this.openVoiceDialog(pane as AgentTerminal);
+    });
     this.addEventListener('delete-workspace', e => {
       const d = (e as CustomEvent<{ id: string; name: string }>).detail;
       this.confirmDelete({ kind: 'workspace', id: asWorkspaceId(d.id), name: d.name });
@@ -179,6 +192,9 @@ export class ConsoleApp extends HTMLElement {
     (this.querySelector('#workspace-save') as HTMLElement).onclick = () =>
       (this.querySelector('#workspace-form') as HTMLFormElement).requestSubmit();
     (this.querySelector('#confirm-delete-ok') as HTMLElement).onclick = () => void this.runDelete();
+    // The voice box: a pane's mic opens it, send pastes the dictated text
+    // back into that pane (no form — a free-text textarea, no enhancer).
+    (this.querySelector('#voice-send') as HTMLElement).onclick = () => this.sendVoiceText();
     // The nav collapse control: SSR'd static markup in the nav header, so
     // it survives the sidebar's innerHTML re-render (AGENTS.md).
     this.applyNavCollapsed();
@@ -191,6 +207,15 @@ export class ConsoleApp extends HTMLElement {
       }
       this.applyNavCollapsed();
     });
+    // The top bar's mobile drawer toggle (app-header's button, announced
+    // as toggle-nav): flips wa-page's drawer, and the drawer's nav-open —
+    // light-dismiss and Escape close it too — mirrors onto the button.
+    document.addEventListener('toggle-nav', this.onToggleNav);
+    const page = this.querySelector('wa-page');
+    if (page) {
+      this.navOpenObserver = new MutationObserver(() => this.syncNavToggle());
+      this.navOpenObserver.observe(page, { attributeFilter: ['nav-open'] });
+    }
     // The new-app dialog suggests a directory derived from the name (the
     // server's own slug rule), until the cwd is hand-edited. The icon
     // preview rides the same name typing through the shared suggestion
@@ -258,6 +283,9 @@ export class ConsoleApp extends HTMLElement {
   disconnectedCallback(): void {
     this.teardownEvents?.();
     this.teardownEvents = null;
+    document.removeEventListener('toggle-nav', this.onToggleNav);
+    this.navOpenObserver?.disconnect();
+    this.navOpenObserver = null;
     document.removeEventListener('keydown', this.onKeydown, true);
   }
 
@@ -441,6 +469,28 @@ export class ConsoleApp extends HTMLElement {
 
   // ---- create dialogs ----
 
+  private openVoiceDialog(pane: AgentTerminal): void {
+    this.voicePane = pane;
+    const text = this.querySelector('#voice-text') as HTMLTextAreaElement | null;
+    if (text) text.value = '';
+    this.dialog('#voice-dialog').show();
+    // After the dialog's own open transition hands focus around: the
+    // textarea is where dictation lands.
+    requestAnimationFrame(() => text?.focus());
+  }
+
+  /** Send pastes the dictated text into the pane that opened the box; a
+   *  dead pane (workspace switched mid-dictation) just closes. */
+  private sendVoiceText(): void {
+    const text = (this.querySelector('#voice-text') as HTMLTextAreaElement | null)?.value ?? '';
+    const pane = this.voicePane;
+    this.dialog('#voice-dialog').open = false;
+    this.voicePane = null;
+    if (text.trim() === '' || !pane?.isConnected) return;
+    pane.terminal?.paste(text);
+    pane.terminal?.focus();
+  }
+
   private openAppDialog(): void {
     this.resetForm('#app-form');
     this.appCwdTouched = false;
@@ -544,6 +594,25 @@ export class ConsoleApp extends HTMLElement {
       toggle.setAttribute('aria-label', label);
       toggle.setAttribute('title', label);
     }
+  }
+
+  private readonly onToggleNav = (): void => {
+    (this.querySelector('wa-page') as WaPage | null)?.toggleNavigation();
+  };
+
+  /** The drawer button's disclosure semantics follow wa-page's nav-open,
+   *  whichever way it flipped (toggle, light-dismiss, Escape). */
+  private syncNavToggle(): void {
+    const open = this.querySelector('wa-page')?.hasAttribute('nav-open') ?? false;
+    const button = document.querySelector('app-header #nav-drawer-toggle');
+    if (!button) return;
+    const label = open ? 'close the workspace drawer' : 'open the workspace drawer';
+    button.setAttribute('aria-expanded', String(open));
+    button.setAttribute('aria-label', label);
+    button.setAttribute('title', label);
+    const icon = button.querySelector('wa-icon');
+    icon?.setAttribute('name', open ? 'xmark' : 'bars');
+    icon?.setAttribute('label', label);
   }
 
   private async createApp(): Promise<void> {

@@ -1,7 +1,8 @@
 // Console cosmetics: the cybermole product label (title, nav, sidebar
 // heading), the page-entry fade (and its reduced-motion skip), the
-// desktop nav collapse (persisted, rail with the expand control), and the
-// new-app dialog's directory suggestion from the name.
+// desktop nav collapse (persisted, rail with the expand control), the
+// mobile drawer toggle in the top bar, the brand glyph's page-current
+// highlight, and the new-app dialog's directory suggestion from the name.
 //
 // Apps-spec discipline: one login() via the shared cookie file (env.ts); no
 // afterAll; each test starts from a fresh context (localStorage included),
@@ -128,6 +129,84 @@ test('the nav collapse toggles a rail and persists across reload', async ({ page
   expect(await page.evaluate(() => localStorage.getItem('cybermole:sidebar-collapsed'))).toBe(
     'false',
   );
+});
+
+// ---------- the mobile drawer toggle ----------
+
+test('on mobile the drawer toggle sits far left of the top bar and drives the drawer', async ({
+  page,
+}) => {
+  await login(page);
+  const toggle = page.locator('app-header #nav-drawer-toggle');
+  const thePage = page.locator('console-app wa-page');
+
+  // Wide: the sidebar is inline and the toggle is a mobile-only control.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(thePage).not.toHaveAttribute('view', 'mobile');
+  await expect(toggle).toBeHidden();
+  await expect(page.locator('workspace-sidebar .nav')).toBeVisible();
+
+  // Narrow: wa-page flips to its mobile view, the toggle appears at the
+  // top bar's far left (the first control of the left cluster), and the
+  // stock hamburger's header row is gone.
+  await page.setViewportSize({ width: 600, height: 900 });
+  await expect(thePage).toHaveAttribute('view', 'mobile');
+  await expect(toggle).toBeVisible();
+  const firstClusterControl = page.locator('app-header nav.wa-cluster > :first-child');
+  await expect(firstClusterControl).toHaveAttribute('id', 'nav-drawer-toggle');
+
+  // Opening: the drawer carries the sidebar, the button's disclosure
+  // semantics follow (icon flips to the close glyph).
+  await toggle.click();
+  await expect(thePage).toHaveAttribute('nav-open', '');
+  await expect(page.locator('wa-drawer[open]')).toHaveCount(1);
+  await expect(page.locator('workspace-sidebar .nav')).toBeVisible();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(toggle.locator('wa-icon')).toHaveAttribute('name', 'xmark');
+
+  // Escape closes (light-dismiss would too); the semantics follow back.
+  await page.keyboard.press('Escape');
+  await expect(thePage).not.toHaveAttribute('nav-open', '');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(toggle.locator('wa-icon')).toHaveAttribute('name', 'bars');
+
+  // Pages without the console drawer never show the toggle.
+  await page.goto('/jobs');
+  await page.waitForSelector('jobs-app');
+  await expect(page.locator('app-header #nav-drawer-toggle')).toBeHidden();
+});
+
+// ---------- the brand glyph's page-current highlight ----------
+
+test('the brand glyph is monochrome ink: it takes the current-page colour like its siblings', async ({
+  page,
+}) => {
+  await login(page);
+  // The button part's colour is what every slotted icon inherits; the
+  // inline mole glyph rides the same chain (a raster icon could not).
+  const colors = () =>
+    page.evaluate(() => {
+      const partColor = (btn: Element): string => {
+        const part = (btn.shadowRoot as ShadowRoot).querySelector('[part~="button"]')!;
+        return getComputedStyle(part).color;
+      };
+      return {
+        glyph: getComputedStyle(document.querySelector('app-header .app-brand-icon')!).color,
+        current: partColor(document.querySelector("app-header wa-button[aria-current='page']")!),
+        resting: partColor(document.querySelector("app-header wa-button[href$='/jobs']")!),
+      };
+    });
+
+  // Home: the brand owns the highlight.
+  const home = await colors();
+  expect(home.glyph).toBe(home.current);
+  expect(home.current).not.toBe(home.resting);
+
+  // Away: it rests at the same colour as every other non-current icon.
+  await page.goto('/builder');
+  await page.waitForSelector('workspace-sidebar .nav');
+  const away = await colors();
+  expect(away.glyph).toBe(away.resting);
 });
 
 // ---------- the new-app dialog's directory suggestion ----------

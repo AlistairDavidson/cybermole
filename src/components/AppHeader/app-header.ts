@@ -14,6 +14,13 @@ export class AppHeader extends HTMLElement {
       'click',
       () => void this.signOut(),
     );
+    // The mobile drawer toggle (console pages only — CSS decides where it
+    // shows): the drawer lives in the page's wa-page below this bar, so the
+    // click is announced as an event for console-app to answer.
+    (this.querySelector('#nav-drawer-toggle') as HTMLElement | null)?.addEventListener(
+      'click',
+      () => this.dispatchEvent(new CustomEvent('toggle-nav', { bubbles: true, composed: true })),
+    );
   }
 
   private async signOut(): Promise<void> {

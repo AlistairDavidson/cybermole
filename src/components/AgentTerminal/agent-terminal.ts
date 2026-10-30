@@ -381,6 +381,33 @@ export class AgentTerminal extends HTMLElement {
           title="download the transcript — scrollback included, ANSI colors preserved">
         <wa-icon slot="start" name="download" aria-hidden="true"></wa-icon>download
       </wa-button>`;
+    // The voice box's mic, console pages only — <console-app> owns the
+    // dialog it opens (the pop-out view has none). Mobile IMEs (Gboard)
+    // refuse to dictate into xterm's offscreen helper textarea, so the mic
+    // routes through a plain, visible textarea instead; CSS keeps the
+    // button to narrow viewports, where that problem lives.
+    if (this.closest('console-app')) {
+      const mic = document.createElement('wa-button');
+      mic.className = 'tb-voice';
+      mic.setAttribute('appearance', 'plain');
+      mic.setAttribute('variant', 'neutral');
+      mic.setAttribute('size', 'xs');
+      mic.setAttribute(
+        'title',
+        'voice typing — dictate into a text box, then send it to this terminal',
+      );
+      mic.innerHTML = '<wa-icon slot="start" name="microphone" aria-hidden="true"></wa-icon>voice';
+      mic.addEventListener('click', () => {
+        this.dispatchEvent(
+          new CustomEvent('voice-typing', {
+            detail: { pane: this },
+            bubbles: true,
+            composed: true,
+          }),
+        );
+      });
+      bar.appendChild(mic);
+    }
     // Pop-out is only revealed by attach() for 'terminal' mode: a run pane
     // has no tab to come back to. The move itself belongs to <terminal-tabs>,
     // which catches the bubbled event.

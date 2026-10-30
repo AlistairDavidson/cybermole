@@ -126,10 +126,26 @@ app-header {
 /* Foreground accents use the *-on-quiet text tokens throughout: the fill-*
    family is background fills, near-black in wa-dark. */
 app-header wa-button.app-brand::part(button) { font-weight: var(--wa-font-weight-bold); }
-app-header .app-brand-icon { display: block; }
+/* The inline mole glyph (AppHeader.astro): ink in currentColor, so it
+   rides the same page-current highlight as its siblings. */
+app-header .app-brand-icon { display: block; width: 1em; height: 1em; }
 app-header wa-button.app-nav-link[aria-current='page']::part(button) {
   color: var(--wa-color-brand-on-quiet);
   font-weight: var(--wa-font-weight-bold);
+}
+/* The mobile drawer toggle: far left of the top bar, where the thumb
+   lives. Only on the console pages (body:has(> console-app) — a wa-page
+   drawer to open) and only below wa-page's mobile breakpoint (its default
+   768px — keep the two in step). */
+app-header .nav-drawer-toggle {
+  display: none; /* desktop, and pages with no drawer */
+  color: var(--wa-color-text-quiet);
+}
+app-header .nav-drawer-toggle::part(base) { padding-inline: var(--wa-space-2xs); }
+app-header .nav-drawer-toggle:hover,
+app-header .nav-drawer-toggle:focus-visible { color: var(--wa-color-brand-on-quiet); }
+@media (width < 768px) {
+  body:has(> console-app) app-header .nav-drawer-toggle { display: inline-flex; }
 }
 
 /* ---- console-app: <wa-page> app shell ---- */
@@ -156,6 +172,10 @@ console-app wa-page::part(navigation-header) {
    otherwise the terminal's rows would drive the page height and the
    ResizeObserver would never see the viewport shrink. */
 console-app wa-page::part(base) { height: 100%; min-height: 0; }
+/* The console pages never fill wa-page's header slot; its only tenant is
+   the stock mobile hamburger, which the top bar's toggle replaces — so the
+   empty header row goes entirely (the drawer itself stays). */
+console-app wa-page::part(header) { display: none; }
 /* Stretch main into its track so heights stay definite down to .terminal-container. */
 console-app wa-page::part(main) { align-self: stretch; }
 console-app main {
@@ -477,6 +497,23 @@ console-app .dialog-note {
   margin: 0; color: var(--wa-color-text-quiet);
   font-size: var(--wa-font-size-s);
 }
+/* The voice box's textarea: a plain, visible field is the whole point —
+   the IME has to see a real text input to dictate. Terminal-flavoured
+   (mono, no corrections) so dictated commands read as commands. */
+#voice-text {
+  display: block; box-sizing: border-box; width: 100%;
+  min-height: 6em; resize: vertical;
+  padding: var(--wa-space-2xs) var(--wa-space-xs);
+  border: var(--wa-border-width-s) solid var(--wa-color-surface-border);
+  border-radius: var(--wa-border-radius-s);
+  background: var(--wa-color-surface-default);
+  color: var(--wa-color-text-normal);
+  font: var(--wa-font-size-s)/1.5 ui-monospace, monospace;
+}
+#voice-text:focus {
+  outline: var(--wa-focus-ring);
+  outline-offset: var(--wa-focus-ring-offset);
+}
 
 /* ---- agent-terminal ---- */
 agent-terminal {
@@ -503,6 +540,13 @@ agent-terminal .terminal-toolbar {
 }
 agent-terminal .terminal-find wa-input { width: 15rem; }
 agent-terminal .terminal-find wa-button::part(base) { padding-inline: var(--wa-space-3xs); }
+/* The voice box's mic: a narrow-viewport affordance (the same breakpoint
+   as wa-page's mobile view) — mobile IMEs refuse to dictate into xterm's
+   helper textarea, desktop keyboards paste straight into the terminal. */
+agent-terminal .terminal-toolbar .tb-voice { display: none; }
+@media (width < 768px) {
+  agent-terminal .terminal-toolbar .tb-voice { display: inline-flex; }
+}
 agent-terminal .terminal-status {
   display: flex; align-items: center; gap: var(--wa-space-2xs);
   color: var(--wa-color-text-quiet); font-size: var(--wa-font-size-2xs);
