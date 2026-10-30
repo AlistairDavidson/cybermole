@@ -24,7 +24,7 @@ import {
 import { BASE } from '../../base';
 import { signedInFetch, type SignedInFetchFailure } from '../signed-in-fetch';
 import { subscribeConsoleEvents } from '../console-events';
-import { inTextField, type AgentTerminal } from '../AgentTerminal/agent-terminal';
+import { inTextField } from '../AgentTerminal/agent-terminal';
 import type { TerminalCommand } from '../../lib/terminals/tab-order';
 import 'validation-enhancer/zod';
 import type { ValidationEnhancerZod } from 'validation-enhancer/zod';
@@ -107,8 +107,6 @@ export class ConsoleApp extends HTMLElement {
   })();
   /** Mirrors wa-page's nav-open onto the top bar's mobile toggle. */
   private navOpenObserver: MutationObserver | null = null;
-  /** The pane whose mic opened the voice box; send pastes into it. */
-  private voicePane: AgentTerminal | null = null;
 
   connectedCallback(): void {
     // Ids come from server-rendered markup and are re-checked against state anyway.
@@ -127,12 +125,6 @@ export class ConsoleApp extends HTMLElement {
       this.openWorkspaceDialog();
     });
     this.addEventListener('new-app', () => this.openAppDialog());
-    // A pane's mic (the voice box): the IME-friendly textarea does the
-    // dictation, send carries the text back to the pane.
-    this.addEventListener('voice-typing', e => {
-      const pane = (e as CustomEvent<{ pane?: unknown }>).detail.pane;
-      if (pane instanceof HTMLElement) this.openVoiceDialog(pane as AgentTerminal);
-    });
     this.addEventListener('delete-workspace', e => {
       const d = (e as CustomEvent<{ id: string; name: string }>).detail;
       this.confirmDelete({ kind: 'workspace', id: asWorkspaceId(d.id), name: d.name });
@@ -192,9 +184,6 @@ export class ConsoleApp extends HTMLElement {
     (this.querySelector('#workspace-save') as HTMLElement).onclick = () =>
       (this.querySelector('#workspace-form') as HTMLFormElement).requestSubmit();
     (this.querySelector('#confirm-delete-ok') as HTMLElement).onclick = () => void this.runDelete();
-    // The voice box: a pane's mic opens it, send pastes the dictated text
-    // back into that pane (no form — a free-text textarea, no enhancer).
-    (this.querySelector('#voice-send') as HTMLElement).onclick = () => this.sendVoiceText();
     // The nav collapse control: SSR'd static markup in the nav header, so
     // it survives the sidebar's innerHTML re-render (AGENTS.md).
     this.applyNavCollapsed();
@@ -388,6 +377,7 @@ export class ConsoleApp extends HTMLElement {
     const r = sent.data.response;
     if (!r.ok) return;
     const st = (await r.json()) as ConsoleState;
+    this.noteNewBuildSessions(this.state, st);
     this.state = st;
     if (this.scope === 'builder') void this.loadAppsStatus();
     // Deep links are consumed in one pass, so a ?t= hit can't leave a ?run=
@@ -436,6 +426,28 @@ export class ConsoleApp extends HTMLElement {
     this.applySelection();
   }
 
+  /** A build session that appeared out-of-band — an agent's build_session
+   *  in a terminal, another tab's builder — while this console page was
+   *  open: point the human at the builder page, where it lives. Not on
+   *  the builder page itself (its sidebar shows the new group directly)
+   *  and not on the first load (nothing is "new"). */
+  private noteNewBuildSessions(prev: ConsoleState | null, next: ConsoleState): void {
+    if (prev === null || this.scope !== 'console') return;
+    const known = new Set(prev.workspaces.map(w => w.id));
+    const fresh = next.workspaces.filter(
+      (w): w is typeof w & { appId: AppId } => w.appId !== null && !known.has(w.id),
+    );
+    if (fresh.length === 0) return;
+    // The FRESH state's apps: the app row often lands in the same push.
+    const appNames = new Map((next.apps ?? []).map(a => [a.id, a.name]));
+    const label = fresh.map(w => `${appNames.get(w.appId) ?? 'an app'}: “${w.name}”`).join(', ');
+    this.toast(`build session opened — ${label}. Open the builder page to watch it`, {
+      variant: 'neutral',
+      icon: 'cubes',
+      duration: 10_000,
+    });
+  }
+
   /** The builder scope's /api/apps/status half of the poll. A failure keeps
    *  the last good list (the sidebar tolerates a null status). */
   private async loadAppsStatus(): Promise<void> {
@@ -468,28 +480,6 @@ export class ConsoleApp extends HTMLElement {
   }
 
   // ---- create dialogs ----
-
-  private openVoiceDialog(pane: AgentTerminal): void {
-    this.voicePane = pane;
-    const text = this.querySelector('#voice-text') as HTMLTextAreaElement | null;
-    if (text) text.value = '';
-    this.dialog('#voice-dialog').show();
-    // After the dialog's own open transition hands focus around: the
-    // textarea is where dictation lands.
-    requestAnimationFrame(() => text?.focus());
-  }
-
-  /** Send pastes the dictated text into the pane that opened the box; a
-   *  dead pane (workspace switched mid-dictation) just closes. */
-  private sendVoiceText(): void {
-    const text = (this.querySelector('#voice-text') as HTMLTextAreaElement | null)?.value ?? '';
-    const pane = this.voicePane;
-    this.dialog('#voice-dialog').open = false;
-    this.voicePane = null;
-    if (text.trim() === '' || !pane?.isConnected) return;
-    pane.terminal?.paste(text);
-    pane.terminal?.focus();
-  }
 
   private openAppDialog(): void {
     this.resetForm('#app-form');

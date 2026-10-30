@@ -295,6 +295,8 @@ export class AgentTerminal extends HTMLElement {
     this.resizeObserver = new ResizeObserver(() => this.fitNow());
     this.resizeObserver.observe(terminalContainer);
 
+    this.armTouchScroll(terminalContainer);
+
     this.ensureToolbar();
 
     this.fitNow();
@@ -305,6 +307,7 @@ export class AgentTerminal extends HTMLElement {
     instances.delete(this);
     this.resizeObserver?.disconnect();
     this.resizeObserver = undefined;
+    this.cancelTouchMomentum();
   }
 
   private send(msg: ClientMsg): void {
@@ -317,6 +320,127 @@ export class AgentTerminal extends HTMLElement {
     if (this.terminal) {
       this.send({ type: 'resize', cols: this.terminal.cols, rows: this.terminal.rows });
     }
+  }
+
+  // ---- touch scrollback ----
+
+  /** A drag must travel this far (px) before it becomes a scroll, so taps
+   *  and xterm's own selection gestures keep working. */
+  private static readonly TOUCH_CLAIM_PX = 10;
+  /** Momentum decay per 16ms frame; below this speed (px/ms) it stops. */
+  private static readonly MOMENTUM_DECAY = 0.95;
+  private static readonly MOMENTUM_MIN = 0.02;
+
+  /** Fractional rows carried between moves (scrollLines takes integers). */
+  private touchRowAccum = 0;
+  private touchMomentum: number | null = null;
+  private touchMomentumRaf = 0;
+
+  /** px→rows through the container's own box: client height / rows is the
+   *  cell height, whatever the renderer drew it with. Positive px (finger
+   *  moving down) scrolls back in history. */
+  private touchScrollBy(px: number): void {
+    const t = this.terminal;
+    const cont = this.querySelector('.terminal-container') as HTMLElement | null;
+    if (!t || !cont || t.rows <= 0 || cont.clientHeight === 0) return;
+    this.touchRowAccum += px / (cont.clientHeight / t.rows);
+    const rows = Math.trunc(this.touchRowAccum);
+    if (rows !== 0) {
+      t.scrollLines(-rows);
+      this.touchRowAccum -= rows;
+    }
+  }
+
+  /** Touch drag scrolls the pane's scrollback — xterm has no touch
+   *  scrolling of its own (its touch handlers only feed selection
+   *  gestures), and phones have no wheel. Direct 1:1 drag while the finger
+   *  is down (terminal.scrollLines — the viewport's DOM scroll area is not
+   *  the buffer in this xterm), then a short momentum glide; a new touch
+   *  cancels it. */
+  private armTouchScroll(container: HTMLElement): void {
+    let startY = 0;
+    let startX = 0;
+    let claimed = false;
+    let dead = false; // an x-dominant drag never scrolls
+    let lastY = 0;
+    let lastT = 0;
+    let velocity = 0; // px/ms, positive = finger moving down
+
+    container.addEventListener(
+      'touchstart',
+      e => {
+        this.cancelTouchMomentum();
+        this.touchRowAccum = 0;
+        claimed = false;
+        dead = e.touches.length !== 1;
+        const t = e.touches[0];
+        if (!t) return;
+        startY = lastY = t.clientY;
+        startX = t.clientX;
+        lastT = performance.now();
+        velocity = 0;
+      },
+      { passive: true },
+    );
+    container.addEventListener(
+      'touchmove',
+      e => {
+        const t = e.touches[0];
+        if (!t || dead || e.touches.length !== 1) {
+          if (e.touches.length !== 1) dead = true;
+          return;
+        }
+        const dy = t.clientY - startY;
+        if (!claimed) {
+          if (Math.abs(dy) < AgentTerminal.TOUCH_CLAIM_PX) return;
+          // A sideways-dominant drag is not a scroll; let it go entirely.
+          if (Math.abs(t.clientX - startX) > Math.abs(dy)) {
+            dead = true;
+            return;
+          }
+          claimed = true;
+        }
+        e.preventDefault();
+        this.touchScrollBy(t.clientY - lastY);
+        const now = performance.now();
+        const dt = now - lastT;
+        if (dt > 0) velocity = (t.clientY - lastY) / dt;
+        lastY = t.clientY;
+        lastT = now;
+      },
+      { passive: false },
+    );
+    container.addEventListener('touchend', () => {
+      if (!claimed) return;
+      this.touchMomentum = velocity;
+      this.glideTouchMomentum();
+    });
+    container.addEventListener('touchcancel', () => {
+      claimed = false;
+      this.cancelTouchMomentum();
+    });
+  }
+
+  private glideTouchMomentum(): void {
+    const v = this.touchMomentum;
+    if (v === null || Math.abs(v) < AgentTerminal.MOMENTUM_MIN) {
+      this.touchMomentum = null;
+      return;
+    }
+    const frameStart = performance.now();
+    this.touchMomentumRaf = requestAnimationFrame(() => {
+      if (this.touchMomentum === null) return; // cancelled mid-glide
+      const dt = performance.now() - frameStart;
+      this.touchScrollBy(v * dt);
+      this.touchMomentum = v * Math.pow(AgentTerminal.MOMENTUM_DECAY, dt / 16);
+      this.glideTouchMomentum();
+    });
+  }
+
+  private cancelTouchMomentum(): void {
+    this.touchMomentum = null;
+    if (this.touchMomentumRaf !== 0) cancelAnimationFrame(this.touchMomentumRaf);
+    this.touchMomentumRaf = 0;
   }
 
   /** A hidden tab's ResizeObserver fires at 0×0; fitting there would
@@ -380,34 +504,11 @@ export class AgentTerminal extends HTMLElement {
       <wa-button class="tb-download-transcript" appearance="plain" variant="neutral" size="xs"
           title="download the transcript — scrollback included, ANSI colors preserved">
         <wa-icon slot="start" name="download" aria-hidden="true"></wa-icon>download
+      </wa-button>
+      <wa-button class="tb-esc" appearance="plain" variant="neutral" size="xs"
+          title="send escape — phones have no esc key">
+        esc
       </wa-button>`;
-    // The voice box's mic, console pages only — <console-app> owns the
-    // dialog it opens (the pop-out view has none). Mobile IMEs (Gboard)
-    // refuse to dictate into xterm's offscreen helper textarea, so the mic
-    // routes through a plain, visible textarea instead; CSS keeps the
-    // button to narrow viewports, where that problem lives.
-    if (this.closest('console-app')) {
-      const mic = document.createElement('wa-button');
-      mic.className = 'tb-voice';
-      mic.setAttribute('appearance', 'plain');
-      mic.setAttribute('variant', 'neutral');
-      mic.setAttribute('size', 'xs');
-      mic.setAttribute(
-        'title',
-        'voice typing — dictate into a text box, then send it to this terminal',
-      );
-      mic.innerHTML = '<wa-icon slot="start" name="microphone" aria-hidden="true"></wa-icon>voice';
-      mic.addEventListener('click', () => {
-        this.dispatchEvent(
-          new CustomEvent('voice-typing', {
-            detail: { pane: this },
-            bubbles: true,
-            composed: true,
-          }),
-        );
-      });
-      bar.appendChild(mic);
-    }
     // Pop-out is only revealed by attach() for 'terminal' mode: a run pane
     // has no tab to come back to. The move itself belongs to <terminal-tabs>,
     // which catches the bubbled event.
@@ -429,6 +530,19 @@ export class AgentTerminal extends HTMLElement {
     (bar.querySelector('.tb-download-transcript') as HTMLElement).addEventListener('click', () =>
       this.downloadTranscript(),
     );
+    // A phone's soft keyboard has no esc, and TUIs need it (closing
+    // dialogs, backing out of screens). One byte, then back to the pane.
+    // CSS keeps the button to narrow viewports — a hardware key renders
+    // it redundant.
+    // Focus FIRST, send after: clicking blurs the terminal (xterm emits a
+    // focus-out), and refocusing emits a focus-in — a byte sent between
+    // the two glues onto the focus-in sequence (tmux reads ESC+[I as one
+    // key) and never reaches the pane as ESC. After the focus-in, the
+    // byte travels alone.
+    (bar.querySelector('.tb-esc') as HTMLElement).addEventListener('click', () => {
+      this.terminal?.focus();
+      this.send({ type: 'input', data: '\u001b' });
+    });
     bar.insertBefore(find, bar.firstChild);
     this.toolbar = bar;
     this.findBar = find;

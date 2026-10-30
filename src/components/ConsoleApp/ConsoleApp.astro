@@ -111,28 +111,6 @@ const wsValidation = scope === 'builder' ? buildValidation : consoleWsValidation
     <wa-button slot="footer" id="workspace-save" variant="brand">create</wa-button>
   </wa-dialog>
 
-  <!-- The voice box: mobile IMEs (Gboard) refuse to dictate into xterm's
-       offscreen helper textarea — they classify it as non-text input — but
-       happily dictate into a plain, visible one. The terminal toolbar's mic
-       (narrow viewports, console pages) opens this dialog; send pastes the
-       text into the pane that opened it (terminal.paste, bracketed-paste
-       safe). A native textarea on purpose: that's the field the IME will
-       actually type into. -->
-  <wa-dialog id="voice-dialog" label="voice typing" with-footer>
-    <textarea
-      id="voice-text"
-      rows="5"
-      autocomplete="off"
-      autocorrect="off"
-      autocapitalize="off"
-      spellcheck="false"
-      aria-label="dictated terminal input"
-      placeholder="speak — the keyboard dictates here…"></textarea>
-    <p class="dialog-note">send pastes the text into the terminal that opened this box</p>
-    <wa-button slot="footer" appearance="plain" data-dialog="close">cancel</wa-button>
-    <wa-button slot="footer" id="voice-send" variant="brand">send</wa-button>
-  </wa-dialog>
-
   <wa-dialog id="confirm-delete" label="Delete" with-footer>
     <p class="dialog-text" id="confirm-delete-text"></p>
     <p class="dialog-note" id="confirm-delete-note"></p>

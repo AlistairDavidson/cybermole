@@ -2,9 +2,9 @@
 // reorders are optimistic and persist across a reload, the + button and the
 // caret menu open shell vs agent tabs (asserted through the pane's buffer
 // marker, not side channels), and ctrl-t / ctrl-shift-t do the same from
-// the keyboard — never while typing in a field or a dialog. The voice box:
-// the toolbar mic (narrow viewports) dictates into a plain textarea whose
-// send pastes into the pane.
+// the keyboard — never while typing in a field or a dialog. The phone
+// affordances: the toolbar's esc button sends the byte, the pane spends
+// narrow viewports' width on columns, and touch drag scrolls the scrollback.
 //
 // Apps-spec discipline: one login() through the shared cookie file (env.ts);
 // each test sweeps its own workspace and deletes it again, so the fixture
@@ -283,57 +283,160 @@ test('ctrl-t opens a shell tab and ctrl-shift-t an agent tab; neither fires in a
   await deleteWorkspace(page, ws);
 });
 
-// ---------- the voice box ----------
+// ---------- phone affordances ----------
 
-test('the voice box: the toolbar mic (narrow viewports) dictates into a plain textarea, send pastes into the pane', async ({
+// Soft keyboards have no esc; TUIs need it (closing dialogs, backing out
+// of screens). The toolbar's esc button (narrow viewports only) sends the
+// byte; `cat -v` renders it as ^[ in the buffer, so the click is observed
+// through the pane, not a side channel.
+test('the toolbar esc button (narrow viewports) sends an escape byte to the pane', async ({
   page,
 }) => {
   test.setTimeout(60_000);
   await login(page);
-  const ws = await makeWorkspace(page, 'voice box ws');
+  const ws = await makeWorkspace(page, 'esc button ws');
   await waitForTermText(page, AGENT_MARKER);
 
-  // Wide: the mic stays out of the toolbar — desktop keyboards paste
-  // straight into the terminal, the IME problem is a mobile one.
-  await expect(page.locator('agent-terminal .terminal-toolbar .tb-voice')).toBeHidden();
+  // Wide: the button stays out of the toolbar — the hardware key is there.
+  await expect(page.locator('agent-terminal .terminal-toolbar .tb-esc')).toBeHidden();
 
-  // Narrow: the mic appears in the pane's toolbar and opens the voice box
-  // focused on its plain textarea — the field a mobile IME will actually
-  // dictate into (xterm's offscreen helper textarea it will not).
+  // Narrow: it appears and one click is one ESC into the pty.
   await page.setViewportSize({ width: 600, height: 900 });
-  const mic = page.locator('agent-terminal:not(.hidden) .terminal-toolbar .tb-voice');
-  await expect(mic).toBeVisible();
-  await mic.click();
-  const dialog = page.locator('#voice-dialog');
-  await expect(dialog).toHaveAttribute('open', '');
-  const text = page.locator('#voice-text');
-  await expect(text).toBeFocused();
-
-  // Send pastes into the pane that opened the box: the pty echoes the
-  // dictated line into the buffer.
-  await text.fill('echo voice-box-pasted-marker');
-  await page.locator('#voice-send').click();
-  await expect(dialog).not.toHaveAttribute('open', '');
-  await waitForTermText(page, 'voice-box-pasted-marker');
-
-  // Cancel closes without pasting: the box's text never reaches the pane.
-  await mic.click();
-  await expect(dialog).toHaveAttribute('open', '');
-  await text.fill('echo voice-box-cancelled-marker');
-  await page.locator('#voice-dialog [data-dialog="close"]').click();
-  await expect(dialog).not.toHaveAttribute('open', '');
+  const esc = page.locator('agent-terminal:not(.hidden) .terminal-toolbar .tb-esc');
+  await expect(esc).toBeVisible();
+  await page.keyboard.type('cat -v\n');
+  await waitForTermText(page, 'cat -v');
+  // Let the shell exec cat (the echo above arrives while still typing);
+  // then the byte shows as ^[ in cat's output.
   await page.waitForTimeout(500);
-  expect(await termText(page)).not.toContain('voice-box-cancelled-marker');
+  await esc.click();
+  await waitForTermText(page, '^[', 10_000);
+
+  // The click handed focus back to the pane: typing still lands in it.
+  await page.keyboard.press('Control+c');
+  await deleteWorkspace(page, ws);
+});
+
+// Narrow viewports: the pane spends its width on columns, not padding —
+// the terminal container spans the full viewport width.
+test('the pane uses the full viewport width on narrow screens', async ({ page }) => {
+  test.setTimeout(60_000);
+  await login(page);
+  const ws = await makeWorkspace(page, 'full width ws');
+  await waitForTermText(page, AGENT_MARKER);
+
+  await page.setViewportSize({ width: 480, height: 800 });
+  // wa-page flips to its mobile view (the drawer) below 768px, and the body
+  // column then TRANSITIONS to the drawer layout (300ms) — wait for the
+  // pane to actually reach the viewport's left edge before measuring.
+  await page.waitForSelector('console-app wa-page[view="mobile"]');
+  await expect
+    .poll(
+      async () =>
+        (await page.locator('agent-terminal:not(.hidden) .terminal-container').boundingBox())?.x ??
+        999,
+      { timeout: 10_000 },
+    )
+    .toBeLessThanOrEqual(1);
+  const box = await page.locator('agent-terminal:not(.hidden) .terminal-container').boundingBox();
+  expect(box).not.toBeNull();
+  // Within 1px of the viewport: no pane padding, no container margins.
+  expect(Math.abs(box!.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(box!.x + box!.width - 480)).toBeLessThanOrEqual(1);
 
   await deleteWorkspace(page, ws);
 });
 
-/** The visible pane's whole buffer as text (a one-shot read). */
-async function termText(page: Page): Promise<string> {
-  return page.evaluate(() => {
-    const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
-      transcriptText?: () => string;
+// xterm has no touch scrolling of its own; agent-terminal's touch handlers
+// drag the viewport through the scrollback (CDP-injected touch points — a
+// drag DOWN reveals earlier lines, like every phone terminal).
+test('touch drag scrolls the pane scrollback', async ({ page }) => {
+  test.setTimeout(90_000);
+  await login(page);
+  const ws = await makeWorkspace(page, 'touch scroll ws');
+  await waitForTermText(page, AGENT_MARKER);
+
+  // Fill the scrollback: 200 numbered lines, then wait for the last ones
+  // (seq right-aligns to the widest — only 1- and 2-digit lines pad).
+  await page.keyboard.type('seq 1 200\n');
+  await waitForTermText(page, '199', 20_000);
+
+  const viewport = page.locator('agent-terminal:not(.hidden) .terminal-container .xterm-viewport');
+  void viewport;
+  const readViewportY = () =>
+    page.evaluate(() => {
+      const pane = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+        terminal?: {
+          rows: number;
+          buffer: { active: { viewportY: number } };
+        };
+      };
+      return pane?.terminal?.buffer.active.viewportY ?? -1;
+    });
+  const startTop = await readViewportY();
+  // Parked at the bottom: viewportY == rows means NO scrollback (the seq
+  // history must have landed) — anything more is scrollback to drag through.
+  const rows = await page.evaluate(() => {
+    const pane = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+      terminal?: { rows: number };
     };
-    return el?.transcriptText?.() ?? '';
+    return pane?.terminal?.rows ?? 0;
   });
-}
+  expect(startTop).toBeGreaterThan(rows);
+
+  const box = await page.locator('agent-terminal:not(.hidden) .terminal-container').boundingBox();
+  expect(box).not.toBeNull();
+  const cx = box!.x + box!.width / 2;
+  const cy = box!.y + box!.height / 2;
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [{ x: cx, y: cy }],
+  });
+  // A slow drag down (below the claim threshold, then past it): each move
+  // is a separate event so the handler's claim logic runs for real.
+  for (let i = 1; i <= 8; i++) {
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{ x: cx, y: cy + i * 20 }],
+    });
+    await page.waitForTimeout(30);
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+
+  // The drag scrolled up into the scrollback: the buffer's viewport row
+  // (parked at the bottom over ~200 lines of history) moved up by rows.
+  await expect.poll(readViewportY, { timeout: 10_000 }).toBeLessThan(startTop - 5);
+
+  await deleteWorkspace(page, ws);
+});
+
+// ---------- the hand-off toast ----------
+
+// An app's build session appearing out-of-band (an agent's build_session in
+// a terminal, another tab's builder) while the console page is open: the
+// page points the human at the builder page, where it lives.
+test('an out-of-band build session toasts the builder page', async ({ page }) => {
+  test.setTimeout(60_000);
+  await login(page);
+  const ws = await makeWorkspace(page, 'handoff toast ws');
+  await waitForTermText(page, AGENT_MARKER);
+
+  const app = await api(page, 'POST', '/api/apps', { name: 'Handoff Toast' });
+  expect(app.status, JSON.stringify(app.json)).toBe(200);
+  const made = await api(page, 'POST', '/api/workspaces', {
+    appId: app.json.id,
+    kind: 'build',
+  });
+  expect(made.status, JSON.stringify(made.json)).toBe(200);
+
+  // The events push lands the toast (naming the app) on the console page.
+  await expect(page.locator('console-app wa-toast')).toContainText(
+    'build session opened — Handoff Toast:',
+    { timeout: 15_000 },
+  );
+
+  // The app delete cascades the session; the console ws goes too.
+  expect((await api(page, 'DELETE', `/api/apps/${app.json.slug}`)).status).toBe(200);
+  await deleteWorkspace(page, ws);
+});

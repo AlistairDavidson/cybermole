@@ -147,6 +147,11 @@ app-header .nav-drawer-toggle:focus-visible { color: var(--wa-color-brand-on-qui
 @media (width < 768px) {
   body:has(> console-app) app-header .nav-drawer-toggle { display: inline-flex; }
 }
+/* The console shell never scrolls as a page (its panes own scrolling), so
+   a touch drag at its edges must not become pull-to-refresh — the
+   terminal's own gesture containment (agent-terminal .terminal-container)
+   covers the pane; this covers the chrome around it. */
+body:has(> console-app) { overscroll-behavior-y: contain; }
 
 /* ---- console-app: <wa-page> app shell ---- */
 /* A quiet arrival: both console pages fade their shell in (CSS-driven;
@@ -497,23 +502,6 @@ console-app .dialog-note {
   margin: 0; color: var(--wa-color-text-quiet);
   font-size: var(--wa-font-size-s);
 }
-/* The voice box's textarea: a plain, visible field is the whole point —
-   the IME has to see a real text input to dictate. Terminal-flavoured
-   (mono, no corrections) so dictated commands read as commands. */
-#voice-text {
-  display: block; box-sizing: border-box; width: 100%;
-  min-height: 6em; resize: vertical;
-  padding: var(--wa-space-2xs) var(--wa-space-xs);
-  border: var(--wa-border-width-s) solid var(--wa-color-surface-border);
-  border-radius: var(--wa-border-radius-s);
-  background: var(--wa-color-surface-default);
-  color: var(--wa-color-text-normal);
-  font: var(--wa-font-size-s)/1.5 ui-monospace, monospace;
-}
-#voice-text:focus {
-  outline: var(--wa-focus-ring);
-  outline-offset: var(--wa-focus-ring-offset);
-}
 
 /* ---- agent-terminal ---- */
 agent-terminal {
@@ -522,6 +510,15 @@ agent-terminal {
   min-width: 0; min-height: 0; padding: var(--wa-space-xs);
   position: relative;
 }
+/* Phones: the terminal is the page — every spare pixel of width is a
+   column. The toolbar overlays regardless, and the status bar keeps its
+   own padding, so 0 here is safe. */
+@media (width < 768px) {
+  agent-terminal { padding: 0; }
+}
+/* Touch drag scrolls the pane's scrollback (agent-terminal.ts); keep the
+   gesture contained so it never becomes pull-to-refresh or a page scroll. */
+agent-terminal .terminal-container { overscroll-behavior: contain; }
 agent-terminal .terminal-container { flex: 1; min-height: 0; }
 agent-terminal .terminal-container .xterm { height: 100%; }
 /* The pane's overlay toolbar. Absolutely positioned so it's never in
@@ -540,12 +537,12 @@ agent-terminal .terminal-toolbar {
 }
 agent-terminal .terminal-find wa-input { width: 15rem; }
 agent-terminal .terminal-find wa-button::part(base) { padding-inline: var(--wa-space-3xs); }
-/* The voice box's mic: a narrow-viewport affordance (the same breakpoint
-   as wa-page's mobile view) — mobile IMEs refuse to dictate into xterm's
-   helper textarea, desktop keyboards paste straight into the terminal. */
-agent-terminal .terminal-toolbar .tb-voice { display: none; }
+/* The esc key: a narrow-viewport affordance — soft keyboards have no esc,
+   and TUIs need it (closing dialogs, backing out of screens). Desktops
+   keep the toolbar minimal; the hardware key is right there. */
+agent-terminal .terminal-toolbar .tb-esc { display: none; }
 @media (width < 768px) {
-  agent-terminal .terminal-toolbar .tb-voice { display: inline-flex; }
+  agent-terminal .terminal-toolbar .tb-esc { display: inline-flex; }
 }
 agent-terminal .terminal-status {
   display: flex; align-items: center; gap: var(--wa-space-2xs);

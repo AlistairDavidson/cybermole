@@ -12,6 +12,7 @@ import WaField from '../form/WaField.astro';
 import { zodSchemaToHTMLAttributes } from '../../lib/web/zod.service';
 import { appSettingsForm } from '../../schemas/api';
 import { APP_ICONS } from '../../lib/apps/app-icons';
+import { BASE } from '../../base';
 import type { ReadAppData } from '../../lib/apps/apps';
 
 interface Props {
@@ -80,7 +81,7 @@ const iso = (at: number): string => new Date(at).toISOString();
                 <wa-icon slot="start" name="circle-check" />
                 save
               </wa-button>
-              <a class="app-settings-back" href={`/builder`}>
+              <a class="app-settings-back" href={`${BASE}/builder`}>
                 back to the portfolio
               </a>
             </div>
@@ -133,7 +134,7 @@ const iso = (at: number): string => new Date(at).toISOString();
         <h1>no such app</h1>
       </header>
       <p class="hint">no app answers this slug — it may have been deleted or never registered.</p>
-      <a class="app-settings-back" href={`/builder`}>
+      <a class="app-settings-back" href={`${BASE}/builder`}>
         back to the portfolio
       </a>
     </main>
