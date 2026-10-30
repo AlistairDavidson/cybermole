@@ -131,7 +131,7 @@ the app host's status route — so a dead host is visible, not
 mysterious: the builder page's open link dims with the reason); each page
 filters the tree by owner (console: `app_id` null, builder: set). Each app
 group on the builder page has an **open** link to its app at
-`/apps/<slug>/` (a new tab, registered apps only) — registered apps are reachable only
+`/apps/<slug>/` (same-tab navigation — the PWA has no tabs; registered apps only) — registered apps are reachable only
 through that proxy, behind the session gate (a host that is down
 answers 502 through the proxy; an unregistered slug 404s). The rest are thin Astro routes: `POST /api/apps` (an optional
 `cwd` — where the app's in-tree workspaces start) + `PATCH`/
@@ -1256,10 +1256,11 @@ standalone-workspace install above (`CYBERMOLE_AGENT_COMMAND`).
   'none'` (Astro bundles all scripts as same-origin modules; xterm and
   Lit inject styles at runtime, hence the style exception), plus
   `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
-  `Referrer-Policy: same-origin`. The Web Awesome icon glyphs are vendored
-  into `public/icons/wa/` and resolved from there client-side — nothing
-  loads from the Font Awesome CDN, so the strict CSP holds and no usage
-  leaks to a third party.
+  `Referrer-Policy: same-origin`. The full Web Awesome classic/solid icon
+  set (~2000 glyphs — every name the free CDN would serve) is vendored
+  into `public/icons/wa/` by `tools/vendor-wa-icons.mjs` and resolved from
+  there client-side — nothing loads from the Font Awesome CDN, so the
+  strict CSP holds and no usage leaks to a third party.
 - Static assets are served from a fixed route table with traversal checks;
   request bodies are size-capped: 10 KiB everywhere except an upload to
   `POST /api/files` (5 GiB + multipart envelope). `server/main.ts`

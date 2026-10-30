@@ -332,9 +332,9 @@ export class WorkspaceSidebar extends HTMLElement {
     // reason as tooltip; it's still clickable.
     const open = app
       ? `<a class="open-app-btn${app.serving ? '' : ' not-serving'}" ` +
-        `href="${BASE}/apps/${esc(slug)}/" target="_blank" rel="noopener" ` +
-        `title="${esc(app.serving ? `open ${name} in a new tab` : `${name} is not serving: ${app.servingReason ?? 'the app host is down'}`)}">` +
-        `<wa-icon name="arrow-up-right-from-square" label="open ${esc(name)}"></wa-icon></a>`
+        `href="${BASE}/apps/${esc(slug)}/" ` +
+        `title="${esc(app.serving ? `open ${name}` : `${name} is not serving: ${app.servingReason ?? 'the app host is down'}`)}">` +
+        `<wa-icon name="arrow-right" label="open ${esc(name)}"></wa-icon></a>`
       : '';
     // The settings page (the picker lives there); a row is addressable, a
     // bare tree is not.

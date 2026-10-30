@@ -6,7 +6,8 @@ import { registerIconLibrary } from '@awesome.me/webawesome/dist/components/icon
 import { BASE } from './base';
 
 registerIconLibrary('default', {
-  // Only classic/solid is used.
+  // Only classic/solid is used — the full ~2000-glyph free set, vendored
+  // by tools/vendor-wa-icons.mjs (re-run it after bumping the package).
   resolver: (name: string) => `${BASE}/icons/wa/solid/${name}.svg`,
   mutator: (svg: SVGElement) => {
     // As stock: glyphs inherit text colour (the component never sets fill).
