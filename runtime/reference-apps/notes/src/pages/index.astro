@@ -2,10 +2,10 @@
 // The list page: note_list rendered server-side, the capture editor, and
 // the ping action — each a component directory that owns its SSR and its
 // enhancer. The find form uses native controls so it works without JS.
-// The page owns its page-level wa-* halves (card, callout) and its stylesheet
-// (webawesome.css: tokens, utilities, native styles); the components own
-// theirs. add_action appends inside the three marker pairs below.
-import '@awesome.me/webawesome/dist/styles/webawesome.css';
+// The page owns its page-level wa-* halves (card, callout); the kit's
+// AppShell owns the document, the stylesheet and the cybermole header; the
+// components own theirs. add_action appends inside the three marker pairs below.
+import AppShell from '@cybermole/app-kit/AppShell.astro';
 import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/callout/callout.js';
 import { getAppDb } from '../lib/notes-db';
@@ -28,15 +28,7 @@ const listed = noteListResult(getAppDb(), {
 const notes = listed.ok ? listed.data.notes : [];
 const base = import.meta.env.BASE_URL;
 ---
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Notes</title>
-    <link rel="icon" type="image/svg+xml" href="/apps/notes/favicon.svg" />
-  </head>
-  <body>
+<AppShell title="Notes">
     <main>
       <wa-card>
         <h1 slot="header">Notes</h1>
@@ -84,8 +76,9 @@ const base = import.meta.env.BASE_URL;
          this app's operator workspace, plus the builder deep link. -->
     <agent-console slug="notes"></agent-console>
     <script>
+      // The shell's client half first (the wa-* prelude, the header).
+      import '@cybermole/app-kit/app-shell';
       // The page's own wa-* halves (card, callout); the components import theirs.
-      import '@cybermole/app-kit/wa-client';
       import '@awesome.me/webawesome/dist/components/card/card.js';
       import '@awesome.me/webawesome/dist/components/callout/callout.js';
       // The agent drawer (client-only; it imports its own wa-* halves).
@@ -103,5 +96,4 @@ const base = import.meta.env.BASE_URL;
       import '../components/NotesPing/notes-ping';
       // END ACTION ENHANCERS
     </script>
-  </body>
-</html>
+</AppShell>

@@ -1,4 +1,4 @@
-export type Section = 'console' | 'builder' | 'jobs' | 'logs' | 'settings';
+export type Section = 'console' | 'apps' | 'builder' | 'jobs' | 'logs' | 'settings';
 
 export type MenuItem = {
   section: Section;

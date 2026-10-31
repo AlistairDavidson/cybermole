@@ -36,9 +36,13 @@ function basePath(base: string): string {
   return base === '/' ? '/apps' : base + '/apps';
 }
 
-/** `${BASE}/apps` and below; `/appsylvania` must not match. */
+/** `${BASE}/apps/<slug>` and below; `/appsylvania` must not match. The bare
+ *  `${BASE}/apps` (with or without its slash) is the console's apps page. */
 export function isAppsHttpPath(base: string, url: string): boolean {
-  return url === basePath(base) || url.startsWith(basePath(base) + '/');
+  const prefix = basePath(base) + '/';
+  if (!url.startsWith(prefix)) return false;
+  const rest = url.slice(prefix.length);
+  return rest !== '' && !rest.startsWith('?') && !rest.startsWith('#');
 }
 
 /** Raw (AppSlugSchema validates it); null for the bare `/apps` root. */

@@ -1,0 +1,59 @@
+---
+// /apps: every registered app as a card, in console order — the header Apps
+// menu's "All apps", and the list that works without JS. Server-rendered
+// only: nothing on it changes without a navigation. `apps` is null only
+// when the state read failed.
+import '@awesome.me/webawesome/dist/components/button/button.js';
+import '@awesome.me/webawesome/dist/components/callout/callout.js';
+import '@awesome.me/webawesome/dist/components/card/card.js';
+import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import type { AppServingState } from '../../lib/platform/types';
+
+interface Props {
+  apps: AppServingState[] | null;
+  /** why `apps` is null */
+  error?: string | null;
+  base: string;
+}
+const { apps, error = null, base } = Astro.props;
+const sorted = apps ? [...apps].sort((a, b) => a.order - b.order) : [];
+---
+<main class="apps-main wa-stack wa-gap-m">
+  <h1 class="wa-cluster wa-gap-2xs wa-heading-l"><wa-icon name="table-cells-large"></wa-icon> apps</h1>
+  {error !== null && (
+    <wa-callout variant="danger" role="alert">
+      <wa-icon slot="icon" name="triangle-exclamation"></wa-icon>
+      {error}
+    </wa-callout>
+  )}
+  {apps !== null && sorted.length === 0 && (
+    <wa-callout variant="neutral">
+      <wa-icon slot="icon" name="circle-info"></wa-icon>
+      No apps yet. <a href={`${base}/builder`}>Build one in the builder.</a>
+    </wa-callout>
+  )}
+  <div class="wa-grid wa-gap-m">
+    {sorted.map(app => (
+      <wa-card class="app-card" data-slug={app.slug}>
+        <div class="wa-stack wa-gap-s">
+          <h2 class="wa-cluster wa-gap-2xs wa-heading-m">
+            <wa-icon name={app.icon}></wa-icon>
+            {app.name}
+          </h2>
+          {!app.serving && <p class="wa-caption-m">{app.servingReason ?? 'not serving'}</p>}
+        </div>
+        <div slot="footer" class="wa-cluster wa-gap-xs">
+          {app.serving ? (
+            <wa-button variant="brand" size="s" href={`${base}/apps/${app.slug}/`}>Open</wa-button>
+          ) : (
+            <wa-button variant="brand" size="s" disabled>Open</wa-button>
+          )}
+          <wa-button appearance="plain" size="s" href={`${base}/builder/${app.slug}`}>
+            <wa-icon slot="start" name="gear"></wa-icon>
+            Settings
+          </wa-button>
+        </div>
+      </wa-card>
+    ))}
+  </div>
+</main>

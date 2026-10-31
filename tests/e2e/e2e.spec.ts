@@ -340,7 +340,9 @@ test("the console group's + workspace creates a console workspace through the di
   await expect(
     page.locator('workspace-sidebar wa-tree-item[data-ws]').filter({ hasText: 'console made ws' }),
   ).toHaveCount(0);
-  await expect(page.locator('workspace-sidebar wa-tree-item[data-ws][selected]')).toContainText('scratch');
+  await expect(page.locator('workspace-sidebar wa-tree-item[data-ws][selected]')).toContainText(
+    'scratch',
+  );
 });
 
 // The sidebar has no poll anymore: /ws/events pushes workspaces/apps
@@ -434,7 +436,9 @@ test('self-naming: a workspace typed with only a cwd names itself after it, uniq
     expect((await api(page, 'DELETE', `/api/workspaces/${w.id}`)).status).toBe(200);
   }
   await refreshState(page);
-  await expect(page.locator('workspace-sidebar wa-tree-item[data-ws][selected]')).toContainText('scratch');
+  await expect(page.locator('workspace-sidebar wa-tree-item[data-ws][selected]')).toContainText(
+    'scratch',
+  );
 });
 
 test('a new workspace auto-opens its first terminal running the AGENT command; other tabs run the shell', async ({
@@ -1828,8 +1832,10 @@ test('settings dashboard shows effective config; update dry-run is check-only', 
   page,
 }) => {
   await login(page);
-  await expect(page.locator('app-header wa-button[href$="/settings"]')).toBeVisible();
-  await page.goto('/settings');
+  await page.click('app-header #nav-account');
+  await expect(page.locator('app-header #nav-settings')).toBeVisible();
+  await page.click('app-header #nav-settings');
+  await page.waitForURL(u => u.pathname === '/settings');
 
   const cfg = page.locator('#config');
   await expect(cfg.locator('.cfg-row')).toHaveCount(11);
@@ -2522,7 +2528,9 @@ test("deep link ?t=<uuid> opens the terminal's workspace with its tab selected; 
 
   // Sidebar row and tab both active, attached to t-<uuid>, banner shown.
   await page.goto(`/?t=${id}`);
-  await expect(page.locator(`workspace-sidebar wa-tree-item[data-ws="${wsMade.json.id}"]`)).toHaveAttribute('selected');
+  await expect(
+    page.locator(`workspace-sidebar wa-tree-item[data-ws="${wsMade.json.id}"]`),
+  ).toHaveAttribute('selected');
   await expect(page.locator(`terminal-tabs .tab[data-term="${id}"]`)).toHaveAttribute('active', '');
   await expect(page.locator('.terminal-status')).toContainText(`attached: t-${id}`);
   await waitForTermText(page, MARKER);

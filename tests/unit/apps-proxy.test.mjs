@@ -101,7 +101,11 @@ const baseDeps = (socketPath, extra = {}) => ({
 });
 
 test('isAppsHttpPath / appsSlugOf: the namespace and its slug segment', () => {
-  assert.equal(isAppsHttpPath('/', '/apps'), true);
+  assert.equal(isAppsHttpPath('/', '/apps'), false, 'the console page');
+  assert.equal(isAppsHttpPath('/', '/apps/'), false, 'the console page');
+  assert.equal(isAppsHttpPath('/', '/apps/?x=1'), false, 'the console page');
+  assert.equal(isAppsHttpPath('/', '/apps?x=1'), false, 'the console page');
+  assert.equal(isAppsHttpPath('/', '/apps/a'), true);
   assert.equal(isAppsHttpPath('/', '/apps/a/b'), true);
   assert.equal(isAppsHttpPath('/', '/appsylvania'), false);
   assert.equal(isAppsHttpPath('/foo', '/foo/apps/a'), true);

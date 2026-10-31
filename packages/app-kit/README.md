@@ -59,6 +59,21 @@ the root):
   architecture lint: §7's mechanical rules; the module's header comment is
   the rule list. An app's `lint:arch` script runs it over `src` +
   `astro.config.mjs`.
+- **`@cybermole/app-kit/AppShell.astro`** + **`app-shell`** — an app
+  page's whole document: the stock Web Awesome theme, one `wa-page` with
+  the cybermole header (`AppHeader.astro`, the console's own bar) in its
+  header slot, the page's `<main>` in the default slot. `app-shell` is its
+  client half — the wa-* prelude, the console's icon libraries and the
+  header enhancer — imported first by the page's client script (Astro
+  can't build a `<script>` in an `.astro` outside the app's root, which
+  the kit always is). The console's base is derived from the app's baked
+  base.
+- **`@cybermole/app-kit/AppHeader.astro`** + **`app-header`** — the bar
+  itself, shared by the console's `Base.astro` and AppShell: section
+  links, sign-out, and the Apps menu (a `wa-dropdown` stamped from
+  `GET /api/state` on connect and on every open; `app-menu` is its pure
+  half). **`icons`** — `registerCybermoleIcons(base)`, the vendored icon
+  libraries at the console's base.
 - **`@cybermole/app-kit/agent-console`** — the app pages' agent drawer
   (`<agent-console slug=…>`): the wa-drawer + ONE lean xterm over the
   console's /ws bridge, the operator-workspace open flow and the builder

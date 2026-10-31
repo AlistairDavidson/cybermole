@@ -1,0 +1,46 @@
+---
+// An app page's whole document: the stock Web Awesome theme, one wa-page
+// with the cybermole header in its header slot, and the page's content (a
+// <main>) in its default slot. Every app page renders inside it, so every
+// app carries the same bar as the console. The app bakes
+// `<console base>/apps/<slug>` as its base, which is where the console's
+// base, the brand icons and the header's links come from.
+//
+// The client half is app-shell.ts, imported FIRST by the page's own client
+// script (`import '@cybermole/app-kit/app-shell'`): Astro can't build a
+// <script> in an .astro outside the app's root, and the kit always is.
+import '@awesome.me/webawesome/dist/styles/webawesome.css';
+import '@awesome.me/webawesome/dist/components/page/page.js';
+import '@awesome.me/webawesome/dist/components/toast/toast.js';
+import AppHeader from '../AppHeader/AppHeader.astro';
+import { consoleBaseOf } from '../../app-menu';
+
+interface Props {
+  /** The browser-tab title. */
+  title: string;
+}
+
+const { title } = Astro.props;
+const base = consoleBaseOf(import.meta.env.BASE_URL);
+const appBase = import.meta.env.BASE_URL.replace(/\/+$/, '');
+---
+<!doctype html>
+<html lang="en" class="wa-theme-default wa-palette-default wa-brand-blue">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- The console's wa-dark/wa-light boot (same origin): an external file
+         because the CSP has no 'unsafe-inline'. -->
+    <script is:inline src={`${base}/theme-boot.js`}></script>
+    <title>{title}</title>
+    <link rel="icon" type="image/svg+xml" href={`${appBase}/favicon.svg`} />
+    <slot name="head" />
+  </head>
+  <body>
+    <wa-page class="app-page" disable-navigation-toggle>
+      <AppHeader base={base} current="apps" drawer={false} />
+      <slot />
+    </wa-page>
+    <wa-toast placement="top-end"></wa-toast>
+  </body>
+</html>

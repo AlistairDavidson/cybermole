@@ -333,7 +333,9 @@ test('deep links route by owner: app tabs bounce to /builder, console tabs to /'
   // /?t=<app tab> redirects client-side to /builder?t=… and selects it.
   await page.goto(`/?t=${appTerm}`);
   await page.waitForURL(u => u.pathname === '/builder' && u.searchParams.get('t') === appTerm);
-  await expect(page.locator(`workspace-sidebar wa-tree-item[data-ws="${appWs!.id}"]`)).toHaveAttribute('selected');
+  await expect(
+    page.locator(`workspace-sidebar wa-tree-item[data-ws="${appWs!.id}"]`),
+  ).toHaveAttribute('selected');
   await expect(page.locator(`terminal-tabs .tab[data-term="${appTerm}"]`)).toHaveAttribute(
     'aria-label',
     /\(live\)/,
@@ -345,7 +347,9 @@ test('deep links route by owner: app tabs bounce to /builder, console tabs to /'
   // /builder?t=<console tab> bounces back to /.
   await page.goto(`/builder?t=${consoleTerm}`);
   await page.waitForURL(u => u.pathname === '/' && u.searchParams.get('t') === consoleTerm);
-  await expect(page.locator(`workspace-sidebar wa-tree-item[data-ws="${consoleWs!.id}"]`)).toHaveAttribute('selected');
+  await expect(
+    page.locator(`workspace-sidebar wa-tree-item[data-ws="${consoleWs!.id}"]`),
+  ).toHaveAttribute('selected');
 
   // Job runs are orchestration: /builder?run= goes home.
   await page.goto('/builder?run=j-itest-run');

@@ -1,9 +1,9 @@
 ---
 // The note page: note_get rendered server-side, the editor component. A
 // missing note answers 404. The page owns its page-level wa-* halves (the
-// card, the header's badges) and its stylesheet (webawesome.css: tokens,
-// utilities, native styles); the editor directory owns its own.
-import '@awesome.me/webawesome/dist/styles/webawesome.css';
+// card, the header's badges); the kit's AppShell owns the document, the
+// stylesheet and the cybermole header; the editor directory owns its own.
+import AppShell from '@cybermole/app-kit/AppShell.astro';
 import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/badge/badge.js';
 import { getAppDb } from '../../lib/notes-db';
@@ -17,15 +17,7 @@ const note: Note | null = got !== null && got.ok ? got.data.note : null;
 if (note === null) Astro.response.status = 404;
 const base = import.meta.env.BASE_URL;
 ---
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{note !== null ? `${note.title} — Notes` : 'note not found — Notes'}</title>
-    <link rel="icon" type="image/svg+xml" href="/apps/notes/favicon.svg" />
-  </head>
-  <body>
+<AppShell title={note !== null ? `${note.title} — Notes` : 'note not found — Notes'}>
     <main>
       <wa-card>
         <h1 slot="header">{note !== null ? note.title : 'note not found'}</h1>
@@ -66,14 +58,14 @@ const base = import.meta.env.BASE_URL;
          this app's operator workspace, plus the builder deep link. -->
     <agent-console slug="notes"></agent-console>
     <script>
+      // The shell's client half first (the wa-* prelude, the header).
+      import '@cybermole/app-kit/app-shell';
       // The page's own wa-* halves (the card and the header badges); the
       // editor component imports its own.
-      import '@cybermole/app-kit/wa-client';
       import '@awesome.me/webawesome/dist/components/card/card.js';
       import '@awesome.me/webawesome/dist/components/badge/badge.js';
       // The agent drawer (client-only; it imports its own wa-* halves).
       import '@cybermole/app-kit/agent-console';
       import '../../components/NotesEditor/notes-editor';
     </script>
-  </body>
-</html>
+</AppShell>

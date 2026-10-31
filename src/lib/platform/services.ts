@@ -208,6 +208,7 @@ export function createServices(deps: ServiceDeps): CybermoleServices {
           me: 'ok',
           configured: configured.data.value,
           editor: cfg.editorUpstream !== null,
+          logs: cfg.grafanaExploreUrl !== null,
           defaultCwd: cfg.newSessionCwd,
           apps: joinServing(listed.data.apps, servingInfo),
           workspaces: tree.data.workspaces,

@@ -5,7 +5,10 @@
   "license": "MIT",
   "sideEffects": [
     "./src/wa-client.ts",
-    "./src/agent-console.ts"
+    "./src/agent-console.ts",
+    "./src/components/AppHeader/app-header.ts",
+    "./src/components/AppShell/app-shell.ts",
+    "./src/components/**/*.astro"
   ],
   "exports": {
     ".": "./src/index.ts",
@@ -15,6 +18,12 @@
     "./element": "./src/element.ts",
     "./live": "./src/live.ts",
     "./agent-console": "./src/agent-console.ts",
+    "./icons": "./src/icons.ts",
+    "./app-menu": "./src/app-menu.ts",
+    "./AppShell.astro": "./src/components/AppShell/AppShell.astro",
+    "./AppHeader.astro": "./src/components/AppHeader/AppHeader.astro",
+    "./app-header": "./src/components/AppHeader/app-header.ts",
+    "./app-shell": "./src/components/AppShell/app-shell.ts",
     "./testing": "./src/testing/index.mts"
   },
   "dependencies": {

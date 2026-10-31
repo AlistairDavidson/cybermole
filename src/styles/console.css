@@ -155,7 +155,7 @@ agent-terminal .terminal-status.err wa-icon { color: var(--wa-color-danger-on-qu
 
 /* ---- content pages ---- */
 /* The page column: no utility caps inline size. */
-.settings-main, .app-settings-main, .jobs-main {
+.settings-main, .app-settings-main, .jobs-main, .apps-main {
   max-inline-size: 48rem; margin-inline: auto; padding: var(--wa-space-m);
 }
 .login-main, .offline-main { min-block-size: 100dvh; padding: var(--wa-space-m); }

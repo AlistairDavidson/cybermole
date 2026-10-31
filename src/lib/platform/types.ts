@@ -58,6 +58,8 @@ export interface ConsoleState {
   configured: boolean;
   /** CYBERMOLE_EDITOR_UPSTREAM is set; false hides the editor tab. */
   editor: boolean;
+  /** CYBERMOLE_GRAFANA_URL is set: the header shows its logs link. */
+  logs: boolean;
   /** CYBERMOLE_NEW_SESSION_CWD */
   defaultCwd: string;
   apps: AppServingState[];

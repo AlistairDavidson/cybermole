@@ -1,0 +1,30 @@
+---
+import Base from '../layouts/Base.astro';
+import AppsIndex from '../components/AppsIndex/AppsIndex.astro';
+import { assertCybermoleLocals } from '../lib/web/locals';
+import { BASE } from '../base';
+
+const { cybermole } = assertCybermoleLocals(Astro.locals);
+const state = await cybermole.consoleState();
+// console.error: winston stays out of the Vite bundle.
+if (!state.ok) console.error(`apps page: ${state.errorMessage}`);
+---
+<Base title="cybermole — apps" header="apps">
+  <AppsIndex
+    apps={state.ok ? state.data.apps : null}
+    error={state.ok ? null : (state.errorMessage ?? 'could not read the apps')}
+    base={BASE}
+  />
+</Base>
+
+<script>
+  // Must precede any wa-* import, or SSR'd elements render twice.
+  import '@awesome.me/astro-lit/dsd-polyfill.js';
+  import '@awesome.me/astro-lit/hydration-support.js';
+  // Before any wa-* defines, or icons fetch from the CDN first.
+  import '../icons';
+  import '@awesome.me/webawesome/dist/components/button/button.js';
+  import '@awesome.me/webawesome/dist/components/callout/callout.js';
+  import '@awesome.me/webawesome/dist/components/card/card.js';
+  import '@awesome.me/webawesome/dist/components/icon/icon.js';
+</script>

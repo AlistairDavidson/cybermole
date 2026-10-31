@@ -13,6 +13,11 @@
 //   - no innerHTML/outerHTML writes: effects update the DOM surgically.
 //   - no unguarded customElements.define: use defineElement from
 //     @cybermole/app-kit/element.
+//   - no page-owned document: a pages/ .astro renders inside a layout (an
+//     app's inside the kit's AppShell, which carries the cybermole
+//     header), never its own <html>; a page using AppShell imports its
+//     client half (@cybermole/app-kit/app-shell), or the header never
+//     upgrades.
 // Skips node_modules, dist*, .astro, and vendor/ (vendored shims).
 // SANCTIONED: the agent console/terminal is the one first-party module of
 // classic client-side JS (a terminal cannot be SSR'd — CODE_STYLE.md §7).
@@ -53,6 +58,10 @@ const HTML_WRITE_RE =
 /** Inline style attributes in .astro markup — Web Awesome or tokens, not style=. */
 const STYLE_ATTR_RE = /\sstyle\s*=\s*["{]/;
 const CLIENT_DIRECTIVE_RE = /\bclient:(?:load|visible|idle|only|media)\b/;
+const HTML_ROOT_RE = /<html[\s>]/i;
+const PAGES_DIR_RE = /(?:^|[\\/])pages[\\/]/;
+const APP_SHELL_USE_RE = /<AppShell[\s>]/;
+const APP_SHELL_CLIENT_RE = /import\s+['"]@cybermole\/app-kit\/app-shell['"]/;
 const DEFINE_RE = /\bcustomElements\.define\s*\(/;
 const GUARD_RE = /\bcustomElements\.get\s*\(/;
 
@@ -108,6 +117,16 @@ export function scanSource(rel, source) {
   for (const m of source.matchAll(HTML_WRITE_RE)) {
     violations.push(
       `${rel}:${lineOf(source, m.index ?? 0)}: HTML-string write (innerHTML/outerHTML/insertAdjacentHTML/setHTMLUnsafe/document.write) — update the DOM surgically, never from HTML strings`,
+    );
+  }
+  if (/\.astro$/.test(rel) && PAGES_DIR_RE.test(rel) && HTML_ROOT_RE.test(source)) {
+    violations.push(
+      `${rel}:${lineOf(source, source.search(HTML_ROOT_RE))}: a page writing its own <html> — render inside @cybermole/app-kit/AppShell.astro, which carries the cybermole header`,
+    );
+  }
+  if (/\.astro$/.test(rel) && APP_SHELL_USE_RE.test(source) && !APP_SHELL_CLIENT_RE.test(source)) {
+    violations.push(
+      `${rel}:${lineOf(source, source.search(APP_SHELL_USE_RE))}: <AppShell> without its client half — import '@cybermole/app-kit/app-shell' first in the page's client script`,
     );
   }
   if (DEFINE_RE.test(source) && !GUARD_RE.test(source)) {

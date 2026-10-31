@@ -163,3 +163,23 @@ test('arch-check: inline style attributes are banned in .astro markup', () => {
   assert.equal(out.length, 2);
   for (const v of out) assert.match(v, /Web Awesome layout components/);
 });
+
+test('arch-check: a page writing its own <html> is flagged; layouts and components are not', () => {
+  const doc = `---\n---\n<!doctype html>\n<html lang="en">\n  <body></body>\n</html>\n`;
+  const page = scanSource('src/pages/index.astro', doc);
+  assert.equal(page.length, 1);
+  assert.match(page[0], /^src\/pages\/index\.astro:4: a page writing its own <html>/);
+  assert.deepEqual(scanSource('src/components/AppShell/AppShell.astro', doc), []);
+  assert.deepEqual(scanSource('src/layouts/Base.astro', doc), []);
+  const shelled = `<AppShell title="x"><main>html</main></AppShell>\n`;
+  assert.deepEqual(
+    scanSource(
+      'src/pages/index.astro',
+      `${shelled}<script>\n  import '@cybermole/app-kit/app-shell';\n</script>\n`,
+    ),
+    [],
+  );
+  const bare = scanSource('src/pages/index.astro', shelled);
+  assert.equal(bare.length, 1);
+  assert.match(bare[0], /^src\/pages\/index\.astro:1: <AppShell> without its client half/);
+});

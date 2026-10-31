@@ -236,8 +236,12 @@ test('a state poll landing mid-drag defers its re-render: the drag survives and 
   // A hand-driven drag: down, move (the drag starts), then the 15 s poll
   // lands — render defers to dragend instead of swapping innerHTML under
   // the pointer — then the drop completes over 'one's top half.
-  const src = (await page.locator(`workspace-sidebar wa-tree-item[data-ws="${two.json.id}"]`).boundingBox())!;
-  const tgt = (await page.locator(`workspace-sidebar wa-tree-item[data-ws="${one.json.id}"]`).boundingBox())!;
+  const src = (await page
+    .locator(`workspace-sidebar wa-tree-item[data-ws="${two.json.id}"]`)
+    .boundingBox())!;
+  const tgt = (await page
+    .locator(`workspace-sidebar wa-tree-item[data-ws="${one.json.id}"]`)
+    .boundingBox())!;
   const put = orderPut(page, '/api/workspaces/order');
   await page.mouse.move(src.x + 12, src.y + 4);
   await page.mouse.down();
