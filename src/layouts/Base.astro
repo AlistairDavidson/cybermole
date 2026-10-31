@@ -1,6 +1,7 @@
 ---
 import "@awesome.me/webawesome/dist/styles/webawesome.css";
 import "@awesome.me/webawesome/dist/components/toast/toast.js";
+import "@awesome.me/webawesome/dist/components/page/page.js";
 import { BASE } from "../base";
 import AppHeader from "../components/AppHeader/AppHeader.astro";
 import { assertCybermoleLocals } from "../lib/web/locals";
@@ -57,9 +58,23 @@ const THEME_COLOR_LIGHT = "#e1e2e7";
     />
     <meta name="apple-mobile-web-app-title" content="cybermole" />
   </head>
-  <body class={header ? "app-chrome" : undefined}>
-    {header && <AppHeader current={header} logs={logs} />}
-    <slot />
+  <body>
+    {
+      header ? (
+        // The app shell is wa-page: the bar is its header slot, and a page's
+        // own children land in its slots directly — a top-level element
+        // carrying slot="navigation" / "navigation-header" fills the drawer
+        // column, the rest (a <main>) is the content. The drawer toggle is
+        // the bar's data-toggle-nav button, which wa-page wires itself;
+        // SSR can't see it, hence disable-navigation-toggle.
+        <wa-page class="app-page" disable-navigation-toggle>
+          <AppHeader current={header} logs={logs} />
+          <slot />
+        </wa-page>
+      ) : (
+        <slot />
+      )
+    }
     <wa-toast placement="top-end"></wa-toast>
     <script>
       // Client halves of the SSR'd wa-* (AGENTS.md). The astro-lit support
@@ -69,6 +84,7 @@ const THEME_COLOR_LIGHT = "#e1e2e7";
       import "../icons";
       import "@awesome.me/webawesome/dist/components/toast/toast.js";
       import "@awesome.me/webawesome/dist/components/button/button.js";
+      import "@awesome.me/webawesome/dist/components/page/page.js";
       import { BASE } from "../base";
 
       // Service workers need a secure context (https, or loopback http).

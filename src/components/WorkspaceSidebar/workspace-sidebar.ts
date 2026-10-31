@@ -1,9 +1,10 @@
 // <workspace-sidebar>: workspaces grouped by app (the console group first),
 // a name filter, and create/delete buttons; everything is emitted to
-// <console-app>. It re-renders via innerHTML on the 15 s poll, so the
-// filter's value, focus and caret are carried across, and no stateful wa-*
-// lives in here. Group collapse state lives in localStorage and is applied
-// at render, so a poll never flickers groups open.
+// <console-app>. WorkspaceSidebar.astro SSRs the filter and + app and holds
+// the group/row skeletons; each state push restamps the groups, so the
+// filter keeps its value and focus untouched. Group collapse state lives in
+// localStorage and is applied at stamp time, so a push never flickers
+// groups open.
 //
 // Scope splits the page (the console-split plan): "console" renders the
 // Console group only (orchestration); "builder" renders the app portfolio —
@@ -15,12 +16,12 @@
 // language. A reorder is optimistic: the display moves at once, the write
 // rides signedInFetch straight to /api/*/order (no console-app wiring), and
 // the pending order overrides polls until one confirms it; a failed write
-// reverts. A poll that lands mid-drag is deferred to dragend, so the
-// innerHTML swap never yanks the dragged node out from under the pointer.
+// reverts. A push that lands mid-drag is deferred to dragend, so a restamp
+// never yanks the dragged node out from under the pointer.
 // A name filter hides rows, so reordering waits for a clear view: a
 // filtered list can't name a full-group order.
-import type { AppServingState, ConsoleState, WorkspaceState } from '../lib/platform/types';
-import type { AppStatusEntry, AppsStatusData } from '../lib/apps/apps-status';
+import type { AppServingState, ConsoleState, WorkspaceState } from '../../lib/platform/types';
+import type { AppStatusEntry, AppsStatusData } from '../../lib/apps/apps-status';
 import {
   asAppSlug,
   asWorkspaceId,
@@ -28,21 +29,19 @@ import {
   type AppSlug,
   type WorkspaceId,
 } from '@cybermole/app-kit';
-import { BASE } from '../base';
-import { moveItem, sameSequence } from '../lib/order-plan';
-import { DEFAULT_APP_ICON } from '../lib/apps/app-icons';
-import { applyPendingAppOrder, applyPendingWorkspaceOrders } from '../lib/web/sidebar-order';
-import { signedInFetch } from './signed-in-fetch';
+import { BASE } from '../../base';
+import { moveItem, sameSequence } from '../../lib/order-plan';
+import { DEFAULT_APP_ICON } from '../../lib/apps/app-icons';
+import { applyPendingAppOrder, applyPendingWorkspaceOrders } from '../../lib/web/sidebar-order';
+import { signedInFetch } from '../signed-in-fetch';
 import '@awesome.me/webawesome/dist/components/input/input.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/badge/badge.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
-import { esc } from './html';
+import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
 
 interface WaInputLike extends HTMLElement {
-  value: string;
-  focus(options?: FocusOptions): void;
-  setSelectionRange(start: number, end: number): void;
+  value: string | null;
 }
 
 export type SidebarScope = 'console' | 'builder';
@@ -53,14 +52,6 @@ export type SidebarScope = 'console' | 'builder';
 export interface SidebarView {
   scope: SidebarScope;
   appsStatus: AppsStatusData | null;
-}
-
-function caretOf(el: WaInputLike): number | null {
-  const native =
-    (el as unknown as { input?: HTMLInputElement }).input ??
-    el.shadowRoot?.querySelector('input') ??
-    null;
-  return native ? native.selectionStart : null;
 }
 
 // ---- group collapse ----
@@ -103,7 +94,7 @@ function setGroupCollapsed(key: string, collapsed: boolean): void {
 
 // ---- the lifecycle chip (builder scope) ----
 
-/** The portfolio's four states; the title carries the reason. */
+/** The portfolio's four states; the title (its tooltip) carries the reason. */
 function lifecycleChip(entry: AppStatusEntry): { label: string; variant: string; title: string } {
   if (!entry.registered)
     return {
@@ -156,6 +147,24 @@ export class WorkspaceSidebar extends HTMLElement {
    *  order (each write is a full list; the last one wins). */
   private orderQueue: Promise<void> = Promise.resolve();
 
+  connectedCallback(): void {
+    const search = this.querySelector('#workspace-search') as WaInputLike | null;
+    search?.addEventListener('input', () => {
+      this.search = search.value ?? '';
+      this.updateList();
+    });
+    search?.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && this.search !== '') {
+        search.value = '';
+        this.search = '';
+        this.updateList();
+      }
+    });
+    this.querySelector('#new-app')?.addEventListener('click', () =>
+      this.dispatchEvent(new CustomEvent('new-app', { bubbles: true, composed: true })),
+    );
+  }
+
   render(st: ConsoleState, selected: WorkspaceId | null, view: SidebarView): void {
     if (this.rowDrag !== null || this.appDrag !== null) {
       this.deferred = () => this.render(st, selected, view);
@@ -165,56 +174,13 @@ export class WorkspaceSidebar extends HTMLElement {
     this.view = view;
     this.server = st;
     this.state = this.displayState();
-    const prevSearch = this.querySelector('#workspace-search') as WaInputLike | null;
-    if (prevSearch) this.search = prevSearch.value;
-    const searchFocused = prevSearch !== null && document.activeElement === prevSearch;
-    const searchCaret = searchFocused && prevSearch ? caretOf(prevSearch) : null;
-    const focus = this.capturedRowFocus();
-    // + app lives on the builder page (the portfolio's privileged act of
-    // making a row); the console teaches orchestration only.
-    const newApp =
-      view.scope === 'builder'
-        ? `<wa-button id="new-app" class="new-app" appearance="plain" size="s" data-drawer="close">
-          <wa-icon slot="start" name="plus"></wa-icon>new app
-        </wa-button>`
-        : '';
-    this.innerHTML = `
-      <nav class="nav">
-        <wa-input id="workspace-search" class="workspace-search" placeholder="filter workspaces…" size="s">
-          <wa-icon slot="start" name="magnifying-glass"></wa-icon>
-        </wa-input>
-        ${this.groups()}
-        ${newApp}
-      </nav>`;
-    const searchInput = this.querySelector('#workspace-search') as WaInputLike | null;
-    if (searchInput) {
-      searchInput.value = this.search;
-      if (searchFocused) {
-        // After wa-input's first render: its focus/selection forward to an
-        // inner input Lit builds on a microtask.
-        requestAnimationFrame(() => {
-          searchInput.focus();
-          if (searchCaret !== null) searchInput.setSelectionRange(searchCaret, searchCaret);
-        });
-      }
-      searchInput.addEventListener('input', () => {
-        this.search = searchInput.value;
-        this.updateList();
-      });
-      searchInput.addEventListener('keydown', (e: KeyboardEvent) => {
-        if (e.key === 'Escape' && this.search !== '') {
-          searchInput.value = '';
-          this.search = '';
-          this.updateList();
-        }
-      });
-    }
-    const newAppBtn = this.querySelector('#new-app') as HTMLElement | null;
-    if (newAppBtn)
-      newAppBtn.onclick = () =>
-        this.dispatchEvent(new CustomEvent('new-app', { bubbles: true, composed: true }));
-    this.wireRows();
-    this.restoreRowFocus(focus);
+    this.updateList();
+  }
+
+  /** Clones a skeleton's single root element from WorkspaceSidebar.astro. */
+  private stamp<T extends HTMLElement>(name: string): T {
+    const tpl = this.querySelector<HTMLTemplateElement>(`:scope > template[${name}]`)!;
+    return document.importNode(tpl.content, true).firstElementChild as T;
   }
 
   /** The server state with every pending order applied (and confirmed
@@ -235,21 +201,28 @@ export class WorkspaceSidebar extends HTMLElement {
     this.updateList();
   }
 
-  private groups(): string {
+  private groups(): HTMLElement[] {
     const st = this.state;
-    if (!st) return '';
-    if (this.view.scope === 'console')
-      return this.groupShell(
+    if (!st) return [];
+    if (this.view.scope === 'console') {
+      const group = this.groupShell(
         CONSOLE_GROUP_KEY,
         'cybermole',
         'cybermole',
         st.workspaces.filter(w => w.appId === null),
-        // The console group keeps its + workspace (a plain console
-        // workspace: appId null, no build framing) — only + app moved to
-        // the builder page.
-        `<wa-button class="new-ws-btn" data-new-ws="" size="xs" appearance="plain" ` +
-          `title="new workspace in cybermole"><wa-icon name="plus" label="new workspace"></wa-icon></wa-button>`,
       );
+      if (!group) return [];
+      // The console group keeps its + workspace (a plain console
+      // workspace: appId null, no build framing) — only + app moved to
+      // the builder page.
+      this.action(group, 'new-ws-btn', 'new workspace in cybermole')?.setAttribute(
+        'data-new-ws',
+        '',
+      );
+      for (const cls of ['open-app-btn', 'app-settings-btn', 'del-app-btn'])
+        this.action(group, cls, null);
+      return [group];
+    }
     // The builder page: the portfolio join is the group list (it carries the
     // unregistered trees, exactly where "continue building" is the point);
     // rows it hasn't covered yet (the status poll lagging) still render.
@@ -269,51 +242,91 @@ export class WorkspaceSidebar extends HTMLElement {
       const rank = new Map<string, number>(this.pendingApps.map((s, i) => [s, i] as const));
       combined.sort((a, b) => (rank.get(a.slug) ?? Infinity) - (rank.get(b.slug) ?? Infinity));
     }
-    return combined.map(g => this.appGroup(g.slug, g.row, g.entry)).join('');
+    return combined.flatMap(g => this.appGroup(g.slug, g.row, g.entry) ?? []);
   }
 
-  /** The console page's single group (console workspaces). reorderable
-   *  marks the group header itself as draggable — builder app groups only;
-   *  workspace rows always reorder within their group. icon renders ahead
-   *  of the name (app groups only). */
+  /** Pairs a stamped element with its tooltip (data-tip = the element's
+   *  class) by a per-group id; text null drops both. */
+  private tip(
+    scope: HTMLElement,
+    cls: string,
+    id: string,
+    text: string | null,
+  ): HTMLElement | null {
+    const el = scope.querySelector<HTMLElement>(`.${cls}`);
+    const tooltip = scope.querySelector(`:scope > wa-tooltip[data-tip="${cls}"]`);
+    if (text === null) {
+      el?.remove();
+      tooltip?.remove();
+      return null;
+    }
+    if (el) el.id = id;
+    tooltip?.setAttribute('for', id);
+    if (tooltip) tooltip.textContent = text;
+    return el;
+  }
+
+  /** A group-header action and its tooltip; tip null drops the action. */
+  private action(group: HTMLElement, cls: string, tip: string | null): HTMLElement | null {
+    const key = group.dataset.group ?? '';
+    return this.tip(group, cls, `ws-group-${key}-${cls}`, tip);
+  }
+
+  /** A group section from the skeleton. reorderable marks the header itself
+   *  as draggable — builder app groups only; workspace rows always reorder
+   *  within their group. icon renders ahead of the name and chip after it
+   *  (app groups only). null when a filter hides every row. */
   private groupShell(
     key: string,
     name: string,
     title: string,
     workspaces: WorkspaceState[],
-    actions = '',
-    chip = '',
     reorderable = false,
     icon = '',
-  ): string {
+    chip: { label: string; variant: string; title: string } | null = null,
+  ): HTMLElement | null {
     const visible = workspaces.filter(w => this.matchesSearch(w));
-    if (this.search.trim() && visible.length === 0) return ''; // a filter hides empty groups
+    if (this.search.trim() && visible.length === 0) return null; // a filter hides empty groups
     // A filter forces groups open without touching stored state, so
     // clearing it restores each group's collapse.
     const collapsed = this.search.trim() === '' && navCollapsed().has(key);
+    const group = this.stamp<HTMLElement>('data-group');
+    group.dataset.group = key;
+    const h2 = group.querySelector('h2')!;
+    if (reorderable) {
+      h2.draggable = true;
+      h2.setAttribute('aria-keyshortcuts', 'Shift+ArrowUp Shift+ArrowDown');
+    }
     const rowsId = `ws-group-rows-${key}`;
-    const hide = collapsed ? ' hidden' : '';
-    const rows = visible.length
-      ? `<ul class="ws-group-rows" id="${rowsId}"${hide}>${visible.map(w => this.row(w)).join('')}</ul>`
-      : `<p class="ws-group-rows group-empty" id="${rowsId}"${hide}>no workspaces yet</p>`;
-    const glyph =
-      icon === ''
-        ? ''
-        : `<span class="g-icon"><wa-icon name="${esc(icon)}" label="${esc(name)}"></wa-icon></span>`;
-    return (
-      `<section class="ws-group" data-group="${esc(key)}">` +
-      `<h2${reorderable ? ' draggable="true" aria-keyshortcuts="Shift+ArrowUp Shift+ArrowDown"' : ''}>` +
-      `<button type="button" class="g-collapse" data-toggle-group="${esc(key)}" ` +
-      `aria-expanded="${collapsed ? 'false' : 'true'}" aria-controls="${rowsId}" ` +
-      `aria-label="${esc(name)} workspaces">` +
-      `<wa-icon name="chevron-down"></wa-icon></button>` +
-      glyph +
-      `<span class="g-name" title="${esc(title)}">${esc(name)}</span>` +
-      chip +
-      `<span class="g-actions">` +
-      actions +
-      `</span></h2>${rows}</section>`
-    );
+    const list = group.querySelector<HTMLElement>('ul.ws-group-rows')!;
+    const empty = group.querySelector<HTMLElement>('p.group-empty')!;
+    const rows = visible.length ? list : empty;
+    (visible.length ? empty : list).remove();
+    rows.id = rowsId;
+    rows.hidden = collapsed;
+    list.append(...visible.map(w => this.row(w)));
+
+    const toggle = group.querySelector('.g-collapse')!;
+    toggle.setAttribute('data-toggle-group', key);
+    toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    toggle.setAttribute('aria-controls', rowsId);
+    toggle.setAttribute('aria-label', `${name} workspaces`);
+    toggle.querySelector('wa-icon')?.setAttribute('label', `${name} workspaces`);
+
+    const glyph = group.querySelector('.g-icon')!;
+    if (icon === '') glyph.remove();
+    else {
+      const wa = glyph.querySelector('wa-icon')!;
+      wa.setAttribute('name', icon);
+      wa.setAttribute('label', name);
+    }
+    this.tip(group, 'g-name', `ws-group-${key}-name`, title)!.textContent = name;
+    const badge = this.tip(group, 'g-chip', `ws-group-${key}-chip`, chip?.title ?? null);
+    if (badge && chip) {
+      badge.setAttribute('variant', chip.variant);
+      badge.textContent = chip.label;
+    }
+    return group;
   }
 
   /** A builder-page app group: lifecycle chip, open link (registered only),
@@ -322,50 +335,12 @@ export class WorkspaceSidebar extends HTMLElement {
     slug: string,
     app: AppServingState | null,
     entry: AppStatusEntry | null,
-  ): string {
+  ): HTMLElement | null {
     const st = this.state;
     const workspaces = st && app ? st.workspaces.filter(w => w.appId === app.id) : [];
     // The row names what the operator sees (rename edits it); a bare tree
     // falls back to its manifest's name.
     const name = app?.name ?? entry?.name ?? slug;
-    // A plain <a> (no stateful wa-*). Not serving only dims it, with the
-    // reason as tooltip; it's still clickable.
-    const open = app
-      ? `<a class="open-app-btn${app.serving ? '' : ' not-serving'}" ` +
-        `href="${BASE}/apps/${esc(slug)}/" ` +
-        `title="${esc(app.serving ? `open ${name}` : `${name} is not serving: ${app.servingReason ?? 'the app host is down'}`)}">` +
-        `<wa-icon name="arrow-right" label="open ${esc(name)}"></wa-icon></a>`
-      : '';
-    // The settings page (the picker lives there); a row is addressable, a
-    // bare tree is not.
-    const settings = app
-      ? `<a class="app-settings-btn" href="${BASE}/builder/${esc(slug)}" ` +
-        `title="settings for ${esc(name)}">` +
-        `<wa-icon name="gear" label="settings for ${esc(name)}"></wa-icon></a>`
-      : '';
-    const del = app
-      ? `<wa-button class="del-app-btn" data-del-app="${esc(slug)}" size="xs" appearance="plain" ` +
-        `title="delete the app ${esc(name)} (and its workspaces)">` +
-        `<wa-icon name="trash-can" label="delete app"></wa-icon></wa-button>`
-      : '';
-    const actions =
-      (app
-        ? `<wa-button class="new-ws-btn" data-new-ws="${esc(app.id)}" size="xs" appearance="plain" ` +
-          `title="new build workspace for ${esc(name)}"><wa-icon name="plus" label="new workspace"></wa-icon></wa-button>`
-        : '') +
-      open +
-      settings +
-      del;
-    const chip =
-      entry !== null
-        ? (() => {
-            const c = lifecycleChip(entry);
-            return (
-              `<wa-badge class="g-chip" pill variant="${c.variant}" title="${esc(c.title)}">` +
-              `${esc(c.label)}</wa-badge>`
-            );
-          })()
-        : '';
     // The app's cwd shows in the header's tooltip.
     const title = app?.cwd ? `${name} — build sessions are framed at ${app.cwd}` : name;
     // The row's icon wins (the picker's write), else the manifest's (a
@@ -373,26 +348,57 @@ export class WorkspaceSidebar extends HTMLElement {
     const icon = app?.icon ?? entry?.icon ?? DEFAULT_APP_ICON;
     // Only a group with a row persists an order; an unregistered tree is
     // the portfolio's stationary invitation.
-    return this.groupShell(slug, name, title, workspaces, actions, chip, app !== null, icon);
+    const chip = entry === null ? null : lifecycleChip(entry);
+    const group = this.groupShell(slug, name, title, workspaces, app !== null, icon, chip);
+    if (!group) return null;
+
+    if (!app) {
+      for (const cls of ['new-ws-btn', 'open-app-btn', 'app-settings-btn', 'del-app-btn'])
+        this.action(group, cls, null);
+      return group;
+    }
+    this.action(group, 'new-ws-btn', `new build workspace for ${name}`)?.setAttribute(
+      'data-new-ws',
+      app.id,
+    );
+    // Not serving only dims the link, with the reason as its tooltip; it's
+    // still clickable.
+    const open = this.action(
+      group,
+      'open-app-btn',
+      app.serving
+        ? `open ${name}`
+        : `${name} is not serving: ${app.servingReason ?? 'the app host is down'}`,
+    );
+    open?.setAttribute('href', `${BASE}/apps/${slug}/`);
+    open?.classList.toggle('not-serving', !app.serving);
+    open?.querySelector('wa-icon')?.setAttribute('label', `open ${name}`);
+    // The settings page (the picker lives there); a row is addressable, a
+    // bare tree is not.
+    const settings = this.action(group, 'app-settings-btn', `settings for ${name}`);
+    settings?.setAttribute('href', `${BASE}/builder/${slug}`);
+    settings?.querySelector('wa-icon')?.setAttribute('label', `settings for ${name}`);
+    this.action(group, 'del-app-btn', `delete the app ${name} (and its workspaces)`)?.setAttribute(
+      'data-del-app',
+      slug,
+    );
+    return group;
   }
 
-  private row(w: WorkspaceState): string {
-    const cls = w.id === this.selected ? ' class="active"' : '';
-    // No live badge: the tab count is the row's one number, liveness stays
-    // on the tab dots (a green pill per row read as a notification).
-    return (
-      `<li${cls} data-ws="${esc(w.id)}" data-drawer="close" title="${esc(w.cwd)}" ` +
-      `aria-keyshortcuts="Shift+ArrowUp Shift+ArrowDown">` +
-      `<span class="row-main">` +
-      `<span class="t"><wa-icon name="folder"></wa-icon><span class="t-name">${esc(w.name)}</span></span>` +
-      `<span class="d">${esc(w.cwd)}</span>` +
-      `</span>` +
-      `<span class="row-actions">` +
-      `<wa-button class="del-ws-btn" data-del-ws="${esc(w.id)}" size="xs" appearance="plain" ` +
-      `title="delete the workspace ${esc(w.name)} (and its terminals)">` +
-      `<wa-icon name="trash-can" label="delete workspace"></wa-icon></wa-button>` +
-      `</span></li>`
-    );
+  private row(w: WorkspaceState): HTMLElement {
+    const li = this.stamp<HTMLLIElement>('data-row');
+    li.dataset.ws = w.id;
+    if (w.id === this.selected) li.classList.add('active');
+    li.querySelector('.t-name')!.textContent = w.name;
+    // The cwd ellipsizes; its tooltip carries the whole path.
+    this.tip(li, 'd', `ws-row-${w.id}-cwd`, w.cwd)!.textContent = w.cwd;
+    this.tip(
+      li,
+      'del-ws-btn',
+      `ws-row-${w.id}-del`,
+      `delete the workspace ${w.name} (and its terminals)`,
+    )?.setAttribute('data-del-ws', w.id);
+    return li;
   }
 
   /** Name only: a cwd match would light up every workspace sharing a root. */
@@ -401,22 +407,16 @@ export class WorkspaceSidebar extends HTMLElement {
     return !q || w.name.toLowerCase().includes(q);
   }
 
-  /** Leaves the filter input alone, so focus and caret survive typing. */
+  /** Restamps the groups; the filter input is SSR'd and never touched. */
   private updateList(): void {
     if (this.rowDrag !== null || this.appDrag !== null) {
       this.deferred = () => this.updateList();
       return;
     }
-    const nav = this.querySelector('.nav');
-    if (!nav) return;
+    const host = this.querySelector('.ws-groups');
+    if (!host) return;
     const focus = this.capturedRowFocus();
-    nav.querySelectorAll('.ws-group').forEach(g => g.remove());
-    const html = this.groups();
-    // #new-app (builder scope) follows the groups; on the console page the
-    // groups land at the nav's end.
-    const anchor = this.querySelector('#new-app');
-    if (anchor) anchor.insertAdjacentHTML('beforebegin', html);
-    else nav.insertAdjacentHTML('beforeend', html);
+    host.replaceChildren(...this.groups());
     this.wireRows();
     this.restoreRowFocus(focus);
   }
@@ -683,7 +683,7 @@ export class WorkspaceSidebar extends HTMLElement {
 
   /** The group slugs in display order (sections in the nav). */
   private groupSlugs(): AppSlug[] {
-    return [...this.querySelectorAll('.nav .ws-group')].map(g =>
+    return [...this.querySelectorAll('.ws-groups > .ws-group')].map(g =>
       asAppSlug(g.getAttribute('data-group') ?? ''),
     );
   }
@@ -719,7 +719,7 @@ export class WorkspaceSidebar extends HTMLElement {
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
     if (dragged === over) return;
-    const nav = this.querySelector('.nav');
+    const nav = this.querySelector('.ws-groups');
     const draggedSec = this.groupSection(dragged);
     const overSec = this.groupSection(over);
     if (!nav || !draggedSec || !overSec) return;

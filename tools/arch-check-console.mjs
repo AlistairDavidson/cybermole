@@ -11,17 +11,14 @@ import { scanComponentDir, scanSource } from '../packages/app-kit/scripts/arch-c
 
 /** file (or component dir) → violations it is allowed. Lower, never raise. */
 const LEGACY = new Map([
-  ['src/components/AgentTerminal/agent-terminal.ts', 6],
   ['src/components/AppSettings', 1],
   ['src/components/console-events.ts', 1],
   ['src/components/editor-pane.ts', 1],
   ['src/components/form', 1],
   ['src/components/html.ts', 4],
-  ['src/components/JobsApp/jobs-app.ts', 5],
   ['src/components/jobs-events.ts', 1],
   ['src/components/Settings', 1],
   ['src/components/signed-in-fetch.ts', 1],
-  ['src/components/workspace-sidebar.ts', 4],
   ['src/layouts/Base.astro', 1],
 ]);
 

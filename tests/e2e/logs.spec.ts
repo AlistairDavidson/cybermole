@@ -125,8 +125,8 @@ test('CYBERMOLE_GRAFANA_URL set: header link + /logs iframe on Grafana Explore',
     await signIn(page, server);
     const link = page.locator('app-header wa-button[href$="/logs"]');
     await expect(link).toBeVisible();
-    // The nav is icon-only; the label rides the title (the Icons wave).
-    await expect(link).toHaveAttribute('title', 'Logs');
+    // The nav is icon-only; a wa-tooltip carries the label.
+    await expect(page.locator('wa-tooltip[for="nav-logs"]')).toHaveText('Logs');
     await expect(link.locator('wa-icon')).toHaveAttribute('name', 'file-lines');
     // The vendored glyph renders (this page's icon is only pinned here).
     await page.waitForFunction(

@@ -2,11 +2,12 @@
 // The list page: note_list rendered server-side, the capture editor, and
 // the ping action — each a component directory that owns its SSR and its
 // enhancer. The find form uses native controls so it works without JS.
-// The page owns its page-level wa-* halves (the card) and its stylesheet
+// The page owns its page-level wa-* halves (card, callout) and its stylesheet
 // (webawesome.css: tokens, utilities, native styles); the components own
 // theirs. add_action appends inside the three marker pairs below.
 import '@awesome.me/webawesome/dist/styles/webawesome.css';
 import '@awesome.me/webawesome/dist/components/card/card.js';
+import '@awesome.me/webawesome/dist/components/callout/callout.js';
 import { getAppDb } from '../lib/notes-db';
 import { noteListResult } from '../lib/note_list';
 import NotesList from '../components/NotesList/NotesList.astro';
@@ -41,6 +42,7 @@ const base = import.meta.env.BASE_URL;
         <h1 slot="header">Notes</h1>
         <p>capture, find, and archive notes and standup journals</p>
 
+        <!-- Native, not wa-input: a wa-input's value never submits without JS. -->
         <form method="get" class="find wa-cluster wa-gap-s">
           <input type="search" name="search" placeholder="search" value={search} aria-label="search" />
           <input type="text" name="tag" placeholder="tag" value={tag} aria-label="tag" />
@@ -51,9 +53,9 @@ const base = import.meta.env.BASE_URL;
           </a>
         </form>
         {!listed.ok && (
-          <p class="error" role="alert">
+          <wa-callout variant="danger" role="alert">
             {listed.errorMessage}
-          </p>
+          </wa-callout>
         )}
 
         <h2>{archivedView ? 'archived notes' : 'notes'}</h2>
@@ -82,9 +84,10 @@ const base = import.meta.env.BASE_URL;
          this app's operator workspace, plus the builder deep link. -->
     <agent-console slug="notes"></agent-console>
     <script>
-      // The page's own wa-* halves (the card); the components import theirs.
+      // The page's own wa-* halves (card, callout); the components import theirs.
       import '@cybermole/app-kit/wa-client';
       import '@awesome.me/webawesome/dist/components/card/card.js';
+      import '@awesome.me/webawesome/dist/components/callout/callout.js';
       // The agent drawer (client-only; it imports its own wa-* halves).
       import '@cybermole/app-kit/agent-console';
 

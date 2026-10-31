@@ -1,7 +1,7 @@
 // <settings-app>: wires the server-rendered /settings actions (pi update,
 // auto-update toggle, terminal defaults, log out everywhere), then refreshes
-// [data-refresh] regions from /partials/settings. Those regions hold no wa-*,
-// so nothing needs re-hydrating.
+// [data-refresh] regions from /partials/settings. Their wa-* leaves upgrade
+// fresh on import (no state to carry over).
 import type { UpdateResult } from '../../lib/platform/types';
 import { BASE } from '../../base';
 import { signedInFetch, type SignedInFetchFailure } from '../signed-in-fetch';
@@ -9,6 +9,7 @@ import 'validation-enhancer/zod';
 import type { ValidationEnhancerZod } from 'validation-enhancer/zod';
 import { jobWebhookBody, terminalDefaultsBody } from '../../schemas/api';
 import '@awesome.me/webawesome/dist/components/card/card.js';
+import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/callout/callout.js';
@@ -99,7 +100,6 @@ export class SettingsApp extends HTMLElement {
     this.webhookField()?.addEventListener('input', function (this: WaInputLike) {
       this.setCustomValidity('');
     });
-    this.localizeTimes();
   }
 
   // ---- terminal defaults ----
@@ -242,12 +242,6 @@ export class SettingsApp extends HTMLElement {
   }
 
   /** Show server ISO times in the browser's locale. */
-  private localizeTimes(): void {
-    this.querySelectorAll<HTMLTimeElement>('time[datetime]').forEach(t => {
-      t.textContent = new Date(t.dateTime).toLocaleString();
-    });
-  }
-
   // ---- job webhook ----
 
   /** What we last put in the field, to tell user edits apart. */
@@ -392,7 +386,6 @@ export class SettingsApp extends HTMLElement {
         document.importNode(region, true),
       );
     });
-    this.localizeTimes();
     this.prefillDefaults();
     this.prefillWebhook();
     const flags = this.$('pi-flags').dataset;

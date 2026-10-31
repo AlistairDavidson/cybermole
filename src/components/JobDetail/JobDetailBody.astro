@@ -5,7 +5,7 @@ import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/badge/badge.js';
-import { fmtDuration, fmtRunTime } from '../JobsApp/run-format';
+import RunHistory from '../RunHistory/RunHistory.astro';
 import type { ScheduledJob } from '../../lib/platform/types';
 import type { JobRunView } from '../../lib/jobs/jobs';
 
@@ -37,25 +37,26 @@ const editHref = `${base}/jobs?edit=${encodeURIComponent(job.name)}`;
     </span>
   </header>
 
-  <wa-card class="job">
+  <wa-card class="job" with-footer>
     <dl class="job-meta">
       <dt>schedule</dt><dd><code>{job.schedule || '—'}</code></dd>
       <dt>command</dt><dd><code>{job.command || '—'}</code></dd>
       <dt>next</dt><dd>{job.next ?? '—'}</dd>
       <dt>last run</dt><dd>{last}</dd>
     </dl>
-    <div class="job-actions wa-cluster wa-gap-2xs">
+    <div slot="footer" class="wa-cluster wa-gap-2xs">
       {job.running && (
-        <a class="job-view" href={`${base}/?run=${encodeURIComponent(job.session)}`}>
-          view run<wa-icon name="play"></wa-icon>
-        </a>
+        <wa-button class="job-view" appearance="plain" size="s"
+          href={`${base}/?run=${encodeURIComponent(job.session)}`}>
+          view run<wa-icon slot="end" name="play"></wa-icon>
+        </wa-button>
       )}
-      <a class="job-view" href={editHref}>
-        edit<wa-icon name="pencil"></wa-icon>
-      </a>
-      <a class="job-view" href={`${base}/jobs`}>
-        all jobs<wa-icon name="clock"></wa-icon>
-      </a>
+      <wa-button class="job-view" appearance="plain" size="s" href={editHref}>
+        edit<wa-icon slot="end" name="pencil"></wa-icon>
+      </wa-button>
+      <wa-button class="job-view" appearance="plain" size="s" href={`${base}/jobs`}>
+        all jobs<wa-icon slot="end" name="clock"></wa-icon>
+      </wa-button>
     </div>
   </wa-card>
 
@@ -63,35 +64,6 @@ const editHref = `${base}/jobs?edit=${encodeURIComponent(job.name)}`;
     <h2 class="runs-title">
       <wa-icon name="eye"></wa-icon> run history
     </h2>
-    {runs === null
-      ? <p class="runs-empty">the run history could not be read — the refresh keeps trying</p>
-      : runs.length === 0
-        ? <p class="runs-empty">no runs recorded yet — "run now" (on the jobs page) fires one.</p>
-        : <div class="run-list">
-            <div class="run-row run-head">
-              <span class="run-when">fired</span><span class="run-origin">origin</span>
-              <span class="run-duration">duration</span><span class="run-exit">exit</span>
-              <span class="run-log-cell"></span>
-            </div>
-            {runs.map(run => (
-              <div class="run-row">
-                <span class="run-when">{fmtRunTime(run.firedAt)}</span>
-                <span class="run-origin">{run.origin}</span>
-                <span class="run-duration">
-                  {run.finishedAt === null ? '—' : fmtDuration(run.firedAt, run.finishedAt)}
-                </span>
-                {run.exitCode === null
-                  ? <span class="run-exit unknown">—</span>
-                  : <span class={`run-exit ${run.exitCode === 0 ? 'ok' : 'failed'}`}>
-                      exit {run.exitCode}
-                    </span>}
-                <span class="run-log-cell">
-                  {run.hasLog && (
-                    <wa-button size="xs" appearance="plain" data-log={run.firedAt}>log</wa-button>
-                  )}
-                </span>
-              </div>
-            ))}
-          </div>}
+    <RunHistory runs={runs} emptyHint={'"run now" (on the jobs page) fires one.'} />
   </section>
 </div>

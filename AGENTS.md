@@ -192,6 +192,17 @@ Testing), not just in the SSR HTML.
   standing in for a wa-* component is a defect. Where none fits, leave a
   one-line comment at the site saying why. Code you touch that
   hand-rolls something wa-* covers gets converted in the same change.
+- **Follow Web Awesome's idioms, not just its components.** Use a
+  component the way its docs compose it, and don't rebuild what it already
+  does. The page shell is one `wa-page` (`src/layouts/Base.astro`):
+  `AppHeader` is its `header` slot, a page's drawer column fills
+  `navigation-header` / `navigation`, and the content is a `<main>` in its
+  default slot. The mobile drawer opens through `wa-page`'s own
+  `data-toggle-nav` button, and drawer items close it with
+  `data-drawer="close"`. Don't wrap a component in a parallel mechanism
+  (a custom event relay, a hand-rolled header bar beside the shell,
+  `title=` instead of `wa-tooltip`). When code fights a component's
+  structure, restructure the code.
 - The console follows the same component architecture as the apps
   (`docs/conventions/CODE_STYLE.md` §7) — Astro components SSR'd, enhanced
   by HTML web component enhancers, live state in `@preact/signals-core`
@@ -203,18 +214,20 @@ Testing), not just in the SSR HTML.
   worked example, the notes app's `NotesList/` the apps'. `npm run lint`
   ends with the architecture lint as a ratchet
   (`tools/arch-check-console.mjs`): a new violation fails, and its
-  `LEGACY` list (the files still on the old patterns —
-  `workspace-sidebar`'s `innerHTML` re-render among them) only shrinks.
+  `LEGACY` list (the files still on the old patterns) only shrinks.
   When you convert one, lower or delete its entry.
 - The app's identity lives in the `:root` semantic-token overrides in
   `src/styles/console.css` — extend those rather than adding hex/px literals.
 - `console.css` is unlayered on purpose (must win over @layer'd Web Awesome
   styles) and is the only sanctioned place for hex colors.
-- The workspace sidebar (`src/components/workspace-sidebar.ts`) re-renders via
-  `innerHTML` on every state refresh (push events over `/ws/events`, plus a
-  re-sync on socket (re)connect) — preserve
-  transient state (e.g. input value/focus) in `render()`, and don't put
-  stateful components (e.g. `wa-details`) in it.
+- The workspace sidebar (`src/components/WorkspaceSidebar/`) restamps its
+  groups from `<template>`s on every state refresh (push events over
+  `/ws/events`, plus a re-sync on socket (re)connect); the filter and + app
+  are SSR'd outside the restamp. Anything inside a group is rebuilt each
+  push, so don't put state there that must outlive one.
+- A `wa-tooltip` binds its `for` anchor when it connects (or `for`
+  changes): stamp it after its anchor is in the document, and give
+  anchors in cloned skeletons per-instance ids.
 - `agent-terminal` sizes itself with a `ResizeObserver` on `.terminal-container`; new
   layout around it must keep the box able to resize for any reason, not just
   window resizes.

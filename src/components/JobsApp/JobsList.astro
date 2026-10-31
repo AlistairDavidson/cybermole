@@ -1,7 +1,11 @@
 ---
 // The jobs list, rendered by the /jobs page and the partial. `jobs` is null
-// only for a failed listing. `apps` rides along as data-apps on the root, so
-// the tag picker renews with each refresh without a second fetch.
+// only for a failed listing. The app-tag picker's options ride along as a
+// <template>, so they renew with each refresh; <jobs-app> clones them into
+// the dialog's wa-select on open.
+import '@awesome.me/webawesome/dist/components/callout/callout.js';
+import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '@awesome.me/webawesome/dist/components/option/option.js';
 import JobCard from './JobCard.astro';
 import type { AppState } from '../../lib/platform/types';
 import type { ScheduledJob } from '../../lib/platform/types';
@@ -12,10 +16,18 @@ interface Props {
 }
 const { jobs, apps } = Astro.props;
 ---
-<div id="jobs-list" class="wa-stack wa-gap-s" data-apps={JSON.stringify(apps)}>
+<div id="jobs-list" class="wa-stack wa-gap-s">
   {jobs === null
-    ? <p class="jobs-empty">the list could not be read — the refresh keeps trying</p>
+    ? (
+      <wa-callout class="jobs-error" variant="danger">
+        <wa-icon slot="icon" name="triangle-exclamation"></wa-icon>
+        the list could not be read — the refresh keeps trying
+      </wa-callout>
+    )
     : jobs.length === 0
-      ? <p class="jobs-empty">no jobs yet — "new job" schedules a recurring command.</p>
+      ? <p class="jobs-empty wa-caption-s">no jobs yet — "new job" schedules a recurring command.</p>
       : jobs.map(job => <JobCard job={job} />)}
+  <template data-app-options>
+    {apps.map(app => <wa-option value={app.id}>{app.name}</wa-option>)}
+  </template>
 </div>

@@ -1,8 +1,8 @@
 ---
 // The /settings dashboard, rendered by the page and by the partial that
-// <settings-app> refreshes from. data-refresh regions hold plain HTML only
-// (no wa-*), so they can be swapped by id without re-hydrating. `state` is
-// null only when the settings read failed.
+// <settings-app> refreshes from. data-refresh regions are swapped by id;
+// the wa-* leaves inside them (format-date, callout) upgrade fresh on
+// import. `state` is null only when the settings read failed.
 import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
@@ -10,10 +10,12 @@ import '@awesome.me/webawesome/dist/components/callout/callout.js';
 import '@awesome.me/webawesome/dist/components/badge/badge.js';
 import '@awesome.me/webawesome/dist/components/details/details.js';
 import '@awesome.me/webawesome/dist/components/switch/switch.js';
+import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
 import WaField from '../form/WaField.astro';
 import { zodSchemaToHTMLAttributes } from '../../lib/web/zod.service';
 import { jobWebhookBody, terminalDefaultsBody } from '../../schemas/api';
 import type { SettingsState } from '../../lib/platform/types';
+import { DATE_TIME_ATTRS, isoOf } from '../../lib/web/format-attrs';
 
 interface Props {
   state: SettingsState | null;
@@ -36,7 +38,6 @@ const rows: Array<[string, string]> = state ? [
   ['install dir', state.appRoot],
 ] : [];
 const au = state?.piAutoUpdate ?? null;
-const iso = (at: number): string => new Date(at).toISOString();
 // astro-lit renders `x={false}` and `x={undefined}` as present attributes
 // (i.e. true), so spread boolean attributes in only when on.
 const flag = (name: string, on: boolean): Record<string, true> => (on ? { [name]: true } : {});
@@ -56,20 +57,25 @@ const source = (overridden: boolean): string => (overridden ? 'override saved' :
 
   <wa-card class="settings-card" with-header>
     <div slot="header" class="wa-split">
-      <strong class="card-title">configuration</strong>
-      <span class="hint">effective values (defaults where no CYBERMOLE_* override is set)</span>
+      <h2 class="card-title wa-heading-m">configuration</h2>
+      <span class="wa-caption-2xs">effective values (defaults where no CYBERMOLE_* override is set)</span>
     </div>
     <div id="config" class="wa-stack wa-gap-2xs" data-refresh>
       {state
         ? rows.map(([k, v]) => <div class="cfg-row wa-split"><span class="k">{k}</span><span class="v">{v}</span></div>)
-        : <span class="hint">could not load settings: {error}</span>}
+        : (
+          <wa-callout variant="danger">
+            <wa-icon slot="icon" name="triangle-exclamation"></wa-icon>
+            could not load settings: {error}
+          </wa-callout>
+        )}
     </div>
   </wa-card>
 
   <wa-card class="settings-card" with-header>
     <div slot="header" class="wa-split">
-      <strong class="card-title">terminal defaults</strong>
-      <span class="hint">what new terminals run — saved values apply to the next tab, no restart</span>
+      <h2 class="card-title wa-heading-m">terminal defaults</h2>
+      <span class="wa-caption-2xs">what new terminals run — saved values apply to the next tab, no restart</span>
     </div>
     <!-- Fields prefill with the effective values, so a save writes both as
          shown; an emptied field clears its override. The form sits outside
@@ -105,7 +111,7 @@ const source = (overridden: boolean): string => (overridden ? 'override saved' :
     </validation-enhancer-zod>
     <span
       id="terminal-defaults-source"
-      class="hint"
+      class="wa-caption-2xs"
       data-refresh
       data-agent-command={td?.agentCommand ?? ''}
       data-shell-command={td?.shellCommand ?? ''}
@@ -119,8 +125,8 @@ const source = (overridden: boolean): string => (overridden ? 'override saved' :
 
   <wa-card class="settings-card" with-header>
     <div slot="header" class="wa-split">
-      <strong class="card-title">job notifications</strong>
-      <span class="hint">one webhook POST per finished job run — receivers filter by exitCode</span>
+      <h2 class="card-title wa-heading-m">job notifications</h2>
+      <span class="wa-caption-2xs">one webhook POST per finished job run — receivers filter by exitCode</span>
     </div>
     <!-- Same shape as the terminal-defaults form above: prefill with the
          effective value, a save writes it as shown, an emptied field clears
@@ -147,7 +153,7 @@ const source = (overridden: boolean): string => (overridden ? 'override saved' :
     </validation-enhancer-zod>
     <span
       id="job-webhook-source"
-      class="hint"
+      class="wa-caption-2xs"
       data-refresh
       data-job-webhook-url={jw?.url ?? ''}
     >
@@ -162,16 +168,16 @@ const source = (overridden: boolean): string => (overridden ? 'override saved' :
 
   <wa-card class="settings-card" with-header>
     <div slot="header" class="wa-split">
-      <strong class="card-title">pi</strong>
-      <wa-badge id="pi-badge"><span id="pi-badge-text" data-refresh>pi {state ? (state.piInstalled ?? 'not installed') : '…'}</span></wa-badge>
+      <h2 class="card-title wa-heading-m">pi</h2>
+      <wa-badge id="pi-badge"><span id="pi-badge-text" data-refresh>pi {state ? (state.piInstalled ?? 'not installed') : 'unknown'}</span></wa-badge>
     </div>
     <div class="wa-stack wa-gap-s">
       <div class="wa-split">
         <div class="wa-stack wa-gap-3xs">
-          <span class="hint" id="pi-declared" data-refresh>
-            {state ? `declared ${state.piDeclared} (${state.piPackage})` : 'declared …'}
+          <span class="wa-caption-2xs" id="pi-declared" data-refresh>
+            {state ? `declared ${state.piDeclared} (${state.piPackage})` : 'declared unknown'}
           </span>
-          <span class="hint">runs <code>npm install @earendil-works/pi-coding-agent@latest</code> in the app's install dir</span>
+          <span class="wa-caption-2xs">runs <code>npm install @earendil-works/pi-coding-agent@latest</code> in the app's install dir</span>
         </div>
         <wa-button id="update-pi" variant="brand" size="s" {...flag('disabled', npmMissing)}>
           <wa-icon slot="start" name="rotate-right"></wa-icon>
@@ -180,16 +186,16 @@ const source = (overridden: boolean): string => (overridden ? 'override saved' :
       </div>
       <div class="wa-split">
         <div class="wa-stack wa-gap-3xs">
-          <span class="hint">checks daily and installs the newest pi <em>within the declared range</em> —
+          <span class="wa-caption-2xs">checks daily and installs the newest pi <em>within the declared range</em> —
             never a restart; running sessions keep their version</span>
-          <span class="hint" id="auto-check-line" data-refresh>
-            {!au ? '…' : au.lastCheck
-              ? <Fragment>last check <time datetime={iso(au.lastCheck.at)}>{iso(au.lastCheck.at)}</time> — {au.lastCheck.detail}</Fragment>
+          <span class="wa-caption-2xs" id="auto-check-line" data-refresh>
+            {!au ? 'unknown' : au.lastCheck
+              ? <Fragment>last check <wa-format-date date={isoOf(au.lastCheck.at)} {...DATE_TIME_ATTRS} /> — {au.lastCheck.detail}</Fragment>
               : 'not checked yet'}
           </span>
-          <span class="hint" id="auto-update-line" data-refresh>
-            {!au ? '…' : au.lastUpdate
-              ? <Fragment>last update <time datetime={iso(au.lastUpdate.at)}>{iso(au.lastUpdate.at)}</time> — {au.lastUpdate.detail}</Fragment>
+          <span class="wa-caption-2xs" id="auto-update-line" data-refresh>
+            {!au ? 'unknown' : au.lastUpdate
+              ? <Fragment>last update <wa-format-date date={isoOf(au.lastUpdate.at)} {...DATE_TIME_ATTRS} /> — {au.lastUpdate.detail}</Fragment>
               : 'no auto-update has run yet'}
           </span>
         </div>
@@ -200,9 +206,11 @@ const source = (overridden: boolean): string => (overridden ? 'override saved' :
         class={au?.lastUpdate?.output ? undefined : 'hidden'}>
         <pre class="npm-output" id="auto-update-output-text" data-refresh>{au?.lastUpdate?.output ?? ''}</pre>
       </wa-details>
-      <p id="npm-missing" data-refresh class={state && !state.npmAvailable ? 'hint' : 'hint hidden'}>
+      <wa-callout id="npm-missing" data-refresh variant="warning"
+        class={state && !state.npmAvailable ? undefined : 'hidden'}>
+        <wa-icon slot="icon" name="triangle-exclamation"></wa-icon>
         npm was not found on the server's PATH — updating from here needs npm in the server's environment.
-      </p>
+      </wa-callout>
       <!-- Flags applied to the controls after a refresh. -->
       <span id="pi-flags" data-refresh hidden
         data-npm-available={state?.npmAvailable ? 'true' : 'false'}
@@ -211,7 +219,7 @@ const source = (overridden: boolean): string => (overridden ? 'override saved' :
       <wa-details id="update-output" summary="npm output" class="hidden">
         <pre class="npm-output"></pre>
       </wa-details>
-      <p class="hint">
+      <p class="wa-caption-2xs">
         The manual button installs <code>@latest</code> (stay within the declared
         <code>^1</code> range — the app's session code is written against that major);
         auto-update always stays inside it. New sessions use the updated pi
@@ -224,13 +232,13 @@ const source = (overridden: boolean): string => (overridden ? 'override saved' :
 
   <wa-card class="settings-card" with-header>
     <div slot="header" class="wa-split">
-      <strong class="card-title">session</strong>
-      <span class="hint">sessions last 7 days idle, 30 days from login</span>
+      <h2 class="card-title wa-heading-m">session</h2>
+      <span class="wa-caption-2xs">sessions last 7 days idle, 30 days from login</span>
     </div>
     <div class="wa-split">
       <div class="wa-stack wa-gap-3xs">
         <span>log out everywhere</span>
-        <span class="hint">ends every signed-in browser (all tabs, all devices), closes their terminals</span>
+        <span class="wa-caption-2xs">ends every signed-in browser (all tabs, all devices), closes their terminals</span>
       </div>
       <wa-button id="logout-all" variant="danger" size="s">
         <wa-icon slot="start" name="right-from-bracket"></wa-icon>

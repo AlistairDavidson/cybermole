@@ -2,7 +2,7 @@
 // /ws/events-driven state refresh (subscribeConsoleEvents), the
 // create/delete dialogs, and the desktop nav collapse. The
 // dialogs and the nav-collapse control live here, outside the sidebar's
-// innerHTML re-render; the sidebar and tabs only emit events.
+// restamped groups; the sidebar and tabs only emit events.
 // Scope "console" (the / page: console workspaces only) or "builder"
 // (/builder: the app portfolio — app workspace groups, lifecycle chips from
 // the /api/apps/status poll, + app).
@@ -31,7 +31,7 @@ import type { ValidationEnhancerZod } from 'validation-enhancer/zod';
 import { appForm, buildSessionForm, consoleWorkspaceForm } from '../../schemas/api';
 import { workspaceNameFromCwd } from '../../lib/terminals/workspace-name';
 import { DEFAULT_APP_ICON, suggestAppIcon } from '../../lib/apps/app-icons';
-import '@awesome.me/webawesome/dist/components/page/page.js';
+import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/dialog/dialog.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
@@ -39,17 +39,14 @@ import '@awesome.me/webawesome/dist/components/toast/toast.js';
 import '@awesome.me/webawesome/dist/components/input/input.js';
 import type { TerminalTabs } from '../TerminalTabs/terminal-tabs';
 import '../TerminalTabs/terminal-tabs';
-import type { WorkspaceSidebar } from '../workspace-sidebar';
-import '../workspace-sidebar';
+import type { WorkspaceSidebar } from '../WorkspaceSidebar/workspace-sidebar';
+import '../WorkspaceSidebar/workspace-sidebar';
 
 type WaToast = HTMLElement & {
   create(message: string, options?: Record<string, unknown>): Promise<unknown>;
 };
 
 type WaDialog = HTMLElement & { show(): void; open: boolean };
-
-/** wa-page's drawer control (the mobile nav); the element reflects nav-open. */
-type WaPage = HTMLElement & { toggleNavigation(): void };
 
 /** An empty wa-input's value is null, not ''. */
 type WaInput = HTMLElement & { value: string | null };
@@ -105,12 +102,18 @@ export class ConsoleApp extends HTMLElement {
     const v = new URLSearchParams(location.search).get('run') ?? '';
     return TMUX_SESSION_NAME_RE.test(v) ? asTmuxSessionName(v) : null;
   })();
-  /** Mirrors wa-page's nav-open onto the top bar's mobile toggle. */
-  private navOpenObserver: MutationObserver | null = null;
+  /** Aborts the document-level listeners on disconnect. */
+  private listening: AbortController | null = null;
 
   connectedCallback(): void {
+    // The sidebar sits in wa-page's navigation slot, outside this element,
+    // so the console's events are heard where they all arrive: the document.
+    this.listening = new AbortController();
+    const { signal } = this.listening;
+    const on = (type: string, listener: (e: Event) => void): void =>
+      document.addEventListener(type, listener, { signal });
     // Ids come from server-rendered markup and are re-checked against state anyway.
-    this.addEventListener('select-workspace', e => {
+    on('select-workspace', e => {
       const id = (e as CustomEvent<{ id?: string }>).detail.id ?? '';
       if (!UUID_RE.test(id)) return;
       const target = asWorkspaceId(id);
@@ -119,27 +122,27 @@ export class ConsoleApp extends HTMLElement {
         this.applySelection();
       }
     });
-    this.addEventListener('new-workspace', e => {
+    on('new-workspace', e => {
       const appId = (e as CustomEvent<{ appId?: string | null }>).detail.appId ?? null;
       this.newWorkspaceAppId = appId !== null && UUID_RE.test(appId) ? (appId as AppId) : null;
       this.openWorkspaceDialog();
     });
-    this.addEventListener('new-app', () => this.openAppDialog());
-    this.addEventListener('delete-workspace', e => {
+    on('new-app', () => this.openAppDialog());
+    on('delete-workspace', e => {
       const d = (e as CustomEvent<{ id: string; name: string }>).detail;
       this.confirmDelete({ kind: 'workspace', id: asWorkspaceId(d.id), name: d.name });
     });
-    this.addEventListener('delete-app', e => {
+    on('delete-app', e => {
       const d = (e as CustomEvent<{ slug: string; name: string }>).detail;
       this.confirmDelete({ kind: 'app', slug: d.slug as AppSlug, name: d.name });
     });
-    this.addEventListener('new-terminal', e => {
+    on('new-terminal', e => {
       const d = (e as CustomEvent<{ workspaceId?: string; command?: string }>).detail;
       const id = d.workspaceId ?? '';
       const command: TerminalCommand = d.command === 'agent' ? 'agent' : 'shell';
       if (UUID_RE.test(id)) void this.createTerminal(asWorkspaceId(id), command);
     });
-    this.addEventListener('reorder-terminals', e => {
+    on('reorder-terminals', e => {
       const d = (e as CustomEvent<{ workspaceId?: string; order?: string[] }>).detail;
       const id = d.workspaceId ?? '';
       const order = (d.order ?? []).filter(x => UUID_RE.test(x));
@@ -158,7 +161,7 @@ export class ConsoleApp extends HTMLElement {
         );
       }
     });
-    this.addEventListener('close-terminal', e => {
+    on('close-terminal', e => {
       const d = (e as CustomEvent<{ id: string }>).detail;
       const t = this.selectedWorkspace()?.terminals.find(x => x.id === d.id);
       this.confirmDelete({
@@ -168,9 +171,9 @@ export class ConsoleApp extends HTMLElement {
       });
     });
     // Any pane's socket closing → refresh the dots.
-    this.addEventListener('terminal-closed', () => void this.loadState());
+    on('terminal-closed', () => void this.loadState());
     // Without this, a blocked pop-up looks like a dead button.
-    this.addEventListener('pop-blocked', () =>
+    on('pop-blocked', () =>
       this.toast('pop-up blocked — allow pop-ups to pop a tab out', {
         variant: 'danger',
         icon: 'triangle-exclamation',
@@ -184,27 +187,21 @@ export class ConsoleApp extends HTMLElement {
     (this.querySelector('#workspace-save') as HTMLElement).onclick = () =>
       (this.querySelector('#workspace-form') as HTMLFormElement).requestSubmit();
     (this.querySelector('#confirm-delete-ok') as HTMLElement).onclick = () => void this.runDelete();
-    // The nav collapse control: SSR'd static markup in the nav header, so
-    // it survives the sidebar's innerHTML re-render (AGENTS.md).
+    // The nav collapse control: SSR'd static markup in the nav header,
+    // outside the sidebar.
     this.applyNavCollapsed();
-    (this.querySelector('#nav-collapse') as HTMLElement | null)?.addEventListener('click', () => {
-      this.navCollapsed = !this.navCollapsed;
-      try {
-        localStorage.setItem(NAV_RAIL_KEY, String(this.navCollapsed));
-      } catch {
-        /* storage unavailable — this page load only */
-      }
-      this.applyNavCollapsed();
-    });
-    // The top bar's mobile drawer toggle (app-header's button, announced
-    // as toggle-nav): flips wa-page's drawer, and the drawer's nav-open —
-    // light-dismiss and Escape close it too — mirrors onto the button.
-    document.addEventListener('toggle-nav', this.onToggleNav);
-    const page = this.querySelector('wa-page');
-    if (page) {
-      this.navOpenObserver = new MutationObserver(() => this.syncNavToggle());
-      this.navOpenObserver.observe(page, { attributeFilter: ['nav-open'] });
-    }
+    (document.querySelector('#nav-collapse') as HTMLElement | null)?.addEventListener(
+      'click',
+      () => {
+        this.navCollapsed = !this.navCollapsed;
+        try {
+          localStorage.setItem(NAV_RAIL_KEY, String(this.navCollapsed));
+        } catch {
+          /* storage unavailable — this page load only */
+        }
+        this.applyNavCollapsed();
+      },
+    );
     // The new-app dialog suggests a directory derived from the name (the
     // server's own slug rule), until the cwd is hand-edited. The icon
     // preview rides the same name typing through the shared suggestion
@@ -272,9 +269,8 @@ export class ConsoleApp extends HTMLElement {
   disconnectedCallback(): void {
     this.teardownEvents?.();
     this.teardownEvents = null;
-    document.removeEventListener('toggle-nav', this.onToggleNav);
-    this.navOpenObserver?.disconnect();
-    this.navOpenObserver = null;
+    this.listening?.abort();
+    this.listening = null;
     document.removeEventListener('keydown', this.onKeydown, true);
   }
 
@@ -294,7 +290,7 @@ export class ConsoleApp extends HTMLElement {
   };
 
   private sidebar(): WorkspaceSidebar | null {
-    return this.querySelector('workspace-sidebar') as WorkspaceSidebar | null;
+    return document.querySelector('workspace-sidebar') as WorkspaceSidebar | null;
   }
 
   private tabs(): TerminalTabs | null {
@@ -573,36 +569,16 @@ export class ConsoleApp extends HTMLElement {
     return workspaceNameFromCwd(typed, siblings);
   }
 
-  /** Reflects the collapse on the host (console.css owns the look) and on
-   *  the control's semantics. */
+  /** Reflects the collapse on the wa-page (console.css owns the look) and
+   *  on the control's semantics. */
   private applyNavCollapsed(): void {
-    this.toggleAttribute('data-nav-collapsed', this.navCollapsed);
-    const toggle = this.querySelector('#nav-collapse') as HTMLElement | null;
+    this.closest('wa-page')?.toggleAttribute('data-nav-collapsed', this.navCollapsed);
+    const toggle = document.querySelector('#nav-collapse');
     if (toggle) {
       const label = this.navCollapsed ? 'expand the sidebar' : 'collapse the sidebar';
       toggle.setAttribute('aria-expanded', this.navCollapsed ? 'false' : 'true');
       toggle.setAttribute('aria-label', label);
-      toggle.setAttribute('title', label);
     }
-  }
-
-  private readonly onToggleNav = (): void => {
-    (this.querySelector('wa-page') as WaPage | null)?.toggleNavigation();
-  };
-
-  /** The drawer button's disclosure semantics follow wa-page's nav-open,
-   *  whichever way it flipped (toggle, light-dismiss, Escape). */
-  private syncNavToggle(): void {
-    const open = this.querySelector('wa-page')?.hasAttribute('nav-open') ?? false;
-    const button = document.querySelector('app-header #nav-drawer-toggle');
-    if (!button) return;
-    const label = open ? 'close the workspace drawer' : 'open the workspace drawer';
-    button.setAttribute('aria-expanded', String(open));
-    button.setAttribute('aria-label', label);
-    button.setAttribute('title', label);
-    const icon = button.querySelector('wa-icon');
-    icon?.setAttribute('name', open ? 'xmark' : 'bars');
-    icon?.setAttribute('label', label);
   }
 
   private async createApp(): Promise<void> {

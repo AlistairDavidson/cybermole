@@ -327,7 +327,7 @@ test('the pane uses the full viewport width on narrow screens', async ({ page })
   // wa-page flips to its mobile view (the drawer) below 768px, and the body
   // column then TRANSITIONS to the drawer layout (300ms) — wait for the
   // pane to actually reach the viewport's left edge before measuring.
-  await page.waitForSelector('console-app wa-page[view="mobile"]');
+  await page.waitForSelector('wa-page.app-page[view="mobile"]');
   await expect
     .poll(
       async () =>

@@ -1,0 +1,90 @@
+---
+// <workspace-sidebar>: the filter and (builder scope) + app are SSR'd; the
+// groups and rows are stamped from the skeletons below on every state
+// push. The wa-* imports here only SSR; workspace-sidebar.ts re-imports
+// them client-side (AGENTS.md).
+import '@awesome.me/webawesome/dist/components/input/input.js';
+import '@awesome.me/webawesome/dist/components/button/button.js';
+import '@awesome.me/webawesome/dist/components/icon/icon.js';
+
+interface Props {
+  scope: 'console' | 'builder';
+}
+const { scope } = Astro.props;
+---
+<workspace-sidebar slot="navigation">
+  <nav class="nav">
+    <wa-input
+      id="workspace-search"
+      class="workspace-search"
+      placeholder="filter workspaces…"
+      aria-label="filter workspaces"
+      size="s"
+      with-clear
+    >
+      <wa-icon slot="start" name="magnifying-glass"></wa-icon>
+    </wa-input>
+    <div class="ws-groups"></div>
+    {
+      scope === 'builder' && (
+        <wa-button id="new-app" class="new-app" appearance="plain" size="s" data-drawer="close">
+          <wa-icon slot="start" name="plus" />
+          new app
+        </wa-button>
+      )
+    }
+  </nav>
+
+  <!-- Not wa-details: the header carries its own controls and is the
+       group's drag/keyboard reorder handle, which a summary can't nest.
+       Tooltips sit outside the h2 so they don't inherit its uppercase. -->
+  <template data-group>
+    <section class="ws-group">
+      <h2>
+        <wa-button class="g-collapse" appearance="plain" size="xs" aria-expanded="true">
+          <wa-icon name="chevron-down"></wa-icon>
+        </wa-button>
+        <span class="g-icon"><wa-icon></wa-icon></span>
+        <span class="g-name"></span>
+        <wa-badge class="g-chip" pill></wa-badge>
+        <span class="g-actions">
+          <wa-button class="new-ws-btn" size="xs" appearance="plain">
+            <wa-icon name="plus" label="new workspace"></wa-icon>
+          </wa-button>
+          <wa-button class="open-app-btn" size="xs" appearance="plain">
+            <wa-icon name="arrow-right"></wa-icon>
+          </wa-button>
+          <wa-button class="app-settings-btn" size="xs" appearance="plain">
+            <wa-icon name="gear"></wa-icon>
+          </wa-button>
+          <wa-button class="del-app-btn" size="xs" appearance="plain">
+            <wa-icon name="trash-can" label="delete app"></wa-icon>
+          </wa-button>
+        </span>
+      </h2>
+      <wa-tooltip data-tip="g-name"></wa-tooltip>
+      <wa-tooltip data-tip="g-chip"></wa-tooltip>
+      <wa-tooltip data-tip="new-ws-btn"></wa-tooltip>
+      <wa-tooltip data-tip="open-app-btn"></wa-tooltip>
+      <wa-tooltip data-tip="app-settings-btn"></wa-tooltip>
+      <wa-tooltip data-tip="del-app-btn"></wa-tooltip>
+      <ul class="ws-group-rows"></ul>
+      <p class="ws-group-rows group-empty">no workspaces yet</p>
+    </section>
+  </template>
+  <template data-row>
+    <li data-drawer="close" aria-keyshortcuts="Shift+ArrowUp Shift+ArrowDown">
+      <span class="row-main">
+        <span class="t"><wa-icon name="folder"></wa-icon><span class="t-name"></span></span>
+        <span class="d"></span>
+      </span>
+      <span class="row-actions">
+        <wa-button class="del-ws-btn" size="xs" appearance="plain">
+          <wa-icon name="trash-can" label="delete workspace"></wa-icon>
+        </wa-button>
+      </span>
+      <wa-tooltip data-tip="d"></wa-tooltip>
+      <wa-tooltip data-tip="del-ws-btn"></wa-tooltip>
+    </li>
+  </template>
+</workspace-sidebar>

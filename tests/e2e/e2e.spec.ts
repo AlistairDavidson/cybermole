@@ -272,7 +272,7 @@ test('login lands on the console with the fixture workspace tree in the sidebar'
   // past the default 30 s budget.
   test.setTimeout(60_000);
   await login(page);
-  await expect(page.locator('console-app wa-page')).toHaveCount(1);
+  await expect(page.locator('wa-page.app-page')).toHaveCount(1);
 
   // The first workspace (scratch) auto-selects, and its first tab is the
   // live fixture, so a terminal is on screen at once.
@@ -301,18 +301,16 @@ test('login lands on the console with the fixture workspace tree in the sidebar'
   await expect(groups.first()).toContainText('scratch');
   await expect(groups.first()).toContainText('deploy checklist');
   await expect(page.locator('workspace-sidebar #new-app')).toHaveCount(0);
-  // No notification-style badges on the rows: the tab count is the row's
-  // one number, liveness stays on the tab dots below.
+  // No notification-style badges on the rows: liveness stays on the tab dots below.
   await expect(groups.first().locator('li[data-ws] wa-badge')).toHaveCount(0);
-  await expect(groups.first().locator('li[data-ws] .ws-count')).toHaveCount(2);
   await expect(groups.first().locator('li[data-ws].active')).toHaveCount(1);
 
   // scratch's two tabs; no editor tab (unconfigured here).
   const tabs = page.locator('terminal-tabs wa-tab-group');
-  await expect(tabs.locator('.tab')).toHaveCount(2);
-  await expect(tabs.locator('.tab').first()).toHaveAttribute('active', '');
-  await expect(tabs.locator('.tab').first()).toHaveAttribute('aria-label', /\(live\)/);
-  await expect(tabs.locator('.tab').nth(1)).not.toHaveAttribute('aria-label', /\(live\)/);
+  await expect(tabs.locator('wa-tab.tab')).toHaveCount(2);
+  await expect(tabs.locator('wa-tab.tab').first()).toHaveAttribute('active', '');
+  await expect(tabs.locator('wa-tab.tab').first()).toHaveAttribute('aria-label', /\(live\)/);
+  await expect(tabs.locator('wa-tab.tab').nth(1)).not.toHaveAttribute('aria-label', /\(live\)/);
   await expect(tabs.locator('.editor-tab')).toHaveCount(0);
   await expect(tabs.locator('.tab-new')).toHaveCount(1);
 });
@@ -334,7 +332,7 @@ test("the console group's + workspace creates a console workspace through the di
   // The row is the console's, auto-selected, with its first tab spawning.
   const row = page.locator('workspace-sidebar li[data-ws].active');
   await expect(row).toContainText('console made ws');
-  await expect(row).toHaveAttribute('title', WORKSPACE);
+  await expect(row.locator('.d')).toHaveText(WORKSPACE);
   await expect(page.locator('terminal-tabs wa-tab')).toHaveCount(1);
   // Keep the fixture world clean for the later specs: delete it again.
   await row.locator('[data-del-ws]').click();
@@ -399,7 +397,7 @@ test('self-naming: a workspace typed with only a cwd names itself after it, uniq
   await page.click('#workspace-save');
   let row = page.locator('workspace-sidebar li[data-ws].active');
   await expect(row).toContainText('self-named');
-  await expect(row).toHaveAttribute('title', selfNamed);
+  await expect(row.locator('.d')).toHaveText(selfNamed);
 
   // The same directory again: the note reset on reopen, and both the
   // suggestion and the server uniquify (-2).
@@ -410,7 +408,7 @@ test('self-naming: a workspace typed with only a cwd names itself after it, uniq
   await page.click('#workspace-save');
   row = page.locator('workspace-sidebar li[data-ws].active');
   await expect(row).toContainText('self-named-2');
-  await expect(row).toHaveAttribute('title', selfNamed);
+  await expect(row.locator('.d')).toHaveText(selfNamed);
 
   // Once the name is hand-edited it stops following the directory, and the
   // explicit name lands verbatim.
@@ -423,7 +421,7 @@ test('self-naming: a workspace typed with only a cwd names itself after it, uniq
   await page.click('#workspace-save');
   row = page.locator('workspace-sidebar li[data-ws].active');
   await expect(row).toContainText('mine');
-  await expect(row).toHaveAttribute('title', selfNamed);
+  await expect(row.locator('.d')).toHaveText(selfNamed);
 
   // Keep the fixture world clean for the later specs (unique ids, not the
   // shared 'self-named' text, which now names three rows).
@@ -1013,8 +1011,12 @@ test('terminal toolbar: copy output and download transcript capture the terminal
   const dlBtn = toolbar.locator('wa-button.tb-download-transcript');
   await expect(copyBtn).toHaveCount(1);
   await expect(dlBtn).toHaveCount(1);
-  expect(await copyBtn.getAttribute('title')).toContain('copy');
-  expect(await dlBtn.getAttribute('title')).toContain('download');
+  await expect(
+    toolbar.locator(`wa-tooltip[for="${await copyBtn.getAttribute('id')}"]`),
+  ).toContainText('copy');
+  await expect(
+    toolbar.locator(`wa-tooltip[for="${await dlBtn.getAttribute('id')}"]`),
+  ).toContainText('download');
 
   // The walk behind both buttons: the screen's content, trailing blank rows trimmed.
   const walked = await page.evaluate(() =>
@@ -1597,8 +1599,8 @@ test('jobs: app tag chip, persisted run logs, run history + log view', async ({ 
   // The history dialog shows the run, and the log viewer its tail.
   await page.goto('/jobs');
   await page.click('jobs-app wa-button[data-runs="e2e-job"]');
-  await expect(page.locator('#runs-dialog .run-row:not(.run-head)')).toHaveCount(1);
-  await expect(page.locator('#runs-dialog .run-row:not(.run-head)')).toContainText('manual');
+  await expect(page.locator('#runs-dialog run-history tbody tr')).toHaveCount(1);
+  await expect(page.locator('#runs-dialog run-history tbody tr')).toContainText('manual');
   await expect(page.locator('#runs-dialog .run-exit.ok')).toHaveText('exit 0');
   await page.click('#runs-dialog wa-button[data-log]');
   await expect(page.locator('#run-log')).toContainText('JOBS_RUN_MARKER');

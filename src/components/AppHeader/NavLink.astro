@@ -1,0 +1,28 @@
+---
+// One icon-only link of the bar: a wa-button anchor, its name on the icon's
+// label (the accessible name) and a wa-tooltip (the sighted one).
+import type { MenuItem, Section } from './nav';
+
+interface Props {
+  item: MenuItem;
+  current: Section;
+}
+const { item, current } = Astro.props;
+const id = `nav-${item.section}`;
+const brand = item.icon === 'cybermole';
+---
+<wa-button
+  id={id}
+  class={item.className ?? 'app-nav-link'}
+  appearance="plain"
+  size="s"
+  href={item.href}
+  {...(item.section === current ? { 'aria-current': 'page' } : {})}
+>
+  <wa-icon
+    slot="start"
+    {...(brand ? { library: 'brand', name: 'mole' } : { name: item.icon })}
+    label={item.label}
+  ></wa-icon>
+</wa-button>
+<wa-tooltip for={id}>{item.label}</wa-tooltip>

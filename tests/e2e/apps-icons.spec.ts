@@ -257,14 +257,16 @@ test('the settings page: gear -> change icon, name and cwd; the sidebar shows it
   // read-only slug + timestamps.
   await expect(page.locator('wa-input#app-name input')).toHaveValue('Icon Probe');
   await expect(page.locator('wa-input#app-cwd input')).toHaveValue(`${APPS_ROOT}/${SLUG}`);
-  await expect(page.locator('.icon-choice[aria-checked="true"]')).toHaveAttribute(
-    'data-icon',
-    'robot',
-  );
+  await expect
+    .poll(() =>
+      page
+        .locator('wa-radio-group#icon-pick')
+        .evaluate(g => (g as unknown as { value: string }).value),
+    )
+    .toBe('robot');
+  await expect(page.locator('wa-radio[value="robot"]')).toHaveAttribute('aria-checked', 'true');
   await expect(page.locator('.cfg-row').filter({ hasText: 'slug' })).toContainText(SLUG);
-  await expect(page.locator('.cfg-row').filter({ hasText: 'created' })).toContainText(
-    /\d{4}-\d{2}-\d{2}T/,
-  );
+  await expect(page.locator('.cfg-row').filter({ hasText: 'created' })).toContainText(/20\d\d/);
 
   await page.waitForFunction(() => customElements.get('validation-enhancer-zod') !== undefined);
   // An empty name is blocked in the browser, the error in the hint slot.
@@ -282,7 +284,7 @@ test('the settings page: gear -> change icon, name and cwd; the sidebar shows it
   const dir = `${WORKSPACE}/icon-probe-cwd`;
   await page.fill('wa-input#app-name input', 'Icon Probe Renamed');
   await page.fill('wa-input#app-cwd input', dir);
-  await page.click('.icon-choice[data-icon="terminal"]');
+  await page.click('wa-radio[value="terminal"]');
   await page.click('#app-settings-save');
   await expect(page.locator('#app-cwd-error')).toHaveText(`cwd does not exist: ${dir}`);
   expect(patches.filter(p => p === `/api/apps/${SLUG}`)).toEqual([`/api/apps/${SLUG}`]);

@@ -1,6 +1,68 @@
+---
+// The pane's markup, for every host (the console's tab and run panes via
+// TerminalTabs' skeleton, /view's single pane): the xterm box, the overlay
+// toolbar with its find bar, and the status line with one indicator per
+// kind. agent-terminal.ts fills and toggles it; tooltip ids are assigned
+// per instance there, since a skeleton is cloned many times.
+import '@awesome.me/webawesome/dist/components/button/button.js';
+import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '@awesome.me/webawesome/dist/components/input/input.js';
+import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
+---
 <agent-terminal>
   <div class="terminal-container"></div>
-  <div class="terminal-status"></div>
+  <div class="terminal-toolbar wa-cluster wa-gap-s" role="toolbar" aria-label="terminal actions">
+    <div class="terminal-find wa-cluster hidden">
+      <wa-input
+        class="terminal-find-input"
+        placeholder="find in terminal…"
+        size="s"
+        aria-label="find in terminal"></wa-input>
+      <wa-button class="find-prev" appearance="plain" size="xs">
+        <wa-icon name="chevron-up" label="previous match"></wa-icon>
+      </wa-button>
+      <wa-tooltip data-tip="find-prev">previous match (shift+enter)</wa-tooltip>
+      <wa-button class="find-next" appearance="plain" size="xs">
+        <wa-icon name="chevron-down" label="next match"></wa-icon>
+      </wa-button>
+      <wa-tooltip data-tip="find-next">next match (enter)</wa-tooltip>
+      <wa-button class="find-close" appearance="plain" size="xs">
+        <wa-icon name="xmark" label="close find bar"></wa-icon>
+      </wa-button>
+      <wa-tooltip data-tip="find-close">close (esc)</wa-tooltip>
+    </div>
+    <!-- attach() reveals pop-out for 'terminal' mode only: a run pane has
+         no tab to come back to. -->
+    <wa-button class="tb-pop-out hidden" appearance="plain" variant="neutral" size="xs">
+      <wa-icon slot="start" name="arrow-up-right-from-square" aria-hidden="true"></wa-icon>pop out
+    </wa-button>
+    <wa-tooltip data-tip="tb-pop-out"
+      >pop out — move this terminal to its own browser tab (its row here brings it back)</wa-tooltip
+    >
+    <wa-button class="tb-copy-output" appearance="plain" variant="neutral" size="xs">
+      <wa-icon slot="start" name="copy" aria-hidden="true"></wa-icon>copy
+    </wa-button>
+    <wa-tooltip data-tip="tb-copy-output"
+      >copy the terminal's output — scrollback included — as plain text</wa-tooltip
+    >
+    <wa-button class="tb-download-transcript" appearance="plain" variant="neutral" size="xs">
+      <wa-icon slot="start" name="download" aria-hidden="true"></wa-icon>download
+    </wa-button>
+    <wa-tooltip data-tip="tb-download-transcript"
+      >download the transcript — scrollback included, ANSI colors preserved</wa-tooltip
+    >
+    <wa-button class="tb-esc" appearance="plain" variant="neutral" size="xs">esc</wa-button>
+    <wa-tooltip data-tip="tb-esc">send escape — phones have no esc key</wa-tooltip>
+    <!-- The download's target; never shown, clicked from code. -->
+    <a class="tb-download-link hidden" aria-hidden="true" tabindex="-1"></a>
+  </div>
+  <div class="terminal-status">
+    <wa-spinner data-kind="busy" class="hidden"></wa-spinner>
+    <wa-icon data-kind="ok" name="circle-check" class="hidden"></wa-icon>
+    <wa-icon data-kind="err" name="triangle-exclamation" class="hidden"></wa-icon>
+    <wa-icon data-kind="info" name="circle-info" class="hidden"></wa-icon>
+    <span class="status-text"></span>
+  </div>
 </agent-terminal>
 
 <script>

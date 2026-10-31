@@ -1,17 +1,19 @@
 ---
 // The console shell, on both pages: scope "console" (the orchestration
 // page — console workspaces, jobs, settings) or "builder" (the app
-// portfolio — app workspace groups, lifecycle chips, + app). The dialogs
-// live here, outside the sidebar's innerHTML re-render, so their state
-// survives it. The wa-* imports here only SSR; console-app.ts re-imports
-// them client-side (AGENTS.md).
-import '@awesome.me/webawesome/dist/components/page/page.js';
+// portfolio — app workspace groups, lifecycle chips, + app). Rendered into
+// Base.astro's wa-page, filling its navigation slots and its main area.
+// The dialogs live in <console-app>, outside the sidebar's restamped
+// groups, so their state survives it. The wa-* imports here only SSR;
+// console-app.ts re-imports them client-side (AGENTS.md).
+import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/dialog/dialog.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/toast/toast.js';
 import WaField from '../form/WaField.astro';
 import TerminalTabs from '../TerminalTabs/TerminalTabs.astro';
+import WorkspaceSidebar from '../WorkspaceSidebar/WorkspaceSidebar.astro';
 import { zodSchemaToHTMLAttributes } from '../../lib/web/zod.service';
 import { appForm, buildSessionForm, consoleWorkspaceForm } from '../../schemas/api';
 
@@ -28,29 +30,27 @@ const consoleWsValidation = zodSchemaToHTMLAttributes(consoleWorkspaceForm);
 const buildValidation = zodSchemaToHTMLAttributes(buildSessionForm);
 const wsValidation = scope === 'builder' ? buildValidation : consoleWsValidation;
 ---
+<!-- Three wa-page slots (Base.astro's shell): the drawer column's header
+     (the desktop collapse control) and the sidebar, then the main area,
+     whose <console-app> controls all three — the sidebar's events reach it
+     through the document. -->
+<div slot="navigation-header" class="nav-header">
+  <wa-button
+    id="nav-collapse"
+    class="nav-collapse"
+    appearance="plain"
+    size="s"
+    aria-label="collapse the sidebar"
+    aria-expanded="true"
+  >
+    <wa-icon slot="start" name="chevron-left" class="when-open" label="collapse the sidebar"></wa-icon>
+    <wa-icon slot="start" name="chevron-right" class="when-collapsed" label="expand the sidebar"></wa-icon>
+  </wa-button>
+  <wa-tooltip for="nav-collapse" placement="right">collapse / expand the sidebar</wa-tooltip>
+</div>
+<WorkspaceSidebar scope={scope} />
 <console-app scope={scope}>
-  <wa-page>
-    <!-- The collapse control lives here, in the navigation-header slot —
-         static markup outside workspace-sidebar's innerHTML re-render, so
-         the event-driven refresh never touches it (AGENTS.md). console-app.ts
-         flips console-app's data-nav-collapsed; console.css does the rest. -->
-    <div slot="navigation-header" class="nav-header">
-      <wa-button
-        id="nav-collapse"
-        class="nav-collapse"
-        appearance="plain"
-        size="s"
-        title="collapse the sidebar"
-        aria-label="collapse the sidebar"
-        aria-expanded="true"
-      >
-        <wa-icon slot="start" name="chevron-left" class="when-open" label="collapse the sidebar"></wa-icon>
-        <wa-icon slot="start" name="chevron-right" class="when-collapsed" label="expand the sidebar"></wa-icon>
-      </wa-button>
-    </div>
-    <workspace-sidebar slot="navigation"></workspace-sidebar>
-    <main><TerminalTabs /></main>
-  </wa-page>
+  <main class="console-main"><TerminalTabs /></main>
   <wa-toast placement="bottom-start"></wa-toast>
 
   <wa-dialog id="app-dialog" label="New app" with-footer>
@@ -70,7 +70,7 @@ const wsValidation = scope === 'builder' ? buildValidation : consoleWsValidation
           hint="workspaces under this app start here (created if missing); auto-filled from the name until you edit it — empty starts them at the server default"
           {...appValidation.cwd}
         />
-        <p class="dialog-note" id="app-icon-preview">
+        <p class="wa-caption-s" id="app-icon-preview">
           <wa-icon id="app-icon-glyph" name="cubes"></wa-icon>
           <span id="app-icon-name">suggested icon: cubes (from the name)</span>
         </p>
@@ -105,7 +105,7 @@ const wsValidation = scope === 'builder' ? buildValidation : consoleWsValidation
           }
           {...wsValidation.name}
         />
-        <p class="dialog-note" id="workspace-start">starts at the server default</p>
+        <p class="wa-caption-s" id="workspace-start">starts at the server default</p>
       </form>
     </validation-enhancer-zod>
     <wa-button slot="footer" appearance="plain" data-dialog="close">cancel</wa-button>
@@ -114,7 +114,7 @@ const wsValidation = scope === 'builder' ? buildValidation : consoleWsValidation
 
   <wa-dialog id="confirm-delete" label="Delete" with-footer>
     <p class="dialog-text" id="confirm-delete-text"></p>
-    <p class="dialog-note" id="confirm-delete-note"></p>
+    <p class="wa-caption-s" id="confirm-delete-note"></p>
     <wa-button slot="footer" appearance="plain" data-dialog="close">cancel</wa-button>
     <wa-button slot="footer" id="confirm-delete-ok" variant="danger">delete</wa-button>
   </wa-dialog>

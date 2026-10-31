@@ -17,11 +17,13 @@ const last = job.last
   ? `${job.last}${job.lastResult === 'success' ? ' · ok' : job.lastResult === 'failed' ? ' · failed' : ''}`
   : 'never';
 ---
-<wa-card class="job">
-  <div class="job-head">
-    <a class="job-name" href={`${base}/jobs/${encodeURIComponent(job.name)}`}>
-      <wa-icon name="clock"></wa-icon>{job.name}
-    </a>
+<wa-card class="job" with-header with-footer>
+  <div slot="header" class="wa-split wa-gap-s">
+    <h2 class="job-title wa-heading-s">
+      <a class="job-name" href={`${base}/jobs/${encodeURIComponent(job.name)}`}>
+        <wa-icon name="clock"></wa-icon>{job.name}
+      </a>
+    </h2>
     <span class="wa-cluster wa-gap-3xs">
       {job.appName && <wa-badge pill class="job-app">{job.appName}</wa-badge>}
       {job.active
@@ -30,7 +32,14 @@ const last = job.last
       {job.running && <wa-badge pill variant="brand">running</wa-badge>}
       {job.lastResult === 'failed' && <wa-badge pill variant="danger">last run failed</wa-badge>}
       {job.running && (
-        <a class="job-view" href={`${base}/?run=${encodeURIComponent(job.session)}`}>view run<wa-icon name="play"></wa-icon></a>
+        <wa-button
+          class="job-view"
+          appearance="plain"
+          size="s"
+          href={`${base}/?run=${encodeURIComponent(job.session)}`}
+        >
+          view run<wa-icon slot="end" name="play"></wa-icon>
+        </wa-button>
       )}
     </span>
   </div>
@@ -40,7 +49,7 @@ const last = job.last
     <dt>next</dt><dd>{job.next ?? '—'}</dd>
     <dt>last run</dt><dd>{last}</dd>
   </dl>
-  <div class="job-actions wa-cluster wa-gap-2xs">
+  <div slot="footer" class="wa-cluster wa-gap-2xs">
     <wa-button size="s" data-run={job.name}>
       <wa-icon slot="start" name="play"></wa-icon>run now
     </wa-button>

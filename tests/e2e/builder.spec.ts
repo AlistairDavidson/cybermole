@@ -256,7 +256,7 @@ test('builder flow: + app → + workspace (a build session) → framing env in t
   // auto-opened agent tab went live.
   const flowRow = page.locator('workspace-sidebar li[data-ws].active');
   await expect(flowRow).toContainText('flow build');
-  await expect(flowRow).toHaveAttribute('title', WORKSPACE);
+  await expect(flowRow.locator('.d')).toHaveText(WORKSPACE);
   const agentTab = await page.locator('terminal-tabs wa-tab').getAttribute('data-term');
   await expect(page.locator(`terminal-tabs .tab[data-term="${agentTab}"]`)).toHaveAttribute(
     'aria-label',

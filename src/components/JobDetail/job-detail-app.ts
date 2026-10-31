@@ -10,6 +10,8 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/badge/badge.js';
 import '@awesome.me/webawesome/dist/components/toast/toast.js';
+import '@awesome.me/webawesome/dist/components/callout/callout.js';
+import '../RunHistory/run-history';
 
 export class JobDetailApp extends HTMLElement {
   private pollTimer: ReturnType<typeof setInterval> | null = null;

@@ -24,3 +24,10 @@ registerIconLibrary('system', {
     if (!svg.hasAttribute('fill')) svg.setAttribute('fill', 'currentColor');
   },
 });
+
+// The product's own glyphs (public/icons/brand/), drawn in currentColor so
+// they take the text colour — the header's brand link highlights like its
+// sibling icons.
+registerIconLibrary('brand', {
+  resolver: (name: string) => `${BASE}/icons/brand/${name}.svg`,
+});

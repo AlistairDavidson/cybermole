@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="currentColor">
+  <!-- The mole glyph, monochrome: ink in currentColor with the light
+       shapes cut as mask holes, so it takes the text colour like any icon. -->
+  <mask id="mole-holes" maskUnits="userSpaceOnUse">
+    <rect width="512" height="512" fill="#fff"/>
+    <rect x="154.6" y="209.2" width="206" height="19.8" fill="#000"/>
+    <circle cx="256.4" cy="327" r="56" fill="#000"/>
+    <ellipse cx="73.4" cy="515.7" rx="56" ry="84" fill="#000"/>
+    <ellipse cx="439.4" cy="515.7" rx="56" ry="84" fill="#000"/>
+  </mask>
+  <ellipse cx="256.4" cy="557.9" rx="192" ry="448" stroke="currentColor" stroke-width="21.6" mask="url(#mole-holes)"/>
+  <ellipse cx="73.4" cy="515.7" rx="64" ry="92" fill="none" stroke="currentColor" stroke-width="16"/>
+  <ellipse cx="439.4" cy="515.7" rx="64" ry="92" fill="none" stroke="currentColor" stroke-width="16"/>
+  <rect x="44.2" y="472.8" width="17" height="48"/>
+  <rect x="85.7" y="472.9" width="17" height="48"/>
+  <rect x="410.2" y="472.8" width="17" height="48"/>
+  <rect x="451.7" y="472.9" width="17" height="48"/>
+  <circle cx="256.4" cy="327" r="64" fill="none" stroke="currentColor" stroke-width="16"/>
+  <circle cx="256.4" cy="357.8" r="24"/>
+</svg>

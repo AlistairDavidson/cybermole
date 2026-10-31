@@ -1,7 +1,7 @@
 ## Live testing
 
 - not seeing editor on server version
-- console onto the apps' component pattern: TerminalTabs (wa-tab-group, template skeletons) and SingleView done; the rest is the LEGACY list in tools/arch-check-console.mjs (ratchet in `npm run lint`) — workspace-sidebar (innerHTML re-render → .astro + templates + signals store), agent-terminal toolbar/find bar, jobs-app run history, html.ts (parseServerHTML), flat files in src/components (console-events, editor-pane, jobs-events, signed-in-fetch → lib/ or component dirs), AppSettings/Settings/form dirs missing their <Name>.astro, Base.astro's reload button
+- console onto the apps' component pattern: TerminalTabs (wa-tab-group, template skeletons) and SingleView done; WorkspaceSidebar, AgentTerminal chrome and RunHistory done too; the rest is the LEGACY list in tools/arch-check-console.mjs (ratchet in `npm run lint`) — html.ts (parseServerHTML), flat files in src/components (console-events, editor-pane, jobs-events, signed-in-fetch → lib/ or component dirs), AppSettings/Settings/form dirs missing their <Name>.astro, Base.astro's reload button
 - wa-native audit of the rest of the console (hand-rolled stand-ins for wa-* components) — rule now in AGENTS.md, CODE_STYLE §7, runtime/workspace-root/AGENTS.md, app-starter README
 - 
 

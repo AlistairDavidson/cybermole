@@ -54,10 +54,10 @@ async function login(page: Page): Promise<void> {
   await page.waitForSelector('workspace-sidebar .nav');
 }
 
-/** The console-app host's computed animation-name (persists after the run). */
+/** The shell wa-page's computed animation-name (persists after the run). */
 function pageEnterAnimation(page: Page): Promise<string> {
   return page.evaluate(
-    () => getComputedStyle(document.querySelector('console-app')!).animationName,
+    () => getComputedStyle(document.querySelector('wa-page.app-page')!).animationName,
   );
 }
 
@@ -68,15 +68,19 @@ test('the product shows as cybermole: page title, nav brand, sidebar group headi
 }) => {
   await login(page);
   await expect(page).toHaveTitle('cybermole');
-  // The header's brand link (icon button; the label rides its title).
-  await expect(page.locator('app-header wa-button.app-brand')).toHaveAttribute(
-    'title',
+  // The header's brand link (icon button): its name rides the glyph's
+  // label, and a wa-tooltip says it to sighted users.
+  await expect(page.locator('app-header wa-button.app-brand wa-icon')).toHaveAttribute(
+    'label',
     'Cybermole',
   );
+  await expect(page.locator('wa-tooltip[for="nav-console"]')).toHaveText('Cybermole');
   // The / page's single group names the product, not "console".
   const heading = page.locator('workspace-sidebar .ws-group h2 .g-name');
   await expect(heading).toHaveText('cybermole');
-  await expect(heading).toHaveAttribute('title', 'cybermole');
+  await expect(
+    page.locator(`workspace-sidebar wa-tooltip[for="${await heading.getAttribute('id')}"]`),
+  ).toHaveText('cybermole');
 });
 
 // ---------- the page-entry fade ----------
@@ -105,7 +109,7 @@ test('the nav collapse toggles a rail and persists across reload', async ({ page
   // Collapse: the sidebar hides, the expand chevron shows in the rail.
   await toggle.click();
   await expect(page.locator('workspace-sidebar')).toBeHidden();
-  await expect(page.locator('console-app')).toHaveAttribute('data-nav-collapsed', '');
+  await expect(page.locator('wa-page.app-page')).toHaveAttribute('data-nav-collapsed', '');
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(toggle.locator('wa-icon.when-collapsed')).toBeVisible();
   await expect(toggle.locator('wa-icon.when-open')).toBeHidden();
@@ -138,7 +142,7 @@ test('on mobile the drawer toggle sits far left of the top bar and drives the dr
 }) => {
   await login(page);
   const toggle = page.locator('app-header #nav-drawer-toggle');
-  const thePage = page.locator('console-app wa-page');
+  const thePage = page.locator('wa-page.app-page');
 
   // Wide: the sidebar is inline and the toggle is a mobile-only control.
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -183,7 +187,7 @@ test('the brand glyph is monochrome ink: it takes the current-page colour like i
 }) => {
   await login(page);
   // The button part's colour is what every slotted icon inherits; the
-  // inline mole glyph rides the same chain (a raster icon could not).
+  // brand-library mole glyph (currentColor) rides the same chain.
   const colors = () =>
     page.evaluate(() => {
       const partColor = (btn: Element): string => {
@@ -191,7 +195,8 @@ test('the brand glyph is monochrome ink: it takes the current-page colour like i
         return getComputedStyle(part).color;
       };
       return {
-        glyph: getComputedStyle(document.querySelector('app-header .app-brand-icon')!).color,
+        glyph: getComputedStyle(document.querySelector('app-header wa-button.app-brand wa-icon')!)
+          .color,
         current: partColor(document.querySelector("app-header wa-button[aria-current='page']")!),
         resting: partColor(document.querySelector("app-header wa-button[href$='/jobs']")!),
       };

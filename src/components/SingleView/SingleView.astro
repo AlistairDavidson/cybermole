@@ -3,6 +3,7 @@
 // attaches it) or the workspace's editor iframe, or the message when the
 // target didn't resolve.
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import AgentTerminal from '../AgentTerminal/AgentTerminal.astro';
 import { editorSrc } from '../editor-pane';
 import type { PopoutView } from '../../lib/web/popout-view';
 
@@ -22,10 +23,7 @@ const { view } = Astro.props;
 {
   view.kind === 'terminal' && (
     <single-view kind="terminal" target={view.id}>
-      <agent-terminal>
-        <div class="terminal-container" />
-        <div class="terminal-status" />
-      </agent-terminal>
+      <AgentTerminal />
     </single-view>
   )
 }

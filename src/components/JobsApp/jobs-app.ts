@@ -15,13 +15,15 @@ import '@awesome.me/webawesome/dist/components/select/select.js';
 import '@awesome.me/webawesome/dist/components/option/option.js';
 import '@awesome.me/webawesome/dist/components/textarea/textarea.js';
 import '@awesome.me/webawesome/dist/components/toast/toast.js';
+import '@awesome.me/webawesome/dist/components/callout/callout.js';
 import 'validation-enhancer/zod';
 import type { ValidationEnhancerZod } from 'validation-enhancer/zod';
 import { JobSaveSchema } from '../../schemas/jobs';
 import type { JobRunView } from '../../lib/jobs/jobs';
 import { subscribeJobsEvents } from '../jobs-events';
 import { RunLogViewer } from './run-log';
-import { fmtDuration, fmtRunTime } from './run-format';
+import type { RunHistory } from '../RunHistory/run-history';
+import '../RunHistory/run-history';
 
 type WaDialog = HTMLElement & { open: boolean };
 /** An empty wa-input's value is null, not ''; an unselected wa-select's is ''. */
@@ -41,12 +43,6 @@ interface JobFields {
   schedule: string;
   command: string;
   app: string;
-}
-
-/** From the list's data-apps, refreshed with it. */
-interface AppChoice {
-  id: string;
-  name: string;
 }
 
 export class JobsApp extends HTMLElement {
@@ -231,26 +227,17 @@ export class JobsApp extends HTMLElement {
     (job ? schedule : name).focus();
   }
 
-  /** '' selects no app. */
+  /** '' selects no app. The options are the list's template, so a
+   *  refresh renews them. */
   private setAppOptions(selected: string): void {
     const select = this.querySelector('#job-app') as WaSelect | null;
-    if (!select) return;
-    let apps: AppChoice[] = [];
-    try {
-      apps = JSON.parse(
-        this.querySelector('#jobs-list')?.getAttribute('data-apps') ?? '[]',
-      ) as AppChoice[];
-    } catch {
-      /* a bad payload just leaves the picker empty */
-    }
-    select.textContent = '';
-    for (const app of apps) {
-      const option = document.createElement('wa-option');
-      option.value = app.id;
-      option.textContent = app.name;
-      select.append(option);
-    }
-    select.value = apps.some(a => a.id === selected) ? selected : '';
+    const options = this.querySelector<HTMLTemplateElement>(
+      '#jobs-list template[data-app-options]',
+    );
+    if (!select || !options) return;
+    select.replaceChildren(document.importNode(options.content, true));
+    const ids = [...select.querySelectorAll('wa-option')].map(o => o.getAttribute('value'));
+    select.value = ids.includes(selected) ? selected : '';
   }
 
   private queueValidate(): void {
@@ -394,14 +381,13 @@ export class JobsApp extends HTMLElement {
 
   // ---- run history + log tail ----
 
-  /** Only numbers and closed unions are templated, nothing untrusted. */
   private async openRuns(name: string): Promise<void> {
     this.runsJob = name;
     this.logViewer.hide();
     const dlg = this.querySelector('#runs-dialog') as WaDialog;
-    const body = this.querySelector('#runs-body') as HTMLElement;
+    const history = this.querySelector('run-history') as RunHistory;
     dlg.setAttribute('label', `run history — ${name}`);
-    body.innerHTML = '<p class="runs-empty">loading…</p>';
+    history.show(undefined);
     dlg.open = true;
     const sent = await signedInFetch(`${BASE}/api/jobs/${encodeURIComponent(name)}/runs`);
     if (!sent.ok) {
@@ -412,43 +398,7 @@ export class JobsApp extends HTMLElement {
     const payload = r.ok
       ? ((await r.json().catch(() => null)) as { runs?: JobRunView[] } | null)
       : null;
-    if (!payload) {
-      body.innerHTML = '<p class="runs-empty">the run history could not be read</p>';
-      return;
-    }
-    const runs = payload.runs ?? [];
-    if (runs.length === 0) {
-      body.innerHTML = '<p class="runs-empty">no runs recorded yet — "run now" fires one.</p>';
-      return;
-    }
-    const row = (u: JobRunView): string => {
-      const exit =
-        u.exitCode === null
-          ? '<span class="run-exit unknown">—</span>'
-          : `<span class="run-exit ${u.exitCode === 0 ? 'ok' : 'failed'}">exit ${u.exitCode}</span>`;
-      const duration =
-        u.finishedAt === null
-          ? '<span class="run-duration">—</span>'
-          : `<span class="run-duration">${fmtDuration(u.firedAt, u.finishedAt)}</span>`;
-      return (
-        `<div class="run-row">` +
-        `<span class="run-when">${fmtRunTime(u.firedAt)}</span>` +
-        `<span class="run-origin">${u.origin}</span>` +
-        `${duration}${exit}` +
-        `<span class="run-log-cell">${
-          u.hasLog
-            ? `<wa-button size="xs" appearance="plain" data-log="${u.firedAt}">log</wa-button>`
-            : ''
-        }</span>` +
-        `</div>`
-      );
-    };
-    body.innerHTML =
-      '<div class="run-row run-head">' +
-      '<span class="run-when">fired</span><span class="run-origin">origin</span>' +
-      '<span class="run-duration">duration</span><span class="run-exit">exit</span>' +
-      '<span class="run-log-cell"></span></div>' +
-      runs.map(row).join('');
+    history.show(payload ? (payload.runs ?? []) : null);
   }
 }
 

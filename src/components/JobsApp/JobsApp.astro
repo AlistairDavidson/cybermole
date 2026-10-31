@@ -10,6 +10,7 @@ import "@awesome.me/webawesome/dist/components/option/option.js";
 import "@awesome.me/webawesome/dist/components/textarea/textarea.js";
 import "@awesome.me/webawesome/dist/components/toast/toast.js";
 import JobsList from "./JobsList.astro";
+import RunHistory from "../RunHistory/RunHistory.astro";
 import WaField from "../form/WaField.astro";
 import { zodSchemaToHTMLAttributes } from "../../lib/web/zod.service";
 import { JobSaveSchema } from "../../schemas/jobs";
@@ -29,7 +30,7 @@ const validation = zodSchemaToHTMLAttributes(JobSaveSchema);
 ---
 
 <jobs-app>
-  <div class="jobs-main wa-stack wa-gap-m">
+  <main class="jobs-main wa-stack wa-gap-m">
     <header class="jobs-header wa-split">
       <h1>
         <wa-icon name="clock"></wa-icon> scheduled jobs
@@ -40,7 +41,7 @@ const validation = zodSchemaToHTMLAttributes(JobSaveSchema);
         </wa-button>
       </div>
     </header>
-    <p class="jobs-sub">
+    <p class="wa-caption-s">
       A job is a name, a 5-field <code>cron</code> schedule and a shell
       command, run by cybermole's built-in scheduler inside a tmux session on
       the app's socket — every run shows up in the console's
@@ -48,7 +49,7 @@ const validation = zodSchemaToHTMLAttributes(JobSaveSchema);
       started yourself.
     </p>
     <JobsList jobs={jobs} apps={apps} />
-  </div>
+  </main>
 
   <wa-dialog id="job-dialog" label="new job" with-footer>
     <validation-enhancer-zod>
@@ -87,7 +88,7 @@ const validation = zodSchemaToHTMLAttributes(JobSaveSchema);
         />
         <!-- Not a named form field: the enhancer validates against
              JobSaveSchema, where an empty optional select would trip the
-             uuid pattern. Options come from the list's data-apps on open. -->
+             uuid pattern. Options are cloned from the list's template on open. -->
         <wa-select
           id="job-app"
           label="app tag (optional — grouping only)"
@@ -118,7 +119,7 @@ const validation = zodSchemaToHTMLAttributes(JobSaveSchema);
        15 s poll, which would wipe an open history. -->
   <wa-dialog id="runs-dialog" label="run history" class="runs-dialog">
     <div class="wa-stack wa-gap-s">
-      <div id="runs-body"></div>
+      <RunHistory emptyHint={'"run now" fires one.'} />
       <div id="run-log-box" class="run-log-box hidden">
         <div class="run-log-head">
           <span id="run-log-title"></span>

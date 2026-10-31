@@ -7,6 +7,7 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/badge/badge.js';
 import '@awesome.me/webawesome/dist/components/toast/toast.js';
+import '@awesome.me/webawesome/dist/components/callout/callout.js';
 import JobDetailBody from './JobDetailBody.astro';
 import type { ScheduledJob } from '../../lib/platform/types';
 import type { JobRunView } from '../../lib/jobs/jobs';
@@ -21,18 +22,21 @@ const { job, runs } = Astro.props;
 const base = (import.meta.env.BASE_URL ?? '/').replace(/\/+$/, '');
 ---
 {job === null ? (
-  <div class="jobs-main wa-stack wa-gap-m">
+  <main class="jobs-main wa-stack wa-gap-m">
     <header class="jobs-header">
       <h1><wa-icon name="clock"></wa-icon> job not found</h1>
     </header>
-    <p class="jobs-empty">
-      no job by this name — it may have been deleted. back to{' '}
-      <a class="job-view" href={`${base}/jobs`}>the jobs page</a>.
-    </p>
-  </div>
+    <wa-callout variant="warning">
+      <wa-icon slot="icon" name="triangle-exclamation"></wa-icon>
+      no job by this name — it may have been deleted.
+    </wa-callout>
+    <wa-button class="job-view" appearance="plain" size="s" href={`${base}/jobs`}>
+      back to the jobs page
+    </wa-button>
+  </main>
 ) : (
   <job-detail>
-    <div class="jobs-main wa-stack wa-gap-m">
+    <main class="jobs-main wa-stack wa-gap-m">
       <JobDetailBody job={job} runs={runs} />
       <!-- Outside #job-detail, so a refresh doesn't wipe an open log. -->
       <div id="run-log-box" class="run-log-box hidden">
@@ -42,7 +46,7 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/+$/, '');
         </div>
         <pre id="run-log" class="run-log"></pre>
       </div>
-    </div>
+    </main>
     <wa-toast placement="bottom-start"></wa-toast>
   </job-detail>
 )}

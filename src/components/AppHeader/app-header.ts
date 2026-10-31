@@ -1,26 +1,47 @@
-// <app-header>: the global bar. Links are plain anchors; only sign-out is wired.
+// <app-header>: the global bar, wa-page's header slot. Links are wa-button
+// anchors; sign-out and the drawer toggle's semantics are wired here.
 import { BASE } from '../../base';
 import { signedInFetch, type SignedInFetchFailure } from '../signed-in-fetch';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
 
 type WaToast = HTMLElement & {
   create(message: string, options?: Record<string, unknown>): Promise<unknown>;
 };
 
 export class AppHeader extends HTMLElement {
+  private navObserver: MutationObserver | null = null;
+
   connectedCallback(): void {
     (this.querySelector('#sign-out') as HTMLElement | null)?.addEventListener(
       'click',
       () => void this.signOut(),
     );
-    // The mobile drawer toggle (console pages only — CSS decides where it
-    // shows): the drawer lives in the page's wa-page below this bar, so the
-    // click is announced as an event for console-app to answer.
-    (this.querySelector('#nav-drawer-toggle') as HTMLElement | null)?.addEventListener(
-      'click',
-      () => this.dispatchEvent(new CustomEvent('toggle-nav', { bubbles: true, composed: true })),
-    );
+    // The drawer toggle's disclosure semantics follow wa-page's nav-open,
+    // whichever way it flipped (toggle, light-dismiss, Escape).
+    const page = this.closest('wa-page');
+    if (page) {
+      this.navObserver = new MutationObserver(() => this.syncNavToggle(page));
+      this.navObserver.observe(page, { attributeFilter: ['nav-open'] });
+    }
+  }
+
+  disconnectedCallback(): void {
+    this.navObserver?.disconnect();
+    this.navObserver = null;
+  }
+
+  private syncNavToggle(page: Element): void {
+    const button = this.querySelector('#nav-drawer-toggle');
+    if (!button) return;
+    const open = page.hasAttribute('nav-open');
+    const label = open ? 'close the workspace drawer' : 'open the workspace drawer';
+    button.setAttribute('aria-expanded', String(open));
+    button.setAttribute('aria-label', label);
+    const icon = button.querySelector('wa-icon');
+    icon?.setAttribute('name', open ? 'xmark' : 'bars');
+    icon?.setAttribute('label', label);
   }
 
   private async signOut(): Promise<void> {

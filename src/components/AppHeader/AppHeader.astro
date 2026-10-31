@@ -4,21 +4,16 @@
 // imports here only SSR; the client script re-imports (AGENTS.md).
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
+import NavLink from './NavLink.astro';
+import type { MenuItem, Section } from './nav';
 
-type Section = 'console' | 'builder' | 'jobs' | 'logs' | 'settings';
 interface Props {
   current: Section;
   /** Set only when CYBERMOLE_GRAFANA_URL is configured. */
   logs?: boolean;
 }
 
-type MenuItem = {
-  section: Section;
-  label: string;
-  href: string;
-  icon: string;
-  className?: string;
-};
 
 const { current, logs = false } = Astro.props;
 
@@ -40,87 +35,31 @@ const right: MenuItem[] = [
 ];
 
 ---
-<app-header>
+<app-header slot="header">
   <nav class="wa-cluster wa-gap-2xs">
-    <!-- The mobile drawer toggle, far left where the thumb lives. Dumb
-         markup: CSS shows it only on the console pages (a wa-page drawer to
-         open) below wa-page's mobile breakpoint, and app-header.ts announces
-         clicks as a toggle-nav event for console-app to answer. -->
+    <!-- The mobile drawer toggle, far left where the thumb lives.
+         wa-page wires any data-toggle-nav button in its light DOM; its
+         base styles hide it on desktop, console.css on pages without a
+         drawer. app-header.ts mirrors nav-open onto its semantics. -->
     <wa-button
       id="nav-drawer-toggle"
       class="nav-drawer-toggle"
+      data-toggle-nav
       appearance="plain"
       size="s"
-      title="open the workspace drawer"
       aria-label="open the workspace drawer"
       aria-expanded="false"
     >
       <wa-icon name="bars" label="open the workspace drawer"></wa-icon>
     </wa-button>
-    {left.map(l => (
-      <wa-button
-        class={l.className ? l.className : 'app-nav-link'}
-        appearance="plain"
-        size="s"
-        href={l.href}
-        title={l.label}
-        {...(l.section === current ? { 'aria-current': 'page' } : {})}
-      >
-        {
-        l.icon === "cybermole" ? (
-            // The brand glyph, monochrome: the art's ink (dome, outlines,
-            // claws, nose) in currentColor with its light shapes cut as
-            // mask holes, so the page-current highlight colours it exactly
-            // like its sibling icons (a raster icon can't take the colour).
-            <svg slot="start" class="app-brand-icon" viewBox="0 0 512 512" aria-hidden="true">
-              <mask id="app-brand-holes" maskUnits="userSpaceOnUse">
-                <rect width="512" height="512" fill="#fff"></rect>
-                <rect x="154.6" y="209.2" width="206" height="19.8" fill="#000"></rect>
-                <circle cx="256.4" cy="327" r="56" fill="#000"></circle>
-                <ellipse cx="73.4" cy="515.7" rx="56" ry="84" fill="#000"></ellipse>
-                <ellipse cx="439.4" cy="515.7" rx="56" ry="84" fill="#000"></ellipse>
-              </mask>
-              <ellipse
-                cx="256.4"
-                cy="557.9"
-                rx="192"
-                ry="448"
-                fill="currentColor"
-                stroke="currentColor"
-                stroke-width="21.6"
-                mask="url(#app-brand-holes)"></ellipse>
-              <ellipse cx="73.4" cy="515.7" rx="64" ry="92" fill="none" stroke="currentColor" stroke-width="16"></ellipse>
-              <ellipse cx="439.4" cy="515.7" rx="64" ry="92" fill="none" stroke="currentColor" stroke-width="16"></ellipse>
-              <rect x="44.2" y="472.8" width="17" height="48" fill="currentColor"></rect>
-              <rect x="85.7" y="472.9" width="17" height="48" fill="currentColor"></rect>
-              <rect x="410.2" y="472.8" width="17" height="48" fill="currentColor"></rect>
-              <rect x="451.7" y="472.9" width="17" height="48" fill="currentColor"></rect>
-              <circle cx="256.4" cy="327" r="64" fill="none" stroke="currentColor" stroke-width="16"></circle>
-              <circle cx="256.4" cy="357.8" r="24" fill="currentColor"></circle>
-            </svg>
-          )
-          :
-            <wa-icon slot="start" name={l.icon}></wa-icon>
-        }
-      </wa-button>
-    ))}
+    {left.map(l => <NavLink item={l} current={current} />)}
   </nav>
   <div class="wa-cluster wa-gap-2xs">
-    {right.map(l => (
-      <wa-button
-        class="app-nav-link"
-        appearance="plain"
-        size="s"
-        href={l.href}
-        title={l.label}
-        {...(l.section === current ? { 'aria-current': 'page' } : {})}
-      >
-        <wa-icon slot="start" name={l.icon}></wa-icon>
-      </wa-button>
-    ))}
-    <wa-button id="sign-out" appearance="plain" size="s" title="Sign Out">
-      <wa-icon slot="start" name="right-from-bracket"></wa-icon>
+    {right.map(l => <NavLink item={l} current={current} />)}
+    <wa-button id="sign-out" appearance="plain" size="s">
+      <wa-icon slot="start" name="right-from-bracket" label="Sign Out"></wa-icon>
     </wa-button>
+    <wa-tooltip for="sign-out">Sign Out</wa-tooltip>
   </div>
 </app-header>
 

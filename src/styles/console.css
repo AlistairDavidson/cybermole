@@ -103,94 +103,68 @@ body {
 }
 .hidden { display: none !important; }
 
-/* ---- app-header ---- */
-/* Base.astro puts .app-chrome on <body> with the header: the console's
-   fixed-height shell fills what remains, scrollable pages grow below the
-   sticky bar. Not wa-page's header slot, since only the console uses
-   <wa-page>. */
-body.app-chrome { display: flex; flex-direction: column; }
-body.app-chrome > app-header { flex: none; }
-body.app-chrome > console-app { flex: 1 1 0; min-height: 0; height: auto; }
-body.app-chrome > jobs-app,
-body.app-chrome > settings-app,
-body.app-chrome > app-settings { flex: 1 0 auto; }
-
-app-header {
-  position: sticky; top: 0; z-index: 5;
-  display: flex; align-items: center; justify-content: space-between;
-  flex-wrap: wrap; gap: var(--wa-space-2xs) var(--wa-space-s);
-  padding: var(--wa-space-3xs) var(--wa-space-s);
+/* ---- the app shell: Base.astro's wa-page ---- */
+/* app-header is its header slot (sticky by wa-page); pages without a
+   drawer column scroll as documents, the console pages (a navigation
+   slot) pin the page to the viewport and let their panes scroll. */
+wa-page.app-page::part(header) {
   background: var(--wa-color-surface-raised);
   border-bottom: var(--wa-border-width-s) solid var(--wa-color-surface-border);
+}
+app-header {
+  gap: var(--wa-space-2xs) var(--wa-space-s);
+  padding: var(--wa-space-3xs) var(--wa-space-s);
 }
 /* Foreground accents use the *-on-quiet text tokens throughout: the fill-*
    family is background fills, near-black in wa-dark. */
 app-header wa-button.app-brand::part(button) { font-weight: var(--wa-font-weight-bold); }
-/* The inline mole glyph (AppHeader.astro): ink in currentColor, so it
-   rides the same page-current highlight as its siblings. */
-app-header .app-brand-icon { display: block; width: 1em; height: 1em; }
 app-header wa-button.app-nav-link[aria-current='page']::part(button) {
   color: var(--wa-color-brand-on-quiet);
   font-weight: var(--wa-font-weight-bold);
 }
-/* The mobile drawer toggle: far left of the top bar, where the thumb
-   lives. Only on the console pages (body:has(> console-app) — a wa-page
-   drawer to open) and only below wa-page's mobile breakpoint (its default
-   768px — keep the two in step). */
-app-header .nav-drawer-toggle {
-  display: none; /* desktop, and pages with no drawer */
-  color: var(--wa-color-text-quiet);
-}
+/* The mobile drawer toggle (data-toggle-nav): wa-page hides it on
+   desktop; a page with no drawer column has nothing for it to open. */
+app-header .nav-drawer-toggle { color: var(--wa-color-text-quiet); }
 app-header .nav-drawer-toggle::part(base) { padding-inline: var(--wa-space-2xs); }
-app-header .nav-drawer-toggle:hover,
-app-header .nav-drawer-toggle:focus-visible { color: var(--wa-color-brand-on-quiet); }
-@media (width < 768px) {
-  body:has(> console-app) app-header .nav-drawer-toggle { display: inline-flex; }
-}
-/* The console shell never scrolls as a page (its panes own scrolling), so
-   a touch drag at its edges must not become pull-to-refresh — the
-   terminal's own gesture containment (agent-terminal .terminal-container)
-   covers the pane; this covers the chrome around it. */
-body:has(> console-app) { overscroll-behavior-y: contain; }
+wa-page.app-page:not(:has(> [slot='navigation'])) .nav-drawer-toggle { display: none; }
 
-/* ---- console-app: <wa-page> app shell ---- */
+/* ---- the console pages (a navigation slot) ---- */
 /* A quiet arrival: both console pages fade their shell in (CSS-driven;
    reduced motion below skips it). Opacity only, so the terminal's
    ResizeObserver never sees an intermediate layout. */
 @keyframes cybermole-page-enter {
   from { opacity: 0; }
 }
-console-app {
-  display: block; height: 100dvh;
+wa-page.app-page:has(> [slot='navigation']) {
+  height: 100dvh; --menu-width: 300px;
   animation: cybermole-page-enter var(--cybermole-page-fade) var(--wa-transition-easing);
 }
-console-app wa-page { height: 100%; --menu-width: 300px; }
-console-app wa-page[view='mobile'] { --menu-width: auto; }
-console-app wa-page::part(menu) {
+/* The shell never scrolls as a page (its panes own scrolling), so a touch
+   drag at its edges must not become pull-to-refresh — the terminal's own
+   gesture containment covers the pane; this covers the chrome around it. */
+body:has(> wa-page.app-page > [slot='navigation']) { overscroll-behavior-y: contain; }
+wa-page.app-page[view='mobile'] { --menu-width: auto; }
+wa-page.app-page::part(menu) {
   background-color: var(--wa-color-surface-raised);
   border-inline-end: var(--wa-border-width-s) solid var(--wa-color-surface-border);
 }
-console-app wa-page::part(navigation-header) {
+wa-page.app-page::part(navigation-header) {
   border-bottom: var(--wa-border-width-s) solid var(--wa-color-surface-border);
 }
-/* Pin the page to the host height. Web Awesome only sets min-heights, so
+/* Pin the page to its height. Web Awesome only sets min-heights, so
    otherwise the terminal's rows would drive the page height and the
    ResizeObserver would never see the viewport shrink. */
-console-app wa-page::part(base) { height: 100%; min-height: 0; }
-/* The console pages never fill wa-page's header slot; its only tenant is
-   the stock mobile hamburger, which the top bar's toggle replaces — so the
-   empty header row goes entirely (the drawer itself stays). */
-console-app wa-page::part(header) { display: none; }
+wa-page.app-page:has(> [slot='navigation'])::part(base) { height: 100%; min-height: 0; }
 /* Stretch main into its track so heights stay definite down to .terminal-container. */
-console-app wa-page::part(main) { align-self: stretch; }
-console-app main {
-  display: flex; flex-direction: column; min-width: 0; height: 100%;
-  padding: 0; /* wa-page pads <main> by default; the terminal wants it all */
+wa-page.app-page:has(> [slot='navigation'])::part(main) { align-self: stretch; }
+wa-page.app-page:has(> [slot='navigation'])::part(main-content) {
+  display: flex; flex-direction: column; min-height: 0;
 }
-/* The nav header hosts the desktop collapse control. It is static SSR
-   markup in the navigation-header slot, outside workspace-sidebar's
-   innerHTML re-render, so the event-driven refresh never touches it
-   (AGENTS.md). */
+console-app { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+console-app > .console-main {
+  display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0;
+}
+/* The nav header hosts the desktop collapse control. */
 .nav-header {
   /* beats wa-page's ::slotted padding (var(--wa-space-m) all around) and
      its column flex-direction */
@@ -203,28 +177,28 @@ console-app main {
 .nav-collapse:hover, .nav-collapse:focus-visible { color: var(--wa-color-brand-on-quiet); }
 /* One chevron per state; the other is display-none'd away. */
 .nav-collapse wa-icon.when-collapsed { display: none; }
-console-app[data-nav-collapsed] .nav-collapse wa-icon.when-open { display: none; }
-console-app[data-nav-collapsed] .nav-collapse wa-icon.when-collapsed { display: block; }
+wa-page[data-nav-collapsed] .nav-collapse wa-icon.when-open { display: none; }
+wa-page[data-nav-collapsed] .nav-collapse wa-icon.when-collapsed { display: block; }
 /* Collapsed on wide viewports: the menu shrinks to a rail holding only the
    expand control; the sidebar is hidden, not torn down. Narrow viewports
    keep wa-page's own drawer (view='mobile'), where neither applies. */
-console-app[data-nav-collapsed] wa-page:not([view='mobile']) {
+wa-page[data-nav-collapsed]:not([view='mobile']) {
   --menu-width: var(--cybermole-nav-rail);
 }
-console-app[data-nav-collapsed] wa-page:not([view='mobile']) workspace-sidebar { display: none; }
-console-app[data-nav-collapsed] .nav-header {
+wa-page[data-nav-collapsed]:not([view='mobile']) workspace-sidebar { display: none; }
+wa-page[data-nav-collapsed] .nav-header {
   justify-content: center;
   padding-inline: var(--wa-space-2xs);
 }
-console-app wa-page[view='mobile'] .nav-header { display: none; }
+wa-page.app-page[view='mobile'] .nav-header { display: none; }
 /* The menu column eases between widths (track lengths interpolate in
    Chromium; elsewhere it snaps). */
-console-app wa-page::part(body) {
+wa-page.app-page::part(body) {
   transition: grid-template-columns var(--wa-transition-normal) var(--wa-transition-easing);
 }
 @media (prefers-reduced-motion: reduce) {
-  console-app { animation: none; }
-  console-app wa-page::part(body) { transition: none; }
+  wa-page.app-page, wa-page.app-page:has(> [slot='navigation']) { animation: none; }
+  wa-page.app-page::part(body) { transition: none; }
 }
 
 /* ---- workspace-sidebar ---- */
@@ -262,17 +236,9 @@ workspace-sidebar {
   text-transform: none;
   letter-spacing: normal;
 }
-/* A real <button> (no stateful wa-* in the sidebar); the chevron rotates
-   with aria-expanded and [hidden] hides the rows. */
-.nav .ws-group h2 .g-collapse {
-  display: inline-flex; align-items: center; justify-content: center;
-  flex: none;
-  width: var(--wa-space-l); height: var(--wa-space-l);
-  padding: 0;
-  background: none; border: none;
-  border-radius: var(--wa-border-radius-s);
-  color: var(--wa-color-text-quiet); cursor: pointer; font: inherit;
-}
+/* The chevron rotates with aria-expanded; [hidden] hides the rows. */
+.nav .ws-group h2 .g-collapse { flex: none; color: var(--wa-color-text-quiet); }
+.nav .ws-group h2 .g-collapse::part(base) { padding-inline: var(--wa-space-3xs); }
 .nav .ws-group h2 .g-collapse:hover,
 .nav .ws-group h2 .g-collapse:focus-visible {
   color: var(--wa-color-brand-on-quiet);
@@ -293,20 +259,6 @@ workspace-sidebar {
   min-width: var(--wa-space-l); /* stays clickable even if the icon asset fails */
 }
 .nav .ws-group h2 .g-actions wa-button:hover, .nav .ws-group h2 .g-actions wa-button:focus-visible {
-  color: var(--wa-color-brand-on-quiet);
-}
-/* The app settings link: a plain <a> styled like its open-link sibling. */
-.nav .ws-group h2 .g-actions .open-app-btn,
-.nav .ws-group h2 .g-actions .app-settings-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: var(--wa-space-l); min-height: var(--wa-space-l);
-  border-radius: var(--wa-border-radius-s);
-  color: var(--wa-color-text-quiet);
-}
-.nav .ws-group h2 .g-actions .open-app-btn:hover,
-.nav .ws-group h2 .g-actions .open-app-btn:focus-visible,
-.nav .ws-group h2 .g-actions .app-settings-btn:hover,
-.nav .ws-group h2 .g-actions .app-settings-btn:focus-visible {
   color: var(--wa-color-brand-on-quiet);
 }
 .nav .ws-group h2 .g-actions .open-app-btn.not-serving {
@@ -346,9 +298,6 @@ workspace-sidebar {
 }
 .nav li .row-actions {
   display: inline-flex; align-items: center; gap: var(--wa-space-3xs); flex: none;
-}
-.nav li .ws-count {
-  color: var(--wa-color-text-quiet); font-size: var(--wa-font-size-2xs);
 }
 .nav li .del-ws-btn { color: var(--wa-color-text-quiet); }
 .nav li .del-ws-btn::part(button) {
@@ -471,10 +420,7 @@ single-view {
 
 /* ---- console-app dialogs ---- */
 console-app .dialog-text { margin: 0 0 var(--wa-space-2xs); }
-console-app .dialog-note {
-  margin: 0; color: var(--wa-color-text-quiet);
-  font-size: var(--wa-font-size-s);
-}
+console-app [class*='wa-caption'] { margin: 0; }
 
 /* ---- agent-terminal ---- */
 agent-terminal {
@@ -540,12 +486,9 @@ agent-terminal .terminal-status.err wa-icon { color: var(--wa-color-danger-on-qu
   font-size: var(--wa-font-size-l); margin: 0;
 }
 .settings-header h1 wa-icon { color: var(--wa-color-brand-on-quiet); }
-.settings-card .card-title { font-size: var(--wa-font-size-m); }
-.settings-card .hint code {
+.settings-card .card-title { margin: 0; }
+.settings-card [class*='wa-caption'] code {
   font-family: var(--wa-font-family-code); font-size: var(--wa-font-size-2xs);
-}
-.hint {
-  color: var(--wa-color-text-quiet); font-size: var(--wa-font-size-2xs); margin: 0;
 }
 .cfg-row { align-items: baseline; }
 .cfg-row .k {
@@ -562,45 +505,9 @@ agent-terminal .terminal-status.err wa-icon { color: var(--wa-color-danger-on-qu
   padding: var(--wa-space-m);
 }
 .app-settings-header p { margin: 0; }
-.app-settings-back {
-  color: var(--wa-color-brand-on-quiet);
-  font-size: var(--wa-font-size-s);
-}
-/* The icon picker: one button per registry name, the picked one marked. */
-.icon-field {
-  border: none; margin: 0; padding: 0;
-  display: flex; flex-direction: column; gap: var(--wa-space-3xs);
-}
-.icon-field legend {
-  color: var(--wa-color-text-quiet); font-size: var(--wa-font-size-2xs);
-  padding: 0; margin-bottom: var(--wa-space-3xs);
-}
-.icon-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(3rem, 1fr));
-  gap: var(--wa-space-3xs);
-}
-.icon-grid .icon-choice {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-height: var(--wa-space-2xl);
-  padding: var(--wa-space-2xs);
-  background: var(--wa-color-surface-raised);
-  border: var(--wa-border-width-s) solid var(--wa-color-surface-border);
-  border-radius: var(--wa-border-radius-m);
-  color: var(--wa-color-text-normal); cursor: pointer; font: inherit;
-}
-.icon-grid .icon-choice wa-icon { font-size: var(--wa-font-size-l); }
-.icon-grid .icon-choice:hover,
-.icon-grid .icon-choice:focus-visible {
-  border-color: var(--wa-color-brand-on-quiet);
-}
-.icon-grid .icon-choice[aria-checked='true'] {
-  border-color: var(--wa-color-brand-on-quiet);
-  background: color-mix(in oklab, var(--wa-color-brand-on-quiet) 12%, transparent);
-}
-.icon-grid .icon-choice:focus-visible {
-  outline: var(--wa-border-width-m) solid var(--wa-color-brand-fill-quiet);
-  outline-offset: var(--wa-border-width-s);
-}
+/* The icon picker: a wa-radio-group of button radios, wrapping. */
+.icon-grid::part(form-control-input) { gap: var(--wa-space-3xs); }
+.icon-grid wa-radio wa-icon { font-size: var(--wa-font-size-l); }
 .npm-output {
   margin: 0; max-height: 40vh; overflow: auto;
   white-space: pre-wrap; overflow-wrap: anywhere;
@@ -650,8 +557,14 @@ jobs-app { display: block; }
 /* ---- logs page ---- */
 /* The iframe takes exactly what's left under the header. min-height: 0
    stops its default 150px minimum from growing the body. */
-body.app-chrome > .logs-main { flex: 1 1 0; min-height: 0; }
-.logs-main { display: flex; flex-direction: column; }
+ /* A page root's own class sets its padding, whether wa-page slots the
+   <main> directly (logs, not-found bodies) or a custom element wraps it. */
+wa-page.app-page > main { padding: 0; }
+/* The Grafana frame fills what the sticky header leaves. */
+.logs-main {
+  display: flex; flex-direction: column;
+  height: calc(100dvh - var(--header-height, 0px));
+}
 .logs-main iframe {
   flex: 1; width: 100%; border: 0;
   /* avoids a white flash while Grafana loads */
@@ -663,8 +576,7 @@ body.app-chrome > .logs-main { flex: 1 1 0; min-height: 0; }
   font-size: var(--wa-font-size-m); margin: 0;
 }
 .jobs-header h1 wa-icon { color: var(--wa-color-brand-on-quiet); }
-.jobs-sub { color: var(--wa-color-text-quiet); margin: 0; }
-.jobs-sub code, .job-meta code {
+[class*='wa-caption'] code, .job-meta code {
   font-family: var(--wa-font-family-code);
   background: var(--wa-color-surface-lowered);
   border: var(--wa-border-width-s) solid var(--wa-color-surface-border);
@@ -672,37 +584,20 @@ body.app-chrome > .logs-main { flex: 1 1 0; min-height: 0; }
   padding: var(--wa-space-3xs) var(--wa-space-2xs);
   overflow-wrap: anywhere;
 }
-.jobs-empty {
-  color: var(--wa-color-text-quiet); margin: 0;
-  padding: var(--wa-space-m); text-align: center;
-  border: var(--wa-border-width-s) dashed var(--wa-color-surface-border);
-  border-radius: var(--wa-border-radius-m);
-}
-.job-head {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: var(--wa-space-xs); flex-wrap: wrap;
-}
+.jobs-empty { margin: 0; text-align: center; }
+.job-title { margin: 0; }
 .job-name {
-  display: flex; align-items: center; gap: var(--wa-space-2xs);
-  font-weight: var(--wa-font-weight-bold);
+  display: inline-flex; align-items: center; gap: var(--wa-space-2xs);
   color: inherit; text-decoration: none;
 }
 .job-name:hover { text-decoration: underline; }
 .job-name wa-icon { color: var(--wa-color-brand-on-quiet); font-size: var(--wa-font-size-2xs); }
-.job-view {
-  display: inline-flex; align-items: center; gap: var(--wa-space-3xs);
-  color: var(--wa-color-brand-on-quiet); text-decoration: none;
-  font-size: var(--wa-font-size-2xs);
-}
-.job-view:hover { text-decoration: underline; }
-.job-view wa-icon { font-size: var(--wa-font-size-2xs); }
 .job-meta {
   display: grid; grid-template-columns: max-content 1fr;
   gap: var(--wa-space-3xs) var(--wa-space-s); margin: 0;
 }
 .job-meta dt { color: var(--wa-color-text-quiet); }
 .job-meta dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
-.job-actions { margin-block-start: var(--wa-space-s); }
 .schedule-feedback {
   font-size: var(--wa-font-size-2xs); min-height: 1.4em;
   margin-block-start: var(--wa-space-3xs);
@@ -710,36 +605,16 @@ body.app-chrome > .logs-main { flex: 1 1 0; min-height: 0; }
 .schedule-feedback.ok { color: var(--wa-color-success-on-quiet); }
 .schedule-feedback.err { color: var(--wa-color-danger-on-quiet); }
 
-/* App-tag chip, run-history dialog and log tail. The rows are a grid so
-   columns line up without a table. */
+/* App-tag chip, run-history table and log tail. */
 .job-app { font-weight: var(--wa-font-weight-normal); }
-.runs-empty {
-  color: var(--wa-color-text-quiet); margin: 0;
-  padding: var(--wa-space-s); text-align: center;
+.run-table { width: 100%; font-size: var(--wa-font-size-s); }
+.run-table th {
+  color: var(--wa-color-text-quiet); font-size: var(--wa-font-size-2xs);
+  font-weight: var(--wa-font-weight-normal); text-align: start;
 }
-.run-row {
-  display: grid;
-  grid-template-columns: max-content max-content max-content max-content 1fr;
-  justify-content: start;
-  gap: var(--wa-space-s);
-  align-items: center;
-  padding-block: var(--wa-space-3xs);
-  border-block-end: var(--wa-border-width-s) solid var(--wa-color-surface-border);
-}
-.run-row:last-child { border-block-end: none; }
-.run-head {
-  color: var(--wa-color-text-quiet);
-  font-size: var(--wa-font-size-2xs);
-  text-transform: uppercase;
-  letter-spacing: .08em;
-}
-.run-when { font-variant-numeric: tabular-nums; }
-.run-origin { color: var(--wa-color-text-quiet); }
-.run-exit.ok { color: var(--wa-color-success-on-quiet); }
-.run-exit.failed { color: var(--wa-color-danger-on-quiet); }
-.run-exit.unknown, .run-duration { color: var(--wa-color-text-quiet); }
-.run-log-cell { justify-self: end; }
-/* /jobs/:name history heading; the rows reuse the runs dialog's classes. */
+.run-table .run-when { font-variant-numeric: tabular-nums; }
+.run-origin, .run-duration, .run-exit.unknown { color: var(--wa-color-text-quiet); }
+/* /jobs/:name history heading. */
 .runs-title {
   display: flex; align-items: center; gap: var(--wa-space-2xs);
   font-size: var(--wa-font-size-m); margin: 0;

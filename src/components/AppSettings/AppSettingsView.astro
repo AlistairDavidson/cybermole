@@ -1,13 +1,17 @@
 ---
 // One app's settings, under the builder's portfolio framing: the icon
-// picker (one button per registry name — previews are wa-icon over the
-// vendored svgs), rename, and the cwd new workspaces start at; slug and
+// picker (a wa-radio-group of button radios, one per registry name —
+// previews are wa-icon over the vendored svgs), rename, and the cwd new workspaces start at; slug and
 // timestamps read-only. `app` is null only when the slug resolves to no
 // row (a 404 page body).
 import '@awesome.me/webawesome/dist/components/card/card.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/callout/callout.js';
+import '@awesome.me/webawesome/dist/components/radio-group/radio-group.js';
+import '@awesome.me/webawesome/dist/components/radio/radio.js';
+import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
+import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
 import WaField from '../form/WaField.astro';
 import { zodSchemaToHTMLAttributes } from '../../lib/web/zod.service';
 import { appSettingsForm } from '../../schemas/api';
@@ -21,6 +25,14 @@ interface Props {
 const { app } = Astro.props;
 const validation = zodSchemaToHTMLAttributes(appSettingsForm);
 const iso = (at: number): string => new Date(at).toISOString();
+/** wa-format-date's attributes for a full local date and time. */
+const DATE_TIME = {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+} as const;
 ---
 {
   app ? (
@@ -30,38 +42,34 @@ const iso = (at: number): string => new Date(at).toISOString();
           <wa-icon id="app-settings-title-icon" name={app.icon} />
           <span id="app-settings-title-name">{app.name}</span>
         </h1>
-        <p class="hint">app settings — the icon, the name, and where its workspaces start</p>
+        <p class="wa-caption-2xs">app settings — the icon, the name, and where its workspaces start</p>
       </header>
 
       <wa-card class="settings-card" with-header>
         <div slot="header" class="wa-split">
-          <strong class="card-title">identity</strong>
-          <span class="hint">saved through the same service as rename</span>
+          <h2 class="card-title wa-heading-m">identity</h2>
+          <span class="wa-caption-2xs">saved through the same service as rename</span>
         </div>
         <validation-enhancer-zod>
           <form id="app-settings-form" class="wa-stack wa-gap-s" novalidate>
-            <fieldset class="icon-field">
-              <legend>icon</legend>
-              <div class="icon-grid" role="radiogroup" aria-label="icon">
-                {APP_ICONS.map(name => (
-                  <button
-                    type="button"
-                    class="icon-choice"
-                    role="radio"
-                    data-icon={name}
-                    aria-checked={name === app.icon ? 'true' : 'false'}
-                    title={name}
-                  >
-                    <wa-icon name={name} label={name} />
-                  </button>
-                ))}
-              </div>
-              <span class="field-hint">
-                <span class="field-hint-text">
-                  the group header's glyph in the builder sidebar — the vendored set only
-                </span>
-              </span>
-            </fieldset>
+            <wa-radio-group
+              id="icon-pick"
+              class="icon-grid"
+              name="icon"
+              label="icon"
+              hint="the group header's glyph in the builder sidebar — the vendored set only"
+              orientation="horizontal"
+              value={app.icon}
+            >
+              {APP_ICONS.map(name => (
+                <wa-radio id={`icon-pick-${name}`} appearance="button" value={name}>
+                  <wa-icon name={name} label={name} />
+                </wa-radio>
+              ))}
+            </wa-radio-group>
+            {APP_ICONS.map(name => (
+              <wa-tooltip for={`icon-pick-${name}`}>{name}</wa-tooltip>
+            ))}
             <WaField
               id="app-name"
               name="name"
@@ -81,9 +89,9 @@ const iso = (at: number): string => new Date(at).toISOString();
                 <wa-icon slot="start" name="circle-check" />
                 save
               </wa-button>
-              <a class="app-settings-back" href={`${BASE}/builder`}>
+              <wa-button appearance="plain" size="s" href={`${BASE}/builder`}>
                 back to the portfolio
-              </a>
+              </wa-button>
             </div>
           </form>
         </validation-enhancer-zod>
@@ -92,8 +100,8 @@ const iso = (at: number): string => new Date(at).toISOString();
 
       <wa-card class="settings-card" with-header>
         <div slot="header" class="wa-split">
-          <strong class="card-title">read-only</strong>
-          <span class="hint">the slug is the app's address; the timestamps are its row's</span>
+          <h2 class="card-title wa-heading-m">read-only</h2>
+          <span class="wa-caption-2xs">the slug is the app's address; the timestamps are its row's</span>
         </div>
         <div class="wa-stack wa-gap-2xs">
           <div class="cfg-row wa-split">
@@ -104,15 +112,11 @@ const iso = (at: number): string => new Date(at).toISOString();
           </div>
           <div class="cfg-row wa-split">
             <span class="k">created</span>
-            <time class="v" datetime={iso(app.createdAt)}>
-              {iso(app.createdAt)}
-            </time>
+            <wa-format-date class="v" date={iso(app.createdAt)} {...DATE_TIME} />
           </div>
           <div class="cfg-row wa-split">
             <span class="k">updated</span>
-            <time class="v" datetime={iso(app.updatedAt)}>
-              {iso(app.updatedAt)}
-            </time>
+            <wa-format-date class="v" date={iso(app.updatedAt)} {...DATE_TIME} />
           </div>
         </div>
       </wa-card>
@@ -133,10 +137,13 @@ const iso = (at: number): string => new Date(at).toISOString();
       <header class="settings-header app-settings-header">
         <h1>no such app</h1>
       </header>
-      <p class="hint">no app answers this slug — it may have been deleted or never registered.</p>
-      <a class="app-settings-back" href={`${BASE}/builder`}>
+      <wa-callout variant="warning">
+        <wa-icon slot="icon" name="triangle-exclamation" />
+        no app answers this slug — it may have been deleted or never registered.
+      </wa-callout>
+      <wa-button appearance="plain" size="s" href={`${BASE}/builder`}>
         back to the portfolio
-      </a>
+      </wa-button>
     </main>
   )
 }

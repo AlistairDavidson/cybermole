@@ -223,6 +223,13 @@ architecture, and the word is banned from new code and docs.
   site carries a one-line comment saying why. Touching code that
   hand-rolls something a wa-* covers means converting it in the same
   change.
+- **…and its idioms.** Compose components the way their docs do: the page
+  shell is one `wa-page` whose `header` slot holds the app bar, drawers
+  open through `data-toggle-nav` and close through `data-drawer="close"`,
+  tooltips are `wa-tooltip` (not `title=`), cards use their
+  `header`/`footer` slots. A parallel mechanism beside a component (an
+  event relay, a bar outside the shell) is the same defect as a
+  hand-rolled component.
 - App UI is built on Web Awesome — layout components (`wa-stack`,
   `wa-cluster`, `wa-grid`, …) for structure, the utility classes and design
   tokens for spacing, type and color — not inline `style` attributes and

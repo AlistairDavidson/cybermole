@@ -42,6 +42,7 @@ import '@awesome.me/webawesome/dist/components/button-group/button-group.js';
 import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
 import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
 import type { AgentTerminal } from '../AgentTerminal/agent-terminal';
 import '../AgentTerminal/agent-terminal';
 
@@ -68,6 +69,8 @@ export class TerminalTabs extends HTMLElement {
   private active: ActiveTab = null;
   private readonly tabs = new Map<TerminalId, HTMLElement>();
   private readonly panels = new Map<TerminalId, HTMLElement>();
+  /** Stamped anchors' tooltips (in .tab-tips), by anchor id. */
+  private readonly tips = new Map<string, HTMLElement>();
   private readonly panes = new Map<TerminalId, PaneElement>();
   private group: HTMLElement | null = null;
   private newTabGroup: HTMLElement | null = null;
@@ -113,6 +116,20 @@ export class TerminalTabs extends HTMLElement {
   private stamp<T extends HTMLElement>(name: string): T {
     const tpl = this.querySelector<HTMLTemplateElement>(`:scope > template[${name}]`)!;
     return document.importNode(tpl.content, true).firstElementChild as T;
+  }
+
+  /** Call once the anchor is in the document: the tooltip binds on connect. */
+  private addTip(template: string, anchor: HTMLElement): void {
+    this.dropTip(anchor.id);
+    const tip = this.stamp<HTMLElement>(template);
+    tip.setAttribute('for', anchor.id);
+    this.querySelector(':scope > .tab-tips')?.append(tip);
+    this.tips.set(anchor.id, tip);
+  }
+
+  private dropTip(anchorId: string): void {
+    this.tips.get(anchorId)?.remove();
+    this.tips.delete(anchorId);
   }
 
   private setView(view: View): void {
@@ -195,6 +212,7 @@ export class TerminalTabs extends HTMLElement {
       this.tabs.delete(id);
       this.panels.get(id)!.remove();
       this.panels.delete(id);
+      this.dropTip(`tab-close-${id}`);
     }
     if (this.active !== null && this.active !== EDITOR && !seen.has(this.active)) {
       this.active = null;
@@ -504,9 +522,12 @@ export class TerminalTabs extends HTMLElement {
     tab.setAttribute('panel', t.id);
     const panel = this.stamp<HTMLElement>('data-panel');
     panel.setAttribute('name', t.id);
+    const close = tab.querySelector<HTMLElement>('.tab-close')!;
+    close.id = `tab-close-${t.id}`;
     this.tabs.set(t.id, tab);
     this.panels.set(t.id, panel);
     this.group.append(tab, panel);
+    this.addTip('data-close-tip', close);
   }
 
   /** Only touches what changed (including index-shifted "term N" labels). */
@@ -526,6 +547,7 @@ export class TerminalTabs extends HTMLElement {
     if (!this.group || !this.editorEnabled) return;
     this.editorTab = this.stamp<HTMLElement>('data-editor-tab');
     this.group.appendChild(this.editorTab);
+    this.addTip('data-editor-tab-tip', this.editorTab);
   }
 
   private emitNewTerminal(command: TerminalCommand): void {
@@ -549,6 +571,7 @@ export class TerminalTabs extends HTMLElement {
     panel.querySelector<HTMLIFrameElement>('.editor-frame')!.src = editorSrc(this.ws.cwd);
     this.group.appendChild(panel);
     this.editorPanel = panel;
+    this.addTip('data-editor-pop-tip', panel.querySelector<HTMLElement>('.tb-pop-out')!);
   }
 
   /** The editor pops out to /view?w=<id>: a copy, not a move — the editor
@@ -573,9 +596,11 @@ export class TerminalTabs extends HTMLElement {
   /** Popped tabs stay open; their old handles' pagehide is ignored. */
   private teardownPanes(): void {
     for (const id of [...this.panes.keys()]) this.destroyPane(id);
-    for (const el of [...this.tabs.values(), ...this.panels.values()]) el.remove();
+    for (const el of [...this.tabs.values(), ...this.panels.values(), ...this.tips.values()])
+      el.remove();
     this.tabs.clear();
     this.panels.clear();
+    this.tips.clear();
     this.popped.clear();
     this.editorTab?.remove();
     this.editorTab = null;

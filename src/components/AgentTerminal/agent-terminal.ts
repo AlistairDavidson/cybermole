@@ -18,6 +18,7 @@ import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/input/input.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
+import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
 // The protocol types come from the kit's terminal-protocol (one definition,
 // shared with the app pages' lean agent-console client — the convergence
 // path noted there).
@@ -63,6 +64,8 @@ export function terminalPlainText(terminal: Terminal): string {
 /** One page-wide online/visibility listener pair for all instances, rather
  *  than a pair per tab. */
 const instances = new Set<AgentTerminal>();
+/** Tooltip ids must be unique per page; panes are clones of one skeleton. */
+let paneSeq = 0;
 let sharedWakeArmed = false;
 const wakePendingReconnects = (): void => {
   if (document.visibilityState === 'hidden') return;
@@ -240,7 +243,7 @@ export class AgentTerminal extends HTMLElement {
     instances.add(this);
     armSharedWake();
     armSharedThemeSync();
-    this.ensureToolbar();
+    this.wireToolbar();
     armSharedFind();
     if (this.terminal) {
       return;
@@ -296,8 +299,6 @@ export class AgentTerminal extends HTMLElement {
     this.resizeObserver.observe(terminalContainer);
 
     this.armTouchScroll(terminalContainer);
-
-    this.ensureToolbar();
 
     this.fitNow();
     // WebGL loads in activate(), not here.
@@ -455,64 +456,31 @@ export class AgentTerminal extends HTMLElement {
   private status(text: string, kind: 'busy' | 'ok' | 'err' | 'info' = 'busy'): void {
     const el = this.querySelector('.terminal-status');
     if (!el) return;
-    const indicator =
-      kind === 'busy'
-        ? '<wa-spinner></wa-spinner>'
-        : kind === 'ok'
-          ? '<wa-icon name="circle-check"></wa-icon>'
-          : kind === 'err'
-            ? '<wa-icon name="triangle-exclamation"></wa-icon>'
-            : '<wa-icon name="circle-info"></wa-icon>';
     el.className = `terminal-status ${kind}`;
-    el.innerHTML = `${indicator}<span></span>`;
-    (el.lastElementChild as HTMLElement).textContent = text;
+    for (const indicator of el.querySelectorAll<HTMLElement>('[data-kind]'))
+      indicator.classList.toggle('hidden', indicator.dataset.kind !== kind);
+    const label = el.querySelector('.status-text');
+    if (label) label.textContent = text;
   }
 
   // ---- toolbar ----
 
-  /** Absolutely positioned, so the ResizeObserver still sees the container's
-   *  true box. Built here so every pane creation path gets it. */
-  private ensureToolbar(): void {
-    if (this.querySelector('.terminal-toolbar')) return;
-    const bar = document.createElement('div');
-    bar.className = 'terminal-toolbar wa-cluster wa-gap-s';
-    bar.setAttribute('role', 'toolbar');
-    bar.setAttribute('aria-label', 'terminal actions');
-    const find = document.createElement('div');
-    find.className = 'terminal-find wa-cluster hidden';
-    find.innerHTML = `
-      <wa-input class="terminal-find-input" placeholder="find in terminal…" size="s"
-        aria-label="find in terminal"></wa-input>
-      <wa-button class="find-prev" appearance="plain" size="xs" title="previous match (shift+enter)">
-        <wa-icon name="chevron-up" label="previous match"></wa-icon>
-      </wa-button>
-      <wa-button class="find-next" appearance="plain" size="xs" title="next match (enter)">
-        <wa-icon name="chevron-down" label="next match"></wa-icon>
-      </wa-button>
-      <wa-button class="find-close" appearance="plain" size="xs" title="close (esc)">
-        <wa-icon name="xmark" label="close find bar"></wa-icon>
-      </wa-button>`;
-    bar.innerHTML = `
-      <wa-button class="tb-pop-out hidden" appearance="plain" variant="neutral" size="xs"
-          title="pop out — move this terminal to its own browser tab (its row here brings it back)">
-        <wa-icon slot="start" name="arrow-up-right-from-square" aria-hidden="true"></wa-icon>pop out
-      </wa-button>
-      <wa-button class="tb-copy-output" appearance="plain" variant="neutral" size="xs"
-          title="copy the terminal's output — scrollback included — as plain text">
-        <wa-icon slot="start" name="copy" aria-hidden="true"></wa-icon>copy
-      </wa-button>
-      <wa-button class="tb-download-transcript" appearance="plain" variant="neutral" size="xs"
-          title="download the transcript — scrollback included, ANSI colors preserved">
-        <wa-icon slot="start" name="download" aria-hidden="true"></wa-icon>download
-      </wa-button>
-      <wa-button class="tb-esc" appearance="plain" variant="neutral" size="xs"
-          title="send escape — phones have no esc key">
-        esc
-      </wa-button>`;
-    // Pop-out is only revealed by attach() for 'terminal' mode: a run pane
-    // has no tab to come back to. The move itself belongs to <terminal-tabs>,
-    // which catches the bubbled event.
-    (bar.querySelector('.tb-pop-out') as HTMLElement).addEventListener('click', () => {
+  /** The toolbar is AgentTerminal.astro's markup, absolutely positioned so
+   *  the ResizeObserver still sees the container's true box. Wired once. */
+  private wireToolbar(): void {
+    const bar = this.querySelector<HTMLElement>('.terminal-toolbar');
+    if (!bar || this.toolbar === bar) return;
+    this.toolbar = bar;
+    this.findBar = bar.querySelector<HTMLElement>('.terminal-find');
+    const pane = `pane-${++paneSeq}`;
+    for (const tip of bar.querySelectorAll<HTMLElement>('wa-tooltip[data-tip]')) {
+      const anchor = bar.querySelector(`.${tip.dataset.tip}`);
+      if (!anchor) continue;
+      anchor.id = `${pane}-${tip.dataset.tip}`;
+      tip.setAttribute('for', anchor.id);
+    }
+    // The move itself belongs to <terminal-tabs>, which catches the bubbled event.
+    bar.querySelector('.tb-pop-out')?.addEventListener('click', () => {
       const id = this.terminalId;
       if (id === null) return;
       this.dispatchEvent(
@@ -523,13 +491,10 @@ export class AgentTerminal extends HTMLElement {
         }),
       );
     });
-    (bar.querySelector('.tb-copy-output') as HTMLElement).addEventListener(
-      'click',
-      () => void this.copyOutput(),
-    );
-    (bar.querySelector('.tb-download-transcript') as HTMLElement).addEventListener('click', () =>
-      this.downloadTranscript(),
-    );
+    bar.querySelector('.tb-copy-output')?.addEventListener('click', () => void this.copyOutput());
+    bar
+      .querySelector('.tb-download-transcript')
+      ?.addEventListener('click', () => this.downloadTranscript());
     // A phone's soft keyboard has no esc, and TUIs need it (closing
     // dialogs, backing out of screens). One byte, then back to the pane.
     // CSS keeps the button to narrow viewports — a hardware key renders
@@ -539,14 +504,11 @@ export class AgentTerminal extends HTMLElement {
     // the two glues onto the focus-in sequence (tmux reads ESC+[I as one
     // key) and never reaches the pane as ESC. After the focus-in, the
     // byte travels alone.
-    (bar.querySelector('.tb-esc') as HTMLElement).addEventListener('click', () => {
+    bar.querySelector('.tb-esc')?.addEventListener('click', () => {
       this.terminal?.focus();
       this.send({ type: 'input', data: '\u001b' });
     });
-    bar.insertBefore(find, bar.firstChild);
-    this.toolbar = bar;
-    this.findBar = find;
-    const input = find.querySelector('.terminal-find-input') as
+    const input = bar.querySelector('.terminal-find-input') as
       (HTMLElement & { value: string | null; focus(): void }) | null;
     this.findInput = input;
     if (input) {
@@ -564,18 +526,13 @@ export class AgentTerminal extends HTMLElement {
         }
       });
     }
-    (find.querySelector('.find-next') as HTMLElement | null)?.addEventListener('click', () =>
-      this.runFind(this.findQuery(), false),
-    );
-    (find.querySelector('.find-prev') as HTMLElement | null)?.addEventListener('click', () =>
-      this.runFind(this.findQuery(), true),
-    );
-    (find.querySelector('.find-close') as HTMLElement | null)?.addEventListener('click', () =>
-      this.closeFind(),
-    );
-    const status = this.querySelector('.terminal-status');
-    if (status) status.before(bar);
-    else this.appendChild(bar);
+    bar
+      .querySelector('.find-next')
+      ?.addEventListener('click', () => this.runFind(this.findQuery(), false));
+    bar
+      .querySelector('.find-prev')
+      ?.addEventListener('click', () => this.runFind(this.findQuery(), true));
+    bar.querySelector('.find-close')?.addEventListener('click', () => this.closeFind());
   }
 
   /** Public for tests. */
@@ -616,7 +573,8 @@ export class AgentTerminal extends HTMLElement {
     const content = this.serializeXtermAddon ? this.serializeXtermAddon.serialize() : '';
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
+    const link = this.querySelector<HTMLAnchorElement>('.tb-download-link');
+    if (!link) return;
     link.href = url;
     link.download = `${this.attachedTarget ?? 'terminal'}-transcript.ans`;
     link.click();
@@ -698,7 +656,7 @@ export class AgentTerminal extends HTMLElement {
     this.activeKey = key;
     this.attachedTarget = null;
     this.terminalId = mode === 'terminal' ? (target as TerminalId) : null;
-    // The toolbar is built before the mode is known; reveal pop-out here.
+    // The toolbar is wired before the mode is known; reveal pop-out here.
     this.toolbar
       ?.querySelector('.tb-pop-out')
       ?.classList.toggle('hidden', this.terminalId === null);

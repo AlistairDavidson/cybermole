@@ -1,0 +1,93 @@
+---
+// A job's run history: a table of runs, or the loading / unreadable /
+// empty state. /jobs/:name renders it with the runs; the jobs page's runs
+// dialog renders it in its loading state and run-history.ts stamps the
+// <template data-row> per run when the JSON arrives. The template mirrors
+// the SSR row — keep the two beside each other.
+import '@awesome.me/webawesome/dist/components/badge/badge.js';
+import '@awesome.me/webawesome/dist/components/button/button.js';
+import '@awesome.me/webawesome/dist/components/callout/callout.js';
+import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
+import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '@awesome.me/webawesome/dist/components/skeleton/skeleton.js';
+import { fmtDuration } from '../JobsApp/run-format';
+import { DATE_TIME_ATTRS, isoOf } from '../../lib/web/format-attrs';
+import type { JobRunView } from '../../lib/jobs/jobs';
+
+interface Props {
+  /** undefined: still loading; null: the read failed. */
+  runs?: JobRunView[] | null;
+  /** What fires a run, said in the empty state. */
+  emptyHint: string;
+}
+const { runs, emptyHint } = Astro.props;
+const state =
+  runs === undefined ? 'loading' : runs === null ? 'error' : runs.length === 0 ? 'empty' : 'table';
+const shown = (s: string): string | undefined => (s === state ? undefined : 'hidden');
+---
+<run-history>
+  <div data-state="loading" class:list={['wa-stack wa-gap-2xs', shown('loading')]}>
+    <wa-skeleton effect="sheen"></wa-skeleton>
+    <wa-skeleton effect="sheen"></wa-skeleton>
+  </div>
+  <wa-callout data-state="error" variant="danger" class:list={[shown('error')]}>
+    <wa-icon slot="icon" name="triangle-exclamation"></wa-icon>
+    the run history could not be read — the refresh keeps trying
+  </wa-callout>
+  <p data-state="empty" class:list={['wa-caption-s', shown('empty')]}>
+    no runs recorded yet — {emptyHint}
+  </p>
+  <table data-state="table" class:list={['run-table', shown('table')]}>
+    <thead>
+      <tr>
+        <th scope="col">fired</th>
+        <th scope="col">origin</th>
+        <th scope="col">duration</th>
+        <th scope="col">exit</th>
+        <th scope="col"><span class="wa-visually-hidden">log</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      {(runs ?? []).map(run => (
+        <tr>
+          <td><wa-format-date class="run-when" date={isoOf(run.firedAt)} {...DATE_TIME_ATTRS} /></td>
+          <td class="run-origin">{run.origin}</td>
+          <td class="run-duration">
+            {run.finishedAt === null ? '—' : fmtDuration(run.firedAt, run.finishedAt)}
+          </td>
+          <td>
+            {run.exitCode === null ? (
+              <span class="run-exit unknown">—</span>
+            ) : (
+              <wa-badge
+                class:list={['run-exit', run.exitCode === 0 ? 'ok' : 'failed']}
+                variant={run.exitCode === 0 ? 'success' : 'danger'}
+              >
+                exit {run.exitCode}
+              </wa-badge>
+            )}
+          </td>
+          <td>
+            {run.hasLog && (
+              <wa-button size="xs" appearance="plain" data-log={run.firedAt}>log</wa-button>
+            )}
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+  <template data-row>
+    <tr>
+      <td><wa-format-date class="run-when" {...DATE_TIME_ATTRS}></wa-format-date></td>
+      <td class="run-origin"></td>
+      <td class="run-duration"></td>
+      <td>
+        <span class="run-exit unknown" data-optional="unknown">—</span>
+        <wa-badge class="run-exit" data-optional="exit"></wa-badge>
+      </td>
+      <td>
+        <wa-button size="xs" appearance="plain" data-optional="log">log</wa-button>
+      </td>
+    </tr>
+  </template>
+</run-history>

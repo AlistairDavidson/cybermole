@@ -1309,9 +1309,10 @@ standalone-workspace install above (`CYBERMOLE_AGENT_COMMAND`).
   both pages: console scope on `/`, builder scope on `/builder`),
   `<workspace-sidebar>` (the workspace switcher, scope-split),
   `<terminal-tabs>`, `<agent-terminal>` (xterm.js — the classic client-side
-  exception, CODE_STYLE §7); each static
-  shell is SSR'd by an Astro wrapper (`ConsoleApp.astro`,
-  `AgentTerminal.astro`)
+  exception, CODE_STYLE §7); each is a component directory whose Astro
+  half SSRs the static shell and holds the `<template>`s its enhancer
+  stamps (`ConsoleApp/`, `WorkspaceSidebar/`, `TerminalTabs/`,
+  `AgentTerminal/`)
 - `src/lib` — shared strict TS: auth (scrypt + persisted sessions + rate
   limiter), tmux helpers, the apps/workspaces domains (the workspace tree,
   terminal lifecycle, `apps.ts`/`workspaces.ts`), the editor proxy

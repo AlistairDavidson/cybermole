@@ -1,6 +1,5 @@
-// <app-settings>: the per-app settings page's client half. The icon grid
-// (one button per registry name; the picked one is aria-checked), the
-// wa-input prefill (value is a property the server can't render), and the
+// <app-settings>: the per-app settings page's client half. The icon
+// picker (a wa-radio-group: its value is the pick), the wa-input prefill (value is a property the server can't render), and the
 // save through PATCH /api/apps/<slug> — the same rename service the console
 // uses. Field errors land in the hint slots like the enhancer's own; the
 // domain codes the form can't predict (a bad icon, a vanished row) land in
@@ -16,6 +15,10 @@ import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/callout/callout.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/input/input.js';
+import '@awesome.me/webawesome/dist/components/radio-group/radio-group.js';
+import '@awesome.me/webawesome/dist/components/radio/radio.js';
+import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
+import '@awesome.me/webawesome/dist/components/format-date/format-date.js';
 
 interface WaInputLike extends HTMLElement {
   value: string | null;
@@ -23,9 +26,9 @@ interface WaInputLike extends HTMLElement {
 }
 
 type WaCallout = HTMLElement & { variant?: string; open?: boolean };
+type WaRadioGroup = HTMLElement & { value: string | null };
 
 export class AppSettings extends HTMLElement {
-  private icon = '';
   /** Resolves once the enhancer holds the schema; a save clicked before
    *  then defers its submit, so validation is never skipped. The enhancer
    *  wraps the form, so it is queried directly, not under the form. */
@@ -41,7 +44,6 @@ export class AppSettings extends HTMLElement {
   connectedCallback(): void {
     const source = this.querySelector('#app-settings-prefill') as HTMLElement | null;
     if (!source) return; // the 404 body has nothing to wire
-    this.icon = source.dataset.icon ?? '';
     // The save button sits outside its form; requestSubmit so the enhancer
     // validates first.
     const form = this.querySelector('#app-settings-form') as HTMLFormElement | null;
@@ -54,12 +56,6 @@ export class AppSettings extends HTMLElement {
       if ((e.target as HTMLElement).id !== 'app-settings-form') return;
       e.preventDefault();
       void this.save();
-    });
-    // The icon grid: delegated, so the poll-less page needs no re-wiring.
-    this.querySelector('.icon-grid')?.addEventListener('click', e => {
-      const pick = (e.target as HTMLElement).closest<HTMLElement>('.icon-choice');
-      if (!pick) return;
-      this.setIcon(pick.dataset.icon ?? '');
     });
     void customElements.whenDefined('wa-input').then(() => this.prefill());
     // A blocked submit leaves setCustomValidity on the host; clear it on
@@ -92,15 +88,16 @@ export class AppSettings extends HTMLElement {
     const cwd = this.field('cwd');
     if (name) name.value = source.dataset.name ?? '';
     if (cwd) cwd.value = source.dataset.cwd ?? '';
-    this.setIcon(source.dataset.icon ?? '');
   }
 
-  private setIcon(icon: string): void {
-    if (!isAppIcon(icon)) return;
-    this.icon = icon;
-    this.querySelectorAll<HTMLElement>('.icon-choice').forEach(btn => {
-      btn.setAttribute('aria-checked', btn.dataset.icon === icon ? 'true' : 'false');
-    });
+  /** The picked icon; the group SSRs the row's, so it is never unset. */
+  private icon(): string {
+    const value = (this.querySelector('#icon-pick') as WaRadioGroup | null)?.value ?? '';
+    return isAppIcon(value) ? value : (this.prefillSource()?.dataset.icon ?? '');
+  }
+
+  private prefillSource(): HTMLElement | null {
+    return this.querySelector('#app-settings-prefill');
   }
 
   private clearErrors(): void {
@@ -142,13 +139,14 @@ export class AppSettings extends HTMLElement {
   private async save(): Promise<void> {
     const name = (this.field('name')?.value ?? '').trim();
     const typed = (this.field('cwd')?.value ?? '').trim();
+    const icon = this.icon();
     this.clearErrors();
     const sent = await signedInFetch(`${BASE}/api/apps/${encodeURIComponent(this.slug())}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       // An empty cwd is a clear (null), not a keep — the hint promises
       // “empty = the server default”, and absent-keeps would silently no-op.
-      body: JSON.stringify({ name, icon: this.icon, cwd: typed === '' ? null : typed }),
+      body: JSON.stringify({ name, icon, cwd: typed === '' ? null : typed }),
     });
     // Signed out: the page is already heading to /login.
     if (!sent.ok) return;
@@ -161,18 +159,18 @@ export class AppSettings extends HTMLElement {
       else this.callout(json?.error ?? 'could not save — try again');
       return;
     }
-    // Keep the page honest about what's now persisted: the prefill source,
-    // the header, and the grid agree with the row.
+    // Keep the page honest about what's now persisted: the prefill source
+    // and the header agree with the row (the group already shows the pick).
     const source = this.querySelector('#app-settings-prefill') as HTMLElement | null;
     if (source) {
       source.dataset.name = name;
       source.dataset.cwd = typed;
-      source.dataset.icon = this.icon;
+      source.dataset.icon = icon;
     }
     const titleName = this.querySelector('#app-settings-title-name') as HTMLElement | null;
     if (titleName) titleName.textContent = name;
     const titleIcon = this.querySelector('#app-settings-title-icon');
-    titleIcon?.setAttribute('name', this.icon);
+    titleIcon?.setAttribute('name', icon);
     this.callout('saved — the sidebar shows it on its next sync', 'success');
   }
 }

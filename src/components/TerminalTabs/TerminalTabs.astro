@@ -14,6 +14,7 @@ import '@awesome.me/webawesome/dist/components/button-group/button-group.js';
 import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
 import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import AgentTerminal from '../AgentTerminal/AgentTerminal.astro';
 ---
 <terminal-tabs view="loading">
   <!-- manual activation: arrows walk focus, Enter/Space/click select —
@@ -21,10 +22,10 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
   <wa-tab-group class="hidden" activation="manual" without-scroll-controls>
     <wa-button-group slot="nav" class="tab-new-group" label="new tab">
       <wa-button
+        id="tab-new"
         class="tab-new"
         appearance="plain"
         size="s"
-        title="new shell tab"
         aria-label="new shell tab"
       >
         <wa-icon name="plus" label="new shell tab"></wa-icon>
@@ -32,10 +33,10 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
       <wa-dropdown class="tab-new-menu" placement="bottom-end">
         <wa-button
           slot="trigger"
+          id="tab-new-caret"
           class="tab-new-caret"
           appearance="plain"
           size="s"
-          title="new tab options"
           aria-label="new tab options"
         >
           <wa-icon name="chevron-down" label="new tab options"></wa-icon>
@@ -69,6 +70,13 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
     </wa-button>
   </div>
   <div class="run-host hidden" data-view="run"></div>
+  <!-- Out here, not in the tabs: a tooltip inside a wa-tab would join the
+       tab's text, one inside a panel hides with it. A tooltip binds its
+       anchor on connect, so stamped anchors get theirs stamped after. -->
+  <div class="tab-tips">
+    <wa-tooltip for="tab-new">new shell tab</wa-tooltip>
+    <wa-tooltip for="tab-new-caret">new tab options</wa-tooltip>
+  </div>
 
   <template data-tab>
     <wa-tab
@@ -83,20 +91,25 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
         appearance="plain"
         size="xs"
         tabindex="-1"
-        title="close this terminal"
       >
         <wa-icon name="xmark" label="close terminal"></wa-icon>
       </wa-button>
     </wa-tab>
   </template>
+  <template data-close-tip>
+    <wa-tooltip>close this terminal</wa-tooltip>
+  </template>
+  <template data-editor-tab-tip>
+    <wa-tooltip>open the workspace folder in the editor</wa-tooltip>
+  </template>
+  <template data-editor-pop-tip>
+    <wa-tooltip>pop out — open this workspace's editor in its own browser tab</wa-tooltip>
+  </template>
   <template data-panel>
     <wa-tab-panel class="term-panel"></wa-tab-panel>
   </template>
   <template data-pane>
-    <agent-terminal>
-      <div class="terminal-container"></div>
-      <div class="terminal-status"></div>
-    </agent-terminal>
+    <AgentTerminal />
   </template>
   <template data-popped>
     <div class="tabs-empty tabs-popped">
@@ -110,7 +123,7 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
       class="tab editor-tab"
       panel="editor"
       data-term="editor"
-      title="open the workspace folder in the editor"
+      id="tab-editor"
     >
       <wa-icon name="code" aria-hidden="true"></wa-icon>
       <span class="tab-label">editor</span>
@@ -120,11 +133,11 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
     <wa-tab-panel name="editor" class="editor-host">
       <div class="editor-toolbar" role="toolbar" aria-label="editor actions">
         <wa-button
+          id="editor-pop-out"
           class="tb-pop-out"
           appearance="plain"
           variant="neutral"
           size="xs"
-          title="pop out — open this workspace's editor in its own browser tab"
         >
           <wa-icon slot="start" name="arrow-up-right-from-square" aria-hidden="true"></wa-icon>
           pop out
