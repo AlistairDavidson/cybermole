@@ -491,7 +491,6 @@ export class TerminalTabs extends HTMLElement {
     tab.draggable = true;
     tab.setAttribute('aria-keyshortcuts', 'Shift+ArrowLeft Shift+ArrowRight');
     tab.innerHTML =
-      `<span class="tab-dot" aria-hidden="true"></span>` +
       `<span class="tab-label"></span>` +
       `<span class="tab-close" role="button" title="close this terminal"><wa-icon name="xmark" label="close terminal"></wa-icon></span>`;
     (tab.querySelector('.tab-label') as HTMLElement).textContent = t.title ?? '';

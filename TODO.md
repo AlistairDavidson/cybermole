@@ -1,6 +1,9 @@
 ## Live testing
 
-- unclear if a builder page agent would have found the example app without being told (the root AGENTS.md now tells it; verify the builder-side story too)
+- not seeing editor on server version
+- code pattern from apps has not been applied to main application (eg it is still setting innerHTML in terminal-tabs.ts)
+- wa-tab is not used for our tabs. Strict instructions must be given to all agents to ALWAYS use a wa-native solution when possible and conversion work must be done on the existing code
+- 
 
 ## Human tasks
 
