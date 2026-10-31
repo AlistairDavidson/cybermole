@@ -106,7 +106,9 @@ async function refreshState(page: Page): Promise<void> {
 async function waitForTermText(page: Page, text: string, timeout = 20_000): Promise<void> {
   await page.waitForFunction(
     marker => {
-      const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+      const el = document.querySelector(
+        'agent-terminal:not(wa-tab-panel:not([active]) *)',
+      ) as unknown as {
         terminal?: {
           buffer: {
             active: {
@@ -255,16 +257,21 @@ test('builder flow: + app → + workspace (a build session) → framing env in t
   const flowRow = page.locator('workspace-sidebar li[data-ws].active');
   await expect(flowRow).toContainText('flow build');
   await expect(flowRow).toHaveAttribute('title', WORKSPACE);
-  const agentTab = await page.locator('terminal-tabs .tabs-bar .tab').getAttribute('data-term');
-  await expect(page.locator(`terminal-tabs .tab[data-term="${agentTab}"] .tab-dot`)).toHaveClass(
-    /live/,
-    { timeout: 10_000 },
+  const agentTab = await page.locator('terminal-tabs wa-tab').getAttribute('data-term');
+  await expect(page.locator(`terminal-tabs .tab[data-term="${agentTab}"]`)).toHaveAttribute(
+    'aria-label',
+    /\(live\)/,
+    {
+      timeout: 10_000,
+    },
   );
   await waitForTermText(page, AGENT_MARKER, 20_000);
 
   // The framing one-liner rode the spawn: the session exists to build
   // flow-app, from the root cwd (not the app tree).
-  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page
+    .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+    .click();
   await page.keyboard.type('echo FOCUS=$CYBERMOLE_WORKSPACE_FOCUS\n');
   await waitForTermText(page, 'FOCUS=flow-app', 10_000);
   await page.keyboard.type('pwd\n');
@@ -274,16 +281,19 @@ test('builder flow: + app → + workspace (a build session) → framing env in t
 
   // A + tab carries the framing too (spawn path two).
   await page.click('terminal-tabs .tab-new');
-  await page.waitForFunction(
-    () => document.querySelectorAll('terminal-tabs .tabs-bar .tab').length === 2,
-  );
-  const tabId = await page.locator('terminal-tabs .tabs-bar .tab.active').getAttribute('data-term');
-  await expect(page.locator(`terminal-tabs .tab[data-term="${tabId}"] .tab-dot`)).toHaveClass(
-    /live/,
-    { timeout: 10_000 },
+  await page.waitForFunction(() => document.querySelectorAll('terminal-tabs wa-tab').length === 2);
+  const tabId = await page.locator('terminal-tabs wa-tab[active]').getAttribute('data-term');
+  await expect(page.locator(`terminal-tabs .tab[data-term="${tabId}"]`)).toHaveAttribute(
+    'aria-label',
+    /\(live\)/,
+    {
+      timeout: 10_000,
+    },
   );
   await waitForTermText(page, MARKER, 20_000);
-  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page
+    .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+    .click();
   await page.keyboard.type('echo FOCUS=$CYBERMOLE_WORKSPACE_FOCUS\n');
   await waitForTermText(page, 'FOCUS=flow-app', 10_000);
 
@@ -324,9 +334,12 @@ test('deep links route by owner: app tabs bounce to /builder, console tabs to /'
   await page.goto(`/?t=${appTerm}`);
   await page.waitForURL(u => u.pathname === '/builder' && u.searchParams.get('t') === appTerm);
   await expect(page.locator(`workspace-sidebar li[data-ws="${appWs!.id}"]`)).toHaveClass(/active/);
-  await expect(page.locator(`terminal-tabs .tab[data-term="${appTerm}"] .tab-dot`)).toHaveClass(
-    /live/,
-    { timeout: 10_000 },
+  await expect(page.locator(`terminal-tabs .tab[data-term="${appTerm}"]`)).toHaveAttribute(
+    'aria-label',
+    /\(live\)/,
+    {
+      timeout: 10_000,
+    },
   );
 
   // /builder?t=<console tab> bounces back to /.

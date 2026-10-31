@@ -1,14 +1,24 @@
-// <terminal-tabs>: the selected workspace's tab bar and panes. Each tab's
-// <agent-terminal> is created on first activation and stays connected while
-// hidden. The editor tab (an iframe of the /editor proxy) is pinned last.
-// Bar updates are granular node moves and class flips, never innerHTML
-// swaps, so listeners and focus survive.
+// <terminal-tabs>: the enhancer for TerminalTabs.astro — the selected
+// workspace's tabs on a wa-tab-group. Every structure is authored in the
+// .astro (the empty states, the run host, the new-tab split button, and
+// the <template> skeletons cloned per terminal); this fills class hooks
+// and never builds markup. Each tab's <agent-terminal> is stamped into its
+// panel on first activation and stays connected while the panel is
+// hidden. The editor tab (an iframe of the /editor proxy) is pinned after
+// the terminals.
+//
+// The group owns the tablist semantics, the panels' visibility and arrow
+// focus (manual activation). Selection stays here: a selection is an
+// attach, and the run view and the empty states select no tab at all, so
+// markActive() sets every tab's and panel's `active` itself and the group
+// follows (its MutationObserver re-syncs on `active`). The group is hidden
+// while it holds no tab — wa-tab-group can't initialise an empty tablist.
 //
 // Tabs reorder by drag (the dragged tab follows the pointer across the
-// bar's midpoints) or by Shift+Arrow on a focused tab. A reorder is
-// optimistic: the bar moves at once, the order rides a
+// tabs' midpoints) or by Shift+Arrow on a focused tab. A reorder is
+// optimistic: the strip moves at once, the order rides a
 // 'reorder-terminals' event up to <console-app>, and the next sync
-// confirms it (or, after a failed write, reverts the bar).
+// confirms it (or, after a failed write, reverts the strip).
 //
 // Pop-out moves a terminal to its own browser tab (/view?t=<id>: the
 // chrome-free single view). It's a move, not a copy: the server attaches
@@ -24,10 +34,14 @@ import type { TerminalId, TmuxSessionName, WorkspaceId } from '@cybermole/app-ki
 import { BASE } from '../../base';
 import { moveItem, type TerminalCommand } from '../../lib/terminals/tab-order';
 import { armEditorThemeReload, editorSrc } from '../editor-pane';
-import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '@awesome.me/webawesome/dist/components/tab-group/tab-group.js';
+import '@awesome.me/webawesome/dist/components/tab/tab.js';
+import '@awesome.me/webawesome/dist/components/tab-panel/tab-panel.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
+import '@awesome.me/webawesome/dist/components/button-group/button-group.js';
 import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
 import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
+import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import type { AgentTerminal } from '../AgentTerminal/agent-terminal';
 import '../AgentTerminal/agent-terminal';
 
@@ -39,41 +53,77 @@ const POPUP_GONE_MS = 300;
 
 type ActiveTab = TerminalId | typeof EDITOR | null;
 
+/** The group's `active` while no tab is selected: a panel name no tab
+ *  has. Left empty, its first-visibility init would select the first tab. */
+const NO_TAB = '-';
+
+/** What the body shows: a tab's panel, the job-run pane, or an empty state. */
+type View = 'tab' | 'run' | 'no-terminals' | 'no-workspace';
+
+type PaneElement = AgentTerminal & HTMLElement;
+
 export class TerminalTabs extends HTMLElement {
   private ws: WorkspaceState | null = null;
   private editorEnabled = false;
   private active: ActiveTab = null;
-  private readonly tabs = new Map<TerminalId, HTMLButtonElement>();
-  private readonly panes = new Map<TerminalId, AgentTerminal>();
-  private bar: HTMLElement | null = null;
-  private body: HTMLElement | null = null;
+  private readonly tabs = new Map<TerminalId, HTMLElement>();
+  private readonly panels = new Map<TerminalId, HTMLElement>();
+  private readonly panes = new Map<TerminalId, PaneElement>();
+  private group: HTMLElement | null = null;
+  private newTabGroup: HTMLElement | null = null;
   /** Popped tabs' window handles; pagehide or `closed` brings the terminal back. */
   private readonly popped = new Map<TerminalId, Window>();
-  /** Only one tab can be both popped and active. */
-  private poppedNotice: HTMLElement | null = null;
-  private editorTab: HTMLButtonElement | null = null;
-  private newTabGroup: HTMLElement | null = null;
-  /** The editor pane: a toolbar (pop-out) above the workbench iframe. */
-  private editorHost: HTMLElement | null = null;
+  private editorTab: HTMLElement | null = null;
+  /** Stamped on first open: a hidden iframe would still boot the whole workbench. */
+  private editorPanel: HTMLElement | null = null;
   /** The in-flight optimistic tab order, until a poll confirms the write. */
   private pendingOrder: TerminalId[] | null = null;
   /** The tab being dragged, null when no drag is live. */
   private dragging: TerminalId | null = null;
-  private runHost: HTMLElement | null = null;
-  private runPane: AgentTerminal | null = null;
-  /** A named field so re-adding the listener on reconnect dedupes. */
-  private readonly onPanePopOut = (e: Event): void => {
-    this.popTerminal((e as CustomEvent<{ id: TerminalId }>).detail.id);
-  };
+  private runPane: PaneElement | null = null;
 
   connectedCallback(): void {
-    this.addEventListener('terminal-pop-out', this.onPanePopOut);
-    if (this.bar) return;
-    this.innerHTML = `
-      <div class="tabs-bar" role="tablist" aria-label="terminal tabs"></div>
-      <div class="tabs-body"></div>`;
-    this.bar = this.querySelector('.tabs-bar');
-    this.body = this.querySelector('.tabs-body');
+    if (this.group) return; // listeners on the host survive a re-connect
+    this.group = this.querySelector('wa-tab-group');
+    this.newTabGroup = this.querySelector('.tab-new-group');
+    this.addEventListener('terminal-pop-out', e => {
+      this.popTerminal((e as CustomEvent<{ id: TerminalId }>).detail.id);
+    });
+    // Capture: the close button sits inside its tab, and the group's own
+    // click handler (in its shadow root) would select the tab first.
+    this.addEventListener('click', e => this.onCloseClick(e), true);
+    this.addEventListener('click', e => this.onClick(e));
+    // Capture: Shift+Arrow must reach the reorder before the group's arrow
+    // handler walks focus.
+    this.addEventListener('keydown', e => this.onReorderKey(e), true);
+    this.addEventListener('keydown', e => this.onSelectKey(e));
+    this.addEventListener('dragstart', e => this.onTabDragStart(e));
+    this.addEventListener('dragover', e => this.onTabDragOver(e));
+    this.addEventListener('drop', e => this.onTabDrop(e));
+    this.addEventListener('dragend', () => this.onTabDragEnd());
+    this.addEventListener('wa-select', e => {
+      const value = (e as CustomEvent<{ item?: Element }>).detail.item?.getAttribute('value');
+      if (value === 'agent' || value === 'shell') this.emitNewTerminal(value);
+    });
+  }
+
+  // ---- stamping ----
+
+  /** Clones a skeleton's single root element from TerminalTabs.astro. */
+  private stamp<T extends HTMLElement>(name: string): T {
+    const tpl = this.querySelector<HTMLTemplateElement>(`:scope > template[${name}]`)!;
+    return document.importNode(tpl.content, true).firstElementChild as T;
+  }
+
+  private setView(view: View): void {
+    this.setAttribute('view', view);
+    for (const el of this.querySelectorAll<HTMLElement>(':scope > [data-view]'))
+      el.classList.toggle('hidden', el.dataset.view !== view);
+    this.group?.classList.toggle('hidden', this.tabs.size === 0 && !this.editorTab);
+  }
+
+  private emit(type: string, detail: unknown): void {
+    this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
   }
 
   // ---- workspace lifecycle ----
@@ -87,47 +137,29 @@ export class TerminalTabs extends HTMLElement {
     this.editorEnabled = editorEnabled;
     this.pendingOrder = null; // any optimistic order belonged to the old workspace
     this.teardownPanes();
-    if (!this.bar || !this.body) return;
-    this.bar.innerHTML = '';
+    if (!this.group) return;
     if (!ws) {
-      this.body.innerHTML = `
-        <div class="tabs-empty tabs-empty-nows">
-          <wa-icon name="folder"></wa-icon>
-          <p>no workspace selected</p>
-          <wa-button size="s" class="empty-new-workspace">
-            <wa-icon slot="start" name="plus"></wa-icon>new workspace
-          </wa-button>
-        </div>`;
-      (this.querySelector('.empty-new-workspace') as HTMLElement).onclick = () =>
-        this.dispatchEvent(
-          new CustomEvent('new-workspace', {
-            detail: { appId: null },
-            bubbles: true,
-            composed: true,
-          }),
-        );
+      this.setView('no-workspace');
       return;
     }
-    this.body.innerHTML = '';
     for (const [i, t] of ws.terminals.entries()) {
-      this.addTabButton(t);
-      this.updateTabButton(t, i);
+      this.addTab(t);
+      this.updateTab(t, i);
     }
     this.appendEditorTab();
-    this.appendNewTabButtons();
-    this.body.appendChild(this.runPaneHost());
+    if (this.newTabGroup) this.group.appendChild(this.newTabGroup);
     const initial =
       initialTab !== undefined && ws.terminals.some(t => t.id === initialTab) ? initialTab : null;
     if (initial !== null) this.selectTerminal(initial);
-    else if (!this.selectFirstTerminal()) this.renderNoTerminals();
+    else if (!this.selectFirstTerminal()) this.showNoTerminals();
   }
 
   /** Granular reconcile with a fresh poll: nodes are moved, never rebuilt. */
   sync(ws: WorkspaceState): void {
-    if (!this.bar || this.ws?.id !== ws.id) return;
+    if (!this.group || this.ws?.id !== ws.id) return;
     // An in-flight optimistic reorder keeps the display order until a poll
-    // confirms it (identical ids) — a mid-write poll must not snap the bar
-    // back. Tabs that appeared or vanished elsewhere still reconcile.
+    // confirms it (identical ids) — a mid-write poll must not snap the
+    // strip back. Tabs that appeared or vanished elsewhere still reconcile.
     if (this.pendingOrder !== null) {
       const serverIds = ws.terminals.map(t => t.id);
       const confirmed =
@@ -148,56 +180,55 @@ export class TerminalTabs extends HTMLElement {
       }
     }
     this.ws = ws;
-    // appendChild moves buttons into state order; editor and the new-tab
-    // group stay last.
-    for (const t of ws.terminals) {
-      if (!this.tabs.has(t.id)) this.addTabButton(t);
-      this.bar.appendChild(this.tabs.get(t.id)!);
-    }
-    if (this.editorTab) this.bar.appendChild(this.editorTab);
-    if (this.newTabGroup) this.bar.appendChild(this.newTabGroup);
+    for (const t of ws.terminals) if (!this.tabs.has(t.id)) this.addTab(t);
+    this.applyDomOrder();
     const seen = new Set<TerminalId>();
     ws.terminals.forEach((t, i) => {
       seen.add(t.id);
-      this.updateTabButton(t, i);
+      this.updateTab(t, i);
     });
-    for (const [id, tab] of this.tabs) {
+    for (const id of [...this.tabs.keys()]) {
       if (seen.has(id)) continue;
-      tab.remove();
-      this.tabs.delete(id);
       this.unpop(id);
       this.destroyPane(id);
+      this.tabs.get(id)!.remove();
+      this.tabs.delete(id);
+      this.panels.get(id)!.remove();
+      this.panels.delete(id);
     }
     if (this.active !== null && this.active !== EDITOR && !seen.has(this.active)) {
       this.active = null;
-      this.clearNoTerminals();
-      this.clearPoppedNotice();
-      if (!this.selectFirstTerminal()) this.renderNoTerminals();
+      if (!this.selectFirstTerminal()) this.showNoTerminals();
+    } else {
+      // A tab appearing (or the last vanishing) flips the group's visibility.
+      this.setView((this.getAttribute('view') as View | null) ?? 'tab');
     }
   }
 
   // ---- reorder ----
 
-  /** The bar's ids in display order (an optimistic reorder mutates ws). */
+  /** The strip's ids in display order (an optimistic reorder mutates ws). */
   private displayIds(): TerminalId[] {
     return this.ws ? this.ws.terminals.map(t => t.id) : [];
   }
 
-  /** Moves the bar to the state order and pins editor/new-tab last. */
+  /** Moves the tabs to the state order and pins editor/new-tab last. Only
+   *  the nav-slotted children's relative order matters; panels interleave. */
   private applyDomOrder(): void {
-    if (!this.bar || !this.ws) return;
+    if (!this.group || !this.ws) return;
     for (const t of this.ws.terminals) {
       const tab = this.tabs.get(t.id);
-      if (tab) this.bar.appendChild(tab);
+      if (tab) this.group.appendChild(tab);
     }
-    if (this.editorTab) this.bar.appendChild(this.editorTab);
-    if (this.newTabGroup) this.bar.appendChild(this.newTabGroup);
+    if (this.editorTab) this.group.appendChild(this.editorTab);
+    if (this.newTabGroup) this.group.appendChild(this.newTabGroup);
   }
 
-  /** Optimistic: ws and the bar take the order at once, and the write rides
-   *  the event up to <console-app>, which reports back via reorderSettled. */
+  /** Optimistic: ws and the strip take the order at once, and the write
+   *  rides the event up to <console-app>, which reports back via
+   *  reorderSettled. */
   private applyOrder(ids: TerminalId[]): void {
-    if (!this.ws || !this.bar) return;
+    if (!this.ws) return;
     const byId = new Map(this.ws.terminals.map(t => [t.id, t] as const));
     const reordered = ids
       .map(id => byId.get(id))
@@ -206,18 +237,12 @@ export class TerminalTabs extends HTMLElement {
     this.pendingOrder = ids;
     this.ws = { ...this.ws, terminals: reordered };
     this.applyDomOrder();
-    reordered.forEach((t, i) => this.updateTabButton(t, i)); // "term N" labels renumber
-    this.dispatchEvent(
-      new CustomEvent('reorder-terminals', {
-        detail: { workspaceId: this.ws!.id, order: ids },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+    reordered.forEach((t, i) => this.updateTab(t, i)); // "term N" labels renumber
+    this.emit('reorder-terminals', { workspaceId: this.ws.id, order: ids });
   }
 
   /** The console's reorder PUT settled. A failure clears the optimistic
-   *  order (the sync the console fires right after reverts the bar); a
+   *  order (the sync the console fires right after reverts the strip); a
    *  success confirms only ITS order — a superseded one (a newer drag is
    *  still in flight) must not clear the newer pending order. */
   reorderSettled(ok: boolean, order?: TerminalId[]): void {
@@ -234,19 +259,29 @@ export class TerminalTabs extends HTMLElement {
       this.pendingOrder = null;
   }
 
+  /** The terminal tab an event happened in (never the editor tab). */
+  private terminalTabOf(e: Event): TerminalId | null {
+    const tab = (e.target as Element | null)?.closest?.('wa-tab[data-term]');
+    const id = (tab as HTMLElement | null)?.dataset.term as TerminalId | undefined;
+    return id !== undefined && this.tabs.has(id) ? id : null;
+  }
+
   /** HTML5 drag: the dragged tab follows the pointer, hopping each tab's
    *  midpoint, so the drop position is already the DOM order. */
-  private onTabDragStart(id: TerminalId, e: DragEvent): void {
+  private onTabDragStart(e: DragEvent): void {
+    const id = this.terminalTabOf(e);
+    if (id === null) return;
     this.dragging = id;
     // Data is required for Firefox to start a drag at all.
     e.dataTransfer?.setData('text/plain', id);
     if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-    this.tabs.get(id)?.classList.add('dragging');
+    this.tabs.get(id)!.classList.add('dragging');
   }
 
-  private onTabDragOver(over: TerminalId, e: DragEvent): void {
+  private onTabDragOver(e: DragEvent): void {
     const dragged = this.dragging;
-    if (dragged === null) return;
+    const over = this.terminalTabOf(e);
+    if (dragged === null || over === null) return;
     // Every tab is a drop target, the dragged one too: dropping on itself
     // keeps the preview position (dragend alone would snap it back).
     e.preventDefault();
@@ -254,73 +289,87 @@ export class TerminalTabs extends HTMLElement {
     if (dragged === over) return;
     const draggedEl = this.tabs.get(dragged);
     const overEl = this.tabs.get(over);
-    if (!this.bar || !draggedEl || !overEl) return;
+    if (!this.group || !draggedEl || !overEl) return;
     const rect = overEl.getBoundingClientRect();
     const reference = e.clientX > rect.left + rect.width / 2 ? overEl.nextSibling : overEl;
     if (draggedEl !== reference && draggedEl.nextSibling !== reference)
-      this.bar.insertBefore(draggedEl, reference);
+      this.group.insertBefore(draggedEl, reference);
   }
 
   private onTabDrop(e: DragEvent): void {
     if (this.dragging === null) return;
     e.preventDefault();
-    this.finishDrag();
-  }
-
-  private onTabDragEnd(id: TerminalId): void {
-    if (this.dragging !== null) {
-      // No drop: the preview moved the tab, so snap the bar back.
-      this.dragging = null;
-      this.applyDomOrder();
-    }
-    this.tabs.get(id)?.classList.remove('dragging');
-  }
-
-  private finishDrag(): void {
     const id = this.dragging;
     this.dragging = null;
-    this.tabs.get(id!)?.classList.remove('dragging');
-    if (id === null || !this.bar) return;
+    this.tabs.get(id)?.classList.remove('dragging');
+    if (!this.group) return;
     const ids: TerminalId[] = [];
-    for (const el of this.bar.children) {
-      const term = (el as HTMLElement).dataset.term;
-      if (term !== undefined && this.tabs.has(term as TerminalId)) ids.push(term as TerminalId);
+    for (const el of this.group.children) {
+      const term = (el as HTMLElement).dataset.term as TerminalId | undefined;
+      if (term !== undefined && this.tabs.has(term)) ids.push(term);
     }
     this.applyOrder(ids);
   }
 
-  /** Arrows walk the tab bar (roving focus, wrapping); Shift+Arrow moves
-   *  the focused tab itself — the keyboard half of drag-reorder. */
-  private onTabKeydown(id: TerminalId, e: KeyboardEvent): void {
-    if (e.altKey || e.ctrlKey || e.metaKey) return;
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-    e.preventDefault();
-    const ids = this.displayIds();
-    const from = ids.indexOf(id);
-    if (from < 0) return;
-    const delta = e.key === 'ArrowLeft' ? -1 : 1;
-    if (e.shiftKey) {
-      const to = from + delta;
-      if (to < 0 || to >= ids.length) return;
-      this.applyOrder(moveItem(ids, from, to));
-      // A DOM move can drop focus; the tab stays where the user is looking.
-      this.tabs.get(id)?.focus();
-    } else {
-      const next = ids[(from + delta + ids.length) % ids.length]!;
-      this.setRovingTabindex(next);
-      this.tabs.get(next)?.focus();
+  private onTabDragEnd(): void {
+    if (this.dragging !== null) {
+      // No drop: the preview moved the tab, so snap the strip back.
+      this.tabs.get(this.dragging)?.classList.remove('dragging');
+      this.dragging = null;
+      this.applyDomOrder();
     }
   }
 
-  /** One tab stop in the bar: the given terminal tab, the rest -1. */
-  private setRovingTabindex(on: TerminalId | null): void {
-    let any = false;
-    for (const [id, tab] of this.tabs) {
-      const isOn = id === on;
-      if (isOn) any = true;
-      tab.tabIndex = isOn ? 0 : -1;
-    }
-    if (!any) for (const tab of this.tabs.values()) tab.tabIndex = 0;
+  /** Shift+Arrow moves the focused tab — the keyboard half of
+   *  drag-reorder. Plain arrows are the group's (roving focus). */
+  private onReorderKey(e: KeyboardEvent): void {
+    if (!e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const id = this.terminalTabOf(e);
+    if (id === null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const ids = this.displayIds();
+    const from = ids.indexOf(id);
+    const to = from + (e.key === 'ArrowLeft' ? -1 : 1);
+    if (from < 0 || to < 0 || to >= ids.length) return;
+    this.applyOrder(moveItem(ids, from, to));
+    // A DOM move can drop focus; the tab stays where the user is looking.
+    this.tabs.get(id)?.focus();
+  }
+
+  // ---- clicks and keys ----
+
+  private onCloseClick(e: MouseEvent): void {
+    if (!(e.target as Element).closest('.tab-close')) return;
+    const id = this.terminalTabOf(e);
+    if (id === null) return;
+    e.stopPropagation();
+    this.emit('close-terminal', { id });
+  }
+
+  private onClick(e: MouseEvent): void {
+    const target = e.target as Element;
+    if (target.closest('.tab-new')) this.emitNewTerminal('shell');
+    else if (target.closest('.empty-new-terminal'))
+      this.emit('new-terminal', { workspaceId: this.ws?.id });
+    else if (target.closest('.empty-new-workspace')) this.emit('new-workspace', { appId: null });
+    else if (target.closest('.editor-host .tb-pop-out')) this.popEditor();
+    else this.selectTabOf(target);
+  }
+
+  /** Enter/Space on a focused tab (the group's manual activation). */
+  private onSelectKey(e: KeyboardEvent): void {
+    if (e.key === 'Enter' || e.key === ' ') this.selectTabOf(e.target as Element);
+  }
+
+  /** Clicking the already-active tab still selects: it re-attaches a
+   *  popped or ended pane. */
+  private selectTabOf(target: Element): void {
+    const tab = target.closest<HTMLElement>('wa-tab[data-term]');
+    if (!tab || tab.closest('terminal-tabs') !== this) return;
+    if (tab.dataset.term === EDITOR) this.selectEditor();
+    else this.selectTerminal(tab.dataset.term as TerminalId);
   }
 
   // ---- pop-out ----
@@ -342,19 +391,12 @@ export class TerminalTabs extends HTMLElement {
     // '_blank' with no features string is a new tab, not a popup.
     const win = window.open(`${BASE}/view?t=${id}`, '_blank');
     if (!win) {
-      this.dispatchEvent(
-        new CustomEvent('pop-blocked', {
-          detail: { id },
-          bubbles: true,
-          composed: true,
-        }),
-      );
+      this.emit('pop-blocked', { id });
       return;
     }
     this.popped.set(id, win);
     this.destroyPane(id);
     this.markPopped(id, true);
-    this.showPoppedNotice();
     // Same-origin navigation reuses the window, so the about:blank → /view?t=
     // swap fires pagehide too. Only count it once `closed` is true.
     win.addEventListener('pagehide', () => {
@@ -375,32 +417,18 @@ export class TerminalTabs extends HTMLElement {
     if (this.popped.delete(id)) this.markPopped(id, false);
   }
 
-  /** Updates the aria label now rather than at the next poll. */
+  /** The class, aria label and the panel's notice (it says where the
+   *  terminal went) flip now rather than at the next poll. */
   private markPopped(id: TerminalId, on: boolean): void {
     const tab = this.tabs.get(id);
-    if (!tab) return;
+    const panel = this.panels.get(id);
+    if (!tab || !panel) return;
     tab.classList.toggle('popped', on);
+    panel.querySelector(':scope > .tabs-popped')?.remove();
+    if (on) panel.appendChild(this.stamp('data-popped'));
     const ws = this.ws;
     const i = ws ? ws.terminals.findIndex(t => t.id === id) : -1;
-    if (i >= 0) this.updateTabButton(ws!.terminals[i]!, i);
-  }
-
-  /** The popped tab stays selected, so its spot says where the terminal went. */
-  private showPoppedNotice(): void {
-    this.clearPoppedNotice();
-    if (!this.body) return;
-    const notice = document.createElement('div');
-    notice.className = 'tabs-empty tabs-popped';
-    notice.innerHTML = `
-      <wa-icon name="arrow-up-right-from-square"></wa-icon>
-      <p>popped out to its own tab — click the tab to bring it back here</p>`;
-    this.body.appendChild(notice);
-    this.poppedNotice = notice;
-  }
-
-  private clearPoppedNotice(): void {
-    this.poppedNotice?.remove();
-    this.poppedNotice = null;
+    if (i >= 0) this.updateTab(ws!.terminals[i]!, i);
   }
 
   // ---- tab selection ----
@@ -408,65 +436,52 @@ export class TerminalTabs extends HTMLElement {
   /** A pane whose attach ended (the session died) is re-created, so the
    *  click is a fresh attach and the server respawns the session. */
   selectTerminal(id: TerminalId): void {
-    if (!this.body || !this.ws || !this.ws.terminals.some(t => t.id === id)) return;
+    if (!this.ws || !this.ws.terminals.some(t => t.id === id)) return;
     this.hideRun();
-    this.clearNoTerminals();
-    this.clearPoppedNotice();
     // Clicking a popped tab brings it back: this attach bumps the popped
     // tab's client once, and its 'exit' ends it, so no loop.
     if (this.popped.has(id)) this.unpop(id);
     this.active = id;
-    const dead = this.panes.get(id);
-    if (dead?.ended) this.destroyPane(id);
-    const pane = this.ensurePane(id);
-    for (const [pid, p] of this.panes) {
-      (p as unknown as HTMLElement).classList.toggle('hidden', pid !== id);
-    }
-    this.editorHost?.classList.add('hidden');
     this.markActive();
-    pane.activate();
+    this.setView('tab');
+    if (this.panes.get(id)?.ended) this.destroyPane(id);
+    const pane = this.ensurePane(id);
+    // A freshly stamped panel renders its slot a microtask after connect;
+    // until then the pane is outside the flat tree and can't fit or focus.
+    void (
+      this.panels.get(id) as HTMLElement & { updateComplete: Promise<unknown> }
+    ).updateComplete.then(() => {
+      if (this.active === id && this.panes.get(id) === pane) pane.activate();
+    });
   }
 
   selectEditor(): void {
-    if (!this.editorEnabled || !this.body) return;
+    if (!this.editorEnabled || !this.editorTab) return;
     this.hideRun();
-    this.clearNoTerminals();
-    this.clearPoppedNotice();
     this.active = EDITOR;
-    this.ensureEditorPane();
-    for (const p of this.panes.values()) (p as unknown as HTMLElement).classList.add('hidden');
-    this.editorHost?.classList.remove('hidden');
+    this.ensureEditorPanel();
     this.markActive();
+    this.setView('tab');
   }
 
   /** ?run=<name>: a transient pane for a live job run, never a tab. Hiding
    *  it destroys the instance, since the run dies with its command anyway. */
   showRun(target: TmuxSessionName): void {
-    if (!this.body) return;
-    // Never show the run pane next to an empty-state prompt.
-    this.clearNoTerminals();
-    this.clearPoppedNotice();
-    this.querySelector('.tabs-empty-nows')?.classList.add('hidden');
+    const host = this.querySelector<HTMLElement>(':scope > [data-view="run"]');
+    if (!host) return;
     if (!this.runPane) {
-      const el = document.createElement('agent-terminal') as AgentTerminal & HTMLElement;
-      el.innerHTML = '<div class="terminal-container"></div><div class="terminal-status"></div>';
-      this.runPaneHost().appendChild(el);
-      this.runPane = el;
+      this.runPane = this.stamp<PaneElement>('data-pane');
+      host.appendChild(this.runPane);
     }
-    this.runPaneHost().classList.remove('hidden');
-    for (const p of this.panes.values()) (p as unknown as HTMLElement).classList.add('hidden');
-    this.editorHost?.classList.add('hidden');
     this.active = null;
     this.markActive();
+    this.setView('run');
     this.runPane.attach('run', target, `run:${target}`);
     this.runPane.activate();
   }
 
   private hideRun(): void {
-    if (this.runPane) this.runPane.destroy();
-    this.runHost?.classList.add('hidden');
-    // Restore the no-workspace prompt showRun hid.
-    this.querySelector('.tabs-empty-nows')?.classList.remove('hidden');
+    this.runPane?.destroy();
   }
 
   activeTerminalId(): TerminalId | null {
@@ -481,53 +496,25 @@ export class TerminalTabs extends HTMLElement {
     return t.title ?? `term ${index + 1}`;
   }
 
-  private addTabButton(t: TerminalState): void {
-    if (!this.bar) return;
-    const tab = document.createElement('button');
-    tab.type = 'button';
-    tab.className = 'tab';
-    tab.setAttribute('role', 'tab');
+  /** A tab and its (empty) panel; the pane is stamped on first select. */
+  private addTab(t: TerminalState): void {
+    if (!this.group) return;
+    const tab = this.stamp<HTMLElement>('data-tab');
     tab.dataset.term = t.id;
-    tab.draggable = true;
-    tab.setAttribute('aria-keyshortcuts', 'Shift+ArrowLeft Shift+ArrowRight');
-    tab.innerHTML =
-      `<span class="tab-label"></span>` +
-      `<span class="tab-close" role="button" title="close this terminal"><wa-icon name="xmark" label="close terminal"></wa-icon></span>`;
-    (tab.querySelector('.tab-label') as HTMLElement).textContent = t.title ?? '';
-    tab.addEventListener('click', e => {
-      if ((e.target as HTMLElement).closest('.tab-close')) {
-        e.stopPropagation();
-        this.dispatchEvent(
-          new CustomEvent('close-terminal', {
-            detail: { id: t.id },
-            bubbles: true,
-            composed: true,
-          }),
-        );
-        return;
-      }
-      this.selectTerminal(t.id);
-    });
-    tab.addEventListener('dragstart', e => this.onTabDragStart(t.id, e));
-    tab.addEventListener('dragover', e => this.onTabDragOver(t.id, e));
-    tab.addEventListener('drop', e => this.onTabDrop(e));
-    tab.addEventListener('dragend', () => this.onTabDragEnd(t.id));
-    tab.addEventListener('keydown', e => this.onTabKeydown(t.id, e));
+    tab.setAttribute('panel', t.id);
+    const panel = this.stamp<HTMLElement>('data-panel');
+    panel.setAttribute('name', t.id);
     this.tabs.set(t.id, tab);
-    this.bar.appendChild(tab);
+    this.panels.set(t.id, panel);
+    this.group.append(tab, panel);
   }
 
   /** Only touches what changed (including index-shifted "term N" labels). */
-  private updateTabButton(t: TerminalState, index: number): void {
+  private updateTab(t: TerminalState, index: number): void {
     const tab = this.tabs.get(t.id);
     if (!tab) return;
-    const dot = tab.querySelector('.tab-dot') as HTMLElement | null;
-    if (dot) {
-      dot.classList.toggle('live', t.live);
-      dot.title = t.live ? 'live' : 'not live';
-    }
     const label = this.tabLabel(t, index);
-    const labelEl = tab.querySelector('.tab-label') as HTMLElement;
+    const labelEl = tab.querySelector('.tab-label')!;
     if (labelEl.textContent !== label) labelEl.textContent = label;
     tab.setAttribute(
       'aria-label',
@@ -536,113 +523,32 @@ export class TerminalTabs extends HTMLElement {
   }
 
   private appendEditorTab(): void {
-    if (!this.bar || !this.editorEnabled) return;
-    const tab = document.createElement('button');
-    tab.type = 'button';
-    tab.className = 'tab editor-tab';
-    tab.dataset.term = EDITOR;
-    tab.setAttribute('role', 'tab');
-    tab.title = 'open the workspace folder in the editor';
-    tab.innerHTML = `<wa-icon name="code" aria-hidden="true"></wa-icon><span class="tab-label">editor</span>`;
-    tab.addEventListener('click', () => this.selectEditor());
-    this.bar.appendChild(tab);
-    this.editorTab = tab;
-  }
-
-  /** The new-tab affordances, pinned last in the bar: + opens a shell tab
-   *  (the common case, same as today), the caret opens the menu with both
-   *  kinds and their shortcuts. */
-  private appendNewTabButtons(): void {
-    if (!this.bar || !this.ws) return;
-    const group = document.createElement('div');
-    group.className = 'tab-new-group';
-    const shell = document.createElement('button');
-    shell.type = 'button';
-    shell.className = 'tab-new';
-    shell.title = 'new shell tab';
-    shell.setAttribute('aria-label', 'new shell tab');
-    shell.innerHTML = `<wa-icon name="plus" aria-hidden="true"></wa-icon>`;
-    shell.addEventListener('click', () => this.emitNewTerminal('shell'));
-    const menu = document.createElement('wa-dropdown');
-    menu.setAttribute('placement', 'bottom-end');
-    menu.className = 'tab-new-menu';
-    const caret = document.createElement('button');
-    caret.type = 'button';
-    caret.className = 'tab-new-caret';
-    caret.title = 'new tab options';
-    caret.setAttribute('aria-label', 'new tab options');
-    caret.setAttribute('slot', 'trigger');
-    caret.innerHTML = `<wa-icon name="chevron-down" aria-hidden="true"></wa-icon>`;
-    menu.appendChild(caret);
-    for (const item of [
-      { value: 'shell', icon: 'terminal', label: 'new shell tab', hint: 'ctrl t' },
-      { value: 'agent', icon: 'robot', label: 'new agent tab', hint: 'ctrl shift t' },
-    ] as const) {
-      const entry = document.createElement('wa-dropdown-item');
-      entry.setAttribute('value', item.value);
-      entry.innerHTML =
-        `<wa-icon slot="icon" name="${item.icon}" aria-hidden="true"></wa-icon>` +
-        `<span>${item.label}</span><span slot="details">${item.hint}</span>`;
-      menu.appendChild(entry);
-    }
-    menu.addEventListener('wa-select', e => {
-      const chosen = (e as CustomEvent<{ item?: Element }>).detail.item;
-      const value = chosen?.getAttribute('value');
-      if (value === 'agent' || value === 'shell') this.emitNewTerminal(value);
-    });
-    group.append(shell, menu);
-    this.bar.appendChild(group);
-    this.newTabGroup = group;
+    if (!this.group || !this.editorEnabled) return;
+    this.editorTab = this.stamp<HTMLElement>('data-editor-tab');
+    this.group.appendChild(this.editorTab);
   }
 
   private emitNewTerminal(command: TerminalCommand): void {
-    this.dispatchEvent(
-      new CustomEvent('new-terminal', {
-        detail: { workspaceId: this.ws?.id, command },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+    this.emit('new-terminal', { workspaceId: this.ws?.id, command });
   }
 
   private ensurePane(id: TerminalId): AgentTerminal {
     const existing = this.panes.get(id);
     if (existing) return existing;
-    const el = document.createElement('agent-terminal') as AgentTerminal & HTMLElement;
-    el.innerHTML = '<div class="terminal-container"></div><div class="terminal-status"></div>';
-    this.body!.appendChild(el);
-    this.panes.set(id, el);
-    el.attach('terminal', id, `terminal:${id}`);
-    return el;
+    const pane = this.stamp<PaneElement>('data-pane');
+    this.panels.get(id)!.appendChild(pane);
+    this.panes.set(id, pane);
+    pane.attach('terminal', id, `terminal:${id}`);
+    return pane;
   }
 
-  /** Created on first open: a hidden iframe would still boot the whole workbench. */
-  private ensureEditorPane(): void {
-    if (this.editorHost || !this.body || !this.ws) return;
+  private ensureEditorPanel(): void {
+    if (this.editorPanel || !this.group || !this.ws) return;
     armEditorThemeReload();
-    const host = document.createElement('div');
-    host.className = 'editor-host hidden';
-    const bar = document.createElement('div');
-    bar.className = 'editor-toolbar';
-    bar.setAttribute('role', 'toolbar');
-    bar.setAttribute('aria-label', 'editor actions');
-    const pop = document.createElement('wa-button');
-    pop.className = 'tb-pop-out';
-    pop.setAttribute('appearance', 'plain');
-    pop.setAttribute('variant', 'neutral');
-    pop.setAttribute('size', 'xs');
-    pop.title = "pop out — open this workspace's editor in its own browser tab";
-    pop.innerHTML =
-      '<wa-icon slot="start" name="arrow-up-right-from-square" aria-hidden="true"></wa-icon>pop out';
-    pop.addEventListener('click', () => this.popEditor());
-    bar.appendChild(pop);
-    const frame = document.createElement('iframe');
-    frame.className = 'editor-frame';
-    frame.title = 'editor';
-    frame.src = editorSrc(this.ws.cwd);
-    host.append(bar, frame);
-    this.body.appendChild(host);
-    this.editorHost = host;
+    const panel = this.stamp<HTMLElement>('data-editor-panel');
+    panel.querySelector<HTMLIFrameElement>('.editor-frame')!.src = editorSrc(this.ws.cwd);
+    this.group.appendChild(panel);
+    this.editorPanel = panel;
   }
 
   /** The editor pops out to /view?w=<id>: a copy, not a move — the editor
@@ -652,15 +558,7 @@ export class TerminalTabs extends HTMLElement {
     const id = this.ws?.id;
     if (!id) return;
     const win = window.open(`${BASE}/view?w=${id}`, '_blank');
-    if (!win) {
-      this.dispatchEvent(
-        new CustomEvent('pop-blocked', {
-          detail: { id },
-          bubbles: true,
-          composed: true,
-        }),
-      );
-    }
+    if (!win) this.emit('pop-blocked', { id });
   }
 
   /** A teardown, not a drop: no reconnect. */
@@ -668,32 +566,29 @@ export class TerminalTabs extends HTMLElement {
     const pane = this.panes.get(id);
     if (!pane) return;
     pane.destroy();
-    (pane as unknown as HTMLElement).remove();
+    pane.remove();
     this.panes.delete(id);
   }
 
   /** Popped tabs stay open; their old handles' pagehide is ignored. */
   private teardownPanes(): void {
     for (const id of [...this.panes.keys()]) this.destroyPane(id);
+    for (const el of [...this.tabs.values(), ...this.panels.values()]) el.remove();
     this.tabs.clear();
+    this.panels.clear();
     this.popped.clear();
-    this.clearPoppedNotice();
     this.editorTab?.remove();
     this.editorTab = null;
-    this.newTabGroup?.remove();
-    this.newTabGroup = null;
+    this.editorPanel?.remove();
+    this.editorPanel = null;
     this.pendingOrder = null;
     this.dragging = null;
-    this.editorHost?.remove();
-    this.editorHost = null;
     this.active = null;
     if (this.runPane) {
       this.runPane.destroy();
-      (this.runPane as unknown as HTMLElement).remove();
+      this.runPane.remove();
       this.runPane = null;
     }
-    this.runHost?.remove();
-    this.runHost = null;
   }
 
   private selectFirstTerminal(): boolean {
@@ -703,53 +598,26 @@ export class TerminalTabs extends HTMLElement {
     return true;
   }
 
-  private renderNoTerminals(): void {
-    if (!this.body || this.querySelector('.tabs-empty-terminals')) return;
-    const empty = document.createElement('div');
-    empty.className = 'tabs-empty tabs-empty-terminals';
-    empty.innerHTML = `
-      <wa-icon name="terminal"></wa-icon>
-      <p>no terminals in this workspace yet</p>
-      <wa-button size="s" class="empty-new-terminal">
-        <wa-icon slot="start" name="plus"></wa-icon>new terminal
-      </wa-button>`;
-    this.body.appendChild(empty);
-    (empty.querySelector('.empty-new-terminal') as HTMLElement).onclick = () =>
-      this.dispatchEvent(
-        new CustomEvent('new-terminal', {
-          detail: { workspaceId: this.ws?.id },
-          bubbles: true,
-          composed: true,
-        }),
-      );
+  private showNoTerminals(): void {
+    this.active = null;
+    this.markActive();
+    this.setView('no-terminals');
   }
 
-  private clearNoTerminals(): void {
-    this.querySelector('.tabs-empty-terminals')?.remove();
-  }
-
-  private runPaneHost(): HTMLElement {
-    if (!this.runHost) {
-      this.runHost = document.createElement('div');
-      this.runHost.className = 'run-host hidden';
-      this.body!.appendChild(this.runHost);
-    }
-    return this.runHost;
-  }
-
+  /** One tab stop in the strip: the active terminal's tab, else the first. */
   private markActive(): void {
-    for (const [id, tab] of this.tabs) {
-      const on = this.active === id;
-      tab.classList.toggle('active', on);
-      tab.setAttribute('aria-selected', on ? 'true' : 'false');
-    }
-    this.setRovingTabindex(
+    // The attribute, not the property: the panel's display follows it now,
+    // not at the element's next Lit update, so a pane activates visible.
+    for (const [id, tab] of this.tabs) tab.toggleAttribute('active', id === this.active);
+    for (const [id, panel] of this.panels) panel.toggleAttribute('active', id === this.active);
+    this.editorTab?.toggleAttribute('active', this.active === EDITOR);
+    this.editorPanel?.toggleAttribute('active', this.active === EDITOR);
+    this.group?.setAttribute('active', this.active ?? NO_TAB);
+    const stop =
       this.active !== null && this.active !== EDITOR
         ? this.active
-        : (this.ws?.terminals[0]?.id ?? null),
-    );
-    this.editorTab?.classList.toggle('active', this.active === EDITOR);
-    this.editorTab?.setAttribute('aria-selected', this.active === EDITOR ? 'true' : 'false');
+        : (this.ws?.terminals[0]?.id ?? null);
+    for (const [id, tab] of this.tabs) tab.tabIndex = id === stop ? 0 : -1;
   }
 }
 

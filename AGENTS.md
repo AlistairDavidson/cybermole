@@ -182,16 +182,31 @@ Testing), not just in the SSR HTML.
 
 ## UI conventions
 
-- cybermole apps follow the component architecture of
-  `docs/conventions/CODE_STYLE.md` §7 — Astro components SSR'd, enhanced by
-  HTML web component enhancers, live state in `@preact/signals-core` stores;
-  say "component", never "island". The architecture lint (the `lint:arch`
-  stage of an app's `check`) enforces the mechanical rules. The console's own
-  `workspace-sidebar` `innerHTML` re-render (below) is legacy-to-migrate onto
-  signals, not the pattern.
-- New UI goes on Web Awesome components/utilities/tokens, not hand-rolled
-  HTML/CSS (`.agents/skills/webawesome*` are the references). The app's
-  identity lives in the `:root` semantic-token overrides in
+- **ALWAYS use the Web Awesome-native solution when one exists** — this
+  is strict, not a preference. Before writing UI, look the need up in
+  `.agents/skills/webawesome/references/choosing-components.md` and use
+  the component: tabs are `wa-tab-group`/`wa-tab`/`wa-tab-panel` (see
+  `src/components/TerminalTabs/`), buttons `wa-button`, split buttons
+  `wa-button-group`, menus `wa-dropdown`, dialogs `wa-dialog`, layout
+  `wa-stack`/`wa-cluster` and the utility classes. Hand-rolled HTML/CSS
+  standing in for a wa-* component is a defect. Where none fits, leave a
+  one-line comment at the site saying why. Code you touch that
+  hand-rolls something wa-* covers gets converted in the same change.
+- The console follows the same component architecture as the apps
+  (`docs/conventions/CODE_STYLE.md` §7) — Astro components SSR'd, enhanced
+  by HTML web component enhancers, live state in `@preact/signals-core`
+  stores; say "component", never "island". No HTML strings on the client:
+  no `innerHTML`/`insertAdjacentHTML` writes, no markup in template
+  literals, no `document.createElement` for structure — the `.astro` holds
+  the markup (`<template>` skeletons for anything stamped per item) and
+  the enhancer clones and fills it. `TerminalTabs/` is the console's
+  worked example, the notes app's `NotesList/` the apps'. `npm run lint`
+  ends with the architecture lint as a ratchet
+  (`tools/arch-check-console.mjs`): a new violation fails, and its
+  `LEGACY` list (the files still on the old patterns —
+  `workspace-sidebar`'s `innerHTML` re-render among them) only shrinks.
+  When you convert one, lower or delete its entry.
+- The app's identity lives in the `:root` semantic-token overrides in
   `src/styles/console.css` — extend those rather than adding hex/px literals.
 - `console.css` is unlayered on purpose (must win over @layer'd Web Awesome
   styles) and is the only sanctioned place for hex colors.

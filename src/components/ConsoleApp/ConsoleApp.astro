@@ -11,6 +11,7 @@ import '@awesome.me/webawesome/dist/components/dialog/dialog.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/toast/toast.js';
 import WaField from '../form/WaField.astro';
+import TerminalTabs from '../TerminalTabs/TerminalTabs.astro';
 import { zodSchemaToHTMLAttributes } from '../../lib/web/zod.service';
 import { appForm, buildSessionForm, consoleWorkspaceForm } from '../../schemas/api';
 
@@ -48,7 +49,7 @@ const wsValidation = scope === 'builder' ? buildValidation : consoleWsValidation
       </wa-button>
     </div>
     <workspace-sidebar slot="navigation"></workspace-sidebar>
-    <main><terminal-tabs></terminal-tabs></main>
+    <main><TerminalTabs /></main>
   </wa-page>
   <wa-toast placement="bottom-start"></wa-toast>
 

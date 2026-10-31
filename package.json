@@ -17,7 +17,7 @@
     "start": "docker compose up -d --build",
     "set-password": "node dist-server/server/set-password.js",
     "check": "astro check && tsc -p tsconfig.server.json --noEmit && tsc -p packages/app-kit/tsconfig.json --noEmit",
-    "lint": "eslint .",
+    "lint": "eslint . && node tools/arch-check-console.mjs",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

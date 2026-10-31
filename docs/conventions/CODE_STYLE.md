@@ -211,6 +211,18 @@ architecture, and the word is banned from new code and docs.
 
 ### Styling: Web Awesome layout components, utilities and tokens
 
+- **Web Awesome first — strict, for every agent and every surface (apps
+  and the console alike).** Before writing any UI, find the Web Awesome
+  component for it (the webawesome skill's `choosing-components.md`) and
+  use it: tabs are `wa-tab-group`/`wa-tab`/`wa-tab-panel`, buttons
+  `wa-button`, split buttons `wa-button-group`, menus `wa-dropdown`,
+  dialogs `wa-dialog`, notices `wa-callout`, layout `wa-stack`/
+  `wa-cluster`/`wa-grid` and the utility classes. A hand-rolled
+  equivalent (`<button role="tab">`, a CSS-drawn indicator, a home-made
+  menu) is a defect, not a style choice. Where no component fits, the
+  site carries a one-line comment saying why. Touching code that
+  hand-rolls something a wa-* covers means converting it in the same
+  change.
 - App UI is built on Web Awesome — layout components (`wa-stack`,
   `wa-cluster`, `wa-grid`, …) for structure, the utility classes and design
   tokens for spacing, type and color — not inline `style` attributes and
@@ -273,7 +285,10 @@ The mechanical rules (banned imports and renderer integrations,
 `customElements.define`) are checked by the architecture lint
 (`@cybermole/app-kit`'s `scripts/arch-check.mjs`): it runs in every app's
 `npm run check` (the `lint:arch` stage of the apps `check` verb) and can be
-run anywhere with `node <kit>/scripts/arch-check.mjs <dirs>`.
+run anywhere with `node <kit>/scripts/arch-check.mjs <dirs>`. The console
+runs it too, as a ratchet (`tools/arch-check-console.mjs`, the tail of
+`npm run lint`): its `LEGACY` list names the files still on the old
+patterns, and it only shrinks.
 
 ## 8. Forms
 

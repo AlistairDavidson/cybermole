@@ -135,7 +135,7 @@ const openFindOnCtrlF = (e: KeyboardEvent): void => {
   if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== 'f') return;
   if (inTextField(document.activeElement)) return;
   for (const t of instances) {
-    if ((t as unknown as HTMLElement).classList.contains('hidden')) continue;
+    if (!(t as unknown as HTMLElement).checkVisibility()) continue;
     e.preventDefault();
     t.openFind();
     return;

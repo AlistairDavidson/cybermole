@@ -155,7 +155,9 @@ async function makeTerminal(name: string): Promise<{ ws: string; id: string }> {
 /** Trimmed lines of the visible pane's buffer. */
 function bufferLines(page: Page): Promise<string[]> {
   return page.evaluate(() => {
-    const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+    const el = document.querySelector(
+      'agent-terminal:not(wa-tab-panel:not([active]) *)',
+    ) as unknown as {
       terminal?: {
         buffer: {
           active: {
@@ -182,7 +184,9 @@ async function countExactLine(page: Page, line: string): Promise<number> {
 async function waitForTermLine(page: Page, line: string, timeout = 10_000): Promise<void> {
   await page.waitForFunction(
     want => {
-      const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+      const el = document.querySelector(
+        'agent-terminal:not(wa-tab-panel:not([active]) *)',
+      ) as unknown as {
         terminal?: {
           buffer: {
             active: {
@@ -206,7 +210,9 @@ async function waitForTermLine(page: Page, line: string, timeout = 10_000): Prom
 
 function bufferShape(page: Page): Promise<{ len: number; rows: number; type: string }> {
   return page.evaluate(() => {
-    const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+    const el = document.querySelector(
+      'agent-terminal:not(wa-tab-panel:not([active]) *)',
+    ) as unknown as {
       terminal: { rows: number; buffer: { active: { length: number; type: string } } };
     };
     return {
@@ -233,11 +239,12 @@ async function openTerminal(page: Page, id: string): Promise<void> {
     await page.context().addCookies([sessionCookie]);
   }
   await page.goto(`${BASE}/?t=${id}`);
-  await page.waitForSelector('agent-terminal:not(.hidden) .terminal-container .xterm');
-  await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText(
-    'attached',
-    { timeout: 15_000 },
+  await page.waitForSelector(
+    'agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container .xterm',
   );
+  await expect(
+    page.locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-status'),
+  ).toContainText('attached', { timeout: 15_000 });
 }
 
 /** A missing n means lost history; a doubled n, a screen painted twice. */
@@ -281,7 +288,7 @@ test('backfill: reload brings the scrollback back under the redraw — nothing d
   await waitForTermLine(page, MARKER);
 
   // 60 lines into a ~40-row terminal must push the buffer past one screen.
-  await page.click('agent-terminal:not(.hidden) .terminal-container');
+  await page.click('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container');
   await page.keyboard.type('seq 1 60\n');
   await waitForTermLine(page, '60');
   const live = await bufferShape(page);
@@ -292,11 +299,12 @@ test('backfill: reload brings the scrollback back under the redraw — nothing d
   // backfill; each line exactly once proves the redraw landed below the
   // history rather than over it.
   await page.reload();
-  await page.waitForSelector('agent-terminal:not(.hidden) .terminal-container .xterm');
-  await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText(
-    'attached',
-    { timeout: 15_000 },
+  await page.waitForSelector(
+    'agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container .xterm',
   );
+  await expect(
+    page.locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-status'),
+  ).toContainText('attached', { timeout: 15_000 });
   await waitForTermLine(page, '1');
   // Settle before the one-shot assert.
   await waitForSeqOnceEach(page);
@@ -304,11 +312,12 @@ test('backfill: reload brings the scrollback back under the redraw — nothing d
 
   // A second reload: still exactly one copy of each line.
   await page.reload();
-  await page.waitForSelector('agent-terminal:not(.hidden) .terminal-container .xterm');
-  await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText(
-    'attached',
-    { timeout: 15_000 },
+  await page.waitForSelector(
+    'agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container .xterm',
   );
+  await expect(
+    page.locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-status'),
+  ).toContainText('attached', { timeout: 15_000 });
   await waitForTermLine(page, '1');
   await waitForSeqOnceEach(page); // every reload races the same settle
   await expectSeqOnceEach(page);
@@ -322,7 +331,7 @@ test('backfill is skipped on reconnect (buffer already holds the session) — no
   await waitForTermLine(page, MARKER);
 
   // Slow output: every line lands in the live buffer.
-  await page.click('agent-terminal:not(.hidden) .terminal-container');
+  await page.click('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container');
   await page.keyboard.type('for i in $(seq 1 20); do echo RELINE_$i; sleep 0.15; done\n');
   await waitForTermLine(page, 'RELINE_20', 20_000);
   for (let n = 1; n <= 20; n++) {
@@ -333,15 +342,13 @@ test('backfill is skipped on reconnect (buffer already holds the session) — no
   // onto the same element, keeping its buffer, so the reattach's backfill
   // must be ignored or every line doubles.
   await stopServer();
-  await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText(
-    'reconnect',
-    { timeout: 10_000 },
-  );
+  await expect(
+    page.locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-status'),
+  ).toContainText('reconnect', { timeout: 10_000 });
   await spawnServer();
-  await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText(
-    'attached',
-    { timeout: 30_000 },
-  );
+  await expect(
+    page.locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-status'),
+  ).toContainText('attached', { timeout: 30_000 });
   await waitForTermLine(page, 'RELINE_1');
   for (let n = 1; n <= 20; n++) {
     expect(
@@ -360,19 +367,20 @@ test('find bar: ctrl+F searches the (backfilled) scrollback, Esc refocuses the t
   await waitForTermLine(page, MARKER);
 
   // Matches pushed into history, then a reload so they only exist via the backfill.
-  await page.click('agent-terminal:not(.hidden) .terminal-container');
+  await page.click('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container');
   await page.keyboard.type('echo alpha_one; echo alpha_two; seq 1 60\n');
   await waitForTermLine(page, '60');
   await page.reload();
-  await page.waitForSelector('agent-terminal:not(.hidden) .terminal-container .xterm');
-  await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText(
-    'attached',
-    { timeout: 15_000 },
+  await page.waitForSelector(
+    'agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container .xterm',
   );
+  await expect(
+    page.locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-status'),
+  ).toContainText('attached', { timeout: 15_000 });
   await waitForTermLine(page, 'alpha_one');
 
   // Hidden until Ctrl+F.
-  const pane = page.locator('agent-terminal:not(.hidden)');
+  const pane = page.locator('agent-terminal:not(wa-tab-panel:not([active]) *)');
   const findBar = pane.locator('.terminal-find');
   await expect(pane.locator('.terminal-toolbar')).toBeVisible();
   await expect(findBar).toHaveClass(/hidden/);
@@ -387,7 +395,7 @@ test('find bar: ctrl+F searches the (backfilled) scrollback, Esc refocuses the t
   const viewportBefore = await page.evaluate(
     () =>
       (
-        document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+        document.querySelector('agent-terminal:not(wa-tab-panel:not([active]) *)') as unknown as {
           terminal: { buffer: { active: { viewportY: number } } };
         }
       ).terminal.buffer.active.viewportY,
@@ -399,7 +407,9 @@ test('find bar: ctrl+F searches the (backfilled) scrollback, Esc refocuses the t
         page.evaluate(
           () =>
             (
-              document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+              document.querySelector(
+                'agent-terminal:not(wa-tab-panel:not([active]) *)',
+              ) as unknown as {
                 terminal: { buffer: { active: { viewportY: number } } };
               }
             ).terminal.buffer.active.viewportY,
@@ -441,17 +451,16 @@ test('find bar: ctrl+F searches the (backfilled) scrollback, Esc refocuses the t
     timeout: 10_000,
   });
   await page.click(`terminal-tabs .tab[data-term="${second.json.id}"]`);
-  await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText(
-    'attached',
-    { timeout: 15_000 },
-  );
+  await expect(
+    page.locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-status'),
+  ).toContainText('attached', { timeout: 15_000 });
   await page.keyboard.press('Control+f');
-  await expect(page.locator('agent-terminal:not(.hidden) .terminal-find')).not.toHaveClass(
-    /hidden/,
-  );
+  await expect(
+    page.locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-find'),
+  ).not.toHaveClass(/hidden/);
   expect(
     await page
-      .locator('agent-terminal:not(.hidden) .terminal-find wa-input')
+      .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-find wa-input')
       .evaluate(el => (el as unknown as { value: string | null }).value),
   ).toBe('alpha');
 });

@@ -32,10 +32,12 @@ import { UPLOAD_MAX_BODY_BYTES } from '../../src/schemas/uploads';
 async function waitForTerminalFitted(page: Page, timeout = 5000): Promise<void> {
   await page.waitForFunction(
     () => {
-      const el = document.querySelector('agent-terminal:not(.hidden)');
-      const box = document.querySelector('agent-terminal:not(.hidden) .terminal-container');
+      const el = document.querySelector('agent-terminal:not(wa-tab-panel:not([active]) *)');
+      const box = document.querySelector(
+        'agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container',
+      );
       const screen = document.querySelector(
-        'agent-terminal:not(.hidden) .terminal-container .xterm-screen',
+        'agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container .xterm-screen',
       );
       if (!el || !box || !screen) return false;
       const rows = (el as unknown as { terminal?: { rows: number } }).terminal?.rows ?? 0;
@@ -56,7 +58,7 @@ async function waitForTerminalFitted(page: Page, timeout = 5000): Promise<void> 
 async function termDims(page: Page): Promise<{ cols: number; rows: number }> {
   return page.evaluate(() => {
     const t = (
-      document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+      document.querySelector('agent-terminal:not(wa-tab-panel:not([active]) *)') as unknown as {
         terminal: { cols: number; rows: number };
       }
     ).terminal;
@@ -68,7 +70,9 @@ async function termDims(page: Page): Promise<{ cols: number; rows: number }> {
 async function waitForTermText(page: Page, text: string, timeout = 10_000): Promise<void> {
   await page.waitForFunction(
     marker => {
-      const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+      const el = document.querySelector(
+        'agent-terminal:not(wa-tab-panel:not([active]) *)',
+      ) as unknown as {
         terminal?: {
           buffer: {
             active: {
@@ -152,7 +156,7 @@ async function makeTerminal(
   cwd?: string,
 ): Promise<{ ws: string; id: string }> {
   const ws = await makeWorkspace(page, name, cwd);
-  const auto = await page.locator('terminal-tabs .tabs-bar .tab').first().getAttribute('data-term');
+  const auto = await page.locator('terminal-tabs wa-tab').first().getAttribute('data-term');
   expect(auto, 'the workspace auto-opened its first tab').toBeTruthy();
   const closed = await api(page, 'DELETE', `/api/terminals/${auto}`);
   expect(closed.status, JSON.stringify(closed.json)).toBe(200);
@@ -163,7 +167,7 @@ async function makeTerminal(
 /** Scoped to the visible pane: the auto-opened tab's hidden pane would make
  *  an unscoped locator match two. `state` is a modifier class ('.ok', …). */
 const paneStatus = (page: Page, state = ''): Locator =>
-  page.locator(`agent-terminal:not(.hidden) .terminal-status${state}`);
+  page.locator(`agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-status${state}`);
 
 /** Forces an immediate state refresh; the push subscription makes one
  *  anyway, but tests shouldn't depend on its timing. */
@@ -272,16 +276,17 @@ test('login lands on the console with the fixture workspace tree in the sidebar'
 
   // The first workspace (scratch) auto-selects, and its first tab is the
   // live fixture, so a terminal is on screen at once.
-  await expect(page.locator('agent-terminal:not(.hidden) .terminal-container .xterm')).toHaveCount(
-    1,
-  );
+  await expect(
+    page.locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container .xterm'),
+  ).toHaveCount(1);
 
   // WebGL loads on first activation and swaps DOM rows for canvases
   // (SwiftShader in headless Chromium).
   await page.waitForFunction(
     () =>
-      document.querySelectorAll('agent-terminal:not(.hidden) .terminal-container canvas').length >
-      0,
+      document.querySelectorAll(
+        'agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container canvas',
+      ).length > 0,
     null,
     { timeout: 10_000 },
   );
@@ -303,11 +308,11 @@ test('login lands on the console with the fixture workspace tree in the sidebar'
   await expect(groups.first().locator('li[data-ws].active')).toHaveCount(1);
 
   // scratch's two tabs; no editor tab (unconfigured here).
-  const tabs = page.locator('terminal-tabs .tabs-bar');
+  const tabs = page.locator('terminal-tabs wa-tab-group');
   await expect(tabs.locator('.tab')).toHaveCount(2);
-  await expect(tabs.locator('.tab').first()).toHaveClass(/active/);
-  await expect(tabs.locator('.tab').first().locator('.tab-dot')).toHaveClass(/live/);
-  await expect(tabs.locator('.tab').nth(1).locator('.tab-dot')).not.toHaveClass(/live/);
+  await expect(tabs.locator('.tab').first()).toHaveAttribute('active', '');
+  await expect(tabs.locator('.tab').first()).toHaveAttribute('aria-label', /\(live\)/);
+  await expect(tabs.locator('.tab').nth(1)).not.toHaveAttribute('aria-label', /\(live\)/);
   await expect(tabs.locator('.editor-tab')).toHaveCount(0);
   await expect(tabs.locator('.tab-new')).toHaveCount(1);
 });
@@ -330,7 +335,7 @@ test("the console group's + workspace creates a console workspace through the di
   const row = page.locator('workspace-sidebar li[data-ws].active');
   await expect(row).toContainText('console made ws');
   await expect(row).toHaveAttribute('title', WORKSPACE);
-  await expect(page.locator('terminal-tabs .tabs-bar .tab')).toHaveCount(1);
+  await expect(page.locator('terminal-tabs wa-tab')).toHaveCount(1);
   // Keep the fixture world clean for the later specs: delete it again.
   await row.locator('[data-del-ws]').click();
   await page.click('#confirm-delete-ok');
@@ -441,11 +446,15 @@ test('a new workspace auto-opens its first terminal running the AGENT command; o
   await login(page);
   const ws = await makeWorkspace(page, 'agent slot ws');
   // The first tab exists without the + button, is live, and runs the agent command.
-  await expect(page.locator('terminal-tabs .tabs-bar .tab')).toHaveCount(1);
-  const id = await page.locator('terminal-tabs .tabs-bar .tab').getAttribute('data-term');
-  await expect(page.locator(`terminal-tabs .tab[data-term="${id}"] .tab-dot`)).toHaveClass(/live/, {
-    timeout: 10_000,
-  });
+  await expect(page.locator('terminal-tabs wa-tab')).toHaveCount(1);
+  const id = await page.locator('terminal-tabs wa-tab').getAttribute('data-term');
+  await expect(page.locator(`terminal-tabs .tab[data-term="${id}"]`)).toHaveAttribute(
+    'aria-label',
+    /\(live\)/,
+    {
+      timeout: 10_000,
+    },
+  );
   await waitForTermText(page, AGENT_MARKER, 20_000);
   await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`);
   expect(tmuxStatus(['has-session', '-t', `t-${id}`])).toBe(0);
@@ -462,7 +471,9 @@ test('a new workspace auto-opens its first terminal running the AGENT command; o
   // banner check decisive.
   execFileSync('tmux', ['-L', TMUX_SOCKET, 'kill-session', '-t', `t-${id}`]);
   await expect(
-    page.locator('agent-terminal.hidden .terminal-status', { hasText: `t-${id}` }),
+    page.locator('wa-tab-panel:not([active]) agent-terminal .terminal-status', {
+      hasText: `t-${id}`,
+    }),
   ).toContainText('detached', { timeout: 10_000 });
   await page.click(`terminal-tabs .tab[data-term="${id}"]`);
   await waitForTermText(page, AGENT_MARKER, 20_000);
@@ -485,13 +496,17 @@ test('a paste bigger than one WebSocket frame reaches the session whole', async 
   await waitForTermText(page, MARKER, 20_000);
 
   // Raw mode, no echo, so head sees every byte (a canonical-mode line caps at 4 KiB).
-  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page
+    .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+    .click();
   await page.keyboard.type(
     `stty raw -echo; echo RAW_$((40+2)); head -c ${size} > ${out}; stty sane\n`,
   );
   await waitForTermText(page, 'RAW_42');
   await page.evaluate(n => {
-    const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+    const el = document.querySelector(
+      'agent-terminal:not(wa-tab-panel:not([active]) *)',
+    ) as unknown as {
       terminal: { paste(d: string): void };
     };
     el.terminal.paste('x'.repeat(n));
@@ -524,14 +539,18 @@ test('a dropped socket reconnects to the same session; a session that ends is no
   // Drop the socket like a proxy idle cut: no 'exit' from the server first.
   await page.evaluate(() =>
     (
-      document.querySelector('agent-terminal:not(.hidden)') as unknown as { websocket: WebSocket }
+      document.querySelector('agent-terminal:not(wa-tab-panel:not([active]) *)') as unknown as {
+        websocket: WebSocket;
+      }
     ).websocket.close(),
   );
   await expect(page.locator('.terminal-status')).toContainText('reconnecting');
   await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`, {
     timeout: 10_000,
   });
-  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page
+    .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+    .click();
   await page.keyboard.type('echo BACK_$((40+2))\n');
   await waitForTermText(page, 'BACK_42');
 
@@ -651,8 +670,9 @@ test('dead tab: an out-of-band kill shows not-live in the poll; clicking the tab
       document.querySelector('console-app') as unknown as { loadState(): Promise<void> }
     ).loadState(),
   );
-  await expect(page.locator(`terminal-tabs .tab[data-term="${id}"] .tab-dot`)).not.toHaveClass(
-    /live/,
+  await expect(page.locator(`terminal-tabs .tab[data-term="${id}"]`)).not.toHaveAttribute(
+    'aria-label',
+    /\(live\)/,
   );
 
   // Clicking the ended tab is a fresh attach, which respawns the session.
@@ -663,7 +683,9 @@ test('dead tab: an out-of-band kill shows not-live in the poll; clicking the tab
   await waitForTermText(page, MARKER, 20_000);
 
   const proof = `${cwd}/respawn-pwd.txt`;
-  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page
+    .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+    .click();
   await page.keyboard.type(`pwd > ${JSON.stringify(proof)}\n`);
   await expect
     .poll(() => (fs.existsSync(proof) ? fs.readFileSync(proof, 'utf8').trim() : ''), {
@@ -932,20 +954,26 @@ test('hidden tabs keep their WS attached: state and scrollback persist, refit on
   const second = await makeTerminalIn(page, ws);
   await page.click(`terminal-tabs .tab[data-term="${first}"]`);
   await waitForTermText(page, MARKER, 20_000);
-  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page
+    .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+    .click();
   await page.keyboard.type('echo FIRST_$((40+2))\n');
   await waitForTermText(page, 'FIRST_42', 10_000);
   // a pane exists only once its tab has been activated
   await page.click(`terminal-tabs .tab[data-term="${second}"]`);
   await waitForTermText(page, MARKER, 20_000);
-  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page
+    .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+    .click();
   await page.keyboard.type('echo SECOND_$((40+2))\n');
   await waitForTermText(page, 'SECOND_42', 10_000);
 
   // The first pane still holds its output: hiding never closed the socket.
   await page.click(`terminal-tabs .tab[data-term="${first}"]`);
   await waitForTermText(page, 'FIRST_42', 10_000);
-  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page
+    .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+    .click();
   await page.keyboard.type('echo AGAIN_$((40+2))\n');
   await waitForTermText(page, 'AGAIN_42', 10_000);
 
@@ -971,11 +999,15 @@ test('terminal toolbar: copy output and download transcript capture the terminal
   // More than a screen of output. While attached, tmux holds the client in
   // its alternate screen, so the client buffer is the visible screen; the
   // walk's scrollback half is tested against a stub below.
-  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page
+    .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+    .click();
   await page.keyboard.type('seq 1 120; echo TAIL_$((40+2))\n');
   await waitForTermText(page, 'TAIL_42', 10_000);
 
-  const toolbar = page.locator('agent-terminal:not(.hidden) .terminal-toolbar');
+  const toolbar = page.locator(
+    'agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-toolbar',
+  );
   await expect(toolbar).toBeVisible();
   const copyBtn = toolbar.locator('wa-button.tb-copy-output');
   const dlBtn = toolbar.locator('wa-button.tb-download-transcript');
@@ -987,7 +1019,7 @@ test('terminal toolbar: copy output and download transcript capture the terminal
   // The walk behind both buttons: the screen's content, trailing blank rows trimmed.
   const walked = await page.evaluate(() =>
     (
-      document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+      document.querySelector('agent-terminal:not(wa-tab-panel:not([active]) *)') as unknown as {
         transcriptText(): string;
       }
     ).transcriptText(),
@@ -1000,7 +1032,9 @@ test('terminal toolbar: copy output and download transcript capture the terminal
   // The scrollback + trim half, against a stub buffer with 3000 rows: a
   // scrolled-off head, content, then blank never-written rows.
   const stubbed = await page.evaluate(() => {
-    const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+    const el = document.querySelector(
+      'agent-terminal:not(wa-tab-panel:not([active]) *)',
+    ) as unknown as {
       terminal: unknown;
       transcriptText(): string;
     };
@@ -1085,7 +1119,7 @@ test("popping a tab moves the pane to a new tab: main socket down, popped tab at
   await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`);
   // Only the active pane has a toolbar (an unactivated tab has no pane).
   const popBtn = page.locator(
-    'terminal-tabs agent-terminal:not(.hidden) .terminal-toolbar .tb-pop-out',
+    'terminal-tabs agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-toolbar .tb-pop-out',
   );
   await expect(popBtn).toBeVisible();
   await expect(page.locator('terminal-tabs .tb-pop-out')).toHaveCount(1);
@@ -1099,13 +1133,15 @@ test("popping a tab moves the pane to a new tab: main socket down, popped tab at
   // The main page keeps the row (active, popped) with a notice; its pane is
   // gone but the session the popped tab owns is alive.
   await expect(page.locator(`terminal-tabs .tab[data-term="${id}"]`)).toHaveClass(/popped/);
-  await expect(page.locator(`terminal-tabs .tab[data-term="${id}"]`)).toHaveClass(/active/);
+  await expect(page.locator(`terminal-tabs .tab[data-term="${id}"]`)).toHaveAttribute('active', '');
   await expect(page.locator('.tabs-popped')).toBeVisible();
-  await expect(page.locator('terminal-tabs .tabs-bar .tab')).toHaveCount(2);
+  await expect(page.locator('terminal-tabs wa-tab')).toHaveCount(2);
   await expect(page.locator('terminal-tabs agent-terminal')).toHaveCount(0);
   expect(tmuxStatus(['has-session', '-t', `t-${id}`])).toBe(0);
 
-  await popout.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await popout
+    .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+    .click();
   await popout.keyboard.type('echo POP_$((40+2))\n');
   await waitForTermText(popout, 'POP_42', 10_000);
 
@@ -1115,7 +1151,9 @@ test("popping a tab moves the pane to a new tab: main socket down, popped tab at
   await expect(page.locator(`terminal-tabs .tab[data-term="${id}"]`)).not.toHaveClass(/popped/);
   await expect(page.locator('.tabs-popped')).toHaveCount(0);
   await expect(popout.locator('.terminal-status.info')).toContainText(`detached: t-${id}`);
-  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page
+    .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+    .click();
   await page.keyboard.type('echo BACK_$((40+2))\n');
   await waitForTermText(page, 'BACK_42', 10_000);
   await popout.close(); // its pagehide is a no-op now
@@ -1130,7 +1168,9 @@ test("popping a tab moves the pane to a new tab: main socket down, popped tab at
     timeout: 10_000,
   });
   await expect(page.locator(`terminal-tabs .tab[data-term="${id}"]`)).not.toHaveClass(/popped/);
-  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page
+    .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+    .click();
   await page.keyboard.type('echo AGAIN_$((40+2))\n');
   await waitForTermText(page, 'AGAIN_42', 10_000);
 
@@ -1149,7 +1189,9 @@ test('scrollback backfill: a reload restores history once — and ctrl+F finds i
 
   // More than a screen of history, with a unique anchor (BF_TOP_1 prefixes
   // BF_TOP_10..19, so it can't be counted).
-  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page
+    .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+    .click();
   await page.keyboard.type(
     'echo BF_ANCHOR_$((40+2)); for i in $(seq 1 80); do echo BF_TOP_$i; done; echo BF_DONE_$((40+2))\n',
   );
@@ -1161,7 +1203,9 @@ test('scrollback backfill: a reload restores history once — and ctrl+F finds i
   await page.goto(`/?t=${id}`);
   await waitForTermText(page, 'BF_DONE_42', 20_000);
   const bufferText = await page.evaluate(() => {
-    const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+    const el = document.querySelector(
+      'agent-terminal:not(wa-tab-panel:not([active]) *)',
+    ) as unknown as {
       terminal?: {
         buffer: {
           active: {
@@ -1182,16 +1226,20 @@ test('scrollback backfill: a reload restores history once — and ctrl+F finds i
   expect(bufferText.split('BF_ANCHOR_42').length - 1).toBe(1);
 
   // Ctrl+F opens the terminal's find bar, and a match scrolls into view.
-  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page
+    .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+    .click();
   await page.keyboard.press('Control+f');
-  const find = page.locator('agent-terminal:not(.hidden) .terminal-find');
+  const find = page.locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-find');
   await expect(find).toBeVisible();
   await find.locator('wa-input.terminal-find-input input').fill('BF_ANCHOR_42');
   await expect
     .poll(
       async () =>
         await page.evaluate(() => {
-          const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+          const el = document.querySelector(
+            'agent-terminal:not(wa-tab-panel:not([active]) *)',
+          ) as unknown as {
             terminal?: {
               rows: number;
               buffer: {
@@ -2182,7 +2230,9 @@ test('logout ends live terminal sockets: signed-out message, no reconnect', asyn
       page.evaluate(
         () =>
           (
-            document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+            document.querySelector(
+              'agent-terminal:not(wa-tab-panel:not([active]) *)',
+            ) as unknown as {
               websocket?: WebSocket;
             }
           ).websocket === undefined,
@@ -2312,19 +2362,14 @@ test('SIGTERM: every socket gets restart, closes, and the process exits 0', asyn
       ).loadState(),
     );
     await page.click(`workspace-sidebar li[data-ws="${wsMade.id}"]`);
-    const autoId = await page
-      .locator('terminal-tabs .tabs-bar .tab')
-      .first()
-      .getAttribute('data-term');
+    const autoId = await page.locator('terminal-tabs wa-tab').first().getAttribute('data-term');
     expect(autoId).toBeTruthy();
     await page.click('terminal-tabs .tab-new'); // creates + selects the terminal tab
     // Wait for the selection to leave the auto tab before reading it.
     await expect
-      .poll(() => page.locator('terminal-tabs .tabs-bar .tab.active').getAttribute('data-term'))
+      .poll(() => page.locator('terminal-tabs wa-tab[active]').getAttribute('data-term'))
       .not.toBe(autoId);
-    const tabId = await page
-      .locator('terminal-tabs .tabs-bar .tab.active')
-      .getAttribute('data-term');
+    const tabId = await page.locator('terminal-tabs wa-tab[active]').getAttribute('data-term');
     expect(tabId).toBeTruthy();
     await expect(paneStatus(page, '.ok')).toContainText(`attached: t-${tabId}`, {
       timeout: 20_000,
@@ -2478,7 +2523,7 @@ test("deep link ?t=<uuid> opens the terminal's workspace with its tab selected; 
   await expect(page.locator(`workspace-sidebar li[data-ws="${wsMade.json.id}"]`)).toHaveClass(
     /active/,
   );
-  await expect(page.locator(`terminal-tabs .tab[data-term="${id}"]`)).toHaveClass(/active/);
+  await expect(page.locator(`terminal-tabs .tab[data-term="${id}"]`)).toHaveAttribute('active', '');
   await expect(page.locator('.terminal-status')).toContainText(`attached: t-${id}`);
   await waitForTermText(page, MARKER);
 
@@ -2577,25 +2622,22 @@ test('a terminal tab survives a WEB restart: tmux keeps the session, the client 
     await refreshState(page);
     await page.click(`workspace-sidebar li[data-ws="${wsMade.json.id}"]`);
     // the auto-opened tab, to tell the tab under test apart
-    const autoId = await page
-      .locator('terminal-tabs .tabs-bar .tab')
-      .first()
-      .getAttribute('data-term');
+    const autoId = await page.locator('terminal-tabs wa-tab').first().getAttribute('data-term');
     expect(autoId).toBeTruthy();
     await page.click('terminal-tabs .tab-new');
     // The create is async (POST → loadState → select): wait for the second
     // tab to be selected, or later assertions pin the auto tab's pane.
-    await expect(page.locator('terminal-tabs .tabs-bar .tab')).toHaveCount(2);
+    await expect(page.locator('terminal-tabs wa-tab')).toHaveCount(2);
     await expect
-      .poll(() => page.locator('terminal-tabs .tabs-bar .tab.active').getAttribute('data-term'))
+      .poll(() => page.locator('terminal-tabs wa-tab[active]').getAttribute('data-term'))
       .not.toBe(autoId);
-    const tabId = await page
-      .locator('terminal-tabs .tabs-bar .tab.active')
-      .getAttribute('data-term');
+    const tabId = await page.locator('terminal-tabs wa-tab[active]').getAttribute('data-term');
     expect(tabId).toBeTruthy();
     await waitForTermText(page, MARKER, 20_000);
     await expect(paneStatus(page, '.ok')).toContainText(`attached: t-${tabId}`);
-    await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+    await page
+      .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+      .click();
     await page.keyboard.type('echo SURVIVES_$((40+2))\n');
     await waitForTermText(page, 'SURVIVES_42', 10_000);
 
@@ -2660,14 +2702,16 @@ test('a terminal tab survives a WEB restart: tmux keeps the session, the client 
     const state = await api(page, 'GET', '/api/state');
     const row = state.json.workspaces.find((w: { id: string }) => w.id === wsMade.json.id);
     expect(row.terminals.find((t: { id: string }) => t.id === tabId).live).toBe(true);
-    await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+    await page
+      .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+      .click();
     await page.keyboard.type('echo AFTER_$((40+2))\n');
     await waitForTermText(page, 'AFTER_42', 10_000);
 
     // On a workspace-less db, deleting the workspace shows the no-workspace prompt.
     expect((await api(page, 'DELETE', `/api/workspaces/${wsMade.json.id}`)).status).toBe(200);
     await refreshState(page);
-    await expect(page.locator('.tabs-empty p')).toContainText('no workspace selected');
+    await expect(page.locator('.tabs-empty-nows p')).toContainText('no workspace selected');
     await expect(page.locator('.tabs-empty .empty-new-workspace')).toBeVisible();
   } finally {
     await stop(child);

@@ -8,6 +8,7 @@
 import Base from '../layouts/Base.astro';
 import { assertCybermoleLocals } from '../lib/web/locals';
 import { resolvePopoutView, type PopoutView } from '../lib/web/popout-view';
+import SingleView from '../components/SingleView/SingleView.astro';
 
 const { cybermole } = assertCybermoleLocals(Astro.locals);
 const tree = await cybermole.workspaces.workspaceTree();
@@ -21,32 +22,5 @@ const view: PopoutView = tree.ok
 const title = view.kind === 'missing' ? 'cybermole' : `cybermole — ${view.label}`;
 ---
 <Base title={title}>
-  {
-    view.kind === 'missing' && (
-      <div class="view-empty">
-        <wa-icon name="circle-info" label={view.message}></wa-icon>
-        <p>{view.message}</p>
-      </div>
-    )
-  }
-  {
-    view.kind === 'terminal' && (
-      <single-view kind="terminal" target={view.id} label={view.label} />
-    )
-  }
-  {
-    view.kind === 'editor' && (
-      <single-view kind="editor" target={view.id} label={view.label} cwd={view.cwd} />
-    )
-  }
+  <SingleView view={view} />
 </Base>
-
-<script>
-  // Must precede any wa-* import, or SSR'd elements render twice (the
-  // empty state's wa-icon; AGENTS.md).
-  import '@awesome.me/astro-lit/dsd-polyfill.js';
-  import '@awesome.me/astro-lit/hydration-support.js';
-  // Before any wa-* defines, or icons fetch from the CDN first.
-  import '../icons';
-  import '../components/SingleView/single-view';
-</script>

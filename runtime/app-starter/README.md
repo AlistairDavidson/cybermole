@@ -53,6 +53,14 @@ standard's mechanical rules from CODE_STYLE.md §7, run by the kit's
 `arch-check.mjs` (its header comment is the rule list — the only copy that
 can't drift from the enforcement).
 
+**Web Awesome first — strictly.** Any UI this app needs uses the Web
+Awesome component for the job whenever one exists (tabs are
+`wa-tab-group`/`wa-tab`/`wa-tab-panel`, then `wa-button`,
+`wa-button-group`, `wa-dropdown`, `wa-dialog`, `wa-callout`, and layout
+via `wa-stack`/`wa-cluster` plus the utility classes). A hand-rolled
+stand-in is a defect; where no component fits, a one-line comment at the
+site says why.
+
 The same loop runs through the root agent's `cybermole-apps` MCP
 (`add_action`/`check`/`build`/`register`/`reload`) — this tree's `.pi/mcp.json`
 disables that MCP on purpose (operators don't scaffold) and registers the

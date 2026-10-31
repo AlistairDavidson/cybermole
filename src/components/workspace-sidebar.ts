@@ -388,9 +388,6 @@ export class WorkspaceSidebar extends HTMLElement {
       `<span class="d">${esc(w.cwd)}</span>` +
       `</span>` +
       `<span class="row-actions">` +
-      (w.terminals.length
-        ? `<span class="ws-count" title="${w.terminals.length} terminal tab${w.terminals.length === 1 ? '' : 's'}">${w.terminals.length}</span>`
-        : '') +
       `<wa-button class="del-ws-btn" data-del-ws="${esc(w.id)}" size="xs" appearance="plain" ` +
       `title="delete the workspace ${esc(w.name)} (and its terminals)">` +
       `<wa-icon name="trash-can" label="delete workspace"></wa-icon></wa-button>` +

@@ -379,80 +379,54 @@ terminal-tabs {
   flex: 1; display: flex; flex-direction: column;
   min-width: 0; min-height: 0;
 }
-.tabs-bar {
-  display: flex; align-items: stretch; gap: var(--wa-space-3xs);
-  padding: var(--wa-space-3xs) var(--wa-space-s) 0;
-  border-bottom: var(--wa-border-width-s) solid var(--wa-color-surface-border);
-  overflow-x: auto; /* many tabs scroll the bar, never the page */
-  flex: none;
+/* The strip is a wa-tab-group (activation="manual"); terminal-tabs.ts
+   drives `active` and `view`. The group fills the column and its body
+   flexes, so the active panel's terminal box can size itself. */
+terminal-tabs > wa-tab-group {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  --track-color: var(--wa-color-surface-border);
+  --track-width: var(--wa-border-width-s);
+  --indicator-color: var(--wa-color-brand-on-quiet);
 }
-.tabs-bar .tab {
-  display: inline-flex; align-items: center; gap: var(--wa-space-3xs);
+terminal-tabs > wa-tab-group::part(tab-group) { flex: 1; min-height: 0; }
+terminal-tabs > wa-tab-group::part(nav) { padding: 0 var(--wa-space-s); }
+terminal-tabs > wa-tab-group::part(body) {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+}
+/* The run pane and the empty states select no tab: only the strip shows. */
+terminal-tabs:not([view="tab"]) > wa-tab-group { flex: none; }
+terminal-tabs:not([view="tab"]) > wa-tab-group::part(body) { display: none; }
+terminal-tabs wa-tab-panel { --padding: 0; }
+terminal-tabs wa-tab-panel[active] {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+}
+terminal-tabs wa-tab-panel::part(base) {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+}
+terminal-tabs wa-tab {
+  font-size: var(--wa-font-size-xs); font-weight: inherit;
+  color: var(--wa-color-text-normal);
+}
+terminal-tabs wa-tab[active] { color: var(--wa-color-brand-on-quiet); }
+terminal-tabs wa-tab::part(tab) {
+  gap: var(--wa-space-3xs);
   padding: var(--wa-space-3xs) var(--wa-space-2xs);
-  background: none; color: var(--wa-color-text-normal);
-  border: none; border-bottom: var(--wa-border-width-m) solid transparent;
-  border-radius: var(--wa-border-radius-s) var(--wa-border-radius-s) 0 0;
-  font: inherit; font-size: var(--wa-font-size-xs);
-  cursor: pointer; white-space: nowrap; flex: none;
 }
-.tabs-bar .tab:hover {
-  background: color-mix(in oklab, var(--wa-color-text-normal) 6%, transparent);
-}
-.tabs-bar .tab.active {
-  color: var(--wa-color-brand-on-quiet);
-  border-bottom-color: var(--wa-color-brand-on-quiet);
-}
-.tabs-bar .tab .tab-dot {
-  width: 0.5em; height: 0.5em; border-radius: 50%;
-  background: var(--wa-color-text-quiet); opacity: .5; flex: none;
-}
-.tabs-bar .tab .tab-dot.live {
-  background: var(--wa-color-success-on-quiet); opacity: 1;
-}
-.tabs-bar .tab .tab-label {
+terminal-tabs wa-tab .tab-label {
   max-width: 18ch; overflow: hidden; text-overflow: ellipsis;
 }
-.tabs-bar .tab .tab-close {
-  display: inline-flex; align-items: center;
-  border-radius: var(--wa-border-radius-s);
-  color: var(--wa-color-text-quiet); font-size: var(--wa-font-size-2xs);
-}
-.tabs-bar .tab .tab-close:hover { color: var(--wa-color-danger-on-quiet); }
-/* A popped tab's terminal lives in another browser tab, so its row dims. */
-.tabs-bar .tab.popped { color: var(--wa-color-text-quiet); }
-.tabs-bar .tab.editor-tab wa-icon { font-size: var(--wa-font-size-2xs); flex: none; }
-.tabs-bar .tab.dragging { opacity: .45; }
-.tabs-bar .tab:focus-visible {
-  outline: var(--wa-border-width-s) solid var(--wa-color-brand-on-quiet);
-  outline-offset: calc(-1 * var(--wa-border-width-s));
-}
-.tabs-bar .tab-new,
-.tabs-bar .tab-new-caret {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--wa-space-xl); flex: none;
-  background: none; color: var(--wa-color-text-quiet);
-  border: none; border-bottom: var(--wa-border-width-m) solid transparent;
-  border-radius: var(--wa-border-radius-s) var(--wa-border-radius-s) 0 0;
-  cursor: pointer;
-}
-.tabs-bar .tab-new:hover,
-.tabs-bar .tab-new-caret:hover { color: var(--wa-color-brand-on-quiet); }
-.tabs-bar .tab-new:focus-visible,
-.tabs-bar .tab-new-caret:focus-visible {
-  outline: var(--wa-border-width-s) solid var(--wa-color-brand-on-quiet);
-  outline-offset: calc(-1 * var(--wa-border-width-s));
-}
-/* The new-tab affordances: + opens a shell tab, the caret a menu with both
-   kinds. One visual unit, so they read as one split button. */
-.tabs-bar .tab-new-group {
-  display: inline-flex; align-items: stretch; flex: none;
-  border-left: var(--wa-border-width-s) solid var(--wa-color-surface-border);
-  padding-left: var(--wa-space-3xs);
-}
-.tabs-bar .tab-new-group .tab-new-caret { width: var(--wa-space-m); }
-.tabs-bar .tab-new-group .tab-new-menu { display: inline-flex; }
-.tabs-body {
-  flex: 1; min-height: 0; display: flex; flex-direction: column;
+terminal-tabs wa-tab .tab-close { color: var(--wa-color-text-quiet); }
+terminal-tabs wa-tab .tab-close:hover { color: var(--wa-color-danger-on-quiet); }
+/* A popped tab's terminal lives in another browser tab, so its tab dims. */
+terminal-tabs wa-tab.popped { color: var(--wa-color-text-quiet); }
+terminal-tabs wa-tab.dragging { opacity: .45; }
+/* The new-tab split button: + opens a shell tab, the caret a menu with
+   both kinds. */
+terminal-tabs .tab-new-group {
+  align-self: center; flex: none;
+  margin-inline-start: var(--wa-space-3xs);
+  padding-inline-start: var(--wa-space-3xs);
+  border-inline-start: var(--wa-border-width-s) solid var(--wa-color-surface-border);
 }
 .editor-frame {
   flex: 1; min-height: 0; width: 100%;
@@ -461,7 +435,6 @@ terminal-tabs {
 /* The editor pane: one toolbar row (pop-out only) above the workbench
    iframe — in flow, since unlike a terminal there is no fit to skew and
    the workbench's own title bar sits at the top. */
-.editor-host { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .editor-toolbar {
   flex: none; display: flex; justify-content: flex-end;
   gap: var(--wa-space-3xs);

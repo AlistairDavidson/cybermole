@@ -104,15 +104,16 @@ test.describe('live scheme flip', () => {
 
   test("a live flip flips the class and the attached pane's xterm theme", async ({ page }) => {
     await login(page);
-    await expect(page.locator('agent-terminal:not(.hidden) .terminal-status')).toContainText(
-      'attached',
-      { timeout: 15_000 },
-    );
+    await expect(
+      page.locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-status'),
+    ).toContainText('attached', { timeout: 15_000 });
     // Built from the resolved mode (dark bg).
     await expect
       .poll(async () =>
         page.evaluate(() => {
-          const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+          const el = document.querySelector(
+            'agent-terminal:not(wa-tab-panel:not([active]) *)',
+          ) as unknown as {
             terminal?: { options: { theme: { background?: string } } };
           };
           return el.terminal?.options.theme.background ?? '';
@@ -127,7 +128,9 @@ test.describe('live scheme flip', () => {
     await expect
       .poll(async () =>
         page.evaluate(() => {
-          const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+          const el = document.querySelector(
+            'agent-terminal:not(wa-tab-panel:not([active]) *)',
+          ) as unknown as {
             terminal?: { options: { theme: { background?: string } } };
           };
           return el.terminal?.options.theme.background ?? '';
@@ -142,7 +145,9 @@ test.describe('live scheme flip', () => {
     await expect
       .poll(async () =>
         page.evaluate(() => {
-          const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+          const el = document.querySelector(
+            'agent-terminal:not(wa-tab-panel:not([active]) *)',
+          ) as unknown as {
             terminal?: { options: { theme: { background?: string } } };
           };
           return el.terminal?.options.theme.background ?? '';
@@ -310,7 +315,7 @@ test.describe('editor pane (private server, dead upstream)', () => {
     await page.goto(`${BASE}/`);
     await page.waitForSelector('workspace-sidebar .nav');
 
-    await page.click('button.tab.editor-tab');
+    await page.click('wa-tab.editor-tab');
     const frame = page.locator('iframe.editor-frame');
     await expect(frame).toBeVisible();
     // ...opens the folder through the proxy, with no theme param: the
@@ -383,7 +388,7 @@ test.describe('editor pane (private server, dead upstream)', () => {
     await page.waitForSelector('workspace-sidebar .nav');
     await page.click(`workspace-sidebar li[data-ws="${id}"]`);
 
-    await page.click('button.tab.editor-tab');
+    await page.click('wa-tab.editor-tab');
     const toolbar = page.locator('.editor-toolbar');
     await expect(toolbar).toBeVisible();
     // The toolbar's only control is the pop-out.

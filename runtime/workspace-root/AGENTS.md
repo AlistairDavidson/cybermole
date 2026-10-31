@@ -94,6 +94,16 @@ builder — it builds in the tree; it never calls `build_session`.)
 App e2e (`npm run test:e2e` in a tree) runs in-place — the install image
 ships the Playwright browsers.
 
+**Building UI — Web Awesome first, strictly.** Every app UI uses the Web
+Awesome component for the job whenever one exists (tabs
+`wa-tab-group`/`wa-tab`/`wa-tab-panel`, `wa-button`, `wa-button-group`,
+`wa-dropdown`, `wa-dialog`, `wa-callout`; layout `wa-stack`/`wa-cluster`
+and the utility classes) — never a hand-rolled stand-in. Where none
+fits, a one-line comment at the site says why. Markup lives in the
+`.astro` (`<template>` skeletons for repeated items); enhancers clone and
+fill it, never build HTML strings (CODE_STYLE.md §7 — `lint:arch` in
+the tree's `check` enforces the mechanical half).
+
 ## Trust
 
 Jobs are the root agent's to manage. App-level agents working in trees

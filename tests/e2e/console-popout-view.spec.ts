@@ -116,13 +116,15 @@ function hasSession(id: string): boolean {
 /** Scoped to the visible pane: the workspace's auto-opened tab keeps a
  *  hidden, attached pane too. `state` is a modifier class ('.ok', …). */
 const paneStatus = (page: Page, state = ''): Locator =>
-  page.locator(`agent-terminal:not(.hidden) .terminal-status${state}`);
+  page.locator(`agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-status${state}`);
 
 /** The visible pane's buffer, searched line by line. */
 async function waitForTermText(page: Page, text: string, timeout = 20_000): Promise<void> {
   await page.waitForFunction(
     marker => {
-      const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+      const el = document.querySelector(
+        'agent-terminal:not(wa-tab-panel:not([active]) *)',
+      ) as unknown as {
         terminal?: {
           buffer: {
             active: {
@@ -155,7 +157,7 @@ test('the terminal pop-out opens the chrome-free single view and round-trips a k
     await expect(paneStatus(page, '.ok')).toContainText(`attached: t-${id}`);
 
     const popBtn = page.locator(
-      'terminal-tabs agent-terminal:not(.hidden) .terminal-toolbar .tb-pop-out',
+      'terminal-tabs agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-toolbar .tb-pop-out',
     );
     await expect(popBtn).toBeVisible();
     const [pop] = await Promise.all([page.waitForEvent('popup'), popBtn.click()]);

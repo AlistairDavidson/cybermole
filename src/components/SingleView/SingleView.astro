@@ -1,0 +1,48 @@
+---
+// /view's one pane, SSR'd: the terminal's <agent-terminal> (single-view.ts
+// attaches it) or the workspace's editor iframe, or the message when the
+// target didn't resolve.
+import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import { editorSrc } from '../editor-pane';
+import type { PopoutView } from '../../lib/web/popout-view';
+
+interface Props {
+  view: PopoutView;
+}
+const { view } = Astro.props;
+---
+{
+  view.kind === 'missing' && (
+    <div class="view-empty">
+      <wa-icon name="circle-info" label={view.message} />
+      <p>{view.message}</p>
+    </div>
+  )
+}
+{
+  view.kind === 'terminal' && (
+    <single-view kind="terminal" target={view.id}>
+      <agent-terminal>
+        <div class="terminal-container" />
+        <div class="terminal-status" />
+      </agent-terminal>
+    </single-view>
+  )
+}
+{
+  view.kind === 'editor' && (
+    <single-view kind="editor">
+      <iframe class="editor-frame" title={view.label} src={editorSrc(view.cwd)} />
+    </single-view>
+  )
+}
+
+<script>
+  // Must precede any wa-* import, or SSR'd elements render twice (AGENTS.md).
+  import '@awesome.me/astro-lit/dsd-polyfill.js';
+  import '@awesome.me/astro-lit/hydration-support.js';
+  // Before any wa-* defines, or icons fetch from the CDN first.
+  import '../../icons';
+  import '@awesome.me/webawesome/dist/components/icon/icon.js';
+  import './single-view';
+</script>

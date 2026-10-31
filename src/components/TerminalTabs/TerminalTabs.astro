@@ -1,0 +1,136 @@
+---
+// The workspace's tab strip and panes on a wa-tab-group. Everything the
+// enhancer (terminal-tabs.ts) shows is authored here: the static views
+// (the empty states, the run host, the new-tab split button) are SSR'd,
+// and the per-terminal structures are inert <template> skeletons it
+// clones and fills by class hooks. Nothing is visible until the console
+// state arrives (view="loading"); the enhancer flips `view` and the
+// .hidden classes from then on.
+import '@awesome.me/webawesome/dist/components/tab-group/tab-group.js';
+import '@awesome.me/webawesome/dist/components/tab/tab.js';
+import '@awesome.me/webawesome/dist/components/tab-panel/tab-panel.js';
+import '@awesome.me/webawesome/dist/components/button/button.js';
+import '@awesome.me/webawesome/dist/components/button-group/button-group.js';
+import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
+import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
+import '@awesome.me/webawesome/dist/components/icon/icon.js';
+---
+<terminal-tabs view="loading">
+  <!-- manual activation: arrows walk focus, Enter/Space/click select —
+       a selection is an attach, so focus alone must not open a pane. -->
+  <wa-tab-group class="hidden" activation="manual" without-scroll-controls>
+    <wa-button-group slot="nav" class="tab-new-group" label="new tab">
+      <wa-button
+        class="tab-new"
+        appearance="plain"
+        size="s"
+        title="new shell tab"
+        aria-label="new shell tab"
+      >
+        <wa-icon name="plus" label="new shell tab"></wa-icon>
+      </wa-button>
+      <wa-dropdown class="tab-new-menu" placement="bottom-end">
+        <wa-button
+          slot="trigger"
+          class="tab-new-caret"
+          appearance="plain"
+          size="s"
+          title="new tab options"
+          aria-label="new tab options"
+        >
+          <wa-icon name="chevron-down" label="new tab options"></wa-icon>
+        </wa-button>
+        <wa-dropdown-item value="shell">
+          <wa-icon slot="icon" name="terminal" aria-hidden="true"></wa-icon>
+          new shell tab
+          <span slot="details">ctrl t</span>
+        </wa-dropdown-item>
+        <wa-dropdown-item value="agent">
+          <wa-icon slot="icon" name="robot" aria-hidden="true"></wa-icon>
+          new agent tab
+          <span slot="details">ctrl shift t</span>
+        </wa-dropdown-item>
+      </wa-dropdown>
+    </wa-button-group>
+  </wa-tab-group>
+
+  <div class="tabs-empty tabs-empty-nows hidden" data-view="no-workspace">
+    <wa-icon name="folder"></wa-icon>
+    <p>no workspace selected</p>
+    <wa-button size="s" class="empty-new-workspace">
+      <wa-icon slot="start" name="plus"></wa-icon>new workspace
+    </wa-button>
+  </div>
+  <div class="tabs-empty tabs-empty-terminals hidden" data-view="no-terminals">
+    <wa-icon name="terminal"></wa-icon>
+    <p>no terminals in this workspace yet</p>
+    <wa-button size="s" class="empty-new-terminal">
+      <wa-icon slot="start" name="plus"></wa-icon>new terminal
+    </wa-button>
+  </div>
+  <div class="run-host hidden" data-view="run"></div>
+
+  <template data-tab>
+    <wa-tab
+      slot="nav"
+      class="tab"
+      draggable="true"
+      aria-keyshortcuts="Shift+ArrowLeft Shift+ArrowRight"
+    >
+      <span class="tab-label"></span>
+      <wa-button
+        class="tab-close"
+        appearance="plain"
+        size="xs"
+        tabindex="-1"
+        title="close this terminal"
+      >
+        <wa-icon name="xmark" label="close terminal"></wa-icon>
+      </wa-button>
+    </wa-tab>
+  </template>
+  <template data-panel>
+    <wa-tab-panel class="term-panel"></wa-tab-panel>
+  </template>
+  <template data-pane>
+    <agent-terminal>
+      <div class="terminal-container"></div>
+      <div class="terminal-status"></div>
+    </agent-terminal>
+  </template>
+  <template data-popped>
+    <div class="tabs-empty tabs-popped">
+      <wa-icon name="arrow-up-right-from-square"></wa-icon>
+      <p>popped out to its own tab — click the tab to bring it back here</p>
+    </div>
+  </template>
+  <template data-editor-tab>
+    <wa-tab
+      slot="nav"
+      class="tab editor-tab"
+      panel="editor"
+      data-term="editor"
+      title="open the workspace folder in the editor"
+    >
+      <wa-icon name="code" aria-hidden="true"></wa-icon>
+      <span class="tab-label">editor</span>
+    </wa-tab>
+  </template>
+  <template data-editor-panel>
+    <wa-tab-panel name="editor" class="editor-host">
+      <div class="editor-toolbar" role="toolbar" aria-label="editor actions">
+        <wa-button
+          class="tb-pop-out"
+          appearance="plain"
+          variant="neutral"
+          size="xs"
+          title="pop out — open this workspace's editor in its own browser tab"
+        >
+          <wa-icon slot="start" name="arrow-up-right-from-square" aria-hidden="true"></wa-icon>
+          pop out
+        </wa-button>
+      </div>
+      <iframe class="editor-frame" title="editor"></iframe>
+    </wa-tab-panel>
+  </template>
+</terminal-tabs>

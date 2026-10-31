@@ -116,7 +116,9 @@ async function deleteWorkspace(page: Page, ws: string): Promise<void> {
 async function waitForTermText(page: Page, text: string, timeout = 20_000): Promise<void> {
   await page.waitForFunction(
     marker => {
-      const el = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+      const el = document.querySelector(
+        'agent-terminal:not(wa-tab-panel:not([active]) *)',
+      ) as unknown as {
         terminal?: {
           buffer: {
             active: {
@@ -140,7 +142,7 @@ async function waitForTermText(page: Page, text: string, timeout = 20_000): Prom
 
 /** The bar's labels in display order (titles stay put; "term N" renumbers). */
 async function tabLabels(page: Page): Promise<string[]> {
-  return page.locator('terminal-tabs .tabs-bar .tab .tab-label').allTextContents();
+  return page.locator('terminal-tabs wa-tab .tab-label').allTextContents();
 }
 
 /** Re-selects the workspace after a reload (the first fixture row would
@@ -148,13 +150,13 @@ async function tabLabels(page: Page): Promise<string[]> {
 async function reselectWorkspace(page: Page, ws: string): Promise<void> {
   await page.waitForSelector('workspace-sidebar .nav');
   await page.click(`workspace-sidebar li[data-ws="${ws}"]`);
-  await page.waitForSelector('terminal-tabs .tabs-bar .tab');
+  await page.waitForSelector('terminal-tabs wa-tab');
 }
 
 const tabOf = (page: Page, id: string) => page.locator(`terminal-tabs .tab[data-term="${id}"]`);
 const tabIds = (page: Page) =>
   page
-    .locator('terminal-tabs .tabs-bar .tab')
+    .locator('terminal-tabs wa-tab')
     .evaluateAll(tabs => tabs.map(t => (t as HTMLElement).dataset.term ?? ''));
 
 // ---------- reorder ----------
@@ -224,9 +226,7 @@ test("+ opens a shell tab; the caret menu's agent item opens an agent tab", asyn
   // + is the shell: the new tab is selected and its pane runs the shell
   // command (the fixture's shell banner), not the agent one.
   await page.click('terminal-tabs .tab-new[aria-label="new shell tab"]');
-  await page.waitForFunction(
-    () => document.querySelectorAll('terminal-tabs .tabs-bar .tab').length === 2,
-  );
+  await page.waitForFunction(() => document.querySelectorAll('terminal-tabs wa-tab').length === 2);
   await waitForTermText(page, MARKER);
   expect(await tabIds(page)).toHaveLength(2);
 
@@ -235,9 +235,7 @@ test("+ opens a shell tab; the caret menu's agent item opens an agent tab", asyn
   const menu = page.locator('wa-dropdown[open] wa-dropdown-item');
   await expect(menu).toHaveCount(2);
   await menu.filter({ hasText: 'new agent tab' }).click();
-  await page.waitForFunction(
-    () => document.querySelectorAll('terminal-tabs .tabs-bar .tab').length === 3,
-  );
+  await page.waitForFunction(() => document.querySelectorAll('terminal-tabs wa-tab').length === 3);
   await waitForTermText(page, AGENT_MARKER);
   expect(await tabIds(page)).toHaveLength(3);
   await deleteWorkspace(page, ws);
@@ -255,17 +253,15 @@ test('ctrl-t opens a shell tab and ctrl-shift-t an agent tab; neither fires in a
 
   // Even with the terminal focused (xterm's hidden textarea holds focus)
   // the keys belong to the console, not the shell.
-  await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
+  await page
+    .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+    .click();
   await page.keyboard.press('Control+t');
-  await page.waitForFunction(
-    () => document.querySelectorAll('terminal-tabs .tabs-bar .tab').length === 2,
-  );
+  await page.waitForFunction(() => document.querySelectorAll('terminal-tabs wa-tab').length === 2);
   await waitForTermText(page, MARKER);
 
   await page.keyboard.press('Control+Shift+t');
-  await page.waitForFunction(
-    () => document.querySelectorAll('terminal-tabs .tabs-bar .tab').length === 3,
-  );
+  await page.waitForFunction(() => document.querySelectorAll('terminal-tabs wa-tab').length === 3);
   await waitForTermText(page, AGENT_MARKER);
 
   // A focused text field keeps the keys: no third tab from the field in the
@@ -302,7 +298,9 @@ test('the toolbar esc button (narrow viewports) sends an escape byte to the pane
 
   // Narrow: it appears and one click is one ESC into the pty.
   await page.setViewportSize({ width: 600, height: 900 });
-  const esc = page.locator('agent-terminal:not(.hidden) .terminal-toolbar .tb-esc');
+  const esc = page.locator(
+    'agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-toolbar .tb-esc',
+  );
   await expect(esc).toBeVisible();
   await page.keyboard.type('cat -v\n');
   await waitForTermText(page, 'cat -v');
@@ -333,12 +331,17 @@ test('the pane uses the full viewport width on narrow screens', async ({ page })
   await expect
     .poll(
       async () =>
-        (await page.locator('agent-terminal:not(.hidden) .terminal-container').boundingBox())?.x ??
-        999,
+        (
+          await page
+            .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+            .boundingBox()
+        )?.x ?? 999,
       { timeout: 10_000 },
     )
     .toBeLessThanOrEqual(1);
-  const box = await page.locator('agent-terminal:not(.hidden) .terminal-container').boundingBox();
+  const box = await page
+    .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+    .boundingBox();
   expect(box).not.toBeNull();
   // Within 1px of the viewport: no pane padding, no container margins.
   expect(Math.abs(box!.x)).toBeLessThanOrEqual(1);
@@ -361,11 +364,15 @@ test('touch drag scrolls the pane scrollback', async ({ page }) => {
   await page.keyboard.type('seq 1 200\n');
   await waitForTermText(page, '199', 20_000);
 
-  const viewport = page.locator('agent-terminal:not(.hidden) .terminal-container .xterm-viewport');
+  const viewport = page.locator(
+    'agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container .xterm-viewport',
+  );
   void viewport;
   const readViewportY = () =>
     page.evaluate(() => {
-      const pane = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+      const pane = document.querySelector(
+        'agent-terminal:not(wa-tab-panel:not([active]) *)',
+      ) as unknown as {
         terminal?: {
           rows: number;
           buffer: { active: { viewportY: number } };
@@ -377,14 +384,18 @@ test('touch drag scrolls the pane scrollback', async ({ page }) => {
   // Parked at the bottom: viewportY == rows means NO scrollback (the seq
   // history must have landed) — anything more is scrollback to drag through.
   const rows = await page.evaluate(() => {
-    const pane = document.querySelector('agent-terminal:not(.hidden)') as unknown as {
+    const pane = document.querySelector(
+      'agent-terminal:not(wa-tab-panel:not([active]) *)',
+    ) as unknown as {
       terminal?: { rows: number };
     };
     return pane?.terminal?.rows ?? 0;
   });
   expect(startTop).toBeGreaterThan(rows);
 
-  const box = await page.locator('agent-terminal:not(.hidden) .terminal-container').boundingBox();
+  const box = await page
+    .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+    .boundingBox();
   expect(box).not.toBeNull();
   const cx = box!.x + box!.width / 2;
   const cy = box!.y + box!.height / 2;
