@@ -137,7 +137,7 @@ async function makeWorkspace(page: Page, name: string, cwd?: string): Promise<st
   }
   await refreshState(page);
   // select via the sidebar so its tab bar renders
-  await page.click(`workspace-sidebar li[data-ws="${made.json.id}"]`);
+  await page.click(`workspace-sidebar wa-tree-item[data-ws="${made.json.id}"]`);
   return made.json.id as string;
 }
 
@@ -296,14 +296,14 @@ test('login lands on the console with the fixture workspace tree in the sidebar'
   const nav = page.locator('workspace-sidebar .nav');
   const groups = nav.locator('.ws-group');
   await expect(groups).toHaveCount(1);
-  await expect(groups.first().locator('h2 .g-name')).toHaveText('cybermole');
-  await expect(groups.first().locator('li[data-ws]')).toHaveCount(2);
+  await expect(groups.first().locator('.g-name')).toHaveText('cybermole');
+  await expect(groups.first().locator('wa-tree-item[data-ws]')).toHaveCount(2);
   await expect(groups.first()).toContainText('scratch');
   await expect(groups.first()).toContainText('deploy checklist');
   await expect(page.locator('workspace-sidebar #new-app')).toHaveCount(0);
   // No notification-style badges on the rows: liveness stays on the tab dots below.
-  await expect(groups.first().locator('li[data-ws] wa-badge')).toHaveCount(0);
-  await expect(groups.first().locator('li[data-ws].active')).toHaveCount(1);
+  await expect(groups.first().locator('wa-tree-item[data-ws] wa-badge')).toHaveCount(0);
+  await expect(groups.first().locator('wa-tree-item[data-ws][selected]')).toHaveCount(1);
 
   // scratch's two tabs; no editor tab (unconfigured here).
   const tabs = page.locator('terminal-tabs wa-tab-group');
@@ -330,7 +330,7 @@ test("the console group's + workspace creates a console workspace through the di
   await page.fill('wa-input#workspace-name input', 'console made ws');
   await page.click('#workspace-save');
   // The row is the console's, auto-selected, with its first tab spawning.
-  const row = page.locator('workspace-sidebar li[data-ws].active');
+  const row = page.locator('workspace-sidebar wa-tree-item[data-ws][selected]');
   await expect(row).toContainText('console made ws');
   await expect(row.locator('.d')).toHaveText(WORKSPACE);
   await expect(page.locator('terminal-tabs wa-tab')).toHaveCount(1);
@@ -338,9 +338,9 @@ test("the console group's + workspace creates a console workspace through the di
   await row.locator('[data-del-ws]').click();
   await page.click('#confirm-delete-ok');
   await expect(
-    page.locator('workspace-sidebar li[data-ws]').filter({ hasText: 'console made ws' }),
+    page.locator('workspace-sidebar wa-tree-item[data-ws]').filter({ hasText: 'console made ws' }),
   ).toHaveCount(0);
-  await expect(page.locator('workspace-sidebar li[data-ws].active')).toContainText('scratch');
+  await expect(page.locator('workspace-sidebar wa-tree-item[data-ws][selected]')).toContainText('scratch');
 });
 
 // The sidebar has no poll anymore: /ws/events pushes workspaces/apps
@@ -350,7 +350,7 @@ test("the console group's + workspace creates a console workspace through the di
 test('the sidebar updates over /ws/events push without a reload', async ({ page }) => {
   await login(page);
   await page.evaluate(() => (document.body.dataset.pushSentinel = 'alive'));
-  const rows = page.locator('workspace-sidebar li[data-ws]');
+  const rows = page.locator('workspace-sidebar wa-tree-item[data-ws]');
 
   const made = await api(page, 'POST', '/api/workspaces', { name: 'push ws' });
   expect(made.status, JSON.stringify(made.json)).toBe(200);
@@ -395,7 +395,7 @@ test('self-naming: a workspace typed with only a cwd names itself after it, uniq
   await expect.poll(nameValue).toBe('self-named');
   await expect(page.locator('#workspace-start')).toHaveText(`starts at ${selfNamed}`);
   await page.click('#workspace-save');
-  let row = page.locator('workspace-sidebar li[data-ws].active');
+  let row = page.locator('workspace-sidebar wa-tree-item[data-ws][selected]');
   await expect(row).toContainText('self-named');
   await expect(row.locator('.d')).toHaveText(selfNamed);
 
@@ -406,7 +406,7 @@ test('self-naming: a workspace typed with only a cwd names itself after it, uniq
   await page.fill('wa-input#workspace-cwd input', selfNamed);
   await expect.poll(nameValue).toBe('self-named-2');
   await page.click('#workspace-save');
-  row = page.locator('workspace-sidebar li[data-ws].active');
+  row = page.locator('workspace-sidebar wa-tree-item[data-ws][selected]');
   await expect(row).toContainText('self-named-2');
   await expect(row.locator('.d')).toHaveText(selfNamed);
 
@@ -419,7 +419,7 @@ test('self-naming: a workspace typed with only a cwd names itself after it, uniq
   await page.fill('wa-input#workspace-cwd input', selfNamed);
   expect(await nameValue()).toBe('mine');
   await page.click('#workspace-save');
-  row = page.locator('workspace-sidebar li[data-ws].active');
+  row = page.locator('workspace-sidebar wa-tree-item[data-ws][selected]');
   await expect(row).toContainText('mine');
   await expect(row.locator('.d')).toHaveText(selfNamed);
 
@@ -434,7 +434,7 @@ test('self-naming: a workspace typed with only a cwd names itself after it, uniq
     expect((await api(page, 'DELETE', `/api/workspaces/${w.id}`)).status).toBe(200);
   }
   await refreshState(page);
-  await expect(page.locator('workspace-sidebar li[data-ws].active')).toContainText('scratch');
+  await expect(page.locator('workspace-sidebar wa-tree-item[data-ws][selected]')).toContainText('scratch');
 });
 
 test('a new workspace auto-opens its first terminal running the AGENT command; other tabs run the shell', async ({
@@ -1732,7 +1732,7 @@ test('the workspace filter matches names, hides empty groups, and survives the p
 }) => {
   await login(page);
   const search = page.locator('wa-input#workspace-search input');
-  const rows = page.locator('workspace-sidebar li[data-ws]');
+  const rows = page.locator('workspace-sidebar wa-tree-item[data-ws]');
   const groups = page.locator('workspace-sidebar .ws-group');
 
   // A name match: one row; the app group hides.
@@ -1740,7 +1740,7 @@ test('the workspace filter matches names, hides empty groups, and survives the p
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText('deploy checklist');
   await expect(groups).toHaveCount(1);
-  await expect(groups.first().locator('h2 .g-name')).toHaveText('cybermole');
+  await expect(groups.first().locator('.g-name')).toHaveText('cybermole');
 
   // Names only: a fragment of a fixture's cwd matches nothing.
   await search.fill('cybermole-itest');
@@ -2363,7 +2363,7 @@ test('SIGTERM: every socket gets restart, closes, and the process exits 0', asyn
         document.querySelector('console-app') as unknown as { loadState(): Promise<void> }
       ).loadState(),
     );
-    await page.click(`workspace-sidebar li[data-ws="${wsMade.id}"]`);
+    await page.click(`workspace-sidebar wa-tree-item[data-ws="${wsMade.id}"]`);
     const autoId = await page.locator('terminal-tabs wa-tab').first().getAttribute('data-term');
     expect(autoId).toBeTruthy();
     await page.click('terminal-tabs .tab-new'); // creates + selects the terminal tab
@@ -2522,9 +2522,7 @@ test("deep link ?t=<uuid> opens the terminal's workspace with its tab selected; 
 
   // Sidebar row and tab both active, attached to t-<uuid>, banner shown.
   await page.goto(`/?t=${id}`);
-  await expect(page.locator(`workspace-sidebar li[data-ws="${wsMade.json.id}"]`)).toHaveClass(
-    /active/,
-  );
+  await expect(page.locator(`workspace-sidebar wa-tree-item[data-ws="${wsMade.json.id}"]`)).toHaveAttribute('selected');
   await expect(page.locator(`terminal-tabs .tab[data-term="${id}"]`)).toHaveAttribute('active', '');
   await expect(page.locator('.terminal-status')).toContainText(`attached: t-${id}`);
   await waitForTermText(page, MARKER);
@@ -2542,7 +2540,7 @@ test("deep link ?t=<uuid> opens the terminal's workspace with its tab selected; 
     null,
     { timeout: 10_000 },
   );
-  await expect(page.locator('workspace-sidebar li[data-ws].active')).toHaveCount(1);
+  await expect(page.locator('workspace-sidebar wa-tree-item[data-ws][selected]')).toHaveCount(1);
   expect(tmuxStatus(['has-session', '-t', 't-99999999-9999-4999-8999-999999999999'])).not.toBe(0);
 
   expect((await api(page, 'DELETE', `/api/terminals/${id}`)).status).toBe(200);
@@ -2622,7 +2620,7 @@ test('a terminal tab survives a WEB restart: tmux keeps the session, the client 
     const wsMade = await api(page, 'POST', '/api/workspaces', { name: 'survive' });
     expect(wsMade.status, JSON.stringify(wsMade.json)).toBe(200);
     await refreshState(page);
-    await page.click(`workspace-sidebar li[data-ws="${wsMade.json.id}"]`);
+    await page.click(`workspace-sidebar wa-tree-item[data-ws="${wsMade.json.id}"]`);
     // the auto-opened tab, to tell the tab under test apart
     const autoId = await page.locator('terminal-tabs wa-tab').first().getAttribute('data-term');
     expect(autoId).toBeTruthy();

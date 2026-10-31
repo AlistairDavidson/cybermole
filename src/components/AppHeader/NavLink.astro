@@ -17,7 +17,7 @@ const brand = item.icon === 'cybermole';
   appearance="plain"
   size="s"
   href={item.href}
-  {...(item.section === current ? { 'aria-current': 'page' } : {})}
+  {...(item.section === current ? { 'aria-current': 'page', variant: 'brand' } : {})}
 >
   <wa-icon
     slot="start"

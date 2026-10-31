@@ -216,6 +216,15 @@ Testing), not just in the SSR HTML.
   (`tools/arch-check-console.mjs`): a new violation fails, and its
   `LEGACY` list (the files still on the old patterns) only shrinks.
   When you convert one, lower or delete its entry.
+- **Stock looks, utility layout.** Every `wa-*` component keeps the look
+  its docs page shows: no CSS on its padding, fonts, colours, `::part()`s
+  or component custom properties (`--indicator-color`, `--padding`, …)
+  unless the operator asks for that customisation explicitly. Layout is
+  Web Awesome's layout utilities in the markup (`wa-stack`, `wa-cluster`,
+  `wa-split`, `wa-flank`, `wa-gap-*`, `wa-align-*`, `wa-justify-*`, the
+  text classes); `console.css` holds only what they can't express (the
+  terminal's fill-height chain and its zero pane padding, overlays,
+  truncation, state cues), each with a comment saying why.
 - The app's identity lives in the `:root` semantic-token overrides in
   `src/styles/console.css` — extend those rather than adding hex/px literals.
 - `console.css` is unlayered on purpose (must win over @layer'd Web Awesome

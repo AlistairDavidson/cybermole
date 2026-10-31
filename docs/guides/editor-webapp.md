@@ -117,6 +117,31 @@ cybermole boots clean, `/editor/*` answers 404, the console hides its
 affordances — the idle editor container is cheap to leave running.
 Nothing publishes a port: the compose network is the only door.
 
+## Plain host (the single-user shape)
+
+`deploy/install-host.sh` installs the editor by default (`--without-editor`
+skips it): the same pinned reh-web tarball and bundled extensions as the
+image, sha256-verified, unpacked to `$STATE_DIR/editor`, with the
+extensions installed into `~/.vscodium-server`. The installer carries its
+own copy of the Dockerfile's pins (it can run outside the checkout);
+`tests/unit/editor.test.mjs` fails if they drift. A re-run with new pins
+replaces the install.
+
+With `CYBERMOLE_EDITOR_UPSTREAM` **unset**, a server that finds
+`$STATE_DIR/editor/out/server-main.js` spawns and supervises it (the app
+host's restart loop: doubling backoff, never gives up, stopped on
+shutdown). It runs as the server's own uid, so it edits the user's real
+files. The bundled `node` is spawned directly, because `bin/codium-server`
+is a sh wrapper that doesn't exec and a SIGTERM to it would orphan the
+server. It listens on a **unix socket**, `$STATE_DIR/editor-run/editor.sock`
+in a 0700 dir, never a port: it runs without a connection token, so on a
+shared box a loopback port would be a shell for every local user. The
+supervisor unlinks a stale socket before each spawn (listen() won't reuse
+it), and the path must stay under the ~107-byte unix socket limit.
+`CYBERMOLE_EDITOR_UPSTREAM` set empty turns it off; set to a URL, it
+proxies there instead. A state dir with no install (e2e's hermetic one)
+means editor off.
+
 ## The proxy (server/main.ts + src/lib/terminals/editor.ts)
 
 `CYBERMOLE_EDITOR_UPSTREAM` (e.g. `http://editor:3000`; origin only, validated
@@ -196,7 +221,8 @@ page); unconfigured answers **404**.
 
 ## Security notes
 
-- The editor never publishes a port; the compose network is the boundary.
+- The editor never publishes a port: in compose the network is the
+  boundary, and on a plain host it's a unix socket in a 0700 dir.
 - CSP `connect-src` refuses marketplaces in the BROWSER; the editor
   container's own egress is the operator's (like any container). To take
   Open VSX fully offline, unset the gallery via `VSCODE_GALLERY_*`.

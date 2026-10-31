@@ -214,13 +214,13 @@ test('register lands the manifest icon on the row; the sidebar shows it (and the
   // unregistered tree's shows its manifest's (the status join is cached
   // ~10 s, so poll the page's own refresh until it lands).
   const group = page.locator('workspace-sidebar .ws-group[data-group="' + SLUG + '"]');
-  await expect(group.locator('h2 .g-icon wa-icon')).toHaveAttribute('name', 'robot');
+  await expect(group.locator('.g-icon wa-icon')).toHaveAttribute('name', 'robot');
   const noteGroup = page.locator(`workspace-sidebar .ws-group[data-group="${NOTE_SLUG}"]`);
   await expect
     .poll(
       async () => {
         await refreshState(page);
-        return noteGroup.locator('h2 .g-icon wa-icon').getAttribute('name');
+        return noteGroup.locator('.g-icon wa-icon').getAttribute('name');
       },
       { timeout: 25_000, intervals: [500, 1000, 2000, 2000] },
     )
@@ -307,8 +307,8 @@ test('the settings page: gear -> change icon, name and cwd; the sidebar shows it
   await page.goto('/builder');
   await page.waitForSelector('workspace-sidebar .nav');
   const renamed = page.locator(`workspace-sidebar .ws-group[data-group="${SLUG}"]`);
-  await expect(renamed.locator('h2 .g-name')).toHaveText('Icon Probe Renamed');
-  await expect(renamed.locator('h2 .g-icon wa-icon')).toHaveAttribute('name', 'terminal');
+  await expect(renamed.locator('.g-name')).toHaveText('Icon Probe Renamed');
+  await expect(renamed.locator('.g-icon wa-icon')).toHaveAttribute('name', 'terminal');
 
   // Clearing the cwd returns the app to the server default (the hint's
   // “empty = the server default”: an empty save sends null, not a keep).

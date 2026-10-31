@@ -2,7 +2,8 @@
 // as a supervised child with the same uid and env; when it's set, someone
 // else owns the host. The child's log lines are re-logged at their own
 // level; a crashed host restarts with doubling backoff (reset after a
-// stable run) and the supervisor never gives up.
+// stable run) and the supervisor never gives up. The editor (VSCodium
+// reh-web on a host install) rides the same loop under its own name.
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 
@@ -26,6 +27,12 @@ export interface AppHostSupervisorDeps {
   /** The child derives the same socket defaults from it. */
   env: NodeJS.ProcessEnv;
   log: SupervisorLog;
+  /** In log lines. Default 'app host'. */
+  name?: string;
+  /** What a death costs, appended to the restart warning. */
+  downNote?: string;
+  /** Runs before every spawn (e.g. unlinking a dead child's socket). */
+  beforeSpawn?: () => void;
   spawn?: SupervisorSpawn;
   /** Default 1 s, doubling per consecutive quick death. */
   restartDelayMs?: number;
@@ -91,6 +98,8 @@ export function startAppHostSupervisor(deps: AppHostSupervisorDeps): AppHostSupe
   const backoffCapMs = deps.backoffCapMs ?? 10_000;
   const stableMs = deps.stableMs ?? 30_000;
   const killGraceMs = deps.killGraceMs ?? 2000;
+  const name = deps.name ?? 'app host';
+  const downNote = deps.downNote ?? 'the /apps/* surface 502s until it is back';
 
   let child: ChildProcess | null = null;
   let stopping = false;
@@ -103,6 +112,11 @@ export function startAppHostSupervisor(deps: AppHostSupervisorDeps): AppHostSupe
     if (stopping) return;
     starts++;
     const bornAt = now();
+    try {
+      deps.beforeSpawn?.();
+    } catch (err) {
+      log.warn(`${name} pre-spawn step failed: ${(err as Error).message}`);
+    }
     const c = spawnFn(deps.command, deps.args, {
       env: deps.env,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -110,7 +124,7 @@ export function startAppHostSupervisor(deps: AppHostSupervisorDeps): AppHostSupe
     child = c;
     pipeLines(c.stdout, log);
     pipeLines(c.stderr, log);
-    log.info(`app host started (pid ${c.pid ?? '?'})`);
+    log.info(`${name} started (pid ${c.pid ?? '?'})`);
 
     // A failed spawn emits 'error' but never 'exit'; both count as a death.
     const onDeath = (code: number | null, signal: string | null): void => {
@@ -125,8 +139,8 @@ export function startAppHostSupervisor(deps: AppHostSupervisorDeps): AppHostSupe
       const lived = Math.max(0, now() - bornAt);
       if (lived >= stableMs) delay = restartDelayMs;
       log.warn(
-        `app host (pid ${c.pid ?? '?'}) exited (code ${code}, signal ${signal}) after ${lived}ms — ` +
-          `restarting in ${delay}ms (the /apps/* surface 502s until it is back)`,
+        `${name} (pid ${c.pid ?? '?'}) exited (code ${code}, signal ${signal}) after ${lived}ms — ` +
+          `restarting in ${delay}ms (${downNote})`,
       );
       const wait = delay;
       delay = Math.min(delay * 2, backoffCapMs);
@@ -137,7 +151,7 @@ export function startAppHostSupervisor(deps: AppHostSupervisorDeps): AppHostSupe
       restartTimer.unref();
     };
     c.on('error', err => {
-      log.error(`app host could not be spawned: ${err.message}`);
+      log.error(`${name} could not be spawned: ${err.message}`);
       onDeath(null, null);
     });
     c.on('exit', (code, signal) => onDeath(code, signal));

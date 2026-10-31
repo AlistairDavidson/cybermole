@@ -107,7 +107,7 @@ const orderPut = (page: Page, path: string) =>
 /** The console group's row names in display order. */
 const rowNames = (page: Page) =>
   page
-    .locator('workspace-sidebar .ws-group[data-group="console"] li[data-ws] .t-name')
+    .locator('workspace-sidebar .ws-group[data-group="console"] wa-tree-item[data-ws] .t-name')
     .allTextContents();
 
 /** The builder page's app-row group slugs in display order (a group with
@@ -147,8 +147,8 @@ test('dragging a workspace row reorders its group optimistically and the order s
   // rows keep their relative order (rows reorder within their group only).
   const put = orderPut(page, '/api/workspaces/order');
   await page
-    .locator(`workspace-sidebar li[data-ws="${two.json.id}"]`)
-    .dragTo(page.locator(`workspace-sidebar li[data-ws="${one.json.id}"]`), {
+    .locator(`workspace-sidebar wa-tree-item[data-ws="${two.json.id}"]`)
+    .dragTo(page.locator(`workspace-sidebar wa-tree-item[data-ws="${one.json.id}"]`), {
       targetPosition: { x: 8, y: 2 },
     });
   await expect
@@ -182,7 +182,7 @@ test('Shift+Arrow moves the focused workspace row, and that order survives a rel
   // Keyboard alternative to the drag: focus a row, Shift+ArrowUp walks it
   // up one slot a hop. Two hops move 'two' past both neighbours (each
   // hop's write is awaited before the next, so a reload can't race a PUT).
-  await page.locator(`workspace-sidebar li[data-ws="${two.json.id}"]`).focus();
+  await page.locator(`workspace-sidebar wa-tree-item[data-ws="${two.json.id}"]`).focus();
   const put1 = orderPut(page, '/api/workspaces/order');
   await page.keyboard.press('Shift+ArrowUp');
   await expect
@@ -205,7 +205,7 @@ test('Shift+Arrow moves the focused workspace row, and that order survives a rel
   // A filtered view can't name a full-group order: Shift+Arrow is inert.
   await page.fill('wa-input#workspace-search input', 'sidebar');
   await expect.poll(() => rowNames(page)).toEqual(['sidebar order two', 'sidebar order one']);
-  await page.locator(`workspace-sidebar li[data-ws="${two.json.id}"]`).focus();
+  await page.locator(`workspace-sidebar wa-tree-item[data-ws="${two.json.id}"]`).focus();
   await page.keyboard.press('Shift+ArrowUp');
   await page.waitForTimeout(300);
   await expect.poll(() => rowNames(page)).toEqual(['sidebar order two', 'sidebar order one']);
@@ -236,8 +236,8 @@ test('a state poll landing mid-drag defers its re-render: the drag survives and 
   // A hand-driven drag: down, move (the drag starts), then the 15 s poll
   // lands — render defers to dragend instead of swapping innerHTML under
   // the pointer — then the drop completes over 'one's top half.
-  const src = (await page.locator(`workspace-sidebar li[data-ws="${two.json.id}"]`).boundingBox())!;
-  const tgt = (await page.locator(`workspace-sidebar li[data-ws="${one.json.id}"]`).boundingBox())!;
+  const src = (await page.locator(`workspace-sidebar wa-tree-item[data-ws="${two.json.id}"]`).boundingBox())!;
+  const tgt = (await page.locator(`workspace-sidebar wa-tree-item[data-ws="${one.json.id}"]`).boundingBox())!;
   const put = orderPut(page, '/api/workspaces/order');
   await page.mouse.move(src.x + 12, src.y + 4);
   await page.mouse.down();
@@ -278,12 +278,12 @@ test('dragging an app group reorders the portfolio optimistically and the order 
     .toBeLessThan(await groupIndex(page, 'zz-reorder-b'));
   const before = await groupIndex(page, 'zz-reorder-b');
 
-  // Drop b's header on the top half of a's header: b lands directly above
+  // Drop b's header line on the top half of a's: b lands directly above
   // it. The source position steers clear of the header's buttons.
   const put = orderPut(page, '/api/apps/order');
   await page
-    .locator(`workspace-sidebar .ws-group[data-group="zz-reorder-b"] h2`)
-    .dragTo(page.locator(`workspace-sidebar .ws-group[data-group="zz-reorder-a"] h2`), {
+    .locator(`workspace-sidebar .ws-group[data-group="zz-reorder-b"] > .ws-label`)
+    .dragTo(page.locator(`workspace-sidebar .ws-group[data-group="zz-reorder-a"] > .ws-label`), {
       sourcePosition: { x: 60, y: 4 },
       targetPosition: { x: 60, y: 2 },
     });
@@ -317,7 +317,7 @@ test('Shift+Arrow moves the focused app group, and that order survives a reload 
   // Keyboard alternative to the drag: focus a group header, Shift+ArrowUp
   // walks it up one slot a hop (each hop's write is awaited before the
   // next, so a reload can't race a PUT).
-  await page.locator('workspace-sidebar .ws-group[data-group="zz-reorder-b"] h2').focus();
+  await page.locator('workspace-sidebar .ws-group[data-group="zz-reorder-b"]').focus();
   const put1 = orderPut(page, '/api/apps/order');
   await page.keyboard.press('Shift+ArrowUp');
   await expect.poll(async () => groupIndex(page, 'zz-reorder-b')).toBe(start - 1);

@@ -8,6 +8,7 @@ import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/input/input.js';
 import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
+import '@awesome.me/webawesome/dist/components/divider/divider.js';
 ---
 <agent-terminal>
   <div class="terminal-container"></div>
@@ -56,7 +57,8 @@ import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
     <!-- The download's target; never shown, clicked from code. -->
     <a class="tb-download-link hidden" aria-hidden="true" tabindex="-1"></a>
   </div>
-  <div class="terminal-status">
+  <wa-divider></wa-divider>
+  <div class="terminal-status wa-cluster wa-gap-2xs wa-flex-nowrap wa-caption-xs">
     <wa-spinner data-kind="busy" class="hidden"></wa-spinner>
     <wa-icon data-kind="ok" name="circle-check" class="hidden"></wa-icon>
     <wa-icon data-kind="err" name="triangle-exclamation" class="hidden"></wa-icon>

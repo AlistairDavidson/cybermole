@@ -38,7 +38,7 @@ const DATE_TIME = {
   app ? (
     <main class="app-settings-main wa-stack wa-gap-m">
       <header class="settings-header app-settings-header">
-        <h1>
+        <h1 class="wa-cluster wa-gap-2xs wa-heading-l">
           <wa-icon id="app-settings-title-icon" name={app.icon} />
           <span id="app-settings-title-name">{app.name}</span>
         </h1>
@@ -105,17 +105,17 @@ const DATE_TIME = {
         </div>
         <div class="wa-stack wa-gap-2xs">
           <div class="cfg-row wa-split">
-            <span class="k">slug</span>
+            <span class="k wa-color-text-quiet">slug</span>
             <span class="v">
               <code>{app.slug}</code>
             </span>
           </div>
           <div class="cfg-row wa-split">
-            <span class="k">created</span>
+            <span class="k wa-color-text-quiet">created</span>
             <wa-format-date class="v" date={iso(app.createdAt)} {...DATE_TIME} />
           </div>
           <div class="cfg-row wa-split">
-            <span class="k">updated</span>
+            <span class="k wa-color-text-quiet">updated</span>
             <wa-format-date class="v" date={iso(app.updatedAt)} {...DATE_TIME} />
           </div>
         </div>
@@ -135,7 +135,7 @@ const DATE_TIME = {
   ) : (
     <main class="app-settings-main wa-stack wa-gap-s">
       <header class="settings-header app-settings-header">
-        <h1>no such app</h1>
+        <h1 class="wa-heading-l">no such app</h1>
       </header>
       <wa-callout variant="warning">
         <wa-icon slot="icon" name="triangle-exclamation" />

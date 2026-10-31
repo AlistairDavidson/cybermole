@@ -76,7 +76,7 @@ test('the product shows as cybermole: page title, nav brand, sidebar group headi
   );
   await expect(page.locator('wa-tooltip[for="nav-console"]')).toHaveText('Cybermole');
   // The / page's single group names the product, not "console".
-  const heading = page.locator('workspace-sidebar .ws-group h2 .g-name');
+  const heading = page.locator('workspace-sidebar .ws-group .g-name');
   await expect(heading).toHaveText('cybermole');
   await expect(
     page.locator(`workspace-sidebar wa-tooltip[for="${await heading.getAttribute('id')}"]`),

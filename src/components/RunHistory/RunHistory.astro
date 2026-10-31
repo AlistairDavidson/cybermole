@@ -51,13 +51,13 @@ const shown = (s: string): string | undefined => (s === state ? undefined : 'hid
       {(runs ?? []).map(run => (
         <tr>
           <td><wa-format-date class="run-when" date={isoOf(run.firedAt)} {...DATE_TIME_ATTRS} /></td>
-          <td class="run-origin">{run.origin}</td>
-          <td class="run-duration">
+          <td class="run-origin wa-color-text-quiet">{run.origin}</td>
+          <td class="run-duration wa-color-text-quiet">
             {run.finishedAt === null ? '—' : fmtDuration(run.firedAt, run.finishedAt)}
           </td>
           <td>
             {run.exitCode === null ? (
-              <span class="run-exit unknown">—</span>
+              <span class="run-exit unknown wa-color-text-quiet">—</span>
             ) : (
               <wa-badge
                 class:list={['run-exit', run.exitCode === 0 ? 'ok' : 'failed']}
@@ -79,10 +79,10 @@ const shown = (s: string): string | undefined => (s === state ? undefined : 'hid
   <template data-row>
     <tr>
       <td><wa-format-date class="run-when" {...DATE_TIME_ATTRS}></wa-format-date></td>
-      <td class="run-origin"></td>
-      <td class="run-duration"></td>
+      <td class="run-origin wa-color-text-quiet"></td>
+      <td class="run-duration wa-color-text-quiet"></td>
       <td>
-        <span class="run-exit unknown" data-optional="unknown">—</span>
+        <span class="run-exit unknown wa-color-text-quiet" data-optional="unknown">—</span>
         <wa-badge class="run-exit" data-optional="exit"></wa-badge>
       </td>
       <td>

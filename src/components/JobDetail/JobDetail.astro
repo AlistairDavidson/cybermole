@@ -24,7 +24,7 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/+$/, '');
 {job === null ? (
   <main class="jobs-main wa-stack wa-gap-m">
     <header class="jobs-header">
-      <h1><wa-icon name="clock"></wa-icon> job not found</h1>
+      <h1 class="wa-cluster wa-gap-2xs wa-heading-l"><wa-icon name="clock"></wa-icon> job not found</h1>
     </header>
     <wa-callout variant="warning">
       <wa-icon slot="icon" name="triangle-exclamation"></wa-icon>
@@ -40,7 +40,7 @@ const base = (import.meta.env.BASE_URL ?? '/').replace(/\/+$/, '');
       <JobDetailBody job={job} runs={runs} />
       <!-- Outside #job-detail, so a refresh doesn't wipe an open log. -->
       <div id="run-log-box" class="run-log-box hidden">
-        <div class="run-log-head">
+        <div class="run-log-head wa-split wa-caption-s">
           <span id="run-log-title"></span>
           <wa-button size="xs" appearance="plain" id="run-log-close">hide log</wa-button>
         </div>

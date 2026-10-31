@@ -48,8 +48,10 @@ containers and two uids (server vs tmux/terminals) — see
   Code in the browser with server-side files, served same-origin through
   cybermole's `/editor` proxy behind the session gate — every tab opens its
   workspace's cwd (`?folder=`), many folders at once
-  ([docs/guides/editor-webapp.md](docs/guides/editor-webapp.md)). Ships in the compose
-  stack (`CYBERMOLE_EDITOR_UPSTREAM` defaults on in compose; empty = off).
+  ([docs/guides/editor-webapp.md](docs/guides/editor-webapp.md)). On by default in
+  both install shapes: compose ships the editor container, and the plain-host
+  installer unpacks the same pinned build for the server to supervise
+  (`CYBERMOLE_EDITOR_UPSTREAM` set empty = off).
 - **Jobs** (`/jobs`) — scheduled commands ("cron") on the built-in
   scheduler: name + 5-field cron schedule + arbitrary shell command,
   optionally tagged with an app. Every run — scheduler-fired or "run now"

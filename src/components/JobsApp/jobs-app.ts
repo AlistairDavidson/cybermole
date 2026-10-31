@@ -249,16 +249,15 @@ export class JobsApp extends HTMLElement {
 
   private setFeedback(c: CalendarCheck | null): void {
     const el = this.querySelector('#schedule-feedback') as HTMLElement;
-    el.className = 'schedule-feedback';
-    el.textContent = '';
-    if (!c) return;
-    if (c.valid) {
-      el.className = 'schedule-feedback ok';
-      el.textContent = c.next ? `next: ${c.next}` : 'valid';
-    } else {
-      el.className = 'schedule-feedback err';
-      el.textContent = c.error ?? 'invalid schedule';
-    }
+    el.classList.toggle('ok', c?.valid === true);
+    el.classList.toggle('err', c?.valid === false);
+    el.textContent = !c
+      ? ''
+      : c.valid
+        ? c.next
+          ? `next: ${c.next}`
+          : 'valid'
+        : (c.error ?? 'invalid schedule');
   }
 
   private async validate(): Promise<void> {

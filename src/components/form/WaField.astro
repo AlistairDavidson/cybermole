@@ -23,7 +23,7 @@ const Control = as === 'textarea' ? 'wa-textarea' : 'wa-input';
 const errorId = `${id}-error`;
 ---
 <Control id={id} name={name} label={label} aria-errormessage={errorId} with-hint {...attrs}>
-  <div slot="hint" class="field-hint">
+  <div slot="hint" class="field-hint wa-stack wa-gap-3xs">
     {hint && <span class="field-hint-text">{hint}</span>}
     <span id={errorId} class="field-error">{error}</span>
   </div>

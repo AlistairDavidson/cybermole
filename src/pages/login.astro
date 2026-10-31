@@ -16,26 +16,28 @@ import { loginForm } from '../schemas/api';
 const validation = zodSchemaToHTMLAttributes(loginForm);
 ---
 <Base title="cybermole — sign in">
-  <main class="login-main wa-stack">
+  <main class="login-main wa-stack wa-align-items-center wa-justify-content-center">
     <wa-card class="login-card">
-      <h1><wa-icon name="terminal"></wa-icon> cybermole</h1>
-      <validation-enhancer-zod>
-        <form id="login-form" class="wa-stack wa-gap-m">
-          <WaField id="username" name="username" label="username" autocomplete="username" autofocus
-            {...validation.username} />
-          <WaField
-            id="password"
-            name="password"
-            label="password"
-            type="password"
-            password-toggle
-            autocomplete="current-password"
-            {...validation.password}
-          />
-          <wa-button type="submit" variant="brand">sign in</wa-button>
-          <wa-callout id="error" variant="danger" class="hidden"></wa-callout>
-        </form>
-      </validation-enhancer-zod>
+      <div class="wa-stack">
+        <h1 class="wa-cluster wa-gap-2xs wa-heading-l"><wa-icon name="terminal"></wa-icon> cybermole</h1>
+        <validation-enhancer-zod>
+          <form id="login-form" class="wa-stack wa-gap-m">
+            <WaField id="username" name="username" label="username" autocomplete="username" autofocus
+              {...validation.username} />
+            <WaField
+              id="password"
+              name="password"
+              label="password"
+              type="password"
+              password-toggle
+              autocomplete="current-password"
+              {...validation.password}
+            />
+            <wa-button type="submit" variant="brand">sign in</wa-button>
+            <wa-callout id="error" variant="danger" class="hidden"></wa-callout>
+          </form>
+        </validation-enhancer-zod>
+      </div>
     </wa-card>
   </main>
 </Base>

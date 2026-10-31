@@ -32,7 +32,7 @@ const validation = zodSchemaToHTMLAttributes(JobSaveSchema);
 <jobs-app>
   <main class="jobs-main wa-stack wa-gap-m">
     <header class="jobs-header wa-split">
-      <h1>
+      <h1 class="wa-cluster wa-gap-2xs wa-heading-l">
         <wa-icon name="clock"></wa-icon> scheduled jobs
       </h1>
       <div class="wa-cluster wa-gap-2xs">
@@ -73,7 +73,7 @@ const validation = zodSchemaToHTMLAttributes(JobSaveSchema);
           />
           <div
             id="schedule-feedback"
-            class="schedule-feedback"
+            class="schedule-feedback wa-caption-s"
             aria-live="polite"
           ></div>
         </div>
@@ -121,7 +121,7 @@ const validation = zodSchemaToHTMLAttributes(JobSaveSchema);
     <div class="wa-stack wa-gap-s">
       <RunHistory emptyHint={'"run now" fires one.'} />
       <div id="run-log-box" class="run-log-box hidden">
-        <div class="run-log-head">
+        <div class="run-log-head wa-split wa-caption-s">
           <span id="run-log-title"></span>
           <wa-button size="xs" appearance="plain" id="run-log-close">hide log</wa-button>
         </div>

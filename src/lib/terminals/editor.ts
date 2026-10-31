@@ -32,6 +32,8 @@ export function editorUpgradeHeaders(incoming: IncomingHeaders): IncomingHeaders
 export interface EditorUpstream {
   /** Origin only; request paths are forwarded verbatim. */
   origin: string;
+  /** Connect here instead of the origin's host:port (the supervised editor). */
+  socketPath?: string;
 }
 /** `${BASE}/editor` and below; `/editorial` must not match. */
 export function isEditorHttpPath(base: string, url: string): boolean {

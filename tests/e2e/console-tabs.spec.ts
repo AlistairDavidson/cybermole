@@ -104,7 +104,7 @@ async function makeWorkspace(page: Page, name: string, titles: string[] = []): P
     expect(term.status, JSON.stringify(term.json)).toBe(200);
   }
   await refreshState(page);
-  await page.click(`workspace-sidebar li[data-ws="${made.json.id}"]`);
+  await page.click(`workspace-sidebar wa-tree-item[data-ws="${made.json.id}"]`);
   return made.json.id as string;
 }
 
@@ -149,7 +149,7 @@ async function tabLabels(page: Page): Promise<string[]> {
  * otherwise win) and returns once its bar is up. */
 async function reselectWorkspace(page: Page, ws: string): Promise<void> {
   await page.waitForSelector('workspace-sidebar .nav');
-  await page.click(`workspace-sidebar li[data-ws="${ws}"]`);
+  await page.click(`workspace-sidebar wa-tree-item[data-ws="${ws}"]`);
   await page.waitForSelector('terminal-tabs wa-tab');
 }
 

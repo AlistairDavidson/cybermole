@@ -5,6 +5,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {
   EditorTunnelTracker,
   EDITOR_HTML_REWRITE_MAX_BYTES,
@@ -321,4 +324,71 @@ test('env: malformed values stop the boot (operator mistake, like object storage
     bootUpstream({ CYBERMOLE_EDITOR_UPSTREAM: 'http://editor:3000/?tkn=x' }).error,
     /must be an origin only/,
   );
+});
+
+// ---------- the host install's supervised editor ----------
+
+function bootMode(env) {
+  const clean = Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([k]) => k !== 'CYBERMOLE_EDITOR_UPSTREAM' && k !== 'CYBERMOLE_STATE_DIR',
+    ),
+  );
+  const out = execFileSync(
+    process.execPath,
+    [
+      '-e',
+      "process.stdout.write(JSON.stringify(require('./dist-server/src/lib/platform/env.js').readEditorMode()))",
+    ],
+    { env: { ...clean, ...env }, stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  return JSON.parse(out.toString());
+}
+
+test('editor mode: unset upstream supervises an install under the state dir, else is off', () => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-editor-mode-'));
+  try {
+    assert.deepEqual(bootMode({ CYBERMOLE_STATE_DIR: stateDir }), {
+      kind: 'off',
+      reason: 'not_installed',
+    });
+    fs.mkdirSync(path.join(stateDir, 'editor', 'out'), { recursive: true });
+    fs.writeFileSync(path.join(stateDir, 'editor', 'out', 'server-main.js'), '');
+    assert.deepEqual(bootMode({ CYBERMOLE_STATE_DIR: stateDir }), {
+      kind: 'supervised',
+      installDir: path.join(stateDir, 'editor'),
+      upstream: {
+        origin: 'http://localhost',
+        socketPath: path.join(stateDir, 'editor-run', 'editor.sock'),
+      },
+    });
+    // Set wins over an install: empty is the opt-out, a URL is compose's container.
+    assert.deepEqual(bootMode({ CYBERMOLE_STATE_DIR: stateDir, CYBERMOLE_EDITOR_UPSTREAM: '' }), {
+      kind: 'off',
+      reason: 'disabled',
+    });
+    assert.deepEqual(
+      bootMode({ CYBERMOLE_STATE_DIR: stateDir, CYBERMOLE_EDITOR_UPSTREAM: 'http://editor:3000' }),
+      { kind: 'upstream', upstream: { origin: 'http://editor:3000' } },
+    );
+  } finally {
+    fs.rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+// install-host.sh can run outside the checkout, so it carries its own copy
+// of the image's pins; they must not drift apart.
+test('editor pins: deploy/install-host.sh matches deploy/editor/Dockerfile', () => {
+  const dockerfile = fs.readFileSync('deploy/editor/Dockerfile', 'utf8');
+  const script = fs.readFileSync('deploy/install-host.sh', 'utf8');
+  const fromDocker = Object.fromEntries(
+    [...dockerfile.matchAll(/^ARG ([A-Z0-9_]+)=(\S+)$/gm)].map(m => [m[1], m[2]]),
+  );
+  const pinNames = Object.keys(fromDocker).filter(k => /_(VERSION|SHA256(_[A-Z0-9]+)?)$/.test(k));
+  assert.ok(pinNames.length >= 14, `found the Dockerfile pins (${pinNames.join(', ')})`);
+  for (const name of pinNames) {
+    const m = script.match(new RegExp(`^${name}=(\\S+)$`, 'm'));
+    assert.ok(m, `install-host.sh pins ${name}`);
+    assert.equal(m[1], fromDocker[name], `${name} matches the Dockerfile`);
+  }
 });

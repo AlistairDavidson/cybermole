@@ -20,7 +20,7 @@ const last = job.last
 <wa-card class="job" with-header with-footer>
   <div slot="header" class="wa-split wa-gap-s">
     <h2 class="job-title wa-heading-s">
-      <a class="job-name" href={`${base}/jobs/${encodeURIComponent(job.name)}`}>
+      <a class="job-name wa-cluster wa-gap-2xs" href={`${base}/jobs/${encodeURIComponent(job.name)}`}>
         <wa-icon name="clock"></wa-icon>{job.name}
       </a>
     </h2>
@@ -43,11 +43,11 @@ const last = job.last
       )}
     </span>
   </div>
-  <dl class="job-meta">
-    <dt>schedule</dt><dd><code>{job.schedule || '—'}</code></dd>
-    <dt>command</dt><dd><code>{job.command || '—'}</code></dd>
-    <dt>next</dt><dd>{job.next ?? '—'}</dd>
-    <dt>last run</dt><dd>{last}</dd>
+  <dl class="job-meta wa-stack wa-gap-2xs">
+    <div class="cfg-row wa-split"><dt class="wa-color-text-quiet">schedule</dt><dd class="v"><code>{job.schedule || '—'}</code></dd></div>
+    <div class="cfg-row wa-split"><dt class="wa-color-text-quiet">command</dt><dd class="v"><code>{job.command || '—'}</code></dd></div>
+    <div class="cfg-row wa-split"><dt class="wa-color-text-quiet">next</dt><dd class="v">{job.next ?? '—'}</dd></div>
+    <div class="cfg-row wa-split"><dt class="wa-color-text-quiet">last run</dt><dd class="v">{last}</dd></div>
   </dl>
   <div slot="footer" class="wa-cluster wa-gap-2xs">
     <wa-button size="s" data-run={job.name}>

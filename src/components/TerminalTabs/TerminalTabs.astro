@@ -20,7 +20,7 @@ import AgentTerminal from '../AgentTerminal/AgentTerminal.astro';
   <!-- manual activation: arrows walk focus, Enter/Space/click select —
        a selection is an attach, so focus alone must not open a pane. -->
   <wa-tab-group class="hidden" activation="manual" without-scroll-controls>
-    <wa-button-group slot="nav" class="tab-new-group" label="new tab">
+    <wa-button-group slot="nav" class="tab-new-group wa-align-self-center" label="new tab">
       <wa-button
         id="tab-new"
         class="tab-new"
@@ -55,16 +55,16 @@ import AgentTerminal from '../AgentTerminal/AgentTerminal.astro';
     </wa-button-group>
   </wa-tab-group>
 
-  <div class="tabs-empty tabs-empty-nows hidden" data-view="no-workspace">
-    <wa-icon name="folder"></wa-icon>
-    <p>no workspace selected</p>
+  <div class="tabs-empty tabs-empty-nows wa-stack wa-align-items-center wa-justify-content-center wa-gap-s hidden" data-view="no-workspace">
+    <wa-icon name="folder" class="wa-font-size-l"></wa-icon>
+    <p class="wa-caption-m">no workspace selected</p>
     <wa-button size="s" class="empty-new-workspace">
       <wa-icon slot="start" name="plus"></wa-icon>new workspace
     </wa-button>
   </div>
-  <div class="tabs-empty tabs-empty-terminals hidden" data-view="no-terminals">
-    <wa-icon name="terminal"></wa-icon>
-    <p>no terminals in this workspace yet</p>
+  <div class="tabs-empty tabs-empty-terminals wa-stack wa-align-items-center wa-justify-content-center wa-gap-s hidden" data-view="no-terminals">
+    <wa-icon name="terminal" class="wa-font-size-l"></wa-icon>
+    <p class="wa-caption-m">no terminals in this workspace yet</p>
     <wa-button size="s" class="empty-new-terminal">
       <wa-icon slot="start" name="plus"></wa-icon>new terminal
     </wa-button>
@@ -85,7 +85,7 @@ import AgentTerminal from '../AgentTerminal/AgentTerminal.astro';
       draggable="true"
       aria-keyshortcuts="Shift+ArrowLeft Shift+ArrowRight"
     >
-      <span class="tab-label"></span>
+      <span class="tab-label truncate"></span>
       <wa-button
         class="tab-close"
         appearance="plain"
@@ -112,9 +112,9 @@ import AgentTerminal from '../AgentTerminal/AgentTerminal.astro';
     <AgentTerminal />
   </template>
   <template data-popped>
-    <div class="tabs-empty tabs-popped">
-      <wa-icon name="arrow-up-right-from-square"></wa-icon>
-      <p>popped out to its own tab — click the tab to bring it back here</p>
+    <div class="tabs-empty tabs-popped wa-stack wa-align-items-center wa-justify-content-center wa-gap-s">
+      <wa-icon name="arrow-up-right-from-square" class="wa-font-size-l"></wa-icon>
+      <p class="wa-caption-m">popped out to its own tab — click the tab to bring it back here</p>
     </div>
   </template>
   <template data-editor-tab>
@@ -131,7 +131,7 @@ import AgentTerminal from '../AgentTerminal/AgentTerminal.astro';
   </template>
   <template data-editor-panel>
     <wa-tab-panel name="editor" class="editor-host">
-      <div class="editor-toolbar" role="toolbar" aria-label="editor actions">
+      <div class="editor-toolbar wa-cluster wa-justify-content-end wa-gap-3xs" role="toolbar" aria-label="editor actions">
         <wa-button
           id="editor-pop-out"
           class="tb-pop-out"

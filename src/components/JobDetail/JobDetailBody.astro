@@ -24,7 +24,7 @@ const editHref = `${base}/jobs?edit=${encodeURIComponent(job.name)}`;
 ---
 <div id="job-detail" class="wa-stack wa-gap-m" data-job={job.name}>
   <header class="jobs-header wa-split">
-    <h1>
+    <h1 class="wa-cluster wa-gap-2xs wa-heading-l">
       <wa-icon name="clock"></wa-icon>{job.name}
     </h1>
     <span class="wa-cluster wa-gap-3xs">
@@ -38,11 +38,11 @@ const editHref = `${base}/jobs?edit=${encodeURIComponent(job.name)}`;
   </header>
 
   <wa-card class="job" with-footer>
-    <dl class="job-meta">
-      <dt>schedule</dt><dd><code>{job.schedule || '—'}</code></dd>
-      <dt>command</dt><dd><code>{job.command || '—'}</code></dd>
-      <dt>next</dt><dd>{job.next ?? '—'}</dd>
-      <dt>last run</dt><dd>{last}</dd>
+    <dl class="job-meta wa-stack wa-gap-2xs">
+      <div class="cfg-row wa-split"><dt class="wa-color-text-quiet">schedule</dt><dd class="v"><code>{job.schedule || '—'}</code></dd></div>
+      <div class="cfg-row wa-split"><dt class="wa-color-text-quiet">command</dt><dd class="v"><code>{job.command || '—'}</code></dd></div>
+      <div class="cfg-row wa-split"><dt class="wa-color-text-quiet">next</dt><dd class="v">{job.next ?? '—'}</dd></div>
+      <div class="cfg-row wa-split"><dt class="wa-color-text-quiet">last run</dt><dd class="v">{last}</dd></div>
     </dl>
     <div slot="footer" class="wa-cluster wa-gap-2xs">
       {job.running && (
@@ -61,7 +61,7 @@ const editHref = `${base}/jobs?edit=${encodeURIComponent(job.name)}`;
   </wa-card>
 
   <section class="wa-stack wa-gap-xs">
-    <h2 class="runs-title">
+    <h2 class="runs-title wa-cluster wa-gap-2xs wa-heading-m">
       <wa-icon name="eye"></wa-icon> run history
     </h2>
     <RunHistory runs={runs} emptyHint={'"run now" (on the jobs page) fires one.'} />

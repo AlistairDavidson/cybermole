@@ -16,9 +16,10 @@ const { title, header } = Astro.props;
 // The logs link only exists when Grafana is configured. Every page with a
 // header has already asserted its locals, so a miss here is a bug.
 const logs = header !== undefined && assertCybermoleLocals(Astro.locals).cybermole.cfg.grafanaExploreUrl !== null;
-// Mirror console.css's --wa-color-surface-default per mode, for the browser chrome.
-const THEME_COLOR_DARK = "#11131a";
-const THEME_COLOR_LIGHT = "#e1e2e7";
+// Web Awesome's default --wa-color-surface-default per mode (dark is
+// neutral-05 of the default palette), for the browser chrome.
+const THEME_COLOR_DARK = "#101219";
+const THEME_COLOR_LIGHT = "#ffffff";
 ---
 
 <!doctype html>

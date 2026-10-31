@@ -258,6 +258,42 @@ export function readEditorUpstream(): EditorUpstream | null {
   return { origin: u.origin };
 }
 
+/** Where deploy/install-host.sh unpacks VSCodium reh-web: under the state
+ *  dir, so a hermetic state dir (e2e) never finds the operator's editor. */
+export function editorInstallDefault(stateDir: string): string {
+  return path.join(stateDir, 'editor');
+}
+
+/** The editor's socket sits in its own 0700 dir: the server runs without a
+ *  connection token (the session gate is the auth), so nobody else on the
+ *  box may reach it. Short on purpose — sun_path caps at ~107 bytes. */
+export function editorSocketDefault(stateDir: string): string {
+  return path.join(stateDir, 'editor-run', 'editor.sock');
+}
+
+export type EditorMode =
+  | { kind: 'off'; reason: 'disabled' | 'not_installed' }
+  | { kind: 'upstream'; upstream: EditorUpstream }
+  | { kind: 'supervised'; installDir: string; upstream: EditorUpstream & { socketPath: string } };
+
+/** CYBERMOLE_EDITOR_UPSTREAM set: proxy there (compose's editor container);
+ *  set empty: off. Unset: supervise the host install when one exists. */
+export function readEditorMode(): EditorMode {
+  if (RAW_ENV.CYBERMOLE_EDITOR_UPSTREAM !== undefined) {
+    const upstream = readEditorUpstream();
+    return upstream === null ? { kind: 'off', reason: 'disabled' } : { kind: 'upstream', upstream };
+  }
+  const installDir = editorInstallDefault(stateDir);
+  if (!fs.existsSync(path.join(installDir, 'out', 'server-main.js'))) {
+    return { kind: 'off', reason: 'not_installed' };
+  }
+  return {
+    kind: 'supervised',
+    installDir,
+    upstream: { origin: 'http://localhost', socketPath: editorSocketDefault(stateDir) },
+  };
+}
+
 /** null when unset/empty (/logs off). Unlike the editor, a path is fine
  *  (the browser loads it, so a subpath-mounted Grafana works); a query or
  *  fragment stops the boot since /explore is appended. */

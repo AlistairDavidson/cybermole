@@ -674,7 +674,7 @@ test('the drawer\u2019s builder link: deep-links the app\u2019s build workspace 
   await expect
     .poll(async () => {
       const active = await page
-        .locator('workspace-sidebar li[data-ws].active')
+        .locator('workspace-sidebar wa-tree-item[data-ws][selected]')
         .getAttribute('data-ws');
       return active === firstBuild.id;
     })

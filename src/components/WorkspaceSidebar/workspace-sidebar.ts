@@ -1,10 +1,12 @@
-// <workspace-sidebar>: workspaces grouped by app (the console group first),
-// a name filter, and create/delete buttons; everything is emitted to
-// <console-app>. WorkspaceSidebar.astro SSRs the filter and + app and holds
-// the group/row skeletons; each state push restamps the groups, so the
-// filter keeps its value and focus untouched. Group collapse state lives in
-// localStorage and is applied at stamp time, so a push never flickers
-// groups open.
+// <workspace-sidebar>: workspaces grouped by app (the console group first)
+// in a wa-tree — groups are parent items, workspaces leaf items — with a
+// name filter and create/delete buttons; everything is emitted to
+// <console-app>. WorkspaceSidebar.astro SSRs the filter, the tree and + app
+// and holds the group/row skeletons; each state push restamps the tree's
+// items, so the filter keeps its value and focus untouched. The tree owns
+// selection (leaf mode), expand/collapse and arrow-key navigation; group
+// expansion is remembered in localStorage and applied at stamp time, so a
+// push never flickers groups open.
 //
 // Scope splits the page (the console-split plan): "console" renders the
 // Console group only (orchestration); "builder" renders the app portfolio —
@@ -12,8 +14,8 @@
 // + workspace (a build session) and + app at the bottom.
 //
 // Rows and (on the builder page) app groups reorder by drag or by
-// Shift+Arrow on the focused row/header — the terminal tab bar's affordance
-// language. A reorder is optimistic: the display moves at once, the write
+// Shift+Arrow on the focused item — the terminal tab bar's affordance
+// language; plain arrows stay the tree's. A reorder is optimistic: the display moves at once, the write
 // rides signedInFetch straight to /api/*/order (no console-app wiring), and
 // the pending order overrides polls until one confirms it; a failed write
 // reverts. A push that lands mid-drag is deferred to dragend, so a restamp
@@ -39,9 +41,31 @@ import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/badge/badge.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
+import '@awesome.me/webawesome/dist/components/tree/tree.js';
+import '@awesome.me/webawesome/dist/components/tree-item/tree-item.js';
 
 interface WaInputLike extends HTMLElement {
   value: string | null;
+}
+
+interface Updatable {
+  updateComplete?: Promise<unknown>;
+}
+
+/** Focuses a freshly stamped tree item once it renders: a nested item is
+ *  only slotted (so focusable) after its parent item's first update. */
+function focusWhenRendered(el: HTMLElement | null): void {
+  if (!el) return;
+  const parent = el.parentElement as (HTMLElement & Updatable) | null;
+  void Promise.all([parent?.updateComplete, (el as HTMLElement & Updatable).updateComplete]).then(
+    () => {
+      if (el.isConnected) el.focus();
+    },
+  );
+}
+
+interface WaSelectionChange extends Event {
+  detail: { selection: HTMLElement[] };
 }
 
 export type SidebarScope = 'console' | 'builder';
@@ -146,6 +170,9 @@ export class WorkspaceSidebar extends HTMLElement {
   /** Serializes order writes, so two rapid reorders persist in dispatch
    *  order (each write is a full list; the last one wins). */
   private orderQueue: Promise<void> = Promise.resolve();
+  /** Tooltips stamped during a restamp; they join .ws-tips once their
+   *  anchors are in the document (a tooltip binds its anchor on connect). */
+  private stampedTips: Element[] = [];
 
   connectedCallback(): void {
     const search = this.querySelector('#workspace-search') as WaInputLike | null;
@@ -163,6 +190,22 @@ export class WorkspaceSidebar extends HTMLElement {
     this.querySelector('#new-app')?.addEventListener('click', () =>
       this.dispatchEvent(new CustomEvent('new-app', { bubbles: true, composed: true })),
     );
+    const tree = this.querySelector('wa-tree');
+    tree?.addEventListener('wa-selection-change', e => {
+      const ws = (e as WaSelectionChange).detail.selection[0]?.dataset.ws;
+      if (ws === undefined) return;
+      this.dispatchEvent(
+        new CustomEvent('select-workspace', { detail: { id: ws }, bubbles: true, composed: true }),
+      );
+    });
+    // A filter forces groups open without touching the remembered state.
+    const remember = (e: Event): void => {
+      const group = e.target as HTMLElement;
+      if (!group.matches('.ws-group') || this.search.trim() !== '') return;
+      setGroupCollapsed(group.dataset.group ?? '', e.type === 'wa-collapse');
+    };
+    tree?.addEventListener('wa-expand', remember);
+    tree?.addEventListener('wa-collapse', remember);
   }
 
   render(st: ConsoleState, selected: WorkspaceId | null, view: SidebarView): void {
@@ -261,8 +304,12 @@ export class WorkspaceSidebar extends HTMLElement {
       return null;
     }
     if (el) el.id = id;
-    tooltip?.setAttribute('for', id);
-    if (tooltip) tooltip.textContent = text;
+    if (tooltip) {
+      tooltip.setAttribute('for', id);
+      tooltip.textContent = text;
+      tooltip.remove();
+      this.stampedTips.push(tooltip);
+    }
     return el;
   }
 
@@ -292,26 +339,17 @@ export class WorkspaceSidebar extends HTMLElement {
     const collapsed = this.search.trim() === '' && navCollapsed().has(key);
     const group = this.stamp<HTMLElement>('data-group');
     group.dataset.group = key;
-    const h2 = group.querySelector('h2')!;
+    group.toggleAttribute('expanded', !collapsed);
     if (reorderable) {
-      h2.draggable = true;
-      h2.setAttribute('aria-keyshortcuts', 'Shift+ArrowUp Shift+ArrowDown');
+      group.draggable = true;
+      group.setAttribute('aria-keyshortcuts', 'Shift+ArrowUp Shift+ArrowDown');
     }
-    const rowsId = `ws-group-rows-${key}`;
-    const list = group.querySelector<HTMLElement>('ul.ws-group-rows')!;
-    const empty = group.querySelector<HTMLElement>('p.group-empty')!;
-    const rows = visible.length ? list : empty;
-    (visible.length ? empty : list).remove();
-    rows.id = rowsId;
-    rows.hidden = collapsed;
-    list.append(...visible.map(w => this.row(w)));
-
-    const toggle = group.querySelector('.g-collapse')!;
-    toggle.setAttribute('data-toggle-group', key);
-    toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-    toggle.setAttribute('aria-controls', rowsId);
-    toggle.setAttribute('aria-label', `${name} workspaces`);
-    toggle.querySelector('wa-icon')?.setAttribute('label', `${name} workspaces`);
+    // The disabled placeholder keeps an empty group a parent, so leaf
+    // selection never makes the group itself selectable.
+    if (visible.length) {
+      group.querySelector(':scope > .group-empty')?.remove();
+      group.append(...visible.map(w => this.row(w)));
+    }
 
     const glyph = group.querySelector('.g-icon')!;
     if (icon === '') glyph.remove();
@@ -386,9 +424,9 @@ export class WorkspaceSidebar extends HTMLElement {
   }
 
   private row(w: WorkspaceState): HTMLElement {
-    const li = this.stamp<HTMLLIElement>('data-row');
+    const li = this.stamp<HTMLElement>('data-row');
     li.dataset.ws = w.id;
-    if (w.id === this.selected) li.classList.add('active');
+    li.toggleAttribute('selected', w.id === this.selected);
     li.querySelector('.t-name')!.textContent = w.name;
     // The cwd ellipsizes; its tooltip carries the whole path.
     this.tip(li, 'd', `ws-row-${w.id}-cwd`, w.cwd)!.textContent = w.cwd;
@@ -416,25 +454,18 @@ export class WorkspaceSidebar extends HTMLElement {
     const host = this.querySelector('.ws-groups');
     if (!host) return;
     const focus = this.capturedRowFocus();
+    this.stampedTips = [];
     host.replaceChildren(...this.groups());
+    this.querySelector('.ws-tips')?.replaceChildren(...this.stampedTips);
     this.wireRows();
     this.restoreRowFocus(focus);
   }
 
   /** Called after both render() and updateList(). */
   private wireRows(): void {
-    this.querySelectorAll<HTMLElement>('[data-toggle-group]').forEach(el => {
-      el.onclick = e => {
-        e.stopPropagation();
-        const key = el.dataset.toggleGroup ?? '';
-        const collapsed = !navCollapsed().has(key);
-        setGroupCollapsed(key, collapsed);
-        // Flip in place, exactly as the next render would, so focus stays on the button.
-        el.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-        const rows = el.closest('.ws-group')?.querySelector('.ws-group-rows');
-        if (collapsed) rows?.setAttribute('hidden', '');
-        else rows?.removeAttribute('hidden');
-      };
+    // The header's actions act; they never also toggle the group.
+    this.querySelectorAll<HTMLElement>('.g-actions wa-button').forEach(el => {
+      el.onclick = e => e.stopPropagation();
     });
     this.querySelectorAll<HTMLElement>('[data-new-ws]').forEach(el => {
       el.onclick = e => {
@@ -448,15 +479,7 @@ export class WorkspaceSidebar extends HTMLElement {
         );
       };
     });
-    this.querySelectorAll<HTMLElement>('[data-ws]').forEach(el => {
-      el.onclick = () =>
-        this.dispatchEvent(
-          new CustomEvent('select-workspace', {
-            detail: { id: el.dataset.ws },
-            bubbles: true,
-            composed: true,
-          }),
-        );
+    this.querySelectorAll<HTMLElement>('wa-tree-item[data-ws]').forEach(el => {
       this.wireRowReorder(el);
     });
     this.querySelectorAll<HTMLElement>('[data-del-ws]').forEach(el => {
@@ -488,7 +511,6 @@ export class WorkspaceSidebar extends HTMLElement {
       };
     });
     this.wireGroupReorder();
-    this.applyRovingTabindex();
   }
 
   // ---- reorder: shared ----
@@ -499,17 +521,17 @@ export class WorkspaceSidebar extends HTMLElement {
       document.activeElement instanceof HTMLElement && this.contains(document.activeElement)
         ? document.activeElement
         : null;
-    const ws = active?.closest('li[data-ws]')?.getAttribute('data-ws') ?? null;
+    const ws = active?.closest('wa-tree-item[data-ws]')?.getAttribute('data-ws') ?? null;
     const group =
-      active?.matches('.ws-group > h2') === true
-        ? ((active.closest('.ws-group')?.getAttribute('data-group') ?? null) as AppSlug | null)
+      active?.matches('.ws-group') === true
+        ? ((active.getAttribute('data-group') ?? null) as AppSlug | null)
         : null;
     return { ws: ws === null ? null : asWorkspaceId(ws), group };
   }
 
   private restoreRowFocus(focus: { ws: WorkspaceId | null; group: AppSlug | null }): void {
-    if (focus.ws !== null) this.rowEl(focus.ws)?.focus();
-    else if (focus.group !== null) this.groupH2(focus.group)?.focus();
+    if (focus.ws !== null) focusWhenRendered(this.rowEl(focus.ws));
+    else if (focus.group !== null) focusWhenRendered(this.groupSection(focus.group));
   }
 
   private runDeferred(): void {
@@ -529,8 +551,8 @@ export class WorkspaceSidebar extends HTMLElement {
 
   // ---- reorder: workspace rows ----
 
-  private rowEl(id: WorkspaceId): HTMLLIElement | null {
-    return this.querySelector(`li[data-ws="${id}"]`);
+  private rowEl(id: WorkspaceId): HTMLElement | null {
+    return this.querySelector(`wa-tree-item[data-ws="${id}"]`);
   }
 
   private appIdOf(id: WorkspaceId): AppId | null {
@@ -556,6 +578,7 @@ export class WorkspaceSidebar extends HTMLElement {
   }
 
   private onRowDragStart(id: WorkspaceId, e: DragEvent): void {
+    e.stopPropagation(); // the group item around it drags too
     this.rowDrag = id;
     // Data is required for Firefox to start a drag at all.
     e.dataTransfer?.setData('text/plain', id);
@@ -573,13 +596,13 @@ export class WorkspaceSidebar extends HTMLElement {
     if (dragged === over) return;
     const draggedEl = this.rowEl(dragged);
     const overEl = this.rowEl(over);
-    const ul = draggedEl?.closest('ul');
+    const group = draggedEl?.parentElement;
     // Rows stay in their group: cross-group moves are a different act.
-    if (!draggedEl || !overEl || !ul || overEl.closest('ul') !== ul) return;
+    if (!draggedEl || !overEl || !group || overEl.parentElement !== group) return;
     const rect = overEl.getBoundingClientRect();
     const reference = e.clientY > rect.top + rect.height / 2 ? overEl.nextSibling : overEl;
     if (draggedEl !== reference && draggedEl.nextSibling !== reference)
-      ul.insertBefore(draggedEl, reference);
+      group.insertBefore(draggedEl, reference);
   }
 
   private onRowDrop(e: DragEvent): void {
@@ -604,47 +627,32 @@ export class WorkspaceSidebar extends HTMLElement {
     const el = id === null ? null : this.rowEl(id);
     el?.classList.remove('dragging');
     if (id === null || !el) return;
-    const ul = el.closest('ul');
-    if (!ul) return;
+    const group = el.parentElement;
+    if (!group) return;
     const ids: WorkspaceId[] = [];
-    for (const li of ul.querySelectorAll('li[data-ws]')) {
+    for (const li of group.querySelectorAll(':scope > wa-tree-item[data-ws]')) {
       const ws = (li as HTMLElement).dataset.ws;
       if (ws !== undefined) ids.push(asWorkspaceId(ws));
     }
     if (!sameSequence(ids, this.groupIds(id))) this.applyWsOrder(this.appIdOf(id), ids);
   }
 
-  /** Arrows walk the group's rows (roving focus, wrapping); Shift+Arrow
-   *  moves the focused row itself — the keyboard half of drag-reorder. */
+  /** Shift+Arrow moves the focused row — the keyboard half of
+   *  drag-reorder. Plain arrows are the tree's navigation. */
   private onRowKeydown(id: WorkspaceId, e: KeyboardEvent): void {
-    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    if (!e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
     if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    if (e.target !== this.rowEl(id)) return;
     e.preventDefault();
+    e.stopPropagation(); // or the tree moves focus too
+    if (this.search.trim() !== '') return;
     const ids = this.groupIds(id);
     const from = ids.indexOf(id);
-    if (from < 0) return;
-    const delta = e.key === 'ArrowUp' ? -1 : 1;
-    if (e.shiftKey) {
-      if (this.search.trim() !== '') return;
-      const to = from + delta;
-      if (to < 0 || to >= ids.length) return;
-      this.applyWsOrder(this.appIdOf(id), moveItem(ids, from, to));
-      // The redraw swapped the DOM; keep focus where the user is looking.
-      this.rowEl(id)?.focus();
-    } else {
-      const next = ids[(from + delta + ids.length) % ids.length]!;
-      const el = this.rowEl(next);
-      el?.focus();
-      if (el) this.roveRows(el);
-    }
-  }
-
-  /** One tab stop in the row's group: the given row, the rest -1. */
-  private roveRows(on: HTMLElement): void {
-    const ul = on.closest('ul');
-    ul?.querySelectorAll<HTMLElement>('li[data-ws]').forEach(li => {
-      li.tabIndex = li === on ? 0 : -1;
-    });
+    const to = from + (e.key === 'ArrowUp' ? -1 : 1);
+    if (from < 0 || to < 0 || to >= ids.length) return;
+    this.applyWsOrder(this.appIdOf(id), moveItem(ids, from, to));
+    // The redraw swapped the DOM; keep focus where the user is looking.
+    focusWhenRendered(this.rowEl(id));
   }
 
   private applyWsOrder(appId: AppId | null, ids: WorkspaceId[]): void {
@@ -677,10 +685,6 @@ export class WorkspaceSidebar extends HTMLElement {
     return this.querySelector(`.ws-group[data-group="${slug}"]`);
   }
 
-  private groupH2(slug: AppSlug): HTMLElement | null {
-    return this.groupSection(slug)?.querySelector('h2') ?? null;
-  }
-
   /** The group slugs in display order (sections in the nav). */
   private groupSlugs(): AppSlug[] {
     return [...this.querySelectorAll('.ws-groups > .ws-group')].map(g =>
@@ -690,18 +694,18 @@ export class WorkspaceSidebar extends HTMLElement {
 
   private wireGroupReorder(): void {
     if (this.view.scope !== 'builder') return;
-    this.querySelectorAll<HTMLElement>('.ws-group > h2').forEach(h2 => {
-      const slug = h2.closest('.ws-group')?.getAttribute('data-group') ?? '';
-      h2.addEventListener('dragstart', e => this.onGroupDragStart(asAppSlug(slug), e));
-      h2.addEventListener('dragover', e => this.onGroupDragOver(asAppSlug(slug), e));
-      h2.addEventListener('drop', e => this.onGroupDrop(e));
-      h2.addEventListener('dragend', () => this.onGroupDragEnd(asAppSlug(slug)));
-      h2.addEventListener('keydown', e => this.onGroupKeydown(asAppSlug(slug), e));
+    this.querySelectorAll<HTMLElement>('.ws-groups > .ws-group').forEach(group => {
+      const slug = asAppSlug(group.dataset.group ?? '');
+      group.addEventListener('dragstart', e => this.onGroupDragStart(slug, e));
+      group.addEventListener('dragover', e => this.onGroupDragOver(slug, e));
+      group.addEventListener('drop', e => this.onGroupDrop(e));
+      group.addEventListener('dragend', () => this.onGroupDragEnd(slug));
+      group.addEventListener('keydown', e => this.onGroupKeydown(slug, e));
     });
   }
 
   private onGroupDragStart(slug: AppSlug, e: DragEvent): void {
-    // The h2 carries draggable only with a row; a filtered view hides
+    // The group carries draggable only with a row; a filtered view hides
     // groups, so a partial section list can't name a full order either.
     if (this.search.trim() !== '') {
       e.preventDefault();
@@ -710,7 +714,7 @@ export class WorkspaceSidebar extends HTMLElement {
     this.appDrag = slug;
     e.dataTransfer?.setData('text/plain', slug);
     if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-    this.groupH2(slug)?.classList.add('dragging');
+    this.groupSection(slug)?.classList.add('dragging');
   }
 
   private onGroupDragOver(over: AppSlug, e: DragEvent): void {
@@ -723,7 +727,8 @@ export class WorkspaceSidebar extends HTMLElement {
     const draggedSec = this.groupSection(dragged);
     const overSec = this.groupSection(over);
     if (!nav || !draggedSec || !overSec) return;
-    const rect = overSec.querySelector('h2')?.getBoundingClientRect();
+    // The header line, not the whole item (its rows are inside it).
+    const rect = overSec.querySelector(':scope > .ws-label')?.getBoundingClientRect();
     if (!rect) return;
     const reference = e.clientY > rect.top + rect.height / 2 ? overSec.nextSibling : overSec;
     if (draggedSec !== reference && draggedSec.nextSibling !== reference)
@@ -742,14 +747,14 @@ export class WorkspaceSidebar extends HTMLElement {
       this.appDrag = null;
       this.updateList();
     }
-    this.groupH2(slug)?.classList.remove('dragging');
+    this.groupSection(slug)?.classList.remove('dragging');
     this.runDeferred();
   }
 
   private finishGroupDrag(): void {
     const slug = this.appDrag;
     this.appDrag = null;
-    this.groupH2(slug!)?.classList.remove('dragging');
+    if (slug !== null) this.groupSection(slug)?.classList.remove('dragging');
     if (slug === null) return;
     const slugs = this.groupSlugs();
     const bySlug = new Map((this.server?.apps ?? []).map(a => [a.slug, a.id] as const));
@@ -764,36 +769,27 @@ export class WorkspaceSidebar extends HTMLElement {
     else this.redraw();
   }
 
-  /** Arrows walk the group headers (roving focus, wrapping); Shift+Arrow
-   *  moves the focused group — the keyboard half of drag-reorder. */
+  /** Shift+Arrow moves the focused group — the keyboard half of
+   *  drag-reorder. Plain arrows are the tree's navigation. */
   private onGroupKeydown(slug: AppSlug, e: KeyboardEvent): void {
-    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    if (!e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
     if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    if (e.target !== this.groupSection(slug)) return;
     e.preventDefault();
+    e.stopPropagation(); // or the tree moves focus too
+    if (this.search.trim() !== '') return;
     const slugs = this.groupSlugs();
     const from = slugs.indexOf(slug);
-    if (from < 0) return;
-    const delta = e.key === 'ArrowUp' ? -1 : 1;
-    if (e.shiftKey) {
-      if (this.search.trim() !== '') return;
-      const to = from + delta;
-      if (to < 0 || to >= slugs.length) return;
-      const moved = moveItem(slugs, from, to);
-      const bySlug = new Map((this.server?.apps ?? []).map(a => [a.slug, a.id] as const));
-      const ids = moved.flatMap(s => {
-        const id = bySlug.get(s);
-        return id ? [id] : [];
-      });
-      this.applyAppOrder(moved, ids);
-      this.groupH2(slug)?.focus();
-    } else {
-      const next = slugs[(from + delta + slugs.length) % slugs.length]!;
-      const h2 = this.groupH2(next);
-      h2?.focus();
-      this.querySelectorAll<HTMLElement>('.ws-group > h2').forEach(el => {
-        el.tabIndex = el === h2 ? 0 : -1;
-      });
-    }
+    const to = from + (e.key === 'ArrowUp' ? -1 : 1);
+    if (from < 0 || to < 0 || to >= slugs.length) return;
+    const moved = moveItem(slugs, from, to);
+    const bySlug = new Map((this.server?.apps ?? []).map(a => [a.slug, a.id] as const));
+    const ids = moved.flatMap(s => {
+      const id = bySlug.get(s);
+      return id ? [id] : [];
+    });
+    this.applyAppOrder(moved, ids);
+    focusWhenRendered(this.groupSection(slug));
   }
 
   private applyAppOrder(slugs: AppSlug[], ids: AppId[]): void {
@@ -817,23 +813,6 @@ export class WorkspaceSidebar extends HTMLElement {
     if (current === null || !sameSequence(current, slugs)) return;
     this.pendingApps = null;
     this.redraw();
-  }
-
-  /** One tab stop among the rows (per group) and, on the builder page, the
-   *  group headers — the roving half of the keyboard reorder. */
-  private applyRovingTabindex(): void {
-    this.querySelectorAll('ul.ws-group-rows').forEach(ul => {
-      const rows = [...ul.querySelectorAll<HTMLElement>('li[data-ws]')];
-      const on = rows.find(li => li.dataset.ws === this.selected) ?? rows[0];
-      rows.forEach(li => {
-        li.tabIndex = li === on ? 0 : -1;
-      });
-    });
-    if (this.view.scope !== 'builder') return;
-    const heads = [...this.querySelectorAll<HTMLElement>('.ws-group > h2')];
-    heads.forEach((h2, i) => {
-      h2.tabIndex = i === 0 ? 0 : -1;
-    });
   }
 }
 

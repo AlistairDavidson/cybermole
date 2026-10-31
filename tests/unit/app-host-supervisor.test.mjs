@@ -181,3 +181,37 @@ test('stop() resolves after a spawn failure with no live child and no pending re
   await sleep(40);
   assert.equal(handle.starts, 1, 'no restart after stop');
 });
+
+test('name and downNote label the log lines (the editor rides the same loop)', async () => {
+  const { handle, log, spawns } = harness({ name: 'editor', downNote: 'the editor tab 502s' });
+  assert.ok(log.lines.some(([lvl, m]) => lvl === 'info' && m === 'editor started (pid 4000)'));
+  spawns[0].child.emit('exit', 1, null);
+  assert.ok(
+    log.lines.some(
+      ([lvl, m]) =>
+        lvl === 'warn' &&
+        m.startsWith('editor (pid 4000) exited') &&
+        m.endsWith('(the editor tab 502s)'),
+    ),
+  );
+  await handle.stop();
+});
+
+test('beforeSpawn runs before every spawn; a throw is logged and the spawn still happens', async () => {
+  let calls = 0;
+  const { handle, log, spawns } = harness({
+    beforeSpawn: () => {
+      calls++;
+      if (calls === 2) throw new Error('EACCES');
+    },
+  });
+  assert.equal(calls, 1);
+  spawns[0].child.emit('exit', 1, null);
+  await sleep(25);
+  assert.equal(calls, 2);
+  assert.equal(handle.starts, 2, 'spawned despite the failed pre-step');
+  assert.ok(
+    log.lines.some(([lvl, m]) => lvl === 'warn' && m.includes('pre-spawn step failed: EACCES')),
+  );
+  await stopWithExit(handle, spawns);
+});

@@ -47,9 +47,9 @@ root (Path B refuses to).
 
 | | Path A — compose | Path B — plain host |
 |---|---|---|
-| Processes | 5 containers (web, workspace, editor, seaweedfs + one-shots) | 1 Node process (`cybermole`) |
+| Processes | 5 containers (web, workspace, editor, seaweedfs + one-shots) | 1 Node process (`cybermole`), which supervises the editor |
 | Uids | `node` serves; uid 2000 runs terminals (privilege split) | your user, for server and terminals |
-| State | named volumes: `cybermole-state` (db), `cybermole-workspace` (files, pi creds), `cybermole-seaweedfs` + `cybermole-s3-credentials`, `cybermole-job-logs` | `~/.local/state/cybermole/` (db, pi agent dir, job logs) |
+| State | named volumes: `cybermole-state` (db), `cybermole-workspace` (files, pi creds), `cybermole-seaweedfs` + `cybermole-s3-credentials`, `cybermole-job-logs` | `~/.local/state/cybermole/` (db, pi agent dir, job logs, the editor build); editor settings + extensions in `~/.vscodium-server` |
 | Bins on PATH | none (all inside the image) | `cybermole`, `cybermole-set-password`, `cybermole-cli` |
 | Update | `git pull` + rebuild (or pull a published image) | `npm i -g cybermole@latest` |
 | Uninstall | `deploy/uninstall-compose.sh [--purge]` | `deploy/uninstall-host.sh [--purge]` |
@@ -59,7 +59,7 @@ before they are reachable from anywhere but the box itself
 (README "Security model").
 
 **Choosing:** if Docker is installed (or you may install it), take
-Path A — it is the tested shape, ships the editor, and keeps a prompt
+Path A — it is the tested shape and keeps a prompt
 injection inside a terminal away from the server's own state. Take
 Path B on hosts without Docker, or when the workspaces should live in a
 specific user's real home directory.
@@ -269,7 +269,9 @@ sh deploy/install-host.sh --with-systemd-unit
 Expected: `preflight ok: …`, then the npm install (if the npm prefix is
 root-owned it goes through sudo — passwordless sudo must be configured,
 else the script prints the exact command to run by hand and exits), the
-bin check, and — with the flag — the systemd unit written to
+bin check, the editor (`installing the editor (VSCodium reh-web …)` then
+`editor installed`; it needs `curl`, `tar` and `sha256sum`, and an x64 or
+arm64 host), and — with the flag — the systemd unit written to
 `/etc/systemd/system/cybermole.service`, enabled and started
 (`systemd unit active: systemctl status cybermole`). Manual equivalent
 of the core step: `npm install -g cybermole`.
@@ -278,6 +280,13 @@ The unit runs the server as **the user who ran the script**, binds
 loopback, and restarts on failure. Skip the flag to run the server in
 the foreground (or under tmux) instead. Re-running the script is safe:
 an existing install is left alone, the unit is rewritten and restarted.
+
+The editor (the console's editor tab, VSCodium in the browser) is on by
+default: the server supervises it whenever `~/.local/state/cybermole/editor`
+holds an install. A failed editor download only warns, and cybermole runs
+without the tab (re-run the script to retry). `--without-editor` skips it;
+to switch off one that's installed, set `CYBERMOLE_EDITOR_UPSTREAM=`
+(empty) in the server's environment. Details: docs/guides/editor-webapp.md.
 
 Single-user blast radius: the web app, its terminals and your files
 share this one uid — that is the documented trade-off of this shape
@@ -307,7 +316,9 @@ systemctl is-active cybermole && curl -fsS -o /dev/null -w '%{http_code}\n' http
 Expected: `active` then `200`. Without it, start `cybermole` in a
 terminal (or `tmux new -s cybermole cybermole`) and run the same `curl`.
 Then sign in over the loopback address (or an SSH tunnel) and open a
-workspace — the first terminal tab auto-runs the vendored pi.
+workspace — the first terminal tab auto-runs the vendored pi. The
+server's log says `editor: single-user shape — supervising …` and the
+workspace has an **editor** tab after its terminals.
 
 ### B4. Put TLS in front
 
@@ -364,9 +375,10 @@ sh deploy/uninstall-host.sh            # unit + package; state KEPT
 sh deploy/uninstall-host.sh --purge    # also deletes the state dir — destructive
 ```
 
-State (login db, sessions, pi credentials, job logs) survives the
-default uninstall under `~/.local/state/cybermole` — reinstalling picks
-it back up. `--purge` deletes it.
+State (login db, sessions, pi credentials, job logs, the editor build)
+survives the default uninstall under `~/.local/state/cybermole` —
+reinstalling picks it back up. `--purge` deletes it. The editor's own
+settings and extensions in `~/.vscodium-server` are left either way.
 
 ---
 

@@ -27,7 +27,8 @@ const modeState = (page: Page) =>
     return {
       dark: cls.contains('wa-dark'),
       light: cls.contains('wa-light'),
-      bodyBg: getComputedStyle(document.body).backgroundColor,
+      // Web Awesome's native styles paint the surface on html, not body.
+      pageBg: cs.backgroundColor,
       colorScheme: cs.colorScheme,
       metaDark: meta('(prefers-color-scheme: dark)'),
       metaLight: meta('(prefers-color-scheme: light)'),
@@ -66,12 +67,12 @@ test.describe('browser scheme dark', () => {
       .toBe(true);
     const state = await modeState(page);
     expect(state.light).toBe(false);
-    // the dark surface (#11131a)
-    expect(state.bodyBg).toBe('rgb(17, 19, 26)');
+    // the dark surface (#101219)
+    expect(state.pageBg).toBe('rgb(16, 18, 25)');
     expect(state.colorScheme).toBe('dark');
     // one meta per mode
-    expect(state.metaDark).toBe('#11131a');
-    expect(state.metaLight).toBe('#e1e2e7');
+    expect(state.metaDark).toBe('#101219');
+    expect(state.metaLight).toBe('#ffffff');
   });
 
   test('login and offline shells render the same mode (every page is Base)', async ({ page }) => {
@@ -79,7 +80,7 @@ test.describe('browser scheme dark', () => {
     // before first paint, but tolerate its first load racing the assert.
     await page.goto('/login');
     await expect.poll(async () => (await modeState(page)).dark).toBe(true);
-    expect((await modeState(page)).bodyBg).toBe('rgb(17, 19, 26)');
+    expect((await modeState(page)).pageBg).toBe('rgb(16, 18, 25)');
     await page.goto('/offline');
     await expect.poll(async () => (await modeState(page)).dark).toBe(true);
   });
@@ -93,8 +94,8 @@ test.describe('browser scheme light', () => {
     await expect.poll(async () => (await modeState(page)).light).toBe(true);
     const state = await modeState(page);
     expect(state.dark).toBe(false);
-    // the light surface (#e1e2e7)
-    expect(state.bodyBg).toBe('rgb(225, 226, 231)');
+    // the light surface (#ffffff)
+    expect(state.pageBg).toBe('rgb(255, 255, 255)');
     expect(state.colorScheme).toBe('light');
   });
 });
@@ -107,7 +108,7 @@ test.describe('live scheme flip', () => {
     await expect(
       page.locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-status'),
     ).toContainText('attached', { timeout: 15_000 });
-    // Built from the resolved mode (dark bg).
+    // The page's own Web Awesome surface, normalised to rgb() for xterm.
     await expect
       .poll(async () =>
         page.evaluate(() => {
@@ -119,7 +120,7 @@ test.describe('live scheme flip', () => {
           return el.terminal?.options.theme.background ?? '';
         }),
       )
-      .toBe('#11131a');
+      .toBe('rgb(16, 18, 25)');
 
     // A live flip: the theme-boot listener flips the class, and the
     // terminal's observer re-themes the pane.
@@ -136,8 +137,8 @@ test.describe('live scheme flip', () => {
           return el.terminal?.options.theme.background ?? '';
         }),
       )
-      .toBe('#e1e2e7');
-    expect((await modeState(page)).bodyBg).toBe('rgb(225, 226, 231)');
+      .toBe('rgb(255, 255, 255)');
+    expect((await modeState(page)).pageBg).toBe('rgb(255, 255, 255)');
 
     // and back again, no reload
     await page.emulateMedia({ colorScheme: 'dark' });
@@ -153,7 +154,7 @@ test.describe('live scheme flip', () => {
           return el.terminal?.options.theme.background ?? '';
         }),
       )
-      .toBe('#11131a');
+      .toBe('rgb(16, 18, 25)');
   });
 });
 
@@ -386,7 +387,7 @@ test.describe('editor pane (private server, dead upstream)', () => {
     ]);
     await page.goto(`${BASE}/`);
     await page.waitForSelector('workspace-sidebar .nav');
-    await page.click(`workspace-sidebar li[data-ws="${id}"]`);
+    await page.click(`workspace-sidebar wa-tree-item[data-ws="${id}"]`);
 
     await page.click('wa-tab.editor-tab');
     const toolbar = page.locator('.editor-toolbar');

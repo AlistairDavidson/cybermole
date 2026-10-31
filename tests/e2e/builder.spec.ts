@@ -154,22 +154,22 @@ test('the builder page: app groups with lifecycle chips, + app and no console gr
   // The fixture's app group (a row, no tree): the *registered* chip, the
   // open link dimmed (never mounted), + workspace, delete.
   const alpha = page.locator('workspace-sidebar .ws-group[data-group="alpha-app"]');
-  await expect(alpha.locator('h2 .g-name')).toHaveText('alpha app');
-  await expect(alpha.locator('h2 .g-chip')).toHaveText('registered');
+  await expect(alpha.locator('.g-name')).toHaveText('alpha app');
+  await expect(alpha.locator('.g-chip')).toHaveText('registered');
   await expect(alpha.locator('.open-app-btn')).toHaveClass(/not-serving/);
   await expect(alpha.locator('[data-new-ws]')).toHaveCount(1);
-  await expect(alpha.locator('li[data-ws]')).toHaveCount(1); // the fixture's proj
+  await expect(alpha.locator('wa-tree-item[data-ws]')).toHaveCount(1); // the fixture's proj
   // No cybermole group here (that group is / only; the fixture cwds also
   // contain "cybermole", so the check pins the headings, not the rows), and
   // + app lives at the bottom.
   await expect(page.locator('workspace-sidebar #new-app')).toHaveCount(1);
-  await expect(groups.locator('h2 .g-name').filter({ hasText: 'cybermole' })).toHaveCount(0);
+  await expect(groups.locator('.g-name').filter({ hasText: 'cybermole' })).toHaveCount(0);
 
   // The console page is orchestration only: no app groups, no + app.
   await page.goto('/');
   await page.waitForSelector('workspace-sidebar .nav');
   await expect(page.locator('workspace-sidebar .ws-group')).toHaveCount(1);
-  await expect(page.locator('workspace-sidebar .ws-group h2 .g-name')).toHaveText('cybermole');
+  await expect(page.locator('workspace-sidebar .ws-group .g-name')).toHaveText('cybermole');
   await expect(page.locator('workspace-sidebar #new-app')).toHaveCount(0);
 });
 
@@ -193,8 +193,8 @@ test('an unregistered tree shows with its chip and no row actions', async ({ pag
       { timeout: 25_000, intervals: [500, 1000, 2000, 2000] },
     )
     .toBe(1);
-  await expect(group.locator('h2 .g-name')).toHaveText('Unreg Tree');
-  await expect(group.locator('h2 .g-chip')).toHaveText('unregistered tree');
+  await expect(group.locator('.g-name')).toHaveText('Unreg Tree');
+  await expect(group.locator('.g-chip')).toHaveText('unregistered tree');
   // No row: no open link, no + workspace, no delete — the group is the
   // invitation to continue building (register it, or build on another app).
   await expect(group.locator('.open-app-btn')).toHaveCount(0);
@@ -235,8 +235,8 @@ test('builder flow: + app → + workspace (a build session) → framing env in t
   await page.fill('wa-input#app-cwd input', appDir);
   await page.click('#app-save');
   const group = page.locator('workspace-sidebar .ws-group[data-group="flow-app"]');
-  await expect(group.locator('h2 .g-name')).toHaveText('Flow App');
-  await expect(group.locator('h2 .g-chip')).toHaveText('registered');
+  await expect(group.locator('.g-name')).toHaveText('Flow App');
+  await expect(group.locator('.g-chip')).toHaveText('registered');
   await expect(group.locator('.open-app-btn')).toHaveClass(/not-serving/);
 
   // The workspace dialog names the build-session derivation: the server
@@ -254,7 +254,7 @@ test('builder flow: + app → + workspace (a build session) → framing env in t
 
   // The row is the app's, at the ROOT cwd (the suite default), and the
   // auto-opened agent tab went live.
-  const flowRow = page.locator('workspace-sidebar li[data-ws].active');
+  const flowRow = page.locator('workspace-sidebar wa-tree-item[data-ws][selected]');
   await expect(flowRow).toContainText('flow build');
   await expect(flowRow.locator('.d')).toHaveText(WORKSPACE);
   const agentTab = await page.locator('terminal-tabs wa-tab').getAttribute('data-term');
@@ -298,10 +298,10 @@ test('builder flow: + app → + workspace (a build session) → framing env in t
   await waitForTermText(page, 'FOCUS=flow-app', 10_000);
 
   // Deleting the workspace (existing semantics), then the app, cleans up.
-  await page.locator('workspace-sidebar li[data-ws].active [data-del-ws]').click();
+  await page.locator('workspace-sidebar wa-tree-item[data-ws][selected] [data-del-ws]').click();
   await page.click('#confirm-delete-ok');
   await expect(
-    page.locator('workspace-sidebar li[data-ws]').filter({ hasText: 'flow build' }),
+    page.locator('workspace-sidebar wa-tree-item[data-ws]').filter({ hasText: 'flow build' }),
   ).toHaveCount(0);
   await page.locator('workspace-sidebar .ws-group[data-group="flow-app"] [data-del-app]').click();
   await expect(page.locator('#confirm-delete-text')).toContainText('Flow App');
@@ -333,7 +333,7 @@ test('deep links route by owner: app tabs bounce to /builder, console tabs to /'
   // /?t=<app tab> redirects client-side to /builder?t=… and selects it.
   await page.goto(`/?t=${appTerm}`);
   await page.waitForURL(u => u.pathname === '/builder' && u.searchParams.get('t') === appTerm);
-  await expect(page.locator(`workspace-sidebar li[data-ws="${appWs!.id}"]`)).toHaveClass(/active/);
+  await expect(page.locator(`workspace-sidebar wa-tree-item[data-ws="${appWs!.id}"]`)).toHaveAttribute('selected');
   await expect(page.locator(`terminal-tabs .tab[data-term="${appTerm}"]`)).toHaveAttribute(
     'aria-label',
     /\(live\)/,
@@ -345,9 +345,7 @@ test('deep links route by owner: app tabs bounce to /builder, console tabs to /'
   // /builder?t=<console tab> bounces back to /.
   await page.goto(`/builder?t=${consoleTerm}`);
   await page.waitForURL(u => u.pathname === '/' && u.searchParams.get('t') === consoleTerm);
-  await expect(page.locator(`workspace-sidebar li[data-ws="${consoleWs!.id}"]`)).toHaveClass(
-    /active/,
-  );
+  await expect(page.locator(`workspace-sidebar wa-tree-item[data-ws="${consoleWs!.id}"]`)).toHaveAttribute('selected');
 
   // Job runs are orchestration: /builder?run= goes home.
   await page.goto('/builder?run=j-itest-run');
@@ -360,21 +358,21 @@ test('nav groups collapse per app: rows hide, state survives poll re-render + re
   await login(page);
   await sweepFlowApp();
   await refreshState(page);
+  // The group is a wa-tree-item: it toggles in place, and
+  // `expanded` / aria-expanded reflect the state.
   const app = page.locator('workspace-sidebar .ws-group[data-group="alpha-app"]');
-  const toggle = app.locator('h2 .g-collapse');
-  const rows = app.locator('.ws-group-rows');
+  // Leaf selection: clicking a group's own label toggles it.
+  const expander = app.locator('.g-name');
+  const row = app.locator('wa-tree-item[data-ws]');
 
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  await expect(rows).toBeVisible();
-  await expect(rows.locator('li[data-ws]')).toBeVisible();
+  await expect(app).toHaveAttribute('aria-expanded', 'true');
+  await expect(row).toBeVisible();
 
   // Collapsing hides the rows; the header (with + workspace) stays.
-  await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(rows).toBeHidden();
-  await expect(app.locator('h2 .g-name')).toHaveText('alpha app');
-  // Flipped in place, so focus survives.
-  await expect(toggle).toBeFocused();
+  await expander.click();
+  await expect(app).toHaveAttribute('aria-expanded', 'false');
+  await expect(row).toBeHidden();
+  await expect(app.locator('.g-name')).toHaveText('alpha app');
 
   const stored = await page.evaluate(() => localStorage.getItem('cybermole:nav-collapsed'));
   const collapsedMap = JSON.parse(stored ?? '{}') as Record<string, boolean>;
@@ -382,36 +380,38 @@ test('nav groups collapse per app: rows hide, state survives poll re-render + re
 
   // A poll re-render keeps it collapsed.
   await refreshState(page);
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(rows).toBeHidden();
+  await expect(app).toHaveAttribute('aria-expanded', 'false');
+  await expect(row).toBeHidden();
 
+  // The header's actions act without toggling the group.
   await app.locator('[data-new-ws]').click();
   await expect(page.locator('wa-input#workspace-name input')).toBeVisible();
   await page.locator('#workspace-dialog wa-button[data-dialog="close"]').click();
+  await expect(app).toHaveAttribute('aria-expanded', 'false');
 
   await page.reload();
   await page.waitForSelector('workspace-sidebar .nav');
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(rows).toBeHidden();
+  await expect(app).toHaveAttribute('aria-expanded', 'false');
+  await expect(row).toBeHidden();
 
   // A filter forces groups open without touching stored state.
   const search = page.locator('wa-input#workspace-search input');
   await search.fill('proj');
-  await expect(app.locator('li[data-ws]')).toBeVisible();
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(row).toBeVisible();
+  await expect(app).toHaveAttribute('aria-expanded', 'true');
   await search.fill('');
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(rows).toBeHidden();
+  await expect(app).toHaveAttribute('aria-expanded', 'false');
+  await expect(row).toBeHidden();
 
-  // Expand with the keyboard; it persists.
-  await toggle.focus();
-  await page.keyboard.press('Enter');
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  await expect(rows).toBeVisible();
-  const storedAfterExpand = await page.evaluate(() =>
-    localStorage.getItem('cybermole:nav-collapsed'),
-  );
-  expect(
-    (JSON.parse(storedAfterExpand ?? '{}') as Record<string, boolean>)['alpha-app'],
-  ).toBeUndefined();
+  // Expand with the keyboard (the tree's ArrowRight); it persists.
+  await app.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(app).toHaveAttribute('aria-expanded', 'true');
+  await expect(row).toBeVisible();
+  await expect
+    .poll(async () => {
+      const raw = await page.evaluate(() => localStorage.getItem('cybermole:nav-collapsed'));
+      return (JSON.parse(raw ?? '{}') as Record<string, boolean>)['alpha-app'];
+    })
+    .toBeUndefined();
 });

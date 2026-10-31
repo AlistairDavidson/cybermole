@@ -14,9 +14,9 @@ const { view } = Astro.props;
 ---
 {
   view.kind === 'missing' && (
-    <div class="view-empty">
-      <wa-icon name="circle-info" label={view.message} />
-      <p>{view.message}</p>
+    <div class="view-empty wa-stack wa-align-items-center wa-justify-content-center wa-gap-s">
+      <wa-icon name="circle-info" class="wa-font-size-l" label={view.message} />
+      <p class="wa-caption-m">{view.message}</p>
     </div>
   )
 }

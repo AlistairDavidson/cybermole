@@ -96,7 +96,7 @@ async function makeWorkspace(
   const term = await api(page, 'POST', `/api/workspaces/${made.json.id}/terminals`, { title });
   expect(term.status, JSON.stringify(term.json)).toBe(200);
   await refreshState(page);
-  await page.click(`workspace-sidebar li[data-ws="${made.json.id}"]`);
+  await page.click(`workspace-sidebar wa-tree-item[data-ws="${made.json.id}"]`);
   return { ws: made.json.id as string, id: term.json.id as string };
 }
 

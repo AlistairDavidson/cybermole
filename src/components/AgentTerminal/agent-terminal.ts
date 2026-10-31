@@ -19,6 +19,7 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/input/input.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
+import '@awesome.me/webawesome/dist/components/divider/divider.js';
 // The protocol types come from the kit's terminal-protocol (one definition,
 // shared with the app pages' lean agent-console client — the convergence
 // path noted there).
@@ -92,27 +93,41 @@ function currentColorMode(): string {
   return cls.contains('wa-dark') ? 'wa-dark' : cls.contains('wa-light') ? 'wa-light' : '';
 }
 
-/** The addon paints literal colours onto the canvas, so CSS var() chains
- *  won't do; the hex values are read from console.css's tokens. Cached per
- *  mode. null when they don't resolve: find still works, unhighlighted. */
+/** xterm and its search addon paint literal colours onto a canvas, so a
+ *  Web Awesome token's computed value (var()s already substituted: hex,
+ *  named or color-mix) is normalised to rgb() through a 1px offscreen canvas.
+ *  undefined when it doesn't resolve, so xterm keeps its default. */
+let swatch: OffscreenCanvasRenderingContext2D | null | undefined;
+function waColor(token: string): string | undefined {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(token).trim();
+  if (value === '') return undefined;
+  swatch ??= new OffscreenCanvas(1, 1).getContext('2d', { willReadFrequently: true });
+  if (!swatch) return value;
+  swatch.clearRect(0, 0, 1, 1);
+  swatch.fillStyle = 'transparent';
+  swatch.fillStyle = value; // an unparsable value leaves it transparent
+  swatch.fillRect(0, 0, 1, 1);
+  const [r, g, b, a] = swatch.getImageData(0, 0, 1, 1).data;
+  if (a === 0) return undefined;
+  return a === 255 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})`;
+}
+
+/** Find highlights use the warning (yellow) fills, like a browser's find.
+ *  Cached per mode. */
 let findDecorations: ISearchDecorationOptions | null | undefined;
 let findDecorationsMode: string | null = null;
 function resolveFindDecorations(): ISearchDecorationOptions | undefined {
   const mode = currentColorMode();
   if (findDecorations === undefined || findDecorationsMode !== mode) {
-    const cs = getComputedStyle(document.documentElement);
-    const pick = (name: string): string => cs.getPropertyValue(name).trim();
-    const match = pick('--cybermole-find-match');
-    const active = pick('--cybermole-find-match-active');
-    const overview = pick('--cybermole-find-overview');
-    const activeOverview = pick('--cybermole-find-overview-active');
+    const match = waColor('--wa-color-warning-fill-normal');
+    const active = waColor('--wa-color-warning-fill-loud');
     findDecorations =
-      match !== '' && active !== '' && overview !== '' && activeOverview !== ''
+      match !== undefined && active !== undefined
         ? {
             matchBackground: match,
             activeMatchBackground: active,
-            matchOverviewRuler: overview,
-            activeMatchColorOverviewRuler: activeOverview,
+            matchOverviewRuler: match,
+            activeMatchColorOverviewRuler: active,
           }
         : null;
     findDecorationsMode = mode;
@@ -152,38 +167,35 @@ function armSharedFind(): void {
 
 // ---- color mode ----
 
-/** Built from console.css's --cybermole-xterm-* tokens for the current mode;
- *  keys that don't resolve fall back to xterm's defaults. */
+/** The page's own Web Awesome theme: surface and text tokens for the
+ *  canvas, and the palette's hues for the 16 ANSI colours — lighter steps
+ *  in dark mode, darker in light, so each reads against the surface. */
 function resolveXtermTheme(): ITheme {
-  const cs = getComputedStyle(document.documentElement);
-  const pick = (name: string): string | undefined => {
-    const value = cs.getPropertyValue(name).trim();
-    return value === '' ? undefined : value;
-  };
-  const bright = (name: string): string | undefined => pick(`--cybermole-xterm-${name}-bright`);
-  const plain = (name: string): string | undefined => pick(`--cybermole-xterm-${name}`);
+  const dark = currentColorMode() === 'wa-dark';
+  const hue = (name: string, bright = false): string | undefined =>
+    waColor(`--wa-color-${name}-${dark ? (bright ? 80 : 70) : bright ? 50 : 40}`);
   return {
-    background: plain('background'),
-    foreground: plain('foreground'),
-    cursor: plain('cursor'),
-    cursorAccent: plain('cursor-accent'),
-    selectionBackground: plain('selection-background'),
-    black: plain('black'),
-    red: plain('red'),
-    green: plain('green'),
-    yellow: plain('yellow'),
-    blue: plain('blue'),
-    magenta: plain('magenta'),
-    cyan: plain('cyan'),
-    white: plain('white'),
-    brightBlack: bright('black'),
-    brightRed: bright('red'),
-    brightGreen: bright('green'),
-    brightYellow: bright('yellow'),
-    brightBlue: bright('blue'),
-    brightMagenta: bright('magenta'),
-    brightCyan: bright('cyan'),
-    brightWhite: bright('white'),
+    background: waColor('--wa-color-surface-default'),
+    foreground: waColor('--wa-color-text-normal'),
+    cursor: waColor('--wa-color-text-normal'),
+    cursorAccent: waColor('--wa-color-surface-default'),
+    selectionBackground: waColor('--wa-color-brand-fill-normal'),
+    black: waColor(dark ? '--wa-color-gray-20' : '--wa-color-gray-10'),
+    red: hue('red'),
+    green: hue('green'),
+    yellow: hue('yellow'),
+    blue: hue('blue'),
+    magenta: hue('purple'),
+    cyan: hue('cyan'),
+    white: waColor(dark ? '--wa-color-gray-80' : '--wa-color-gray-70'),
+    brightBlack: waColor('--wa-color-gray-40'),
+    brightRed: hue('red', true),
+    brightGreen: hue('green', true),
+    brightYellow: hue('yellow', true),
+    brightBlue: hue('blue', true),
+    brightMagenta: hue('purple', true),
+    brightCyan: hue('cyan', true),
+    brightWhite: waColor(dark ? '--wa-color-gray-95' : '--wa-color-gray-90'),
   };
 }
 
@@ -456,7 +468,7 @@ export class AgentTerminal extends HTMLElement {
   private status(text: string, kind: 'busy' | 'ok' | 'err' | 'info' = 'busy'): void {
     const el = this.querySelector('.terminal-status');
     if (!el) return;
-    el.className = `terminal-status ${kind}`;
+    for (const k of ['busy', 'ok', 'err', 'info']) el.classList.toggle(k, k === kind);
     for (const indicator of el.querySelectorAll<HTMLElement>('[data-kind]'))
       indicator.classList.toggle('hidden', indicator.dataset.kind !== kind);
     const label = el.querySelector('.status-text');

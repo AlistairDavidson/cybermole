@@ -22,7 +22,8 @@ import {
   readBase,
   readInternalApiSocket,
   readObjectStoreConfig,
-  readEditorUpstream,
+  editorInstallDefault,
+  readEditorMode,
   readJobWebhookUrl,
 } from '../src/lib/platform/env';
 import { componentLogger, closeLogger } from '../src/lib/platform/logger';
@@ -108,6 +109,8 @@ const agentTemplate = path.join(APP_ROOT, 'runtime', 'pi-agent-dir');
 const agentSettingsTemplate = path.join(agentTemplate, 'settings.json');
 const rootAgentsTemplate = path.join(APP_ROOT, 'runtime', 'workspace-root', 'AGENTS.md');
 
+const EDITOR_MODE = readEditorMode();
+
 const CFG: ServerConfig = {
   host: ENV.CYBERMOLE_HOST,
   port: ENV.CYBERMOLE_PORT,
@@ -122,7 +125,7 @@ const CFG: ServerConfig = {
   appsRoot: readAppsRoot(),
   // Terminal commands resolve per spawn (terminal-defaults.ts) so /settings applies without a restart.
   trustProxy: Math.max(0, ENV.CYBERMOLE_TRUST_PROXY),
-  editorUpstream: readEditorUpstream(),
+  editorUpstream: EDITOR_MODE.kind === 'off' ? null : EDITOR_MODE.upstream,
   grafanaExploreUrl: grafanaExploreUrlFromEnv(),
 };
 
@@ -228,11 +231,28 @@ bootLog.info(
     ? 'object storage: not configured (CYBERMOLE_S3_ENDPOINT unset) — uploads answer 503'
     : `object storage: ${objectStore.describe()}`,
 );
-bootLog.info(
-  CFG.editorUpstream === null
-    ? 'editor: not configured (CYBERMOLE_EDITOR_UPSTREAM unset) — /editor answers 404'
-    : `editor: proxying ${CFG.base === '/' ? '' : CFG.base}/editor/ → ${CFG.editorUpstream.origin}`,
-);
+const EDITOR_PATH = `${CFG.base === '/' ? '' : CFG.base}/editor`;
+switch (EDITOR_MODE.kind) {
+  case 'off':
+    bootLog.info(
+      EDITOR_MODE.reason === 'disabled'
+        ? 'editor: off (CYBERMOLE_EDITOR_UPSTREAM is empty) — /editor answers 404'
+        : 'editor: not installed (no CYBERMOLE_EDITOR_UPSTREAM, nothing at ' +
+            `${editorInstallDefault(ENV.CYBERMOLE_STATE_DIR)} — deploy/install-host.sh puts it there) — /editor answers 404`,
+    );
+    break;
+  case 'upstream':
+    bootLog.info(`editor: proxying ${EDITOR_PATH}/ → ${EDITOR_MODE.upstream.origin}`);
+    break;
+  case 'supervised':
+    bootLog.info(
+      `editor: single-user shape — supervising ${EDITOR_MODE.installDir} on ` +
+        `${EDITOR_MODE.upstream.socketPath}, proxied at ${EDITOR_PATH}/`,
+    );
+    break;
+  default:
+    EDITOR_MODE satisfies never;
+}
 bootLog.info(
   CFG.grafanaExploreUrl === null
     ? 'logs: not configured (CYBERMOLE_GRAFANA_URL unset) — /logs answers 404'
@@ -267,6 +287,41 @@ if (APPS_SOCK === null) {
   bootLog.info(
     `apps: single-user shape — spawning + supervising the app host (default socket ${APPS_SOCK})`,
   );
+}
+// The host install's editor: same uid, a private socket, no token — the
+// proxy's session gate is its only door. The bundled node is spawned
+// directly: bin/codium-server is a sh wrapper that doesn't exec, so a
+// SIGTERM to it would orphan the server.
+let editorSupervisor: AppHostSupervisorHandle | null = null;
+if (EDITOR_MODE.kind === 'supervised') {
+  const { installDir, upstream } = EDITOR_MODE;
+  editorSupervisor = startAppHostSupervisor({
+    name: 'editor',
+    downNote: 'the editor tab 502s until it is back',
+    command: path.join(installDir, 'node'),
+    args: [
+      path.join(installDir, 'out', 'server-main.js'),
+      '--socket-path',
+      upstream.socketPath,
+      '--server-base-path',
+      EDITOR_PATH,
+      '--without-connection-token',
+      // The editor is the same uid's shell the terminal tab already grants,
+      // so a per-folder trust prompt gates nothing.
+      '--disable-workspace-trust',
+      '--telemetry-level',
+      'off',
+    ],
+    env: process.env,
+    log: componentLogger('editor'),
+    beforeSpawn: () => {
+      const dir = path.dirname(upstream.socketPath);
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+      fs.chmodSync(dir, 0o700);
+      // A killed server leaves its socket behind, and listen() won't reuse it.
+      fs.rmSync(upstream.socketPath, { force: true });
+    },
+  });
 }
 const appsServing = new AppsServing({ socketPath: APPS_SOCK });
 // A build session's framing env (CYBERMOLE_WORKSPACE_FOCUS[_TREE]) rides
@@ -551,6 +606,9 @@ function renderAstro(
 // ${BASE}/editor/* → CYBERMOLE_EDITOR_UPSTREAM (HTTP + WS), behind the usual
 // session gate. Decisions live in src/lib/terminals/editor.ts.
 
+const viaSocket = (upstream: EditorUpstream): { socketPath?: string } =>
+  upstream.socketPath === undefined ? {} : { socketPath: upstream.socketPath };
+
 function proxyEditorRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -562,52 +620,56 @@ function proxyEditorRequest(
   // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- scrubbing the hop-by-hop header set
   for (const hop of EDITOR_HOP_BY_HOP_HEADERS) delete headers[hop];
   const target = new URL(req.url ?? '/', upstream.origin);
-  const proxied = http.request(target, { method: req.method, headers }, upstreamRes => {
-    const out: Record<string, string> = {};
-    for (const [name, value] of Object.entries(upstreamRes.headers)) {
-      if (Array.isArray(value)) out[name] = value.join(', ');
-      else if (value !== undefined) out[name] = value;
-    }
-    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- scrubbing the hop-by-hop header set
-    for (const hop of EDITOR_HOP_BY_HOP_HEADERS) delete out[hop];
-    // Editor HTML gets its own header set (framing + VS Code CSP).
-    if ((out['content-type'] ?? '').startsWith('text/html')) {
-      for (const [name, value] of Object.entries(editorSecurityHeaders())) out[name] = value;
-      // The boot document is the one rewritten body (theme defaults). It
-      // arrives chunked, so cap by bytes seen: past the cap it isn't the
-      // boot document, so flush unmodified and stream the rest. Compressed
-      // bodies can't be text-rewritten and stream straight through.
-      if (!('content-encoding' in out)) {
-        const chunks: Buffer[] = [];
-        let buffered = 0;
-        let overflowed = false;
-        upstreamRes.on('data', (chunk: Buffer) => {
-          if (overflowed) return;
-          chunks.push(chunk);
-          buffered += chunk.length;
-          if (buffered > EDITOR_HTML_REWRITE_MAX_BYTES) {
-            // Flush including the crossing chunk; bytes are unchanged, so content-length stays exact.
-            overflowed = true;
-            res.writeHead(upstreamRes.statusCode ?? 502, out);
-            res.write(Buffer.concat(chunks));
-            chunks.length = 0;
-            upstreamRes.pipe(res);
-          }
-        });
-        upstreamRes.on('end', () => {
-          if (overflowed) return;
-          const body = injectWorkbenchThemeDefaults(Buffer.concat(chunks).toString('utf8'));
-          out['content-length'] = String(Buffer.byteLength(body));
-          res.writeHead(upstreamRes.statusCode ?? 502, out);
-          res.end(body);
-        });
-        return;
+  const proxied = http.request(
+    target,
+    { method: req.method, headers, ...viaSocket(upstream) },
+    upstreamRes => {
+      const out: Record<string, string> = {};
+      for (const [name, value] of Object.entries(upstreamRes.headers)) {
+        if (Array.isArray(value)) out[name] = value.join(', ');
+        else if (value !== undefined) out[name] = value;
       }
-    }
-    res.writeHead(upstreamRes.statusCode ?? 502, out);
-    // Streamed: workbench bundles are tens of MB.
-    upstreamRes.pipe(res);
-  });
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- scrubbing the hop-by-hop header set
+      for (const hop of EDITOR_HOP_BY_HOP_HEADERS) delete out[hop];
+      // Editor HTML gets its own header set (framing + VS Code CSP).
+      if ((out['content-type'] ?? '').startsWith('text/html')) {
+        for (const [name, value] of Object.entries(editorSecurityHeaders())) out[name] = value;
+        // The boot document is the one rewritten body (theme defaults). It
+        // arrives chunked, so cap by bytes seen: past the cap it isn't the
+        // boot document, so flush unmodified and stream the rest. Compressed
+        // bodies can't be text-rewritten and stream straight through.
+        if (!('content-encoding' in out)) {
+          const chunks: Buffer[] = [];
+          let buffered = 0;
+          let overflowed = false;
+          upstreamRes.on('data', (chunk: Buffer) => {
+            if (overflowed) return;
+            chunks.push(chunk);
+            buffered += chunk.length;
+            if (buffered > EDITOR_HTML_REWRITE_MAX_BYTES) {
+              // Flush including the crossing chunk; bytes are unchanged, so content-length stays exact.
+              overflowed = true;
+              res.writeHead(upstreamRes.statusCode ?? 502, out);
+              res.write(Buffer.concat(chunks));
+              chunks.length = 0;
+              upstreamRes.pipe(res);
+            }
+          });
+          upstreamRes.on('end', () => {
+            if (overflowed) return;
+            const body = injectWorkbenchThemeDefaults(Buffer.concat(chunks).toString('utf8'));
+            out['content-length'] = String(Buffer.byteLength(body));
+            res.writeHead(upstreamRes.statusCode ?? 502, out);
+            res.end(body);
+          });
+          return;
+        }
+      }
+      res.writeHead(upstreamRes.statusCode ?? 502, out);
+      // Streamed: workbench bundles are tens of MB.
+      upstreamRes.pipe(res);
+    },
+  );
   proxied.setTimeout(120_000, () => proxied.destroy(new Error('editor upstream idle')));
   proxied.on('error', err => {
     httpLog.error('editor proxy request failed', { error: err });
@@ -641,7 +703,7 @@ function upgradeEditorSocket(
   // upstream sees a plain GET and never answers 101.
   const headers = editorUpgradeHeaders(req.headers);
   const target = new URL(req.url ?? '/', upstream.origin);
-  const proxied = http.request(target, { method: 'GET', headers });
+  const proxied = http.request(target, { method: 'GET', headers, ...viaSocket(upstream) });
   proxied.setTimeout(30_000, () => proxied.destroy(new Error('editor upstream upgrade idle')));
   proxied.on('error', err => {
     wsLog.error('editor ws upgrade failed', { error: err });
@@ -1428,6 +1490,9 @@ const shutdownSteps: Array<() => void | Promise<void>> = [
   // Before the internal API: the host discovers over that socket.
   () => {
     return appHostSupervisor?.stop();
+  },
+  () => {
+    return editorSupervisor?.stop();
   },
   () => {
     return internalApi?.close();

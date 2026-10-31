@@ -18,8 +18,9 @@ import { chromium } from '@playwright/test';
 const ROOT = path.resolve(import.meta.dirname, '..');
 const OUT_DIR = path.join(ROOT, 'public', 'icons');
 const SIZE = 512;
-// src/styles/console.css :root — keep in sync
-const DARK = '#11131a'; // --wa-color-surface-default (dark mode)
+// Web Awesome's default dark --wa-color-surface-default (neutral-05); keep in
+// sync with THEME_COLOR_DARK in src/layouts/Base.astro.
+const DARK = '#101219';
 
 const src = readFileSync(path.join(ROOT, 'public', 'cybermole.svg'), 'utf8');
 const art = /<g\b[\s\S]*<\/g>/.exec(src)?.[0];

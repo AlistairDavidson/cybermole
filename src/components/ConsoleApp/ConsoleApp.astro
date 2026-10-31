@@ -37,7 +37,7 @@ const wsValidation = scope === 'builder' ? buildValidation : consoleWsValidation
 <div slot="navigation-header" class="nav-header">
   <wa-button
     id="nav-collapse"
-    class="nav-collapse"
+    class="nav-collapse wa-align-self-end"
     appearance="plain"
     size="s"
     aria-label="collapse the sidebar"
@@ -113,7 +113,7 @@ const wsValidation = scope === 'builder' ? buildValidation : consoleWsValidation
   </wa-dialog>
 
   <wa-dialog id="confirm-delete" label="Delete" with-footer>
-    <p class="dialog-text" id="confirm-delete-text"></p>
+    <p id="confirm-delete-text"></p>
     <p class="wa-caption-s" id="confirm-delete-note"></p>
     <wa-button slot="footer" appearance="plain" data-dialog="close">cancel</wa-button>
     <wa-button slot="footer" id="confirm-delete-ok" variant="danger">delete</wa-button>
