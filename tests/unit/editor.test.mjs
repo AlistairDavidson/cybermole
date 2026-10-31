@@ -371,6 +371,31 @@ test('editor mode: unset upstream supervises an install under the state dir, els
       bootMode({ CYBERMOLE_STATE_DIR: stateDir, CYBERMOLE_EDITOR_UPSTREAM: 'http://editor:3000' }),
       { kind: 'upstream', upstream: { origin: 'http://editor:3000' } },
     );
+    // unix:<path>: an editor the console doesn't own (its own unit on a
+    // hardened console); the socket rides the same { origin, socketPath }
+    // shape the supervised mode already produces.
+    const sock = path.join(stateDir, 'editor-run', 'editor.sock');
+    assert.deepEqual(
+      bootMode({ CYBERMOLE_STATE_DIR: stateDir, CYBERMOLE_EDITOR_UPSTREAM: `unix:${sock}` }),
+      { kind: 'upstream', upstream: { origin: 'http://localhost', socketPath: sock } },
+    );
+    const bail = env => {
+      try {
+        bootMode(env);
+      } catch (e) {
+        return e;
+      }
+      return null;
+    };
+    assert.match(
+      bail({ CYBERMOLE_STATE_DIR: stateDir, CYBERMOLE_EDITOR_UPSTREAM: 'unix:relative' }).message,
+      /absolute path/,
+    );
+    const long = `unix:${stateDir}/${'x'.repeat(120)}`;
+    assert.match(
+      bail({ CYBERMOLE_STATE_DIR: stateDir, CYBERMOLE_EDITOR_UPSTREAM: long }).message,
+      /absolute path/,
+    );
   } finally {
     fs.rmSync(stateDir, { recursive: true, force: true });
   }

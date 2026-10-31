@@ -240,13 +240,31 @@ export function readJobWebhookUrl(): string | null {
   return raw;
 }
 
-/** null when unset/empty (editor off). Must be a bare origin: the proxy
- *  forwards paths verbatim and would drop a path/query silently. */
+/** null when unset/empty (editor off). A bare origin: the proxy forwards
+ *  paths verbatim and would drop a path/query silently. Or `unix:<path to
+ *  an absolute 0700-dir socket>` — an editor the console doesn't own (its
+ *  own unit on a hardened console); the socket is the auth, like the app
+ *  host's. */
 export function readEditorUpstream(): EditorUpstream | null {
   const raw = RAW_ENV.CYBERMOLE_EDITOR_UPSTREAM;
   if (raw === undefined || raw.trim() === '') return null;
+  if (raw.startsWith('unix:')) {
+    const socketPath = raw.slice('unix:'.length);
+    if (!path.isAbsolute(socketPath) || socketPath.length > 105) {
+      throw new Error(
+        `CYBERMOLE_EDITOR_UPSTREAM=${JSON.stringify(raw)} needs an absolute path ` +
+          'under 106 bytes after unix: (the unix-socket sun_path cap)',
+      );
+    }
+    // The origin is a placeholder the proxy never connects to: a socketPath
+    // overrides the transport, and the Host header rides verbatim.
+    return { origin: 'http://localhost', socketPath };
+  }
   if (!URL.canParse(raw) || !/^https?:$/.test(new URL(raw).protocol)) {
-    throw new Error(`CYBERMOLE_EDITOR_UPSTREAM=${JSON.stringify(raw)} is not an http(s) URL`);
+    throw new Error(
+      `CYBERMOLE_EDITOR_UPSTREAM=${JSON.stringify(raw)} is not an http(s) URL ` +
+        'or unix:<socket path>',
+    );
   }
   const u = new URL(raw);
   if (u.pathname !== '/' || u.search !== '' || u.hash !== '') {

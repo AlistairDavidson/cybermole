@@ -242,7 +242,13 @@ switch (EDITOR_MODE.kind) {
     );
     break;
   case 'upstream':
-    bootLog.info(`editor: proxying ${EDITOR_PATH}/ → ${EDITOR_MODE.upstream.origin}`);
+    if (EDITOR_MODE.upstream.socketPath === undefined) {
+      bootLog.info(`editor: proxying ${EDITOR_PATH}/ → ${EDITOR_MODE.upstream.origin}`);
+    } else {
+      bootLog.info(
+        `editor: proxying ${EDITOR_PATH}/ → unix socket ${EDITOR_MODE.upstream.socketPath}`,
+      );
+    }
     break;
   case 'supervised':
     bootLog.info(
