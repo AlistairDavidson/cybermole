@@ -56,7 +56,7 @@ async function login(page: Page): Promise<void> {
 test.describe('browser scheme dark', () => {
   test.use({ colorScheme: 'dark' });
 
-  test('console: html.wa-dark, the dark brand surface, color-scheme and both theme-color metas', async ({
+  test('console: html.wa-dark, the stock dark surface, color-scheme and both theme-color metas', async ({
     page,
   }) => {
     await login(page);
@@ -89,7 +89,7 @@ test.describe('browser scheme dark', () => {
 test.describe('browser scheme light', () => {
   test.use({ colorScheme: 'light' });
 
-  test('console: html.wa-light and the light brand surface', async ({ page }) => {
+  test('console: html.wa-light and the stock light surface', async ({ page }) => {
     await login(page); // cookie reuse — no second POST /login
     await expect.poll(async () => (await modeState(page)).light).toBe(true);
     const state = await modeState(page);

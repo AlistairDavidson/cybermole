@@ -53,13 +53,16 @@ interface Updatable {
 }
 
 /** Focuses a freshly stamped tree item once it renders: a nested item is
- *  only slotted (so focusable) after its parent item's first update. */
+ *  only slotted (so focusable) after its parent item's first update. Only
+ *  if focus is still lost by then — the console may have moved it on (into
+ *  the terminal a selection opened). */
 function focusWhenRendered(el: HTMLElement | null): void {
   if (!el) return;
   const parent = el.parentElement as (HTMLElement & Updatable) | null;
   void Promise.all([parent?.updateComplete, (el as HTMLElement & Updatable).updateComplete]).then(
     () => {
-      if (el.isConnected) el.focus();
+      const active = document.activeElement;
+      if (el.isConnected && (active === null || active === document.body)) el.focus();
     },
   );
 }

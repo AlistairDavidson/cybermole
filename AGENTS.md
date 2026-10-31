@@ -106,6 +106,17 @@ ENOTTY — and fast-boot timing can outpace a live status poll; prefer
 round-trips through the UI and pre-installed recorders over side-channel
 probes).
 
+**Seeing the UI (any machine).** Visual checks need no dev server or
+extra browser: a throwaway spec in `tests/e2e/` (sign in through the form
+with `USERNAME`/`PASSWORD` from `tests/support/env`, `page.screenshot()`
+into a scratch dir) runs against the same hermetic world — then delete it.
+Never leave one in the tree while the full suite runs: it is collected, and
+sorting after `e2e.spec.ts` it fires past the rate-limit test, fails its
+sign-in and can cascade into unrelated failures. Check light and dark
+(`page.emulateMedia({ colorScheme })`). To clear a wedged run's servers,
+don't `pkill -f <pattern>` from a shell whose own command line contains
+the pattern (it kills itself); `tools/test-cleanup.mjs` is the janitor.
+
 ## node:sqlite
 
 The state db (`src/lib/platform/db.ts`) uses the built-in `node:sqlite`, which
@@ -216,24 +227,51 @@ Testing), not just in the SSR HTML.
   (`tools/arch-check-console.mjs`): a new violation fails, and its
   `LEGACY` list (the files still on the old patterns) only shrinks.
   When you convert one, lower or delete its entry.
-- **Stock looks, utility layout.** Every `wa-*` component keeps the look
-  its docs page shows: no CSS on its padding, fonts, colours, `::part()`s
-  or component custom properties (`--indicator-color`, `--padding`, …)
-  unless the operator asks for that customisation explicitly. Layout is
-  Web Awesome's layout utilities in the markup (`wa-stack`, `wa-cluster`,
-  `wa-split`, `wa-flank`, `wa-gap-*`, `wa-align-*`, `wa-justify-*`, the
-  text classes); `console.css` holds only what they can't express (the
-  terminal's fill-height chain and its zero pane padding, overlays,
-  truncation, state cues), each with a comment saying why.
-- The app's identity lives in the `:root` semantic-token overrides in
-  `src/styles/console.css` — extend those rather than adding hex/px literals.
-- `console.css` is unlayered on purpose (must win over @layer'd Web Awesome
-  styles) and is the only sanctioned place for hex colors.
+- **Stock Web Awesome, end to end — a standing decision.** Earlier work
+  that restyled components, overrode the palette, hand-rolled widgets or
+  hand-wrote layout CSS was a mistake and has been unwound; don't
+  reintroduce any of it. Customisation happens only when the operator asks
+  for it explicitly — if you think a deviation is needed, ask first.
+  - **Looks:** every `wa-*` component keeps the look its docs page shows:
+    no CSS on its padding, fonts, colours, `::part()`s or component custom
+    properties (`--indicator-color`, `--padding`, …).
+  - **Colours:** the stock theme (`wa-theme-default wa-palette-default
+    wa-brand-blue` on `<html>`, light/dark by `prefers-color-scheme`) is
+    the look. Nothing overrides a `--wa-*` token, and no hex lives in
+    `console.css`. Where something needs a literal colour it is derived
+    from WA's defaults: the terminal's xterm theme and find highlights
+    resolve `--wa-color-*` tokens at runtime (`waColor()` in
+    `agent-terminal.ts` — surface/text for the canvas, palette hues for
+    the 16 ANSI colours); the `theme-color` metas (`Base.astro`), the
+    manifest and `tools/make-icons.mjs` hard-code WA's default surface
+    (`#ffffff` light, neutral-05 `#101219` dark) — keep those three in step
+    if the WA version changes it.
+  - **Components:** use the WA component even at the cost of a bespoke
+    nicety. The workspace sidebar is a `wa-tree` (leaf selection: rows
+    select, group headers toggle; the tree owns arrow-key navigation and
+    expand/collapse) rather than a hand-rolled list.
+  - **Layout:** Web Awesome's layout utilities in the markup (`wa-stack`,
+    `wa-cluster`, `wa-split`, `wa-flank`, `wa-gap-*`, `wa-align-*`,
+    `wa-justify-*`, the text classes). `console.css` holds only what they
+    can't express — the terminal's fill-height chain and its zero pane
+    padding (a sanctioned exception), the toolbar overlay, truncation,
+    state cues, and the tree items' label part (layout only) — each with a
+    comment saying why. Mind `wa-page`: its slotted navigation elements are
+    flex columns, so `wa-cluster` there doesn't make a row; align a child
+    with `wa-align-self-*` instead.
+- `console.css` is unlayered on purpose (it must win over @layer'd Web
+  Awesome styles).
 - The workspace sidebar (`src/components/WorkspaceSidebar/`) restamps its
-  groups from `<template>`s on every state refresh (push events over
-  `/ws/events`, plus a re-sync on socket (re)connect); the filter and + app
-  are SSR'd outside the restamp. Anything inside a group is rebuilt each
-  push, so don't put state there that must outlive one.
+  tree items from `<template>`s on every state refresh (push events over
+  `/ws/events`, plus a re-sync on socket (re)connect); the filter, the
+  `wa-tree` and + app are SSR'd outside the restamp. Anything inside an
+  item is rebuilt each push, so don't put state there that must outlive
+  one. Its tooltips are moved to `.ws-tips` outside the tree (text inside
+  a tree item joins its accessible name). A nested tree item is only
+  focusable after its parent item renders, so focus restores wait on
+  `updateComplete` — and never steal focus the console has moved on.
+  Reordering (drag, Shift+Arrow) is kept but non-vital: if it fights the
+  tree, drop it rather than bend the tree.
 - A `wa-tooltip` binds its `for` anchor when it connects (or `for`
   changes): stamp it after its anchor is in the document, and give
   anchors in cloned skeletons per-instance ids.
