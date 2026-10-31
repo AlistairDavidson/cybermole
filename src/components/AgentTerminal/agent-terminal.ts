@@ -268,6 +268,10 @@ export class AgentTerminal extends HTMLElement {
       fontSize: 13,
       fontFamily: 'monospace',
       scrollback: 5000,
+      // xterm 6 sizes its scrollbar (and the fit addon's reserved gutter)
+      // from the ruler width, 14px by default (0 also means 14): 1px keeps
+      // the full width for columns.
+      overviewRuler: { width: 1 },
       // The search addon's highlights need xterm's proposed API.
       allowProposedApi: true,
       theme: resolveXtermTheme(),
@@ -352,15 +356,34 @@ export class AgentTerminal extends HTMLElement {
   /** px→rows through the container's own box: client height / rows is the
    *  cell height, whatever the renderer drew it with. Positive px (finger
    *  moving down) scrolls back in history. */
-  private touchScrollBy(px: number): void {
+  private touchScrollBy(px: number, x: number, y: number): void {
     const t = this.terminal;
     const cont = this.querySelector('.terminal-container') as HTMLElement | null;
     if (!t || !cont || t.rows <= 0 || cont.clientHeight === 0) return;
     this.touchRowAccum += px / (cont.clientHeight / t.rows);
     const rows = Math.trunc(this.touchRowAccum);
-    if (rows !== 0) {
+    if (rows === 0) return;
+    this.touchRowAccum -= rows;
+    if (t.modes.mouseTrackingMode === 'none') {
       t.scrollLines(-rows);
-      this.touchRowAccum -= rows;
+      return;
+    }
+    // The app in the pane (pi fullscreen, through tmux) asked for the mouse:
+    // what's on screen is its view, not xterm's buffer, so scroll it the way
+    // the wheel does — xterm encodes one wheel report per event.
+    const target = t.element?.querySelector('.xterm-screen');
+    if (!target) return;
+    for (let i = 0; i < Math.abs(rows); i++) {
+      target.dispatchEvent(
+        new WheelEvent('wheel', {
+          deltaY: rows > 0 ? -1 : 1,
+          deltaMode: WheelEvent.DOM_DELTA_LINE,
+          clientX: x,
+          clientY: y,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
     }
   }
 
@@ -376,6 +399,7 @@ export class AgentTerminal extends HTMLElement {
     let claimed = false;
     let dead = false; // an x-dominant drag never scrolls
     let lastY = 0;
+    let lastX = 0;
     let lastT = 0;
     let velocity = 0; // px/ms, positive = finger moving down
 
@@ -389,7 +413,7 @@ export class AgentTerminal extends HTMLElement {
         const t = e.touches[0];
         if (!t) return;
         startY = lastY = t.clientY;
-        startX = t.clientX;
+        startX = lastX = t.clientX;
         lastT = performance.now();
         velocity = 0;
       },
@@ -414,7 +438,8 @@ export class AgentTerminal extends HTMLElement {
           claimed = true;
         }
         e.preventDefault();
-        this.touchScrollBy(t.clientY - lastY);
+        lastX = t.clientX;
+        this.touchScrollBy(t.clientY - lastY, lastX, t.clientY);
         const now = performance.now();
         const dt = now - lastT;
         if (dt > 0) velocity = (t.clientY - lastY) / dt;
@@ -426,7 +451,7 @@ export class AgentTerminal extends HTMLElement {
     container.addEventListener('touchend', () => {
       if (!claimed) return;
       this.touchMomentum = velocity;
-      this.glideTouchMomentum();
+      this.glideTouchMomentum(lastX, lastY);
     });
     container.addEventListener('touchcancel', () => {
       claimed = false;
@@ -434,7 +459,7 @@ export class AgentTerminal extends HTMLElement {
     });
   }
 
-  private glideTouchMomentum(): void {
+  private glideTouchMomentum(x: number, y: number): void {
     const v = this.touchMomentum;
     if (v === null || Math.abs(v) < AgentTerminal.MOMENTUM_MIN) {
       this.touchMomentum = null;
@@ -444,9 +469,9 @@ export class AgentTerminal extends HTMLElement {
     this.touchMomentumRaf = requestAnimationFrame(() => {
       if (this.touchMomentum === null) return; // cancelled mid-glide
       const dt = performance.now() - frameStart;
-      this.touchScrollBy(v * dt);
+      this.touchScrollBy(v * dt, x, y);
       this.touchMomentum = v * Math.pow(AgentTerminal.MOMENTUM_DECAY, dt / 16);
-      this.glideTouchMomentum();
+      this.glideTouchMomentum(x, y);
     });
   }
 

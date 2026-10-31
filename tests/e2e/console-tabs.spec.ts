@@ -422,6 +422,53 @@ test('touch drag scrolls the pane scrollback', async ({ page }) => {
   await deleteWorkspace(page, ws);
 });
 
+// An app that asked for the mouse (pi fullscreen) owns its own scrolling:
+// a touch drag reaches it as wheel reports, like the desktop wheel.
+test('touch drag sends wheel reports when the pane tracks the mouse', async ({ page }) => {
+  test.setTimeout(90_000);
+  await login(page);
+  const ws = await makeWorkspace(page, 'touch wheel ws');
+  await waitForTermText(page, AGENT_MARKER);
+
+  // SGR mouse tracking on; cat -v echoes what arrives (ESC as ^[).
+  await page.keyboard.type("printf '\\033[?1000h\\033[?1006h'; cat -v\n");
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const pane = document.querySelector(
+          'agent-terminal:not(wa-tab-panel:not([active]) *)',
+        ) as unknown as { terminal?: { modes: { mouseTrackingMode: string } } };
+        return pane?.terminal?.modes.mouseTrackingMode;
+      }),
+    )
+    .not.toBe('none');
+
+  const box = await page
+    .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+    .boundingBox();
+  expect(box).not.toBeNull();
+  const cx = box!.x + box!.width / 2;
+  const cy = box!.y + box!.height / 4;
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [{ x: cx, y: cy }],
+  });
+  for (let i = 1; i <= 8; i++) {
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{ x: cx, y: cy + i * 20 }],
+    });
+    await page.waitForTimeout(30);
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+
+  // Finger down = wheel up = SGR button 64.
+  await waitForTermText(page, '^[[<64;', 10_000);
+
+  await deleteWorkspace(page, ws);
+});
+
 // ---------- the hand-off toast ----------
 
 // An app's build session appearing out-of-band (an agent's build_session in

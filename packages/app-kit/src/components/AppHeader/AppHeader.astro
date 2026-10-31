@@ -57,30 +57,32 @@ const appsCurrent = current === 'apps' ? { 'aria-current': 'page', variant: 'bra
       </wa-button>
     )}
     <NavLink item={left[0]!} current={current} />
-    <!-- The Apps menu: its items are stamped from the template by
-         app-header.ts off GET /api/state, on connect and on every open. -->
-    <wa-dropdown class="apps-menu">
-      <wa-button slot="trigger" id="nav-apps" appearance="plain" size="s" {...appsCurrent}>
-        <wa-icon slot="start" name="table-cells-large" label="Apps"></wa-icon>
-      </wa-button>
-      <wa-dropdown-item class="apps-status" disabled>loading apps…</wa-dropdown-item>
-      <wa-divider></wa-divider>
-      <wa-dropdown-item class="apps-all" data-href={`${base}/apps`}>
-        <wa-icon slot="icon" name="list"></wa-icon>
-        All apps
-      </wa-dropdown-item>
-      <template data-app-item>
-        <wa-dropdown-item class="app-item">
-          <wa-icon slot="icon"></wa-icon>
-          <span class="app-name"></span>
-          <span slot="details" class="app-off">not serving</span>
-        </wa-dropdown-item>
-      </template>
-    </wa-dropdown>
     <wa-tooltip for="nav-apps">Apps</wa-tooltip>
     {left.slice(1).map(l => <NavLink item={l} current={current} />)}
     {logs !== false && <NavLink item={logsLink} current={current} hidden={logs === undefined} />}
   </nav>
+
+
+  <!-- The Apps menu: its items are stamped from the template by
+       app-header.ts off GET /api/state, on connect and on every open. -->
+  <wa-dropdown class="apps-menu">
+    <wa-button slot="trigger" id="nav-apps" appearance="plain" size="s" {...appsCurrent}>
+      <wa-icon slot="start" name="table-cells-large" label="Apps"></wa-icon>
+    </wa-button>
+    <wa-dropdown-item class="apps-status" disabled>loading apps…</wa-dropdown-item>
+    <wa-divider></wa-divider>
+    <wa-dropdown-item class="apps-all" data-href={`${base}/apps`}>
+      <wa-icon slot="icon" name="list"></wa-icon>
+      All apps
+    </wa-dropdown-item>
+    <template data-app-item>
+      <wa-dropdown-item class="app-item">
+        <wa-icon slot="icon"></wa-icon>
+        <span class="app-name"></span>
+        <span slot="details" class="app-off">not serving</span>
+      </wa-dropdown-item>
+    </template>
+  </wa-dropdown>
   <!-- Settings and sign-out share one menu, so the bar fits one row on
        a phone. -->
   <wa-dropdown class="account-menu" placement="bottom-end">
