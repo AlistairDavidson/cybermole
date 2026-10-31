@@ -142,6 +142,53 @@ it), and the path must stay under the ~107-byte unix socket limit.
 proxies there instead. A state dir with no install (e2e's hermetic one)
 means editor off.
 
+## The split shape (hardened console, an editor of its own)
+
+The supervised editor runs as the console's child, so it inherits the
+console's sandbox. That is invisible in the unhardened single-user unit
+(it can write everything the user can), but a `ProtectSystem=strict`
+console makes only listed paths writable — the editor would boot and then
+drown in read-only failures (extensions, user-data, every save). Two
+honest ways out:
+
+- **Drop the strict hardening** for a unit that is defined by spawning
+  shells (the docs' single-user position), or
+- **Split the editor onto its own unit** and point the console at its
+  socket: `CYBERMOLE_EDITOR_UPSTREAM=unix:<abs path>` — an absolute path,
+  ≤ 105 bytes (the sun_path cap), in a 0700 dir. The socket is the auth
+  (no connection token, never a port), the console's unit stays
+  strict, and the editor's unit carries the trust the editor IS: home
+  read-write (its own shell-equivalent), the state dir for the socket,
+  everything else read-only. The origin placeholder (`http://localhost`)
+  is never connected to; the `Host` header still rides verbatim into the
+  workbench's `remoteAuthority`.
+
+The split shape's unit (the values here are one real install):
+
+```ini
+[Service]
+User=agent
+Environment=HOME=/home/agent
+ExecStartPre=/usr/bin/install -d -m 0700 -o agent -g agent /home/agent/.local/state/cybermole/editor-run
+ExecStartPre=/bin/rm -f /home/agent/.local/state/cybermole/editor-run/editor.sock
+ExecStart=/home/agent/.local/state/cybermole/editor/node /home/agent/.local/state/cybermole/editor/out/server-main.js \
+  --socket-path /home/agent/.local/state/cybermole/editor-run/editor.sock \
+  --server-base-path /console/editor --without-connection-token \
+  --disable-workspace-trust --telemetry-level off
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/home/agent /home/agent/.local/state/cybermole
+```
+
+and on the console side one env line:
+`Environment=CYBERMOLE_EDITOR_UPSTREAM=unix:/home/agent/.local/state/cybermole/editor-run/editor.sock`.
+`PartOf=agent-console.service` keeps the two lifecycles together (a console
+restart — a deploy — restarts the editor with it). Verify beyond the HTTP
+gate: an authed GET of the boot document must carry the WORKBENCH
+CSP (`worker-src 'self' blob:`, `frame-ancestors 'self'` — the editor proxy's
+own header set), and an upgrade to `/console/editor/stable-…` must answer
+101 through the tunnel.
+
 ## The proxy (server/main.ts + src/lib/terminals/editor.ts)
 
 `CYBERMOLE_EDITOR_UPSTREAM` (e.g. `http://editor:3000`; origin only, validated

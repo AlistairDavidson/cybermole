@@ -93,7 +93,8 @@ export const envSchema = {
     access: 'secret',
     default: 'us-east-1',
   },
-  // e.g. http://editor:3000. Unset: /editor answers 404.
+  // e.g. http://editor:3000, or unix:<abs path to a 0700-dir socket> for an
+  // editor the console doesn't own. Unset: /editor answers 404.
   CYBERMOLE_EDITOR_UPSTREAM: {
     type: 'string',
     context: 'server',
