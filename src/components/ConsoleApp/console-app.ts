@@ -460,6 +460,7 @@ export class ConsoleApp extends HTMLElement {
     const st = this.state;
     if (!st) return;
     const ws = this.selectedWorkspace();
+    this.applyBreadcrumb(st, ws);
     this.sidebar()?.render(st, this.selected, {
       scope: this.scope,
       appsStatus: this.appsStatus,
@@ -472,6 +473,20 @@ export class ConsoleApp extends HTMLElement {
       else tabs.sync(ws);
     } else {
       tabs.setWorkspace(null, st.editor);
+    }
+  }
+
+  /** The header's data-crumb items (AppHeader with sideNav); an empty one hides. */
+  private applyBreadcrumb(st: ConsoleState, ws: WorkspaceState | null): void {
+    const app = ws?.appId ? (st.apps.find(a => a.id === ws.appId)?.name ?? null) : null;
+    for (const [key, text] of [
+      ['app', app],
+      ['workspace', ws?.name ?? null],
+    ] as const) {
+      const crumb = document.querySelector(`app-header [data-crumb="${key}"]`);
+      if (!crumb) continue;
+      crumb.textContent = text ?? '';
+      crumb.toggleAttribute('hidden', text === null);
     }
   }
 

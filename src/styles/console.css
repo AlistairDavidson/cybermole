@@ -66,10 +66,17 @@ console-app, console-app > .console-main, terminal-tabs, .run-host {
 wa-page[data-nav-collapsed] .nav-collapse wa-icon.when-open { display: none; }
 wa-page[data-nav-collapsed] .nav-collapse wa-icon.when-collapsed { display: block; }
 wa-page[data-nav-collapsed]:not([view='mobile']) { --menu-width: var(--cybermole-nav-rail); }
-wa-page[data-nav-collapsed]:not([view='mobile']) workspace-sidebar { display: none; }
-wa-page[data-nav-collapsed] .nav-header { padding-inline: 0; }
+wa-page[data-nav-collapsed]:not([view='mobile']) :is(.nav-column, .side-nav-footer) { display: none; }
 wa-page[data-nav-collapsed] .nav-collapse { align-self: center; }
-wa-page.app-page[view='mobile'] .nav-header { display: none; }
+wa-page.app-page[view='mobile'] .nav-collapse-bar { display: none; }
+/* The navigation column (Base.astro) scrolls as one, so a long app list
+   or tree never spills over the footer (wa-page's body row shrinks; its
+   content doesn't). Its children keep their height. */
+.nav-column { min-height: 0; overflow-y: auto; }
+.nav-column > * { flex-shrink: 0; }
+/* The mobile drawer's footer is an end-justified row; the footer stack
+   spans it to stay start-aligned. */
+.side-nav-footer { flex: 1; }
 wa-page.app-page::part(body) {
   transition: grid-template-columns var(--wa-transition-normal) var(--wa-transition-easing);
 }
@@ -82,9 +89,11 @@ wa-page.app-page::part(body) {
 /* Layout only: a tree item's label part is a flex item that won't shrink
    below its content, and no utility reaches into it. Letting it (and the
    one wrapper inside) span and shrink puts the actions at the end and
-   truncates long names instead of overflowing the drawer. */
-.ws-groups wa-tree-item::part(label) { flex: 1; min-inline-size: 0; }
-.ws-groups .ws-label { flex: 1; min-inline-size: 0; }
+   truncates long names instead of overflowing the drawer. SideNav's
+   section tree takes the same rules. */
+.ws-groups wa-tree-item::part(label),
+.side-nav-tree wa-tree-item::part(label) { flex: 1; min-inline-size: 0; }
+.ws-groups .ws-label, .side-nav-row { flex: 1; min-inline-size: 0; }
 .ws-groups .g-title { min-inline-size: 0; }
 /* The name truncates before the lifecycle chip gives way. */
 .ws-groups .g-chip { flex: none; }
@@ -145,11 +154,6 @@ agent-terminal .terminal-toolbar {
   background: color-mix(in srgb, var(--wa-color-surface-raised) 85%, transparent);
 }
 agent-terminal .terminal-find wa-input { width: 15rem; }
-/* Soft keyboards have no esc, and TUIs need it; desktops have the key. */
-agent-terminal .terminal-toolbar .tb-esc { display: none; }
-@media (width < 768px) {
-  agent-terminal .terminal-toolbar .tb-esc { display: inline-flex; }
-}
 agent-terminal .terminal-status.ok wa-icon { color: var(--wa-color-success-on-quiet); }
 agent-terminal .terminal-status.err wa-icon { color: var(--wa-color-danger-on-quiet); }
 

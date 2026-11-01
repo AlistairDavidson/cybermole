@@ -1,0 +1,56 @@
+---
+// The section nav for a page whose wa-page has a navigation column: Base
+// puts it at the top of that column, above the page's own navigation (the
+// workspace tree), with SideNavFooter in navigation-footer. Not
+// navigation-header: on a phone that becomes the drawer's title. Two flat
+// wa-trees (the workspace list's look) split by a divider: the sections,
+// then All apps and the apps side-nav.ts stamps from GET /api/state.
+// Separate trees because a tree's children must all be tree items.
+import '@awesome.me/webawesome/dist/components/divider/divider.js';
+import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '@awesome.me/webawesome/dist/components/tree/tree.js';
+import '@awesome.me/webawesome/dist/components/tree-item/tree-item.js';
+import SideNavItem from './SideNavItem.astro';
+import type { MenuItem, Section } from './nav';
+
+interface Props {
+  base: string;
+  current: Section | null;
+  logs: boolean;
+}
+const { base, current, logs } = Astro.props;
+
+const sections: MenuItem[] = [
+  { section: 'console', label: 'Console', href: `${base}/`, icon: 'terminal' },
+  { section: 'builder', label: 'Builder', href: `${base}/builder`, icon: 'cubes' },
+  { section: 'jobs', label: 'Jobs', href: `${base}/jobs`, icon: 'clock' },
+  ...(logs ? [{ section: 'logs' as const, label: 'Logs', href: `${base}/logs`, icon: 'file-lines' }] : []),
+];
+const allApps: MenuItem = {
+  section: 'apps',
+  label: 'All apps',
+  href: `${base}/apps`,
+  icon: 'table-cells-large',
+  id: 'nav-apps-all',
+};
+---
+<side-nav data-base={base}>
+  <nav class="wa-stack wa-gap-s" aria-label="sections">
+    <wa-tree class="side-nav-tree" selection="leaf" aria-label="sections">
+      {sections.map(s => <SideNavItem item={s} current={current} />)}
+    </wa-tree>
+    <wa-divider></wa-divider>
+    <wa-tree class="side-nav-tree side-nav-apps" selection="leaf" aria-label="apps">
+      <SideNavItem item={allApps} current={current} />
+      <wa-tree-item class="apps-status" disabled>loading apps…</wa-tree-item>
+    </wa-tree>
+  </nav>
+  <template data-app-item>
+    <wa-tree-item class="app-item">
+      <a class="side-nav-row wa-link-plain wa-cluster wa-flex-nowrap wa-gap-xs" tabindex="-1">
+        <wa-icon></wa-icon>
+        <span class="app-name truncate" aria-hidden="true"></span>
+      </a>
+    </wa-tree-item>
+  </template>
+</side-nav>

@@ -159,6 +159,11 @@ test('the terminal pop-out opens the chrome-free single view and round-trips a k
     const popBtn = page.locator(
       'terminal-tabs agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-toolbar .tb-pop-out',
     );
+    await page
+      .locator(
+        'terminal-tabs agent-terminal:not(wa-tab-panel:not([active]) *) .tb-details wa-icon[slot="summary"]',
+      )
+      .click();
     await expect(popBtn).toBeVisible();
     const [pop] = await Promise.all([page.waitForEvent('popup'), popBtn.click()]);
 

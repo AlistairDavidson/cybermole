@@ -281,11 +281,11 @@ test('ctrl-t opens a shell tab and ctrl-shift-t an agent tab; neither fires in a
 
 // ---------- phone affordances ----------
 
-// Soft keyboards have no esc; TUIs need it (closing dialogs, backing out
-// of screens). The toolbar's esc button (narrow viewports only) sends the
-// byte; `cat -v` renders it as ^[ in the buffer, so the click is observed
-// through the pane, not a side channel.
-test('the toolbar esc button (narrow viewports) sends an escape byte to the pane', async ({
+// Soft keyboards have no esc or arrows; TUIs need them (closing dialogs,
+// walking menus and history). The collapsible toolbar sends them; `cat -v`
+// renders ESC as ^[ in the buffer, so each click is observed through the
+// pane, not a side channel. Its close asks before ending the terminal.
+test('the toolbar opens to send esc and arrows to the pane, and closes the tab', async ({
   page,
 }) => {
   test.setTimeout(60_000);
@@ -293,25 +293,48 @@ test('the toolbar esc button (narrow viewports) sends an escape byte to the pane
   const ws = await makeWorkspace(page, 'esc button ws');
   await waitForTermText(page, AGENT_MARKER);
 
-  // Wide: the button stays out of the toolbar — the hardware key is there.
-  await expect(page.locator('agent-terminal .terminal-toolbar .tb-esc')).toBeHidden();
-
-  // Narrow: it appears and one click is one ESC into the pty.
-  await page.setViewportSize({ width: 600, height: 900 });
-  const esc = page.locator(
-    'agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-toolbar .tb-esc',
-  );
+  const bar = page.locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-toolbar');
+  const esc = bar.locator('.tb-esc');
+  // Collapsed: only its summary shows.
+  await expect(esc).toBeHidden();
+  await bar.locator('.tb-details wa-icon[slot="summary"]').click();
   await expect(esc).toBeVisible();
+  // The tab strip holds no close of its own; the toolbar's is the one.
+  await expect(page.locator('terminal-tabs wa-tab .tab-close')).toHaveCount(0);
+  await expect(
+    page.locator('terminal-tabs wa-tab:not(.editor-tab) wa-icon[name="terminal"]'),
+  ).not.toHaveCount(0);
+
+  // Opening the toolbar took focus; hand it back to the pane.
+  await page
+    .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
+    .click();
   await page.keyboard.type('cat -v\n');
   await waitForTermText(page, 'cat -v');
   // Let the shell exec cat (the echo above arrives while still typing);
-  // then the byte shows as ^[ in cat's output.
+  // then the bytes show in cat's output.
   await page.waitForTimeout(500);
-  await esc.click();
-  await waitForTermText(page, '^[', 10_000);
-
-  // The click handed focus back to the pane: typing still lands in it.
+  // One key per line: tmux would read ESC and a quick next key as one
+  // meta key. Each click hands focus back to the pane, so Enter lands in
+  // it and cat echoes the line.
+  for (const [button, shown] of [
+    ['.tb-esc', 'X^[Y'],
+    ['.tb-up', 'X^[[AY'],
+    ['.tb-down', 'X^[[BY'],
+  ] as const) {
+    await page.keyboard.type('X');
+    await bar.locator(button).click();
+    await page.waitForTimeout(600);
+    await page.keyboard.type('Y\n');
+    await waitForTermText(page, shown, 10_000);
+  }
   await page.keyboard.press('Control+c');
+
+  const tabs = page.locator('terminal-tabs wa-tab[data-term]:not(.editor-tab)');
+  const before = await tabs.count();
+  await bar.locator('.tb-close').click();
+  await page.click('#confirm-delete-ok');
+  await expect(tabs).toHaveCount(before - 1);
   await deleteWorkspace(page, ws);
 });
 

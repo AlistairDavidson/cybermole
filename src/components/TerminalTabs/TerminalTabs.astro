@@ -85,19 +85,9 @@ import AgentTerminal from '../AgentTerminal/AgentTerminal.astro';
       draggable="true"
       aria-keyshortcuts="Shift+ArrowLeft Shift+ArrowRight"
     >
+      <wa-icon name="terminal" aria-hidden="true"></wa-icon>
       <span class="tab-label truncate"></span>
-      <wa-button
-        class="tab-close"
-        appearance="plain"
-        size="xs"
-        tabindex="-1"
-      >
-        <wa-icon name="xmark" label="close terminal"></wa-icon>
-      </wa-button>
     </wa-tab>
-  </template>
-  <template data-close-tip>
-    <wa-tooltip>close this terminal</wa-tooltip>
   </template>
   <template data-editor-tab-tip>
     <wa-tooltip>open the workspace folder in the editor</wa-tooltip>

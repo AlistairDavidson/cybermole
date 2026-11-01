@@ -92,9 +92,9 @@ export class TerminalTabs extends HTMLElement {
     this.addEventListener('terminal-pop-out', e => {
       this.popTerminal((e as CustomEvent<{ id: TerminalId }>).detail.id);
     });
-    // Capture: the close button sits inside its tab, and the group's own
-    // click handler (in its shadow root) would select the tab first.
-    this.addEventListener('click', e => this.onCloseClick(e), true);
+    this.addEventListener('terminal-close', e => {
+      this.emit('close-terminal', { id: (e as CustomEvent<{ id: TerminalId }>).detail.id });
+    });
     this.addEventListener('click', e => this.onClick(e));
     // Capture: Shift+Arrow must reach the reorder before the group's arrow
     // handler walks focus.
@@ -212,7 +212,6 @@ export class TerminalTabs extends HTMLElement {
       this.tabs.delete(id);
       this.panels.get(id)!.remove();
       this.panels.delete(id);
-      this.dropTip(`tab-close-${id}`);
     }
     if (this.active !== null && this.active !== EDITOR && !seen.has(this.active)) {
       this.active = null;
@@ -357,14 +356,6 @@ export class TerminalTabs extends HTMLElement {
   }
 
   // ---- clicks and keys ----
-
-  private onCloseClick(e: MouseEvent): void {
-    if (!(e.target as Element).closest('.tab-close')) return;
-    const id = this.terminalTabOf(e);
-    if (id === null) return;
-    e.stopPropagation();
-    this.emit('close-terminal', { id });
-  }
 
   private onClick(e: MouseEvent): void {
     const target = e.target as Element;
@@ -522,12 +513,9 @@ export class TerminalTabs extends HTMLElement {
     tab.setAttribute('panel', t.id);
     const panel = this.stamp<HTMLElement>('data-panel');
     panel.setAttribute('name', t.id);
-    const close = tab.querySelector<HTMLElement>('.tab-close')!;
-    close.id = `tab-close-${t.id}`;
     this.tabs.set(t.id, tab);
     this.panels.set(t.id, panel);
     this.group.append(tab, panel);
-    this.addTip('data-close-tip', close);
   }
 
   /** Only touches what changed (including index-shifted "term N" labels). */

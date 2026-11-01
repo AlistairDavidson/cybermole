@@ -5,6 +5,8 @@
 // the drawer toggle, the Apps menu and the account menu (settings,
 // sign-out). The wa-* imports here only SSR; the page's client script
 // imports app-header.ts, which re-imports them.
+import '@awesome.me/webawesome/dist/components/breadcrumb/breadcrumb.js';
+import '@awesome.me/webawesome/dist/components/breadcrumb-item/breadcrumb-item.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/divider/divider.js';
 import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
@@ -24,9 +26,18 @@ interface Props {
   logs?: boolean;
   /** The page has a wa-page navigation column for the toggle to open. */
   drawer?: boolean;
+  /** The sections live in the navigation column (SideNav): the bar keeps
+   *  the toggle and brand, and shows where you are as a breadcrumb. */
+  sideNav?: boolean;
 }
 
-const { base, current, logs, drawer = true } = Astro.props;
+const { base, current, logs, drawer = true, sideNav = false } = Astro.props;
+const sectionHref: Record<Section, string> = {
+  console: `${base}/`, apps: `${base}/apps`, builder: `${base}/builder`, jobs: `${base}/jobs`, logs: `${base}/logs`, settings: `${base}/settings`,
+};
+const sectionLabel: Record<Section, string> = {
+  console: 'Console', apps: 'Apps', builder: 'Builder', jobs: 'Jobs', logs: 'Logs', settings: 'Settings',
+};
 
 const left: MenuItem[] = [
   { section: 'console', label: 'Cybermole', href: `${base}/`, icon: 'cybermole', className: 'app-nav-link app-brand' },
@@ -50,19 +61,35 @@ const appsCurrent = current === 'apps' ? { 'aria-current': 'page', variant: 'bra
         data-toggle-nav
         appearance="plain"
         size="s"
-        aria-label="open the workspace drawer"
+        aria-label="open navigation"
         aria-expanded="false"
       >
-        <wa-icon name="bars" label="open the workspace drawer"></wa-icon>
+        <wa-icon name="bars" label="open navigation"></wa-icon>
       </wa-button>
     )}
-    <NavLink item={left[0]!} current={current} />
-    <wa-tooltip for="nav-apps">Apps</wa-tooltip>
-    {left.slice(1).map(l => <NavLink item={l} current={current} />)}
-    {logs !== false && <NavLink item={logsLink} current={current} hidden={logs === undefined} />}
+    {sideNav ? (
+      <>
+        <NavLink item={{ ...left[0]!, id: 'nav-brand' }} current={null} />
+        <!-- The page fills the data-crumb items it knows (the selected
+             app and workspace); an empty one stays hidden. -->
+        <wa-breadcrumb class="where" label="location">
+          <wa-breadcrumb-item href={current ? sectionHref[current] : undefined}>{current ? sectionLabel[current] : ''}</wa-breadcrumb-item>
+          <wa-breadcrumb-item data-crumb="app" hidden></wa-breadcrumb-item>
+          <wa-breadcrumb-item data-crumb="workspace" hidden></wa-breadcrumb-item>
+        </wa-breadcrumb>
+      </>
+    ) : (
+      <>
+        <NavLink item={left[0]!} current={current} />
+        <wa-tooltip for="nav-apps">Apps</wa-tooltip>
+        {left.slice(1).map(l => <NavLink item={l} current={current} />)}
+        {logs !== false && <NavLink item={logsLink} current={current} hidden={logs === undefined} />}
+      </>
+    )}
   </nav>
 
 
+  {!sideNav && (<>
   <!-- The Apps menu: its items are stamped from the template by
        app-header.ts off GET /api/state, on connect and on every open. -->
   <wa-dropdown class="apps-menu">
@@ -99,4 +126,5 @@ const appsCurrent = current === 'apps' ? { 'aria-current': 'page', variant: 'bra
     </wa-dropdown-item>
   </wa-dropdown>
   <wa-tooltip for="nav-account">Account</wa-tooltip>
+  </>)}
 </app-header>

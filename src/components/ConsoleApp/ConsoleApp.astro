@@ -2,7 +2,8 @@
 // The console shell, on both pages: scope "console" (the orchestration
 // page — console workspaces, jobs, settings) or "builder" (the app
 // portfolio — app workspace groups, lifecycle chips, + app). Rendered into
-// Base.astro's wa-page, filling its navigation slots and its main area.
+// Base.astro's wa-page, filling its navigation footer and its main area;
+// the page puts the WorkspaceSidebar in Base's navigation column.
 // The dialogs live in <console-app>, outside the sidebar's restamped
 // groups, so their state survives it. The wa-* imports here only SSR;
 // console-app.ts re-imports them client-side (AGENTS.md).
@@ -13,7 +14,6 @@ import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/toast/toast.js';
 import WaField from '../form/WaField.astro';
 import TerminalTabs from '../TerminalTabs/TerminalTabs.astro';
-import WorkspaceSidebar from '../WorkspaceSidebar/WorkspaceSidebar.astro';
 import { zodSchemaToHTMLAttributes } from '../../lib/web/zod.service';
 import { appForm, buildSessionForm, consoleWorkspaceForm } from '../../schemas/api';
 
@@ -30,11 +30,11 @@ const consoleWsValidation = zodSchemaToHTMLAttributes(consoleWorkspaceForm);
 const buildValidation = zodSchemaToHTMLAttributes(buildSessionForm);
 const wsValidation = scope === 'builder' ? buildValidation : consoleWsValidation;
 ---
-<!-- Three wa-page slots (Base.astro's shell): the drawer column's header
-     (the desktop collapse control) and the sidebar, then the main area,
-     whose <console-app> controls all three — the sidebar's events reach it
+<!-- Two wa-page slots (Base.astro's shell): the drawer column's footer
+     (the desktop collapse control, after SideNavFooter) and the main area,
+     whose <console-app> also drives the sidebar — its events reach it
      through the document. -->
-<div slot="navigation-header" class="nav-header">
+<div slot="navigation-footer" class="nav-collapse-bar wa-stack">
   <wa-button
     id="nav-collapse"
     class="nav-collapse wa-align-self-end"
@@ -48,7 +48,6 @@ const wsValidation = scope === 'builder' ? buildValidation : consoleWsValidation
   </wa-button>
   <wa-tooltip for="nav-collapse" placement="right">collapse / expand the sidebar</wa-tooltip>
 </div>
-<WorkspaceSidebar scope={scope} />
 <console-app scope={scope}>
   <main class="console-main"><TerminalTabs /></main>
   <wa-toast placement="bottom-start"></wa-toast>

@@ -9,7 +9,7 @@ interface Props {
   hidden?: boolean;
 }
 const { item, current, hidden = false } = Astro.props;
-const id = `nav-${item.section}`;
+const id = item.id ?? `nav-${item.section}`;
 const brand = item.icon === 'cybermole';
 ---
 <wa-button

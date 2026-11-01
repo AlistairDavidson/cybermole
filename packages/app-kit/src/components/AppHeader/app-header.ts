@@ -4,6 +4,8 @@
 // wired here. The console's base
 // comes from the element's data-base, so the same module serves both.
 import '../../wa-client';
+import '@awesome.me/webawesome/dist/components/breadcrumb/breadcrumb.js';
+import '@awesome.me/webawesome/dist/components/breadcrumb-item/breadcrumb-item.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/divider/divider.js';
 import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
@@ -11,7 +13,9 @@ import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
 import { defineElement } from '../../element';
-import { appMenuEntries, parseMenuState, type AppMenuEntry } from '../../app-menu';
+import { appMenuEntries, type AppMenuEntry } from '../../app-menu';
+import { fetchMenuState } from './menu-state';
+import './side-nav';
 
 type WaToast = HTMLElement & {
   create(message: string, options?: Record<string, unknown>): Promise<unknown>;
@@ -28,7 +32,7 @@ function toastError(message: string): void {
 
 function syncNavToggle(page: Element, button: Element): void {
   const open = page.hasAttribute('nav-open');
-  const label = open ? 'close the workspace drawer' : 'open the workspace drawer';
+  const label = open ? 'close navigation' : 'open navigation';
   button.setAttribute('aria-expanded', String(open));
   button.setAttribute('aria-label', label);
   const icon = button.querySelector('wa-icon');
@@ -73,20 +77,12 @@ class AppsMenu {
   }
 
   private async load(): Promise<void> {
-    let json: unknown;
-    try {
-      const response = await fetch(`${this.base}/api/state`);
-      if (response.status === 401) {
-        this.showStatus('signed out');
-        return;
-      }
-      json = await response.json();
-    } catch {
-      this.showStatus('could not load apps');
+    const state = await fetchMenuState(this.base);
+    if (state === 'signed-out') {
+      this.showStatus('signed out');
       return;
     }
-    const state = parseMenuState(json);
-    if (!state) {
+    if (state === null) {
       this.showStatus('could not load apps');
       return;
     }
@@ -144,6 +140,17 @@ defineElement('app-header', host => {
   // The drawer toggle's disclosure semantics follow wa-page's nav-open,
   // whichever way it flipped (toggle, light-dismiss, Escape).
   const page = host.closest('wa-page');
+  // SideNav's sign-out sits in the page's navigation footer, outside the bar.
+  page?.addEventListener(
+    'click',
+    e => {
+      const link = (e.target as Element).closest('[data-sign-out]');
+      if (!link) return;
+      e.preventDefault();
+      void signOut(base);
+    },
+    { signal },
+  );
   const toggle = host.querySelector('#nav-drawer-toggle');
   let navObserver: MutationObserver | null = null;
   if (page && toggle) {

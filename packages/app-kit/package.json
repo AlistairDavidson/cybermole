@@ -7,6 +7,7 @@
     "./src/wa-client.ts",
     "./src/agent-console.ts",
     "./src/components/AppHeader/app-header.ts",
+    "./src/components/AppHeader/side-nav.ts",
     "./src/components/AppShell/app-shell.ts",
     "./src/components/**/*.astro"
   ],
@@ -22,6 +23,8 @@
     "./app-menu": "./src/app-menu.ts",
     "./AppShell.astro": "./src/components/AppShell/AppShell.astro",
     "./AppHeader.astro": "./src/components/AppHeader/AppHeader.astro",
+    "./SideNav.astro": "./src/components/AppHeader/SideNav.astro",
+    "./SideNavFooter.astro": "./src/components/AppHeader/SideNavFooter.astro",
     "./app-header": "./src/components/AppHeader/app-header.ts",
     "./app-shell": "./src/components/AppShell/app-shell.ts",
     "./testing": "./src/testing/index.mts"

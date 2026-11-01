@@ -1011,6 +1011,7 @@ test('terminal toolbar: copy output and download transcript capture the terminal
     'agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-toolbar',
   );
   await expect(toolbar).toBeVisible();
+  await openToolbar(page);
   const copyBtn = toolbar.locator('wa-button.tb-copy-output');
   const dlBtn = toolbar.locator('wa-button.tb-download-transcript');
   await expect(copyBtn).toHaveCount(1);
@@ -1109,6 +1110,13 @@ Promise<{ status: number; json: any }> {
   );
 }
 
+/** The visible pane's toolbar starts collapsed; open it. */
+async function openToolbar(page: Page): Promise<void> {
+  await page
+    .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .tb-details wa-icon[slot="summary"]')
+    .click();
+}
+
 // Pop-out moves the pane to a /view?t=<id> tab (the chrome-free single
 // view). The server attaches with `tmux attach -d`, so the main page's
 // socket must close first. The row
@@ -1127,6 +1135,7 @@ test("popping a tab moves the pane to a new tab: main socket down, popped tab at
   const popBtn = page.locator(
     'terminal-tabs agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-toolbar .tb-pop-out',
   );
+  await openToolbar(page);
   await expect(popBtn).toBeVisible();
   await expect(page.locator('terminal-tabs .tb-pop-out')).toHaveCount(1);
 
@@ -1165,6 +1174,7 @@ test("popping a tab moves the pane to a new tab: main socket down, popped tab at
   await popout.close(); // its pagehide is a no-op now
 
   // Pop again and close the popped tab: its pagehide re-attaches here unprompted.
+  await openToolbar(page); // the pane is a fresh one, collapsed
   const [popout2] = await Promise.all([page.waitForEvent('popup'), popBtn.click()]);
   await popout2.waitForSelector('single-view agent-terminal');
   await expect(popout2.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`);

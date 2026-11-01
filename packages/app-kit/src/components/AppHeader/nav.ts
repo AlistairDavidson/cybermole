@@ -7,4 +7,6 @@ export type MenuItem = {
   /** A default-library icon name, or 'cybermole' for the brand glyph. */
   icon: string;
   className?: string;
+  /** Defaults to nav-<section>. */
+  id?: string;
 };

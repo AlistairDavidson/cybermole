@@ -18,6 +18,7 @@ import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/input/input.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
+import '@awesome.me/webawesome/dist/components/details/details.js';
 import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
 import '@awesome.me/webawesome/dist/components/divider/divider.js';
 // The protocol types come from the kit's terminal-protocol (one definition,
@@ -516,35 +517,41 @@ export class AgentTerminal extends HTMLElement {
       anchor.id = `${pane}-${tip.dataset.tip}`;
       tip.setAttribute('for', anchor.id);
     }
-    // The move itself belongs to <terminal-tabs>, which catches the bubbled event.
-    bar.querySelector('.tb-pop-out')?.addEventListener('click', () => {
-      const id = this.terminalId;
-      if (id === null) return;
-      this.dispatchEvent(
-        new CustomEvent('terminal-pop-out', {
-          detail: { id },
-          bubbles: true,
-          composed: true,
-        }),
-      );
-    });
+    // The move and the close belong to <terminal-tabs>, which catches the
+    // bubbled events.
+    const relay = (cls: string, type: string): void => {
+      bar.querySelector(cls)?.addEventListener('click', () => {
+        const id = this.terminalId;
+        if (id === null) return;
+        this.dispatchEvent(
+          new CustomEvent(type, { detail: { id }, bubbles: true, composed: true }),
+        );
+      });
+    };
+    relay('.tb-pop-out', 'terminal-pop-out');
+    relay('.tb-close', 'terminal-close');
     bar.querySelector('.tb-copy-output')?.addEventListener('click', () => void this.copyOutput());
     bar
       .querySelector('.tb-download-transcript')
       ?.addEventListener('click', () => this.downloadTranscript());
-    // A phone's soft keyboard has no esc, and TUIs need it (closing
-    // dialogs, backing out of screens). One byte, then back to the pane.
-    // CSS keeps the button to narrow viewports — a hardware key renders
-    // it redundant.
+    // Keys a phone's soft keyboard lacks, and TUIs need (esc backs out of
+    // dialogs, arrows walk menus and history).
     // Focus FIRST, send after: clicking blurs the terminal (xterm emits a
     // focus-out), and refocusing emits a focus-in — a byte sent between
     // the two glues onto the focus-in sequence (tmux reads ESC+[I as one
-    // key) and never reaches the pane as ESC. After the focus-in, the
-    // byte travels alone.
-    bar.querySelector('.tb-esc')?.addEventListener('click', () => {
-      this.terminal?.focus();
-      this.send({ type: 'input', data: '\u001b' });
-    });
+    // key) and never reaches the pane as the key.
+    const key = (cls: string, data: () => string): void => {
+      bar.querySelector(cls)?.addEventListener('click', () => {
+        this.terminal?.focus();
+        this.send({ type: 'input', data: data() });
+      });
+    };
+    // Arrows follow the pane's cursor-key mode (DECCKM), as xterm's own keys do.
+    const arrow = (final: 'A' | 'B') => (): string =>
+      `\u001b${this.terminal?.modes.applicationCursorKeysMode ? 'O' : '['}${final}`;
+    key('.tb-esc', () => '\u001b');
+    key('.tb-up', arrow('A'));
+    key('.tb-down', arrow('B'));
     const input = bar.querySelector('.terminal-find-input') as
       (HTMLElement & { value: string | null; focus(): void }) | null;
     this.findInput = input;
@@ -693,10 +700,9 @@ export class AgentTerminal extends HTMLElement {
     this.activeKey = key;
     this.attachedTarget = null;
     this.terminalId = mode === 'terminal' ? (target as TerminalId) : null;
-    // The toolbar is wired before the mode is known; reveal pop-out here.
-    this.toolbar
-      ?.querySelector('.tb-pop-out')
-      ?.classList.toggle('hidden', this.terminalId === null);
+    // The toolbar is wired before the mode is known; reveal its tab actions here.
+    for (const action of this.toolbar?.querySelectorAll('.tb-pop-out, .tb-close') ?? [])
+      action.classList.toggle('hidden', this.terminalId === null);
     this.ended = true;
     const msg: ClientMsg =
       mode === 'run' ? { type: 'attach', mode, target } : { type: 'attach', mode, id: target };
