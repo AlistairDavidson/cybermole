@@ -17,7 +17,7 @@ import { databaseRead, databaseUpdate, type DatabaseReadResult } from '@cybermol
 import { componentLogger } from '../platform/logger';
 import { emitDomainEvent } from '../platform/events';
 import { terminalSessionName } from './tmux';
-import { splitCommandLine } from './terminal-defaults';
+import { agentTabArgv, splitCommandLine } from './terminal-defaults';
 import { reorderUpdates, type TerminalCommand } from './tab-order';
 import { workspaceNameFromCwd } from './workspace-name';
 import {
@@ -624,8 +624,9 @@ export class Workspaces {
   /** Row first, then the spawn. A failed command read returns before the
    *  insert, so no row. brief (agent tabs only) is appended as the command's
    *  last argument — the opening prompt a pi command turns into the first
-   *  message. A respawn after the session dies runs the bare command: the
-   *  brief kicks off, it is not a standing instruction. */
+   *  message. A respawn after the session dies runs the command without
+   *  it (a pi tab resumes its conversation by session id): the brief kicks
+   *  off, it is not a standing instruction. */
   private async openTab(
     workspaceId: WorkspaceId,
     cwd: string,
@@ -647,7 +648,6 @@ export class Workspaces {
     if (!resolved.ok)
       return fail('database_error', resolved.errorMessage ?? 'could not read the terminal command');
     const argv = splitCommandLine(resolved.data.value);
-    const spawnArgv = command === 'agent' && brief !== undefined ? [...argv, brief] : argv;
     const actor = this.actor();
     if (!actor.ok) return fail('database_error', actor.errorMessage);
     const order = databaseRead(
@@ -662,6 +662,9 @@ export class Workspaces {
     );
     if (!order.ok) return fail('database_error', order.errorMessage);
     const id = asTerminalId(randomUUID());
+    const agentArgv = command === 'agent' ? agentTabArgv(argv, id) : argv;
+    const spawnArgv =
+      command === 'agent' && brief !== undefined ? [...agentArgv, brief] : agentArgv;
     const now = createdAt;
     const inserted = databaseUpdate('could not save the terminal', () =>
       this.deps.db.run(
@@ -885,6 +888,14 @@ export class Workspaces {
   }
 
   /** Flat list; grouping by app is the client's job. */
+  /** Every terminal row's id: what the session reaper keeps. */
+  terminalIds(): DatabaseReadResult<Set<TerminalId>> {
+    return databaseRead('could not read terminals', () => {
+      const rows = this.deps.db.all(qb.selectFrom('terminals').select('id'));
+      return new Set(rows.map(r => r.id));
+    });
+  }
+
   async workspaceTree(): Promise<WorkspaceTreeResult> {
     const fail = (errorMessage: string) =>
       ({

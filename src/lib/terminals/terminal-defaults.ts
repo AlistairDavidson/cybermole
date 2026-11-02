@@ -3,6 +3,7 @@
 // at spawn time, so a /settings save applies to the next tab. The env
 // values carry their own defaults (env.ts): a login shell, and the vendored
 // pi binary when installed.
+import * as path from 'node:path';
 import { qb, type StateDb } from '../platform/db';
 import { databaseRead, databaseUpdate, type DatabaseReadResult } from '@cybermole/app-kit';
 import { ENV } from '../platform/env';
@@ -19,6 +20,28 @@ export function resolveCommand(override: string | null, envValue: string): strin
 
 export function splitCommandLine(line: string): string[] {
   return line.trim().split(/\s+/).filter(Boolean);
+}
+
+const PI_SESSION_FLAGS = new Set([
+  '--session',
+  '--session-id',
+  '--continue',
+  '-c',
+  '--resume',
+  '-r',
+  '--no-session',
+  '--fork',
+]);
+
+/** A pi agent tab keeps one conversation for its lifetime: --session-id
+ *  <terminal id> creates it on the first spawn and resumes it on every
+ *  respawn (a dead session, a redeploy's refresh). Any other agent command,
+ *  or a pi command that already picks its session, runs as configured. */
+export function agentTabArgv(argv: string[], terminalId: string): string[] {
+  const bin = argv[0];
+  if (bin === undefined || path.basename(bin) !== 'pi') return argv;
+  if (argv.some(arg => PI_SESSION_FLAGS.has(arg.split('=', 1)[0]!))) return argv;
+  return [...argv, '--session-id', terminalId];
 }
 
 /** A corrupt row reads as unset; only a db failure throws. */

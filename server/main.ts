@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import * as zlib from 'node:zlib';
+import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
 import * as pty from 'node-pty';
@@ -73,10 +74,18 @@ import {
 } from '../src/lib/apps/app-host-supervisor';
 import { grafanaExploreUrlFromEnv } from '../src/lib/platform/grafana';
 import {
+  agentTabArgv,
   resolvedAgentCommand,
   resolvedShellCommand,
   splitCommandLine,
 } from '../src/lib/terminals/terminal-defaults';
+import {
+  INSTANCE_SETTING_KEY,
+  SESSION_STAMP_VAR,
+  planSessionHygiene,
+  sessionGeneration,
+  sessionStamp,
+} from '../src/lib/terminals/session-hygiene';
 import { startInternalApi, InternalSocketOwnedError, type InternalApiHandle } from './internal-api';
 import { ObjectStore } from '../src/lib/platform/storage';
 import type { ClientMsg, ServerMsg } from '@cybermole/app-kit';
@@ -216,6 +225,27 @@ const route = (p: string): string => (CFG.base === '/' ? p : CFG.base + p);
 
 const stateDb = new StateDb(CFG.dbFile);
 const auth: AuthType = new Auth(stateDb);
+
+// Every session is stamped with this install and the generation it was
+// spawned under (session-hygiene.ts): the build marker is the compiled
+// server's mtime, so a redeploy (or a session-env change) is a new
+// generation and the boot pass refreshes the old tabs.
+const sessionInstance = ((): string => {
+  const existing = stateDb.getSetting(INSTANCE_SETTING_KEY);
+  if (existing !== null) return existing;
+  const fresh = randomUUID();
+  stateDb.setSetting(INSTANCE_SETTING_KEY, fresh);
+  return fresh;
+})();
+const buildMarker = ((): string => {
+  try {
+    return String(fs.statSync(path.join(APP_ROOT, 'dist-server', 'server', 'main.js')).mtimeMs);
+  } catch {
+    return 'unbuilt';
+  }
+})();
+const sessionGenerationId = sessionGeneration(buildMarker, sessionEnv);
+sessionEnv[SESSION_STAMP_VAR] = sessionStamp(sessionInstance, sessionGenerationId);
 // The notifier returns a delivery promise (awaitable in tests); the
 // scheduler's seam is fire-and-forget, so hand it a void wrapper.
 const notifyRunFinished = createRunFinishNotifier({ db: stateDb });
@@ -366,6 +396,37 @@ const services = createServices({
 });
 const shutdownScheduler = (): void => scheduler.stop();
 const shutdownLivenessWatch = (): void => stopLivenessWatch();
+
+/** Kills this install's orphaned tab sessions, and at boot its stale ones
+ *  too (their tabs respawn on the next attach). Never throws. */
+async function sessionHygiene(atBoot: boolean): Promise<void> {
+  const ids = services.workspaces.terminalIds();
+  if (!ids.ok) return;
+  const plan = planSessionHygiene({
+    sessions: await tmux.liveSessionEnv(SESSION_STAMP_VAR),
+    instance: sessionInstance,
+    generation: sessionGenerationId,
+    terminalIds: ids.data.value,
+  });
+  for (const name of plan.orphans) {
+    if (await tmux.killSession(name))
+      bootLog.info(`reaped orphan session ${name} (no terminal row)`);
+  }
+  if (!atBoot) return;
+  for (const name of plan.stale) {
+    if (await tmux.killSession(name))
+      bootLog.info(`refreshed ${name}: spawned under an older build or session env`);
+  }
+  if (plan.foreign.length > 0)
+    bootLog.info(
+      `tmux socket ${tmux.SOCKET} also holds sessions this install didn't spawn ` +
+        `(left alone): ${plan.foreign.join(', ')}`,
+    );
+}
+const SESSION_REAP_INTERVAL_MS = 60_000;
+void sessionHygiene(true);
+const sessionReaper = setInterval(() => void sessionHygiene(false), SESSION_REAP_INTERVAL_MS);
+sessionReaper.unref();
 
 /** Shared by the HTTP proxy and the WS upgrade tunnel: registered slugs, or
  *  null when the state db can't be read (fail closed). */
@@ -1399,10 +1460,11 @@ function attach(ws: WebSocket, token: SessionToken): void {
             failed('could not read the terminal defaults');
             return;
           }
+          const argv = splitCommandLine(command.data.value);
           const spawned = await spawnTerminalSession(
             name,
             found.data.cwd,
-            splitCommandLine(command.data.value),
+            found.data.agent ? agentTabArgv(argv, id.data) : argv,
             found.data.env ?? undefined,
           );
           if (!spawned.ok) {
@@ -1525,6 +1587,7 @@ const shutdownSteps: Array<() => void | Promise<void>> = [
   },
   () => {
     shutdownLivenessWatch();
+    clearInterval(sessionReaper);
   },
   () => {
     autoUpdater.stop();

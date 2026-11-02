@@ -174,6 +174,23 @@ export async function liveSessionNames(): Promise<Set<TmuxSessionName>> {
   return new Set(stdout.split('\n').filter(Boolean).map(asTmuxSessionName));
 }
 
+/** Live sessions with the value of one session env var (null when unset).
+ *  Can't fail: a down server is an empty map, an unreadable session null. */
+export async function liveSessionEnv(
+  variable: string,
+): Promise<Map<TmuxSessionName, string | null>> {
+  const out = new Map<TmuxSessionName, string | null>();
+  for (const name of await liveSessionNames()) {
+    const { error, stdout } = await tmux(SOCKET, ['show-environment', '-t', name, variable]);
+    const line = stdout.trim();
+    out.set(
+      name,
+      !error && line.startsWith(`${variable}=`) ? line.slice(variable.length + 1) : null,
+    );
+  }
+  return out;
+}
+
 /** Any tmux error reads as "no such session". */
 export async function hasSession(name: TmuxSessionName): Promise<boolean> {
   const { error } = await tmux(SOCKET, ['has-session', '-t', name]);

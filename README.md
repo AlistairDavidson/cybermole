@@ -45,7 +45,12 @@ containers and two uids (server vs tmux/terminals) — see
   same tmux session on its own, with backoff. Tabs carry live dots; a tab
   whose session died (a workspace-container loss) respawns fresh at the
   workspace cwd on its next attach — the tabs and structure always
-  survive. Any tab is deep-linkable (`/?t=<terminal uuid>`).
+  survive; a pi agent tab resumes its own conversation (`--session-id`
+  = the terminal's id). Every session is stamped with the install and the
+  generation (build + session env) it was spawned under: a redeploy's boot
+  refreshes the older tabs (they respawn on attach with the new code and
+  env), and a reaper kills tab sessions whose row is gone. Sessions the
+  install didn't spawn are logged, never killed. Any tab is deep-linkable (`/?t=<terminal uuid>`).
 - **Editor** — a VSCodium (reh-web) tab per workspace: self-hosted VS
   Code in the browser with server-side files, served same-origin through
   cybermole's `/editor` proxy behind the session gate — every tab opens its
