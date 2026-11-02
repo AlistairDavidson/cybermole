@@ -1,0 +1,41 @@
+---
+// The navigation toggle that leads every page's top row: one button per
+// wa-page view. Mobile's is wa-page's own data-toggle-nav (it opens the
+// drawer; WA hides it on desktop); desktop's hides and shows the column
+// (nav-toggle.ts, remembered across pages and reloads).
+import '@awesome.me/webawesome/dist/components/button/button.js';
+import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
+
+interface Props {
+  /** The parent's slot it fills (the tab strip's "nav"). */
+  slotName?: string;
+}
+const { slotName } = Astro.props;
+---
+<nav-toggle
+  class="wa-cluster wa-flex-nowrap wa-gap-0 wa-align-self-center"
+  {...(slotName ? { slot: slotName } : {})}
+>
+  <wa-button
+    id="nav-drawer-toggle"
+    data-toggle-nav
+    appearance="plain"
+    size="s"
+    aria-label="open navigation"
+    aria-expanded="false"
+  >
+    <wa-icon name="bars" label="open navigation"></wa-icon>
+  </wa-button>
+  <wa-button
+    id="nav-collapse"
+    class="wa-desktop-only"
+    appearance="plain"
+    size="s"
+    aria-label="hide the sidebar"
+    aria-expanded="true"
+  >
+    <wa-icon name="bars" label="hide the sidebar"></wa-icon>
+  </wa-button>
+  <wa-tooltip for="nav-collapse">hide / show the sidebar</wa-tooltip>
+</nav-toggle>

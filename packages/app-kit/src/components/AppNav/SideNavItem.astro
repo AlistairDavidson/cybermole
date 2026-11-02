@@ -1,0 +1,25 @@
+---
+// One SideNav section: a tree item whose row is the link. The tree owns
+// focus, so the link takes none; side-nav.ts follows it on Enter/Space and
+// on a click beside it. The icon's label is the accessible name; the
+// visible label is aria-hidden so the name isn't read twice.
+import type { MenuItem, Section } from './nav';
+
+interface Props {
+  item: MenuItem;
+  current: Section | null;
+  hidden?: boolean;
+}
+const { item, current, hidden = false } = Astro.props;
+const icon = item.icon === 'cybermole' ? { library: 'brand', name: 'mole' } : { name: item.icon };
+---
+<wa-tree-item
+  id={item.id ?? `nav-${item.section}`}
+  {...(item.section === current ? { selected: '', 'aria-current': 'page' } : {})}
+  {...(hidden ? { hidden: '' } : {})}
+>
+  <a class="side-nav-row wa-link-plain wa-cluster wa-flex-nowrap wa-gap-xs" href={item.href} tabindex="-1">
+    <wa-icon {...icon} label={item.label}></wa-icon>
+    <span class="truncate" aria-hidden="true">{item.label}</span>
+  </a>
+</wa-tree-item>

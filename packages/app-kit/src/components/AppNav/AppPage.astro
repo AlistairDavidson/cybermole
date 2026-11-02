@@ -1,0 +1,43 @@
+---
+// The cybermole page shell, for the console's pages (Base.astro) and every
+// app's (AppShell): one wa-page whose navigation column is the common nav
+// (SideNav, then the page's own "navigation" slot), its footer
+// SideNavFooter, and a top row led by NavToggle. A page whose content
+// brings its own top row (the console's tab strip, carrying NavToggle)
+// says so with ownTopRow. The page's <main> goes in the default slot.
+// The client half is app-nav.ts. SSR can't see the data-toggle-nav
+// button, hence disable-navigation-toggle.
+import '@awesome.me/webawesome/dist/components/divider/divider.js';
+import '@awesome.me/webawesome/dist/components/page/page.js';
+import NavToggle from './NavToggle.astro';
+import SideNav from './SideNav.astro';
+import SideNavFooter from './SideNavFooter.astro';
+import type { Section } from './nav';
+import './app-nav.css';
+
+interface Props {
+  base: string;
+  current: Section | null;
+  /** See SideNav. */
+  logs?: boolean;
+  /** The page fills its "navigation" slot (a divider then sets it apart). */
+  pageNav?: boolean;
+  /** The content renders its own top row, with NavToggle in it. */
+  ownTopRow?: boolean;
+}
+const { base, current, logs, pageNav = false, ownTopRow = false } = Astro.props;
+---
+<wa-page class="app-page" disable-navigation-toggle>
+  <div slot="navigation" class="nav-column wa-stack wa-gap-s">
+    <SideNav base={base} current={current} logs={logs} />
+    {pageNav && <wa-divider />}
+    <slot name="navigation" />
+  </div>
+  <SideNavFooter base={base} current={current} />
+  {!ownTopRow && (
+    <div slot="main-header" class="top-row wa-cluster wa-gap-2xs">
+      <NavToggle />
+    </div>
+  )}
+  <slot />
+</wa-page>

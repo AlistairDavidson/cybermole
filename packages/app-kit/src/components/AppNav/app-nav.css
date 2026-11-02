@@ -1,0 +1,52 @@
+/* AppPage's shell, for the console's pages and every app's (apps don't
+   load the console's stylesheet). Layout only, where Web Awesome's
+   utilities can't reach: no colour or component look is overridden. */
+
+/* The navigation column scrolls as one, so a long app list or tree never
+   spills over the footer (wa-page's body row shrinks; its content
+   doesn't). Its children keep their height. */
+.nav-column { min-height: 0; overflow-y: auto; }
+.nav-column > * { flex-shrink: 0; }
+/* The mobile drawer's footer is an end-justified row; the footer stack
+   spans it to stay start-aligned. */
+.side-nav-footer { flex: 1; }
+
+/* A tree item's label part won't shrink below its content and no utility
+   reaches into it: spanning and shrinking it truncates long names
+   instead of overflowing the column. */
+.side-nav-tree wa-tree-item::part(label) { flex: 1; min-inline-size: 0; }
+.side-nav-row { flex: 1; min-inline-size: 0; }
+side-nav .truncate {
+  min-inline-size: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* The Logs item an app page renders hidden until the state read. */
+side-nav wa-tree-item[hidden] { display: none; }
+
+/* The top row puts the toggle where the console's tab strip has it (flush
+   with the column, centred on a tab's height), so it never moves between
+   pages: wa-page's main-header padding would inset it. */
+wa-page.app-page > .top-row {
+  padding: calc(var(--wa-space-xs) + var(--wa-space-3xs)) 0;
+}
+/* It stays in reach on a long page: the part sticks (a grid item, so it
+   sticks within the whole main column), on the page's own surface so
+   content scrolls under it. */
+wa-page.app-page:has(> .top-row)::part(main-header) {
+  position: sticky; inset-block-start: 0; z-index: 3;
+  background-color: var(--wa-color-surface-default);
+}
+
+/* The desktop hide (nav-toggle.ts): the column closes to nothing, and
+   leaves the tab order and the accessibility tree with it. Narrow
+   viewports keep wa-page's own drawer. */
+wa-page.app-page { --menu-width: 300px; }
+wa-page.app-page[view='mobile'] { --menu-width: auto; }
+wa-page.app-page[data-nav-collapsed]:not([view='mobile']) { --menu-width: 0px; }
+wa-page.app-page[data-nav-collapsed]:not([view='mobile'])::part(menu) { visibility: hidden; }
+wa-page.app-page::part(body) {
+  transition: grid-template-columns var(--wa-transition-normal) var(--wa-transition-easing);
+}
+@media (prefers-reduced-motion: reduce) {
+  wa-page.app-page::part(body) { transition: none; }
+}
