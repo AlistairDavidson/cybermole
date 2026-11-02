@@ -2,6 +2,12 @@
 // check, build, register, reload, unregister, status) and action vocabulary
 // (add_action, describe, call).
 //
+// In a build session (CYBERMOLE_WORKSPACE_FOCUS set) the server is the
+// builder's: the root-only verbs (scaffold, register, unregister,
+// build_session) aren't offered, and every other verb answers for the
+// focused app only. Like the operator tree's .pi/mcp.json, the role
+// boundary is tool availability (one uid: a convention, not enforcement).
+//
 // Socket-backed tools return the APIs' JSON verbatim; isError is reserved for
 // transport failures. Local tools answer their own Result or quiet envelope,
 // where a red result is information, not isError.
@@ -13,7 +19,7 @@ import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { AppSlugSchema } from '@cybermole/app-kit';
+import { AppSlugSchema, type AppSlug } from '@cybermole/app-kit';
 import {
   APP_ROOT,
   readAppsRoot,
@@ -111,6 +117,30 @@ export interface AppsMcpDeps {
   templateDir?: string | undefined;
   agentTemplateFile?: string | undefined;
   run?: typeof runChild | undefined;
+  /** CYBERMOLE_WORKSPACE_FOCUS: the build session's app; null = the root agent. */
+  focus?: AppSlug | null | undefined;
+}
+
+/** null: the slug is in reach. */
+function outOfFocus(focus: AppSlug | null, slug: string): CallToolResult | null {
+  if (focus === null || slug === focus) return null;
+  return json({
+    ok: false,
+    resultType: 'apps_focus',
+    errorCode: 'out_of_focus',
+    errorMessage:
+      `this build session is framed at ${focus}: ${slug} is out of reach — ` +
+      'other apps are the root agent’s (the console) or their own builders’',
+  });
+}
+
+/** Reads CYBERMOLE_WORKSPACE_FOCUS; a set-but-invalid slug throws (the boot reports it). */
+export function readFocus(env: NodeJS.ProcessEnv = process.env): AppSlug | null {
+  const raw = env.CYBERMOLE_WORKSPACE_FOCUS;
+  if (raw === undefined || raw === '') return null;
+  const parsed = AppSlugSchema.safeParse(raw);
+  if (!parsed.success) throw new Error(`CYBERMOLE_WORKSPACE_FOCUS is not an app slug: ${raw}`);
+  return parsed.data;
 }
 
 // ---------- register precheck ----------
@@ -460,36 +490,94 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
     run: deps.run ?? runChild,
   };
 
+  const focus = deps.focus ?? null;
   const server = new McpServer({ name: 'cybermole-apps', version: '0.1.0' });
 
-  server.registerTool(
-    'scaffold',
-    {
-      description:
-        'Scaffold a new cybermole app at the apps root from the image starter template: ' +
-        'a real minimal Astro app on @cybermole/app-kit with one example action (ping) wired end to end, ' +
-        `base '${base === '/' ? '' : base}/apps/<slug>' baked (the console URL base included), ` +
-        "node_modules as per-package symlinks into the install's tree, a git repo " +
-        "(first commit = the scaffold; agent undo is git clean) and the operator's AGENTS.md. The slug is " +
-        'derived from the name like the console derives it, and is stable once created. Nothing registers or ' +
-        'builds: check → register → reload is the loop.',
-      inputSchema: {
-        name: z.string().min(1).describe('the display name ("Notes Standup" → notes-standup)'),
-        description: z
-          .string()
-          .optional()
-          .describe('one line about what the app is for — lands in app.json and AGENTS.md'),
-        icon: z
-          .string()
-          .optional()
-          .describe(
-            "the app's icon, one of the vendored names (cubes, file-lines, code, robot, terminal, folder, gear, clock, play, download, magnifying-glass, pencil, copy, circle-check, circle-info, triangle-exclamation, eye, eye-slash, arrows-rotate, rotate-right) — omitted, the name suggests one; lands in app.json, so register puts it on the row",
-          ),
+  if (focus === null) {
+    server.registerTool(
+      'scaffold',
+      {
+        description:
+          'Scaffold a new cybermole app at the apps root from the image starter template: ' +
+          'a real minimal Astro app on @cybermole/app-kit with one example action (ping) wired end to end, ' +
+          `base '${base === '/' ? '' : base}/apps/<slug>' baked (the console URL base included), ` +
+          "node_modules as per-package symlinks into the install's tree, a git repo " +
+          "(first commit = the scaffold; agent undo is git clean) and the operator's AGENTS.md. The slug is " +
+          'derived from the name like the console derives it, and is stable once created. Nothing registers or ' +
+          'builds: check → register → reload is the loop.',
+        inputSchema: {
+          name: z.string().min(1).describe('the display name ("Notes Standup" → notes-standup)'),
+          description: z
+            .string()
+            .optional()
+            .describe('one line about what the app is for — lands in app.json and AGENTS.md'),
+          icon: z
+            .string()
+            .optional()
+            .describe(
+              "the app's icon, one of the vendored names (cubes, file-lines, code, robot, terminal, folder, gear, clock, play, download, magnifying-glass, pencil, copy, circle-check, circle-info, triangle-exclamation, eye, eye-slash, arrows-rotate, rotate-right) — omitted, the name suggests one; lands in app.json, so register puts it on the row",
+            ),
+        },
       },
-    },
-    async ({ name, description, icon }) =>
-      json(await scaffoldApp(scaffoldDeps, { name, description, icon })),
-  );
+      async ({ name, description, icon }) =>
+        json(await scaffoldApp(scaffoldDeps, { name, description, icon })),
+    );
+
+    server.registerTool(
+      'register',
+      {
+        description:
+          "Register a scaffolded app: write its db row through the internal API (name from the tree's " +
+          'app.json, cwd = the tree). Registration is the privileged act — it creates the app group ' +
+          'workspaces can attach to. After the row: reload (register + reload is the sync point that mounts). ' +
+          'duplicate_slug names the recovery in its answer — no tree is touched.',
+        inputSchema: { slug: AppSlugSchema.describe('the app, by its slug') },
+      },
+      async ({ slug }) => registerTool(deps, slug),
+    );
+
+    server.registerTool(
+      'unregister',
+      {
+        description:
+          'Unregister an app: delete its db row (the row + the cascade of its workspaces/terminals — the ' +
+          'TREE is never touched, it stands at the apps root and status still shows it) and then reload, the ' +
+          'sync point that drops the mount. Register again later to re-serve the same tree.',
+        inputSchema: { slug: AppSlugSchema.describe('the app, by its slug') },
+      },
+      async ({ slug }) => unregisterTool(deps, slug),
+    );
+
+    server.registerTool(
+      'build_session',
+      {
+        description:
+          'THE hand-off when the user asks for a new app (or a rebuild): open the app’s build ' +
+          'session — a fresh agent tab in the app’s build workspace on the builder page (kind build, ' +
+          'framed at the app with CYBERMOLE_WORKSPACE_FOCUS; the workspace is created on first ' +
+          'use) that takes the brief as its opening prompt and runs with it. The brief should carry the user’s ask verbatim plus what the ' +
+          'builder needs to know (the reference app, the check-green loop, anything settled). The ' +
+          'app must be REGISTERED first (register + reload). The answer carries the deep link — ' +
+          'send the human there (or to the builder page) and end your turn.',
+        inputSchema: {
+          slug: AppSlugSchema.describe('the app, by its slug (registered)'),
+          brief: z
+            .string()
+            .min(1)
+            .max(4000)
+            .describe(
+              'the opening brief for the builder agent — the user’s ask plus the context it needs',
+            ),
+          name: z
+            .string()
+            .max(80)
+            .optional()
+            .describe('the workspace row’s name when this creates it; omitted derives one'),
+        },
+      },
+      async ({ slug, brief, name }) => buildSessionTool(deps, { slug, brief, name }),
+    );
+  }
 
   server.registerTool(
     'check',
@@ -501,7 +589,7 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
         'quiet envelope: read passed first, counts on a glance, failures[] for the detail. Re-run until green.',
       inputSchema: { slug: AppSlugSchema.describe('the app, by its slug') },
     },
-    async ({ slug }) => json(await checkApp(gateDeps, slug)),
+    async ({ slug }) => outOfFocus(focus, slug) ?? json(await checkApp(gateDeps, slug)),
   );
 
   server.registerTool(
@@ -513,7 +601,7 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
         're-imports the new build at the host.',
       inputSchema: { slug: AppSlugSchema.describe('the app, by its slug') },
     },
-    async ({ slug }) => json(await buildApp(gateDeps, slug)),
+    async ({ slug }) => outOfFocus(focus, slug) ?? json(await buildApp(gateDeps, slug)),
   );
 
   server.registerTool(
@@ -525,35 +613,17 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
         'Run it after register, after unregister, and after rebuilding a registered app. The answer is the ' +
         "host's transition report (mounted/reimported/dropped/skipped) — for the post-state, status.",
       inputSchema: {
-        slug: AppSlugSchema.optional().describe('scope the sync to one app; omit for every app'),
+        slug: AppSlugSchema.optional().describe(
+          focus === null
+            ? 'scope the sync to one app; omit for every app'
+            : `this session's app (${focus}); omitted means it too`,
+        ),
       },
     },
-    async ({ slug }) => reloadTool(deps, slug),
-  );
-
-  server.registerTool(
-    'register',
-    {
-      description:
-        "Register a scaffolded app: write its db row through the internal API (name from the tree's " +
-        'app.json, cwd = the tree). Registration is the privileged act — it creates the app group ' +
-        'workspaces can attach to. After the row: reload (register + reload is the sync point that mounts). ' +
-        'duplicate_slug names the recovery in its answer — no tree is touched.',
-      inputSchema: { slug: AppSlugSchema.describe('the app, by its slug') },
-    },
-    async ({ slug }) => registerTool(deps, slug),
-  );
-
-  server.registerTool(
-    'unregister',
-    {
-      description:
-        'Unregister an app: delete its db row (the row + the cascade of its workspaces/terminals — the ' +
-        'TREE is never touched, it stands at the apps root and status still shows it) and then reload, the ' +
-        'sync point that drops the mount. Register again later to re-serve the same tree.',
-      inputSchema: { slug: AppSlugSchema.describe('the app, by its slug') },
-    },
-    async ({ slug }) => unregisterTool(deps, slug),
+    async ({ slug }) =>
+      slug === undefined
+        ? reloadTool(deps, focus ?? undefined)
+        : (outOfFocus(focus, slug) ?? reloadTool(deps, slug)),
   );
 
   server.registerTool(
@@ -565,40 +635,17 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
         'sources newer than the build). Also lists the unregistered trees present at the apps root (manifest ' +
         'but no row — scaffolded, not yet registered). Pass a slug to scope to one app.',
       inputSchema: {
-        slug: AppSlugSchema.optional().describe('scope to one app; omit for the whole picture'),
+        slug: AppSlugSchema.optional().describe(
+          focus === null
+            ? 'scope to one app; omit for the whole picture'
+            : `this session's app (${focus}); omitted means it too`,
+        ),
       },
     },
-    async ({ slug }) => statusTool(deps, slug),
-  );
-
-  server.registerTool(
-    'build_session',
-    {
-      description:
-        'THE hand-off when the user asks for a new app (or a rebuild): open the app’s build ' +
-        'session — a fresh agent tab in the app’s build workspace on the builder page (kind build, ' +
-        'framed at the app with CYBERMOLE_WORKSPACE_FOCUS; the workspace is created on first ' +
-        'use) that takes the brief as its opening prompt and runs with it. The brief should carry the user’s ask verbatim plus what the ' +
-        'builder needs to know (the reference app, the check-green loop, anything settled). The ' +
-        'app must be REGISTERED first (register + reload). The answer carries the deep link — ' +
-        'send the human there (or to the builder page) and end your turn.',
-      inputSchema: {
-        slug: AppSlugSchema.describe('the app, by its slug (registered)'),
-        brief: z
-          .string()
-          .min(1)
-          .max(4000)
-          .describe(
-            'the opening brief for the builder agent — the user’s ask plus the context it needs',
-          ),
-        name: z
-          .string()
-          .max(80)
-          .optional()
-          .describe('the workspace row’s name when this creates it; omitted derives one'),
-      },
-    },
-    async ({ slug, brief, name }) => buildSessionTool(deps, { slug, brief, name }),
+    async ({ slug }) =>
+      slug === undefined
+        ? statusTool(deps, focus ?? undefined)
+        : (outOfFocus(focus, slug) ?? statusTool(deps, slug)),
   );
 
   server.registerTool(
@@ -637,6 +684,7 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
       },
     },
     async ({ slug, name, summary, method }) =>
+      outOfFocus(focus, slug) ??
       json(await addAction({ appsRoot: deps.appsRoot, base }, { slug, name, summary, method })),
   );
 
@@ -650,7 +698,7 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
         'sources changed since — status reports buildStale.',
       inputSchema: { slug: AppSlugSchema.describe('the app, by its slug') },
     },
-    async ({ slug }) => describeTool(deps, slug),
+    async ({ slug }) => outOfFocus(focus, slug) ?? describeTool(deps, slug),
   );
 
   server.registerTool(
@@ -671,7 +719,8 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
           .describe("the action's input fields, as describe's schema names them"),
       },
     },
-    async ({ slug, action, params }) => callActionTool(deps, { slug, action, params }),
+    async ({ slug, action, params }) =>
+      outOfFocus(focus, slug) ?? callActionTool(deps, { slug, action, params }),
   );
 
   return server;
@@ -684,7 +733,9 @@ export async function main(): Promise<void> {
   let appsRoot: string;
   let internalSocketPath: string | null;
   let appsSocketPath: string | null;
+  let focus: AppSlug | null;
   try {
+    focus = readFocus();
     appsRoot = readAppsRoot();
     internalSocketPath = readInternalApiSocket();
     appsSocketPath = readAppsSocket();
@@ -698,6 +749,7 @@ export async function main(): Promise<void> {
     internalSocketPath,
     appsSocketPath,
     installRoot: APP_ROOT,
+    focus,
   });
   await server.connect(new StdioServerTransport());
 }

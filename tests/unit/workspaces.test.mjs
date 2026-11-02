@@ -365,6 +365,18 @@ test("save_workspace kind 'build': the default cwd (the parent app's cwd is skip
   assert.equal(plain.data.kind, null);
   assert.equal(wsRow(db, plain.data.id).kind, null);
   assert.equal(spawned[spawned.length - 1].env, undefined);
+
+  // the editor opens the app tree for a build session; a tree not on disk
+  // yet falls back to the cwd; everything else opens its cwd
+  const folders = new Map(
+    (await w.workspaceTree()).data.workspaces.map(x => [x.id, x.editorFolder]),
+  );
+  assert.equal(folders.get(build.data.id), dir);
+  assert.equal(folders.get(buildBare.data.id), defaultDir);
+  assert.equal(folders.get(plain.data.id), dir);
+  fs.mkdirSync(path.join(appsRoot, 'bare'));
+  const after = (await w.workspaceTree()).data.workspaces.find(x => x.id === buildBare.data.id);
+  assert.equal(after.editorFolder, path.join(appsRoot, 'bare'));
 });
 
 test('save_workspace: the brief rides the auto-opened agent tab as one argument, and the answer carries its id', async () => {

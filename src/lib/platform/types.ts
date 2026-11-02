@@ -46,6 +46,8 @@ export interface WorkspaceState {
   appId: AppId | null;
   name: string;
   cwd: string;
+  /** What the editor tab opens: the app tree for a build session, else cwd. */
+  editorFolder: string;
   /** 'build' = a build session (framed at one app, root cwd); the client
    *  doesn't branch on it yet — it rides the state for app pages later. */
   kind: 'build' | null;

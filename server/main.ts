@@ -4,6 +4,7 @@ import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { execFile } from 'node:child_process';
+import * as zlib from 'node:zlib';
 import { pathToFileURL } from 'node:url';
 import { WebSocketServer, type WebSocket } from 'ws';
 import * as pty from 'node-pty';
@@ -44,8 +45,10 @@ import { EventsRelay, checkEventsUpgrade } from '../src/lib/platform/events-ws';
 import { TunnelTracker } from '../src/lib/platform/ws-tunnels';
 import { AutoUpdater } from '../src/lib/platform/auto-update';
 import {
+  EDITOR_BROTLI_QUALITY,
   EDITOR_HOP_BY_HOP_HEADERS,
   EDITOR_HTML_REWRITE_MAX_BYTES,
+  editorAssetEncoding,
   EditorTunnelTracker,
   editorBodyCapStatus,
   editorSecurityHeaders,
@@ -670,6 +673,32 @@ function proxyEditorRequest(
           });
           return;
         }
+      }
+      const encoding =
+        upstreamRes.statusCode === 200 && req.method === 'GET'
+          ? editorAssetEncoding(
+              CFG.base,
+              req.url ?? '/',
+              { contentType: out['content-type'], contentEncoding: out['content-encoding'] },
+              typeof req.headers['accept-encoding'] === 'string'
+                ? req.headers['accept-encoding']
+                : undefined,
+            )
+          : null;
+      if (encoding !== null) {
+        delete out['content-length'];
+        out['content-encoding'] = encoding;
+        out.vary = 'Accept-Encoding';
+        res.writeHead(200, out);
+        const encoder =
+          encoding === 'br'
+            ? zlib.createBrotliCompress({
+                params: { [zlib.constants.BROTLI_PARAM_QUALITY]: EDITOR_BROTLI_QUALITY },
+              })
+            : zlib.createGzip();
+        encoder.on('error', () => res.destroy());
+        upstreamRes.pipe(encoder).pipe(res);
+        return;
       }
       res.writeHead(upstreamRes.statusCode ?? 502, out);
       // Streamed: workbench bundles are tens of MB.

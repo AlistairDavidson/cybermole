@@ -99,9 +99,11 @@ settings and delete, and *new app*. The pick is remembered (`?app=<slug>`
 and the browser's storage). Place
 teaches role, and pages are homes, not permissions: nothing narrows. A
 builder-page workspace is a **build session** — the app's build workspace
-row, `kind: 'build'` — with the root agent's full powers: root cwd (never the
-app tree; its editor tab and terminals work from `CYBERMOLE_NEW_SESSION_CWD`,
-the tree one click down) and the root AGENTS.md by walk, its attention
+row, `kind: 'build'` — at the root: root cwd (never the app tree; its
+terminals work from `CYBERMOLE_NEW_SESSION_CWD`, while its editor tab opens
+the app tree) and the root AGENTS.md by walk, but with `cybermole-apps`
+scoped to its app (no scaffold/register/unregister/build_session; the
+other verbs answer `out_of_focus` for any other slug), its attention
 framed at one app by two per-session env vars on **every** spawn (the
 create-time agent tab, later `+` tabs, and the WS-attach respawn):
 `CYBERMOLE_WORKSPACE_FOCUS=<slug>` and `CYBERMOLE_WORKSPACE_FOCUS_TREE=<tree>`.

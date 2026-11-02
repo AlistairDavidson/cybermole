@@ -5,7 +5,9 @@
 // and never builds markup. Each tab's <agent-terminal> is stamped into its
 // panel on first activation and stays connected while the panel is
 // hidden. The editor tab (an iframe of the /editor proxy) is pinned after
-// the terminals; the builder page's app switcher ends the strip.
+// the terminals; its workbench preloads while idle, and the last few stay
+// booted across workspace switches. The builder page's app switcher ends
+// the strip.
 //
 // The group owns the tablist semantics, the panels' visibility and arrow
 // focus (manual activation). Selection stays here: a selection is an
@@ -51,6 +53,14 @@ import '../AgentTerminal/agent-terminal';
 /** A terminal id is a uuid, so no collision. */
 const EDITOR = 'editor';
 
+/** Booted workbenches kept per folder: switching back to a recent app is
+ *  instant, and each one costs a few hundred MB in the browser. */
+const EDITOR_CACHE_SIZE = 3;
+
+/** Preload the workbench this long after a workspace shows, once idle, so
+ *  it doesn't compete with the terminals' first attach. */
+const EDITOR_PRELOAD_DELAY_MS = 1500;
+
 /** After a popped tab's pagehide, wait this long before trusting `closed`. */
 const POPUP_GONE_MS = 300;
 
@@ -80,8 +90,13 @@ export class TerminalTabs extends HTMLElement {
   /** Popped tabs' window handles; pagehide or `closed` brings the terminal back. */
   private readonly popped = new Map<TerminalId, Window>();
   private editorTab: HTMLElement | null = null;
-  /** Stamped on first open: a hidden iframe would still boot the whole workbench. */
+  /** The current workspace's editor panel, from editorPanels. */
   private editorPanel: HTMLElement | null = null;
+  /** By folder, least recently used first. They stay in place across
+   *  workspace switches: re-parenting an iframe reloads it. */
+  private readonly editorPanels = new Map<string, HTMLElement>();
+  private editorPanelSeq = 0;
+  private preloadTimer: ReturnType<typeof setTimeout> | null = null;
   /** The in-flight optimistic tab order, until a poll confirms the write. */
   private pendingOrder: TerminalId[] | null = null;
   /** The tab being dragged, null when no drag is live. */
@@ -174,6 +189,7 @@ export class TerminalTabs extends HTMLElement {
     }
     this.appendEditorTab();
     this.pinTrailing();
+    this.schedulePreload();
     const initial =
       initialTab !== undefined && ws.terminals.some(t => t.id === initialTab) ? initialTab : null;
     if (initial !== null) this.selectTerminal(initial);
@@ -204,6 +220,14 @@ export class TerminalTabs extends HTMLElement {
           terminals: [...ordered, ...ws.terminals.filter(t => !seen.has(t.id))],
         };
       }
+    }
+    // The app tree appeared after the workspace showed (a fresh app): open
+    // the editor there next time, unless it's in use right now.
+    if (this.ws?.editorFolder !== ws.editorFolder && this.active !== EDITOR) {
+      const pop = this.editorPanel?.querySelector<HTMLElement>('.tb-pop-out');
+      if (pop) this.dropTip(pop.id);
+      this.editorPanel = null;
+      this.schedulePreload();
     }
     this.ws = ws;
     for (const t of ws.terminals) if (!this.tabs.has(t.id)) this.addTab(t);
@@ -568,14 +592,53 @@ export class TerminalTabs extends HTMLElement {
     return pane;
   }
 
+  /** Reuses the folder's booted panel if there is one, else stamps it and
+   *  evicts the least recently used past the cap. */
   private ensureEditorPanel(): void {
-    if (this.editorPanel || !this.group || !this.ws) return;
-    armEditorThemeReload();
-    const panel = this.stamp<HTMLElement>('data-editor-panel');
-    panel.querySelector<HTMLIFrameElement>('.editor-frame')!.src = editorSrc(this.ws.cwd);
-    this.group.appendChild(panel);
-    this.editorPanel = panel;
+    if (this.editorPanel || !this.group || !this.ws || !this.editorTab) return;
+    const folder = this.ws.editorFolder;
+    let panel = this.editorPanels.get(folder);
+    if (panel) {
+      this.editorPanels.delete(folder); // re-inserted below as most recent
+    } else {
+      armEditorThemeReload();
+      panel = this.stamp<HTMLElement>('data-editor-panel');
+      panel.setAttribute('name', `editor-${++this.editorPanelSeq}`);
+      panel.querySelector<HTMLIFrameElement>('.editor-frame')!.src = editorSrc(folder);
+      this.group.appendChild(panel);
+      panel.querySelector<HTMLElement>('.tb-pop-out')!.id = `editor-pop-out-${this.editorPanelSeq}`;
+    }
+    // A workspace switch drops every tip; the current panel's comes back.
     this.addTip('data-editor-pop-tip', panel.querySelector<HTMLElement>('.tb-pop-out')!);
+    this.editorPanels.set(folder, panel);
+    for (const [old, stale] of this.editorPanels) {
+      if (this.editorPanels.size <= EDITOR_CACHE_SIZE) break;
+      this.dropEditorPanel(old, stale);
+    }
+    this.editorTab.setAttribute('panel', panel.getAttribute('name')!);
+    this.editorPanel = panel;
+  }
+
+  private dropEditorPanel(folder: string, panel: HTMLElement): void {
+    const pop = panel.querySelector<HTMLElement>('.tb-pop-out');
+    if (pop) this.dropTip(pop.id);
+    panel.remove();
+    this.editorPanels.delete(folder);
+  }
+
+  /** Boots the current workspace's workbench in its hidden panel before
+   *  the editor tab is first clicked. */
+  private schedulePreload(): void {
+    if (this.preloadTimer !== null) clearTimeout(this.preloadTimer);
+    this.preloadTimer = null;
+    if (!this.editorEnabled || !this.ws) return;
+    const ws = this.ws.id;
+    this.preloadTimer = setTimeout(() => {
+      this.preloadTimer = null;
+      requestIdleCallback(() => {
+        if (this.ws?.id === ws) this.ensureEditorPanel();
+      });
+    }, EDITOR_PRELOAD_DELAY_MS);
   }
 
   /** The editor pops out to /view?w=<id>: a copy, not a move — the editor
@@ -608,8 +671,11 @@ export class TerminalTabs extends HTMLElement {
     this.popped.clear();
     this.editorTab?.remove();
     this.editorTab = null;
-    this.editorPanel?.remove();
+    // The panel stays booted in editorPanels, hidden: its tab is gone.
+    this.editorPanel?.removeAttribute('active');
     this.editorPanel = null;
+    if (this.preloadTimer !== null) clearTimeout(this.preloadTimer);
+    this.preloadTimer = null;
     this.pendingOrder = null;
     this.dragging = null;
     this.active = null;

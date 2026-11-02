@@ -9,7 +9,7 @@ import type { WorkspaceState } from '../platform/types';
 
 export type PopoutView =
   | { kind: 'terminal'; id: TerminalId; label: string }
-  | { kind: 'editor'; id: WorkspaceId; label: string; cwd: string }
+  | { kind: 'editor'; id: WorkspaceId; label: string; folder: string }
   /** The page's message state: absent or malformed params, unknown ids, editor off. */
   | { kind: 'missing'; message: string };
 
@@ -48,7 +48,7 @@ export function resolvePopoutView(
         message: 'the editor is not configured (CYBERMOLE_EDITOR_UPSTREAM is unset)',
       };
     }
-    return { kind: 'editor', id: ws.id, label: `${ws.name} — editor`, cwd: ws.cwd };
+    return { kind: 'editor', id: ws.id, label: `${ws.name} — editor`, folder: ws.editorFolder };
   }
   return {
     kind: 'missing',

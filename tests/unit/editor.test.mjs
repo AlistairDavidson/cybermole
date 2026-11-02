@@ -13,6 +13,7 @@ import {
   EDITOR_HTML_REWRITE_MAX_BYTES,
   EDITOR_MAX_BODY_BYTES,
   EDITOR_THEME_CONFIGURATION_DEFAULTS,
+  editorAssetEncoding,
   editorBodyCapStatus,
   editorSecurityHeaders,
   editorUpgradeHeaders,
@@ -416,4 +417,26 @@ test('editor pins: deploy/install-host.sh matches deploy/editor/Dockerfile', () 
     assert.ok(m, `install-host.sh pins ${name}`);
     assert.equal(m[1], fromDocker[name], `${name} matches the Dockerfile`);
   }
+});
+
+test('editorAssetEncoding: commit-pathed text statics only, br over gzip, never re-encoded', () => {
+  const js = { contentType: 'text/javascript', contentEncoding: undefined };
+  const asset = '/editor/stable-807ba2d6/static/out/vs/code/browser/workbench/workbench.js';
+  assert.equal(editorAssetEncoding('/', asset, js, 'gzip, deflate, br, zstd'), 'br');
+  assert.equal(editorAssetEncoding('/', asset, js, 'gzip'), 'gzip');
+  assert.equal(editorAssetEncoding('/', asset, js, 'br;q=0, gzip'), 'gzip');
+  assert.equal(editorAssetEncoding('/', asset, js, undefined), null);
+  assert.equal(editorAssetEncoding('/foo', '/foo' + asset, js, 'br'), 'br');
+  assert.equal(editorAssetEncoding('/foo', asset, js, 'br'), null, 'outside the base');
+  assert.equal(editorAssetEncoding('/', `${asset}?v=1`, js, 'br'), 'br');
+  // the boot document, extension resources and binaries pass through raw
+  assert.equal(editorAssetEncoding('/', '/editor/?folder=/x', js, 'br'), null);
+  assert.equal(
+    editorAssetEncoding('/', '/editor/stable-807ba2d6/vscode-remote-resource?path=/x', js, 'br'),
+    null,
+  );
+  const png = { contentType: 'image/png', contentEncoding: undefined };
+  assert.equal(editorAssetEncoding('/', asset.replace('.js', '.png'), png, 'br'), null);
+  const encoded = { contentType: 'text/javascript', contentEncoding: 'gzip' };
+  assert.equal(editorAssetEncoding('/', asset, encoded, 'br'), null);
 });

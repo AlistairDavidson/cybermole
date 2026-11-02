@@ -14,6 +14,7 @@ const workspaces = [
     appId: null,
     name: 'alpha',
     cwd: '/srv/alpha',
+    editorFolder: '/srv/alpha/tree',
     kind: null,
     order: 0,
     terminals: [
@@ -21,7 +22,16 @@ const workspaces = [
       { id: T(2), title: 'build', order: 1, live: false },
     ],
   },
-  { id: W(2), appId: null, name: 'beta', cwd: '/srv/beta', kind: null, order: 1, terminals: [] },
+  {
+    id: W(2),
+    appId: null,
+    name: 'beta',
+    cwd: '/srv/beta',
+    editorFolder: '/srv/beta',
+    kind: null,
+    order: 1,
+    terminals: [],
+  },
 ];
 
 test('resolvePopoutView: ?t finds the terminal, labelled by the tab rule', () => {
@@ -60,7 +70,7 @@ test('resolvePopoutView: ?w finds the workspace editor with its folder', () => {
       workspaceId: W(1),
       editorEnabled: true,
     }),
-    { kind: 'editor', id: W(1), label: 'alpha — editor', cwd: '/srv/alpha' },
+    { kind: 'editor', id: W(1), label: 'alpha — editor', folder: '/srv/alpha/tree' },
   );
   // Empty workspaces still have an editor.
   assert.deepEqual(
@@ -69,7 +79,7 @@ test('resolvePopoutView: ?w finds the workspace editor with its folder', () => {
       workspaceId: W(2),
       editorEnabled: true,
     }),
-    { kind: 'editor', id: W(2), label: 'beta — editor', cwd: '/srv/beta' },
+    { kind: 'editor', id: W(2), label: 'beta — editor', folder: '/srv/beta' },
   );
 });
 

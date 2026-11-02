@@ -1,7 +1,6 @@
 ## Product
 
-preload editor
-editor needs to open app's cwd
+builder/cybermole cwd needs to be the folder cybermole is in, not the home folder of the user or whatever
 add pi standard ctrl-commands to drop down
   ctrl-t
   ctrl-o

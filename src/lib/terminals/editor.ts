@@ -142,3 +142,37 @@ export function editorBodyCapStatus(req: {
 /** Idempotent: closeToken may race a socket's own end. */
 export type { TunnelHandle as EditorTunnelHandle } from '../platform/ws-tunnels';
 export { TunnelTracker as EditorTunnelTracker } from '../platform/ws-tunnels';
+
+/** Brotli quality for proxied workbench assets: ~4x smaller than raw at
+ *  ~0.3 s for the 20 MB bundle; higher qualities cost seconds. */
+export const EDITOR_BROTLI_QUALITY = 4;
+
+const COMPRESSIBLE = /^(text\/|application\/(javascript|json|wasm|xml)|image\/svg\+xml)/;
+
+/**
+ * reh-web serves its commit-pathed statics raw (with a year's max-age), so
+ * the proxy encodes them: the workbench is ~26 MB uncompressed. Only that
+ * tree — the versioned path means a fetch happens once per browser per
+ * release, which keeps the per-request CPU affordable.
+ */
+export function editorAssetEncoding(
+  base: string,
+  url: string,
+  res: { contentType: string | undefined; contentEncoding: string | undefined },
+  acceptEncoding: string | undefined,
+): 'br' | 'gzip' | null {
+  if (res.contentEncoding !== undefined) return null;
+  if (!COMPRESSIBLE.test(res.contentType ?? '')) return null;
+  const pathname = url.split('?', 1)[0]!;
+  const prefix = basePath(base);
+  if (!pathname.startsWith(prefix + '/')) return null;
+  if (!/^\/stable-[0-9a-f]+\/static\//.test(pathname.slice(prefix.length))) return null;
+  const accepted = (acceptEncoding ?? '')
+    .split(',')
+    .map(part => part.trim().split(';'))
+    .filter(([, q]) => q?.trim() !== 'q=0')
+    .map(([name]) => name!.trim().toLowerCase());
+  if (accepted.includes('br')) return 'br';
+  if (accepted.includes('gzip')) return 'gzip';
+  return null;
+}

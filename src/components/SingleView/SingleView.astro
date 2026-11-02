@@ -30,7 +30,7 @@ const { view } = Astro.props;
 {
   view.kind === 'editor' && (
     <single-view kind="editor">
-      <iframe class="editor-frame" title={view.label} src={editorSrc(view.cwd)} />
+      <iframe class="editor-frame" title={view.label} src={editorSrc(view.folder)} />
     </single-view>
   )
 }

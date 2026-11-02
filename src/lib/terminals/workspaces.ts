@@ -246,8 +246,29 @@ export class Workspaces {
     if (kind !== 'build') return null;
     return {
       CYBERMOLE_WORKSPACE_FOCUS: slug,
-      CYBERMOLE_WORKSPACE_FOCUS_TREE: appCwd ?? path.join(this.deps.appsRoot, slug),
+      CYBERMOLE_WORKSPACE_FOCUS_TREE: this.focusTree(slug, appCwd),
     } satisfies Record<string, string>;
+  }
+
+  private focusTree(slug: string, appCwd: string | null): string {
+    return appCwd ?? path.join(this.deps.appsRoot, slug);
+  }
+
+  /** A build session's editor opens the app tree, not its root cwd; a tree
+   *  that isn't on disk yet falls back to the cwd (the workbench errors on
+   *  a missing folder). */
+  private editorFolder(
+    kind: string | null,
+    cwd: string,
+    app: { slug: string; cwd: string | null } | undefined,
+  ): string {
+    if (kind !== 'build' || !app) return cwd;
+    const tree = this.focusTree(app.slug, app.cwd);
+    try {
+      return fs.statSync(tree).isDirectory() ? tree : cwd;
+    } catch {
+      return cwd;
+    }
   }
 
   /** Reads the app row and derives the framing env for a stored workspace. */
@@ -892,6 +913,11 @@ export class Workspaces {
       ),
     );
     if (!terminals.ok) return fail(terminals.errorMessage);
+    const apps = databaseRead('could not read apps', () =>
+      this.deps.db.all(qb.selectFrom('apps').select(['id', 'slug', 'cwd'])),
+    );
+    if (!apps.ok) return fail(apps.errorMessage);
+    const appById = new Map(apps.data.value.map(a => [a.id, a] as const));
     const live = await this.deps.liveSessionNames();
     const byWorkspace = new Map<WorkspaceId, WorkspaceState['terminals']>();
     for (const row of workspaces.data.value) byWorkspace.set(row.id, []);
@@ -914,6 +940,11 @@ export class Workspaces {
           appId: w.app_id,
           name: w.name,
           cwd: w.cwd,
+          editorFolder: this.editorFolder(
+            w.kind,
+            w.cwd,
+            w.app_id === null ? undefined : appById.get(w.app_id),
+          ),
           kind: w.kind === 'build' ? 'build' : null,
           order: w.sort_order,
           terminals: byWorkspace.get(w.id) ?? [],

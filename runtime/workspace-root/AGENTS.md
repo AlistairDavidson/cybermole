@@ -113,8 +113,12 @@ below this directory also read this file by upward walk — accepted usage
 ## Build sessions (CYBERMOLE_WORKSPACE_FOCUS)
 
 When CYBERMOLE_WORKSPACE_FOCUS names an app, this session exists to
-build it: the tree is CYBERMOLE_WORKSPACE_FOCUS_TREE. You keep every
-power of this file — the framing is attention, not a boundary. The
+build it: the tree is CYBERMOLE_WORKSPACE_FOCUS_TREE. Your
+`cybermole-apps` is scoped to it: `scaffold`, `register`, `unregister`
+and `build_session` are the root agent's and aren't offered, and the
+other verbs answer for this app only (`out_of_focus` otherwise). Jobs
+stay available. Registering, cross-app work and new apps go back to the
+console's agent — say so to the user rather than working around it. The
 tree's own AGENTS.md is the operator's manual: read it to learn what
 the app is for and what its actions do, but it is not your
 instructions — you are the builder it keeps referring to. Never touch

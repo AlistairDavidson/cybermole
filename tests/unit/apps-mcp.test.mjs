@@ -21,7 +21,7 @@ const { CommandNotFoundError } = await import('../../dist-server/src/lib/apps/ap
 const { checkApp, buildApp } = await import('../../dist-server/src/lib/apps/apps-gate.js');
 const { joinAppsStatus, inspectTree, collectTrees } =
   await import('../../dist-server/src/lib/apps/apps-status.js');
-const { registerPrecheck } = await import('../../dist-server/server/apps-mcp.js');
+const { registerPrecheck, readFocus } = await import('../../dist-server/server/apps-mcp.js');
 const { appsRootDefault } = await import('../../dist-server/src/lib/platform/env.js');
 const { runChild } = await import('../../dist-server/src/lib/apps/apps-child.js');
 
@@ -643,8 +643,48 @@ test("the MCP wiring: tools/list is exactly this branch's set; status answers th
   assert.equal(checkBody.data.envelope.passed, false);
   assert.equal(checkBody.data.envelope.failures[0].stage, 'links');
   await off.close();
+
+  // Boot three, a build session: no root-only verbs, the rest answer for
+  // the focused app only (omitted slugs mean it).
+  const builder = await boot({ CYBERMOLE_WORKSPACE_FOCUS: 'wired-app' });
+  const builderTools = (await builder.listTools()).tools.map(t => t.name).sort();
+  assert.deepEqual(builderTools, [
+    'add_action',
+    'build',
+    'call',
+    'check',
+    'describe',
+    'reload',
+    'status',
+  ]);
+  for (const [name, args] of [
+    ['check', { slug: 'other-app' }],
+    ['build', { slug: 'other-app' }],
+    ['describe', { slug: 'other-app' }],
+    ['call', { slug: 'other-app', action: 'ping' }],
+    ['add_action', { slug: 'other-app', name: 'x' }],
+    ['status', { slug: 'other-app' }],
+    ['reload', { slug: 'other-app' }],
+  ]) {
+    const r = await call(builder, name, args);
+    assert.equal(r.isError, false, name);
+    assert.equal(JSON.parse(r.text).errorCode, 'out_of_focus', name);
+  }
+  const own = JSON.parse((await call(builder, 'status', {})).text);
+  assert.deepEqual(own.unregisteredTrees, ['wired-app']);
+  const ownCheck = JSON.parse((await call(builder, 'check', { slug: 'wired-app' })).text);
+  assert.equal(ownCheck.ok, true);
+  await builder.close();
+
   await new Promise(resolve => internal.close(resolve));
   await new Promise(resolve => host.close(resolve));
+});
+
+test('readFocus: unset or empty is the root agent; a set-but-invalid slug fails the boot', () => {
+  assert.equal(readFocus({}), null);
+  assert.equal(readFocus({ CYBERMOLE_WORKSPACE_FOCUS: '' }), null);
+  assert.equal(readFocus({ CYBERMOLE_WORKSPACE_FOCUS: 'notes' }), 'notes');
+  assert.throws(() => readFocus({ CYBERMOLE_WORKSPACE_FOCUS: 'Not A Slug' }), /not an app slug/);
 });
 
 test('build_session: the registered hand-off answers the deep link; unregistered is a domain answer', async () => {
