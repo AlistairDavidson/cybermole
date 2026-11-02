@@ -1,7 +1,11 @@
 ## Product
 
 preload editor
-
+editor needs to open app's cwd
+add pi standard ctrl-commands to drop down
+  ctrl-t
+  ctrl-o
+  ctrl-c
 
 
 ## Dev
