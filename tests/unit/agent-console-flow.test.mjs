@@ -15,7 +15,6 @@ const APP_ID = 'b0b0b0b0-1111-4111-8111-111111111111';
 const OTHER_APP = 'b0b0b0b0-2222-4222-8222-222222222222';
 const CONSOLE_WS = '11111111-3333-4333-8333-333333333333';
 const OPERATOR_A = '11111111-4444-4444-8444-444444444444';
-const OPERATOR_B = '11111111-5555-4555-8555-555555555555';
 const BUILD_A = '11111111-6666-4666-8666-666666666666';
 const BUILD_B = '11111111-7777-4777-8777-777777777777';
 const TERM = n => `11111111-8888-4888-8888-${String(n).padStart(12, '0')}`;
@@ -36,13 +35,6 @@ const state = () => ({
       terminals: [{ id: TERM(1), order: 10 }],
     },
     { id: CONSOLE_WS, appId: null, kind: null, order: 10, terminals: [] },
-    {
-      id: OPERATOR_B,
-      appId: APP_ID,
-      kind: null,
-      order: 30,
-      terminals: [{ id: TERM(3), order: 10 }],
-    },
     {
       id: OPERATOR_A,
       appId: APP_ID,
@@ -69,8 +61,7 @@ test('appBySlug: the row for this slug, or null', () => {
   assert.equal(appBySlug(state(), 'nope'), null);
 });
 
-test('operatorWorkspace: first kind-NULL workspace of this app, by order', () => {
-  // OPERATOR_A sorts before OPERATOR_B despite the row order in the array
+test('operatorWorkspace: this app\u2019s kind-NULL workspace, never its build one', () => {
   assert.equal(operatorWorkspace(state(), APP_ID), OPERATOR_A);
   // another app's rows never win
   const mine = {
@@ -92,24 +83,27 @@ test('firstTerminal: the workspace agent tab, by order; null when tabless', () =
   assert.equal(firstTerminal(state(), '00000000-0000-4000-8000-000000000000'), null);
 });
 
-test('builderLink: this app\u2019s first build workspace\u2019s first terminal, else plain', () => {
+test('builderLink: this app\u2019s build workspace\u2019s first terminal, else the app', () => {
   assert.equal(builderLink(state(), APP_ID, ''), `/builder?t=${TERM(1)}`);
   assert.equal(builderLink(state(), OTHER_APP, ''), `/builder?t=${TERM(5)}`);
   // a based install keeps the prefix
   assert.equal(builderLink(state(), APP_ID, '/cm'), `/cm/builder?t=${TERM(1)}`);
-  // no build workspace for this app → the plain portfolio page
+  // no build workspace for this app → the app on the builder (which
+  // creates it)
   const noBuilds = {
     ...state(),
     workspaces: state().workspaces.filter(w => w.kind !== 'build'),
   };
-  assert.equal(builderLink(noBuilds, APP_ID, ''), '/builder');
-  // a build workspace whose tabs were all closed still lands on the
-  // portfolio, not on a dead uuid
+  assert.equal(builderLink(noBuilds, APP_ID, ''), '/builder?app=notes');
+  // a build workspace whose tabs were all closed still lands on the app,
+  // not on a dead uuid
   const tabless = {
     ...state(),
     workspaces: state().workspaces.map(w => (w.id === BUILD_A ? { ...w, terminals: [] } : w)),
   };
-  assert.equal(builderLink(tabless, APP_ID, ''), '/builder');
+  assert.equal(builderLink(tabless, APP_ID, ''), '/builder?app=notes');
+  // an unknown app → the plain page
+  assert.equal(builderLink(state(), CONSOLE_WS, ''), '/builder');
 });
 
 // ---- apiJson: the drawer's failure surfaces ----

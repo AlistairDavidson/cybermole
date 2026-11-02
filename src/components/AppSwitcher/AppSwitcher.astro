@@ -1,0 +1,49 @@
+---
+// <app-switcher>: the builder page's app menu, at the end of the tab strip
+// (the page's top row). The trigger wears the current app's icon; the
+// items are stamped per app from the skeleton below (app-switcher.ts), the
+// current app's actions follow the divider. The wa-* imports here only
+// SSR; app-switcher.ts re-imports them client-side (AGENTS.md).
+import '@awesome.me/webawesome/dist/components/badge/badge.js';
+import '@awesome.me/webawesome/dist/components/button/button.js';
+import '@awesome.me/webawesome/dist/components/divider/divider.js';
+import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
+import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
+import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
+---
+<app-switcher slot="nav" class="app-switcher wa-align-self-center">
+  <wa-dropdown class="app-menu" placement="bottom-end">
+    <wa-button slot="trigger" id="app-switch" appearance="plain" size="s" with-caret>
+      <wa-icon class="app-switch-icon" name="cubes" label="switch app"></wa-icon>
+    </wa-button>
+    <h3>apps</h3>
+    <wa-dropdown-item class="apps-empty" disabled>no apps yet</wa-dropdown-item>
+    <wa-divider class="apps-end"></wa-divider>
+    <wa-dropdown-item class="app-open" value="open">
+      <wa-icon slot="icon" name="arrow-up-right-from-square"></wa-icon>
+      <span class="app-open-label">open app</span>
+    </wa-dropdown-item>
+    <wa-dropdown-item class="app-settings" value="settings">
+      <wa-icon slot="icon" name="gear"></wa-icon>
+      <span class="app-settings-label">app settings</span>
+    </wa-dropdown-item>
+    <wa-dropdown-item class="app-new" value="new-app">
+      <wa-icon slot="icon" name="plus"></wa-icon>
+      new app
+    </wa-dropdown-item>
+    <wa-dropdown-item class="app-delete" value="delete-app" variant="danger">
+      <wa-icon slot="icon" name="trash-can"></wa-icon>
+      <span class="app-delete-label">delete app</span>
+    </wa-dropdown-item>
+  </wa-dropdown>
+  <wa-tooltip for="app-switch" class="app-switch-tip">switch app</wa-tooltip>
+
+  <template data-app-item>
+    <wa-dropdown-item class="app-item" type="checkbox">
+      <wa-icon slot="icon"></wa-icon>
+      <span class="app-item-name"></span>
+      <wa-badge slot="details" class="app-item-chip" pill></wa-badge>
+    </wa-dropdown-item>
+  </template>
+</app-switcher>

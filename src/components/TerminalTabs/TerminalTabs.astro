@@ -17,6 +17,14 @@ import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import NavToggle from '@cybermole/app-kit/NavToggle.astro';
 import AgentTerminal from '../AgentTerminal/AgentTerminal.astro';
+import AppSwitcher from '../AppSwitcher/AppSwitcher.astro';
+
+interface Props {
+  /** The builder page: the app switcher ends the strip, and the empty
+   *  state offers a new app. */
+  appSwitcher?: boolean;
+}
+const { appSwitcher = false } = Astro.props;
 ---
 <terminal-tabs view="loading">
   <!-- manual activation: arrows walk focus, Enter/Space/click select —
@@ -62,14 +70,27 @@ import AgentTerminal from '../AgentTerminal/AgentTerminal.astro';
         </wa-dropdown-item>
       </wa-dropdown>
     </wa-button-group>
+    {appSwitcher && <AppSwitcher />}
   </wa-tab-group>
 
   <div class="tabs-empty tabs-empty-nows wa-stack wa-align-items-center wa-justify-content-center wa-gap-s hidden" data-view="no-workspace">
-    <wa-icon name="folder" class="wa-font-size-l"></wa-icon>
-    <p class="wa-caption-m">no workspace selected</p>
-    <wa-button size="s" class="empty-new-workspace">
-      <wa-icon slot="start" name="plus"></wa-icon>new workspace
-    </wa-button>
+    {
+      appSwitcher ? (
+        <>
+          <wa-icon name="cubes" class="wa-font-size-l" />
+          <p class="wa-caption-m">no apps yet</p>
+          <wa-button size="s" class="empty-new-app">
+            <wa-icon slot="start" name="plus" />
+            new app
+          </wa-button>
+        </>
+      ) : (
+        <>
+          <wa-icon name="folder" class="wa-font-size-l" />
+          <p class="wa-caption-m">opening the workspace…</p>
+        </>
+      )
+    }
   </div>
   <div class="tabs-empty tabs-empty-terminals wa-stack wa-align-items-center wa-justify-content-center wa-gap-s hidden" data-view="no-terminals">
     <wa-icon name="terminal" class="wa-font-size-l"></wa-icon>

@@ -1,4 +1,6 @@
-// POST creates a workspace (appId null = the console group). The cwd is
+// POST ensures a group's workspace of a kind (appId null = the console
+// group; per app, kind 'build' or the operator's NULL):
+// the existing one answers (created: false), else it is created. The cwd is
 // optional: absent or empty derives it (the parent app's, else
 // CYBERMOLE_NEW_SESSION_CWD). The name is optional the same way: absent or
 // empty derives it from the resolved cwd's basename, uniquified per group.

@@ -51,7 +51,7 @@ async function login(page: Page): Promise<void> {
     if (sessionCookie) writeSharedSessionCookie(`${sessionCookie.name}=${sessionCookie.value}`);
     await page.goto('/');
   }
-  await page.waitForSelector('workspace-sidebar .nav');
+  await page.waitForSelector('terminal-tabs:not([view="loading"])');
 }
 
 /** The shell wa-page's computed animation-name (persists after the run). */
@@ -63,9 +63,7 @@ function pageEnterAnimation(page: Page): Promise<string> {
 
 // ---------- the product label ----------
 
-test('the product shows as cybermole: page title, nav item, sidebar group heading', async ({
-  page,
-}) => {
+test('the product shows as cybermole: page title, nav item', async ({ page }) => {
   await login(page);
   await expect(page).toHaveTitle('cybermole');
   // No header bar (so no brand logo or breadcrumb): the tab strip is the
@@ -79,12 +77,6 @@ test('the product shows as cybermole: page title, nav item, sidebar group headin
   await expect(glyph).toHaveAttribute('library', 'brand');
   await expect(glyph).toHaveAttribute('name', 'mole');
   await expect(glyph).toHaveAttribute('label', 'Cybermole');
-  // The / page's single group names the product, not "console".
-  const heading = page.locator('workspace-sidebar .ws-group .g-name');
-  await expect(heading).toHaveText('cybermole');
-  await expect(
-    page.locator(`workspace-sidebar wa-tooltip[for="${await heading.getAttribute('id')}"]`),
-  ).toHaveText('cybermole');
 });
 
 // ---------- the page-entry fade ----------
@@ -93,7 +85,7 @@ test('console pages fade in; reduced motion skips the animation', async ({ page 
   await login(page);
   expect(await pageEnterAnimation(page)).toBe('cybermole-page-enter');
   await page.goto('/builder');
-  await page.waitForSelector('workspace-sidebar .nav');
+  await page.waitForSelector('terminal-tabs:not([view="loading"])');
   expect(await pageEnterAnimation(page)).toBe('cybermole-page-enter');
 
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -129,7 +121,6 @@ test('desktop: the hamburger leads the tab strip, hides the sidebar, and persist
 
   // Hide: the whole column goes, the hamburger stays.
   await toggle.click();
-  await expect(page.locator('workspace-sidebar')).toBeHidden();
   await expect(page.locator('side-nav')).toBeHidden();
   await expect(page.locator('wa-page.app-page')).toHaveAttribute('data-nav-collapsed', '');
   await expect(toggle).toBeVisible();
@@ -141,15 +132,15 @@ test('desktop: the hamburger leads the tab strip, hides the sidebar, and persist
   // The persisted state re-applies after a reload (both console pages).
   await page.reload();
   await page.waitForSelector('console-app');
-  await expect(page.locator('workspace-sidebar')).toBeHidden();
+  await expect(page.locator('side-nav')).toBeHidden();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await page.goto('/builder');
   await page.waitForSelector('console-app');
-  await expect(page.locator('workspace-sidebar')).toBeHidden();
+  await expect(page.locator('side-nav')).toBeHidden();
 
-  // Show again: the sidebar is back, and the memory clears.
+  // Show again: the column is back, and the memory clears.
   await toggle.click();
-  await expect(page.locator('workspace-sidebar .nav')).toBeVisible();
+  await expect(page.locator('side-nav')).toBeVisible();
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   expect(await page.evaluate(() => localStorage.getItem('cybermole:sidebar-collapsed'))).toBe(
     'false',
@@ -167,12 +158,12 @@ test('on mobile the drawer toggle leads the tab strip and drives the drawer', as
   await expect(page.locator('#nav-collapse')).toBeHidden();
   expect(await firstStripControl(page)).toBe('nav-drawer-toggle');
 
-  // Opening: the drawer carries the sidebar, the button's disclosure
+  // Opening: the drawer carries the side nav, the button's disclosure
   // semantics follow (icon flips to the close glyph).
   await toggle.click();
   await expect(thePage).toHaveAttribute('nav-open', '');
   await expect(page.locator('wa-drawer[open]')).toHaveCount(1);
-  await expect(page.locator('workspace-sidebar .nav')).toBeVisible();
+  await expect(page.locator('side-nav')).toBeVisible();
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   await expect(toggle.locator('wa-icon')).toHaveAttribute('name', 'xmark');
 
@@ -226,7 +217,7 @@ test('the new-app dialog suggests a directory from the name until the cwd is edi
 }) => {
   await login(page);
   await page.goto('/builder');
-  await page.waitForSelector('workspace-sidebar .nav');
+  await page.waitForSelector('terminal-tabs:not([view="loading"])');
   await page.waitForFunction(() => customElements.get('validation-enhancer-zod') !== undefined);
 
   const cwdValue = (): Promise<string | null> =>
@@ -235,7 +226,8 @@ test('the new-app dialog suggests a directory from the name until the cwd is edi
         (document.querySelector('wa-input#app-cwd') as unknown as { value: string | null }).value,
     );
 
-  await page.click('workspace-sidebar #new-app');
+  await page.click('app-switcher #app-switch');
+  await page.click('app-switcher .app-new');
   // Typing a name derives the slug (the server's own rule) under the
   // default cwd.
   await page.fill('wa-input#app-name input', 'Cosmetics App');
@@ -254,7 +246,8 @@ test('the new-app dialog suggests a directory from the name until the cwd is edi
 
   // Cancel (no row is created), reopen: fields reset, suggestions resume.
   await page.click('#app-dialog [data-dialog="close"]');
-  await page.click('workspace-sidebar #new-app');
+  await page.click('app-switcher #app-switch');
+  await page.click('app-switcher .app-new');
   expect(await cwdValue()).toBeNull();
   await page.fill('wa-input#app-name input', 'Cosmetics App');
   await expect.poll(cwdValue).toBe(`${WORKSPACE}/cosmetics-app`);

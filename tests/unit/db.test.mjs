@@ -1,5 +1,5 @@
 // The state db's schema upgrade: a fresh file gets the current shape, a
-// v5-shaped file opens as v8 with ALTERs applied and data intact (and the
+// v5-shaped file opens as v9 with ALTERs applied and data intact (and the
 // old `sessions` table dropped), a newer file refuses, and foreign_keys is
 // on. Reopening never re-runs an ALTER.
 import test from 'node:test';
@@ -66,11 +66,11 @@ const V5_SCHEMA = `
   );
 `;
 
-test('a fresh file (user_version 0) gets the v8 shape at CREATE — no ALTER ever throws', () => {
+test('a fresh file (user_version 0) gets the v9 shape at CREATE — no ALTER ever throws', () => {
   const file = freshFile('cybermole-db-fresh-');
   const db = new StateDb(file);
   db.db(); // open + migrate
-  assert.equal(userVersion(file), 8);
+  assert.equal(userVersion(file), 9);
   for (const t of ['apps', 'workspaces', 'terminals']) {
     assert.ok(columns(db, t).length > 0, t);
   }
@@ -93,10 +93,10 @@ test('a fresh file (user_version 0) gets the v8 shape at CREATE — no ALTER eve
   // re-runs harmlessly.
   const reopened = new StateDb(file);
   reopened.db();
-  assert.equal(userVersion(file), 8);
+  assert.equal(userVersion(file), 9);
 });
 
-test('a v5-shaped file upgrades to v8 with the ALTERs applied and its data intact', () => {
+test('a v5-shaped file upgrades to v9 with the ALTERs applied and its data intact', () => {
   const file = freshFile('cybermole-db-v5-');
   const raw = new DatabaseSync(file);
   raw.exec(V5_SCHEMA);
@@ -114,7 +114,7 @@ test('a v5-shaped file upgrades to v8 with the ALTERs applied and its data intac
 
   const db = new StateDb(file);
   db.db();
-  assert.equal(userVersion(file), 8);
+  assert.equal(userVersion(file), 9);
   assert.ok(columns(db, 'jobs').includes('app_id'));
   for (const c of ['log', 'exit_code', 'finished_at']) {
     assert.ok(columns(db, 'job_runs').includes(c), c);
@@ -149,12 +149,12 @@ test('a v5-shaped file upgrades to v8 with the ALTERs applied and its data intac
     },
   );
   assert.equal(db.getSetting('k'), '"v"');
-  // sessions is dropped at every open, and user_version stays 8.
+  // sessions is dropped at every open, and user_version stays 9.
   const tableExists = name =>
     db.db().prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !=
     null;
   assert.equal(tableExists('sessions'), false);
-  assert.equal(userVersion(file), 8);
+  assert.equal(userVersion(file), 9);
   new StateDb(file).db(); // reopen: the DROP is idempotent
   assert.equal(tableExists('sessions'), false);
   // the upgraded file takes rows in the new tables (FKs resolve)
@@ -224,13 +224,13 @@ test('a v6 file whose apps table predates apps.cwd gains the column at open, dat
     { name: 'alpha app', slug: 'alpha-app', cwd: null },
   );
   // the column comes from the check, not the number; the open does bump
-  // the file to the current v8
-  assert.equal(userVersion(file), 8);
+  // the file to the current v9
+  assert.equal(userVersion(file), 9);
   // reopening skips the ALTER
   const reopened = new StateDb(file);
   reopened.db();
   assert.ok(columns(reopened, 'apps').includes('cwd'));
-  assert.equal(userVersion(file), 8);
+  assert.equal(userVersion(file), 9);
 });
 
 test('a v6 file whose workspaces table predates workspaces.kind gains the column at open, data intact', () => {
@@ -285,13 +285,13 @@ test('a v6 file whose workspaces table predates workspaces.kind gains the column
     { name: 'legacy', kind: null },
   );
   // the column comes from the check, not the number; the open does bump
-  // the file to the current v8
-  assert.equal(userVersion(file), 8);
+  // the file to the current v9
+  assert.equal(userVersion(file), 9);
   // reopening skips the ALTER
   const reopened = new StateDb(file);
   reopened.db();
   assert.ok(columns(reopened, 'workspaces').includes('kind'));
-  assert.equal(userVersion(file), 8);
+  assert.equal(userVersion(file), 9);
 });
 
 test('a v6 file whose terminals table predates terminals.command gains the column at open, data intact', () => {
@@ -426,12 +426,87 @@ test('a v7 file whose apps table predates apps.icon gains the column at open, da
   assert.ok(columns(reopened, 'apps').includes('icon'));
 });
 
-test('a db newer than v8 refuses to open', () => {
+test('v9 folds each group and kind into its first workspace: terminals move (in order, legacy commands pinned), extras go, the index holds', () => {
+  const file = freshFile('cybermole-db-v9-merge-');
+  new StateDb(file).db();
+  // Back to a v8 world: no index, two console workspaces and two app ones.
+  const raw = new DatabaseSync(file);
+  raw.exec('DROP INDEX workspaces_one_per_app');
+  raw.exec('PRAGMA user_version = 8');
+  raw
+    .prepare(
+      'INSERT INTO apps (id, name, slug, sort_order, created_at, updated_at, created_by, updated_by) ' +
+        "VALUES ('a0000000-0000-4000-8000-000000000001', 'A', 'a', 10, 1, 1, 't', 't')",
+    )
+    .run();
+  const ws = raw.prepare(
+    'INSERT INTO workspaces (id, app_id, name, cwd, kind, sort_order, created_at, updated_at, created_by, updated_by) ' +
+      "VALUES (?, ?, ?, '/tmp', ?, ?, ?, 1, 't', 't')",
+  );
+  const C1 = 'c0000000-0000-4000-8000-000000000001';
+  const C2 = 'c0000000-0000-4000-8000-000000000002';
+  const A1 = 'c0000000-0000-4000-8000-000000000003';
+  const A2 = 'c0000000-0000-4000-8000-000000000004';
+  const A3 = 'c0000000-0000-4000-8000-000000000005';
+  ws.run(C2, null, 'second', null, 20, 50);
+  ws.run(C1, null, 'first', null, 10, 40);
+  ws.run(A1, 'a0000000-0000-4000-8000-000000000001', 'app one', 'build', 10, 60);
+  ws.run(A2, 'a0000000-0000-4000-8000-000000000001', 'app two', 'build', 20, 70);
+  // the app's operator workspace is another kind: it stays
+  ws.run(A3, 'a0000000-0000-4000-8000-000000000001', 'operator', null, 30, 80);
+  const term = raw.prepare(
+    'INSERT INTO terminals (id, workspace_id, sort_order, command, created_at, updated_at, created_by, updated_by) ' +
+      "VALUES (?, ?, ?, ?, ?, 1, 't', 't')",
+  );
+  term.run('d0000000-0000-4000-8000-000000000001', C1, 10, 'agent', 40);
+  term.run('d0000000-0000-4000-8000-000000000002', C1, 20, 'shell', 41);
+  // C2's legacy rows: the one born with its workspace is the agent slot.
+  term.run('d0000000-0000-4000-8000-000000000003', C2, 10, null, 50);
+  term.run('d0000000-0000-4000-8000-000000000004', C2, 20, null, 51);
+  term.run('d0000000-0000-4000-8000-000000000005', A2, 10, 'agent', 70);
+  term.run('d0000000-0000-4000-8000-000000000006', A3, 10, 'agent', 80);
+  raw.close();
+
+  const db = new StateDb(file);
+  db.db();
+  assert.equal(userVersion(file), 9);
+  const rows = db.db().prepare('SELECT id FROM workspaces ORDER BY id').all();
+  assert.deepEqual(
+    rows.map(r => r.id),
+    [C1, A1, A3],
+  );
+  const terms = db
+    .db()
+    .prepare('SELECT id, workspace_id, command FROM terminals ORDER BY workspace_id, sort_order')
+    .all()
+    .map(r => [r.id.slice(-1), r.workspace_id, r.command]);
+  assert.deepEqual(terms, [
+    ['1', C1, 'agent'],
+    ['2', C1, 'shell'],
+    ['3', C1, 'agent'],
+    ['4', C1, 'shell'],
+    ['5', A1, 'agent'],
+    ['6', A3, 'agent'],
+  ]);
+  assert.throws(
+    () =>
+      db
+        .db()
+        .prepare(
+          'INSERT INTO workspaces (id, app_id, name, cwd, sort_order, created_at, updated_at, created_by, updated_by) ' +
+            "VALUES ('c0000000-0000-4000-8000-000000000009', NULL, 'dup', '/tmp', 30, 1, 1, 't', 't')",
+        )
+        .run(),
+    /UNIQUE/,
+  );
+});
+
+test('a db newer than v9 refuses to open', () => {
   const file = freshFile('cybermole-db-v9-');
   const db = new StateDb(file);
   db.db();
   const raw = new DatabaseSync(file);
-  raw.exec('PRAGMA user_version = 9');
+  raw.exec('PRAGMA user_version = 10');
   raw.close();
   assert.throws(() => new StateDb(file).db(), /newer than this build understands/);
 });

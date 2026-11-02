@@ -33,10 +33,12 @@ containers and two uids (server vs tmux/terminals) — see
 
 ## What you get
 
-- **Workspaces & apps** — the sidebar *is* the app switcher: workspaces
-  grouped by app, the Console group first, a filter on workspace name,
-  `+ workspace` per group, `+ app` at the bottom. A workspace is a working
-  context: a cwd + terminal tabs + one editor tab.
+- **Workspaces & apps** — a workspace is a working context (a cwd +
+  terminal tabs, and on the builder page one editor tab), created the
+  first time it is shown. There is no workspace list: the console has one,
+  and each app has two — its build session (the builder page; the app
+  switcher at the right of the tab strip picks the app) and its operator
+  workspace (the app page's agent drawer, in the app tree).
 - **Terminals** — one tab = one tmux session. A NEW workspace auto-opens its first terminal running the agent command (the vendored pi by default — `CYBERMOLE_AGENT_COMMAND`); every other new tab runs the shell command (`CYBERMOLE_COMMAND`, default a login shell — `zsh -l` in the shipped compose). Both are configurable per install on `/settings` (db overrides, applied without a restart); closing the
   browser tab detaches, the session keeps running. A dropped connection
   (proxy idle timeout, server restart, network blip) reattaches to the
@@ -87,15 +89,17 @@ containers and two uids (server vs tmux/terminals) — see
 
 The console is two pages, each teaching one semantics (the
 [console-split plan](docs/plans/console-split-plan.md)). **`/`** is
-orchestration: console workspaces only (agents that talk to *everything* —
-multi-app work, jobs, platform management), the jobs and settings links.
-**`/builder`** is the app portfolio: the app list with lifecycle state (a
-chip per app — *unregistered tree* / *registered* / *built* / *stale
-build*, the reason as tooltip), the app workspace groups, `+ workspace`
-per app, and `+ app` at the bottom (moved off the console page). Place
+orchestration: the console's one workspace (agents that talk to
+*everything* — multi-app work, jobs, platform management), with no editor
+tab. **`/builder`** is the app portfolio: one app's workspace at a time,
+picked in the app switcher at the right end of the tab strip — a dropdown
+of the apps with lifecycle state (a chip per app — *unregistered tree* /
+*registered* / *built* / *stale build*), then the current app's open,
+settings and delete, and *new app*. The pick is remembered (`?app=<slug>`
+and the browser's storage). Place
 teaches role, and pages are homes, not permissions: nothing narrows. A
-builder-page workspace is a **build session** — a workspace row with
-`kind: 'build'` — with the root agent's full powers: root cwd (never the
+builder-page workspace is a **build session** — the app's build workspace
+row, `kind: 'build'` — with the root agent's full powers: root cwd (never the
 app tree; its editor tab and terminals work from `CYBERMOLE_NEW_SESSION_CWD`,
 the tree one click down) and the root AGENTS.md by walk, its attention
 framed at one app by two per-session env vars on **every** spawn (the
@@ -517,8 +521,8 @@ at `<base>/apps/<slug>/` (the console's URL base is baked into every app at
 scaffold/build — a subpath console serves subpath apps with no extra proxy
 rules). The web container proxies and never imports app
 code; a registered app is reachable only through that proxy (an
-unregistered slug 404s, a down host 502s — the sidebar's app group
-links what serves, with a dimmed reason when it doesn't).
+unregistered slug 404s, a down host 502s — the builder's app switcher
+links what serves, with the reason when it doesn't).
 
 The build loop belongs to the **root agent**, through the
 `cybermole-apps` MCP every root-agent session gets: `scaffold` (the
@@ -528,9 +532,10 @@ check, one quiet envelope), `register` (the db row — the privileged
 act), `reload` (the host's sync point), then `add_action` to extend it:
 one route-table entry becomes the HTTP route, the UI stub, the shim
 tool and the manual's section in lockstep. When the user asks for a new
-app, `build_session` hands it off: the app's builder workspace opens on
-the builder page with the brief as its builder agent's opening prompt,
-and the answer carries the deep link to watch it. **App agents operate,
+app, `build_session` hands it off: a fresh agent tab opens in the app's
+build workspace on the builder page (the workspace is created on first use)
+with the brief as its opening prompt, and the answer carries the deep
+link to watch it. **App agents operate,
 never build**: a pi session in a workspace under the app gets the app's own
 MCP (its tools 1:1 with the route table, registered by the tree's
 `.pi/mcp.json`; `cybermole-apps` is disabled there on purpose). Every
@@ -1309,11 +1314,11 @@ standalone-workspace install above (`CYBERMOLE_AGENT_COMMAND`).
   import order vs wa-* modules matters, see AGENTS.md)
 - `src/components` — web components: `<console-app>` (the orchestrator,
   both pages: console scope on `/`, builder scope on `/builder`),
-  `<workspace-sidebar>` (the workspace switcher, scope-split),
+  `<app-switcher>` (the builder's app picker),
   `<terminal-tabs>`, `<agent-terminal>` (xterm.js — the classic client-side
   exception, CODE_STYLE §7); each is a component directory whose Astro
   half SSRs the static shell and holds the `<template>`s its enhancer
-  stamps (`ConsoleApp/`, `WorkspaceSidebar/`, `TerminalTabs/`,
+  stamps (`ConsoleApp/`, `AppSwitcher/`, `TerminalTabs/`,
   `AgentTerminal/`)
 - `src/lib` — shared strict TS: auth (scrypt + persisted sessions + rate
   limiter), tmux helpers, the apps/workspaces domains (the workspace tree,

@@ -3,8 +3,8 @@
 // terminals are created once, minutes before the specs that assert their
 // liveness run, and a session that dies out-of-band in between is never
 // retried by design (only an attach respawns) — scratch heals itself
-// through the apps specs' own page attaches, but deploy's tab is attached
-// by nothing, so its liveness would be gone forever. The heal re-establishes
+// through the apps specs' own page attaches, but proj's tab is attached
+// only by the builder page, so its liveness could be gone for good. The heal re-establishes
 // the precondition where the tests need it instead of waiting on a
 // liveness that can no longer return.
 import { spawnSync } from 'node:child_process';

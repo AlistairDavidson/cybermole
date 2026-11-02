@@ -2,12 +2,7 @@
 // client-side against the same definitions. Cron validity and name
 // normalization stay server-side, in the domains.
 import { z } from 'zod';
-import {
-  AppIdSchema,
-  AppSlugSchema,
-  TerminalIdSchema,
-  WorkspaceIdSchema,
-} from '@cybermole/app-kit';
+import { AppIdSchema, AppSlugSchema, TerminalIdSchema } from '@cybermole/app-kit';
 import { MAX_WORKSPACE_NAME } from '../lib/terminals/workspace-name';
 
 /** A parse failure answers 401, which fail2ban counts. Empty strings pass:
@@ -55,7 +50,8 @@ export const appPatchBody = z.object({
   icon: z.string().max(64, 'icon is too long').optional(),
 });
 
-/** appId null or absent = the console group. An absent or empty cwd is
+/** An ensure: the group's workspace of that kind answers when it exists
+ *  (the fields only shape a create). appId null or absent = the console group. An absent or empty cwd is
  *  derived: the parent app's, else CYBERMOLE_NEW_SESSION_CWD — except kind
  *  'build' (a build session), which requires appId and always starts at
  *  the server default. An absent or empty name is derived too: the
@@ -116,13 +112,6 @@ export const terminalReorderBody = z.object({
   order: z.array(TerminalIdSchema).min(1, 'order is required').max(200, 'too many terminals'),
 });
 
-/** A full-list reorder within one group (the console's or one app's):
- *  every workspace of that group, each once. The domain checks the set;
- *  the schema caps the list. */
-export const workspaceReorderBody = z.object({
-  order: z.array(WorkspaceIdSchema).min(1, 'order is required').max(500, 'too many workspaces'),
-});
-
 /** A full-list reorder: every app row, each once. */
 export const appReorderBody = z.object({
   order: z.array(AppIdSchema).min(1, 'order is required').max(200, 'too many apps'),
@@ -154,28 +143,6 @@ export const appForm = z.object({
 export const appSettingsForm = z.object({
   name: z.string().trim().min(1, 'name is required').max(80, 'name is too long (max 80)'),
   cwd: z.string().trim().max(4096, 'cwd is too long').optional(),
-});
-
-/** The console dialog's workspace: both fields may be empty on the wire —
- *  the server derives what's missing (name ← the cwd's basename, uniquified
- *  in the group; cwd ← the server default). */
-export const consoleWorkspaceForm = z.object({
-  name: z
-    .string()
-    .trim()
-    .max(MAX_WORKSPACE_NAME, `name is too long (max ${MAX_WORKSPACE_NAME})`)
-    .optional(),
-  cwd: z.string().trim().max(4096, 'cwd is too long').optional(),
-});
-
-/** The builder dialog's build session: every build session shares the root
- *  cwd, so a derived name would be the same for every app — name it. */
-export const buildSessionForm = z.object({
-  name: z
-    .string()
-    .trim()
-    .min(1, 'name is required')
-    .max(MAX_WORKSPACE_NAME, `name is too long (max ${MAX_WORKSPACE_NAME})`),
 });
 
 // ---------- /settings terminal-defaults form ----------

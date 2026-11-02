@@ -1,12 +1,14 @@
 // Workspaces (a cwd + terminal tabs) belong to the console (app_id NULL) or
-// one app. Each terminal tab is a tmux session 't-<uuid>', derived from the
+// one app — exactly one per group and kind (the workspaces_one_per_app
+// index: the console's, and per app a build session plus an operator
+// workspace), so a create is an ensure: it answers the existing one. Each terminal tab is a tmux session 't-<uuid>', derived from the
 // row id. The row exists even when the spawn fails; the first attach retries.
 // Deletes cascade through FKs; tmux kills are best-effort.
 // A kind='build' workspace is a build session: cwd stays the console default
 // (the parent app's cwd is skipped) and every spawn carries the framing env
 // (CYBERMOLE_WORKSPACE_FOCUS[_TREE]) — advisory attention, never authority.
 // A workspace created without a meaningful name names itself: the resolved
-// cwd's basename, uniquified among its group's siblings (workspace-name.ts).
+// cwd's basename (workspace-name.ts).
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -17,7 +19,6 @@ import { emitDomainEvent } from '../platform/events';
 import { terminalSessionName } from './tmux';
 import { splitCommandLine } from './terminal-defaults';
 import { reorderUpdates, type TerminalCommand } from './tab-order';
-import { orderPlan } from '../order-plan';
 import { workspaceNameFromCwd } from './workspace-name';
 import {
   asTerminalId,
@@ -36,7 +37,8 @@ const log = componentLogger('workspaces');
 
 // ---------- results ----------
 
-/** 'build' is the only kind; NULL covers console and legacy in-tree rows. */
+/** 'build' = an app's build session; NULL = the console's workspace, or an
+ *  app's operator workspace (in the app tree — the app page's drawer). */
 export type WorkspaceKind = 'build' | null;
 export type SaveWorkspaceData = {
   id: WorkspaceId;
@@ -44,9 +46,12 @@ export type SaveWorkspaceData = {
   name: string;
   cwd: string;
   kind: WorkspaceKind;
-  /** Create only: the auto-opened agent tab's id (null when even its row
-   *  failed) — the deep link into the workspace. Update answers omit it. */
+  /** Create only: the agent tab it opened (null when even its row failed,
+   *  or an existing workspace was answered without a brief) — the deep
+   *  link into the workspace. Update answers omit it. */
   terminalId?: TerminalId | null;
+  /** Create only: false when the group's existing workspace answered. */
+  created?: boolean;
 };
 /** invalid_cwd: not absolute or not an existing directory. invalid_kind:
  *  kind 'build' without an appId (the API schema rejects it first; this is
@@ -128,20 +133,6 @@ export type ReorderTerminalsFailure = ResultFailure<
   ReorderTerminalsErrorCode
 >;
 
-/** A full-list reorder within one group (the console's or one app's): the
- *  ids are that group's workspaces, each once, in their new order. The
- *  group is whichever parent the listed rows share; ids from two groups
- *  (or nowhere) are invalid_order — a stale client re-reads state and
- *  retries. */
-export type ReorderWorkspacesData = { order: WorkspaceId[] };
-export type ReorderWorkspacesErrorCode = 'invalid_order' | 'database_error';
-export type ReorderWorkspacesSuccess = ResultSuccess<'reorder_workspaces', ReorderWorkspacesData>;
-export type ReorderWorkspacesFailure = ResultFailure<
-  'reorder_workspaces',
-  ReorderWorkspacesData,
-  ReorderWorkspacesErrorCode
->;
-export type ReorderWorkspacesResult = ReorderWorkspacesSuccess | ReorderWorkspacesFailure;
 export type ReorderTerminalsResult = ReorderTerminalsSuccess | ReorderTerminalsFailure;
 
 /** `agent`: this is the workspace's auto-opened agent tab, so a respawn
@@ -304,10 +295,12 @@ export class Workspaces {
    *  'build', which always takes the default (a build session works from
    *  the root cwd, never the app tree). Validated either way, since the
    *  app's dir may have gone since it was saved. name: explicit wins
-   *  verbatim; an empty one derives from the resolved cwd (uniquified
-   *  against the group's existing names — explicit names never uniquify).
+   *  verbatim; an empty one derives from the resolved cwd.
    *  brief: handed to the auto-opened agent tab as its opening prompt (the
-   *  agent command's first argument — pi takes it as the initial message). */
+   *  agent command's first argument — pi takes it as the initial message).
+   *  When the group already has its workspace of that kind, that one
+   *  answers unchanged (name and cwd are birth-only) and a brief opens a
+   *  fresh agent tab in it instead. */
   async saveWorkspace(input: {
     appId?: AppId | null;
     name?: string;
@@ -342,6 +335,21 @@ export class Workspaces {
       parentCwd = parent.data.value.cwd;
       focusEnv = this.focusEnv(kind, parent.data.value.slug, parentCwd);
     }
+    // No await between this read and the insert below, so two creates
+    // cannot both miss it.
+    const existing = databaseRead(
+      'could not read workspace',
+      () =>
+        this.deps.db.get(
+          qb
+            .selectFrom('workspaces')
+            .select(['id', 'app_id', 'name', 'cwd', 'kind', 'created_at'])
+            .where('app_id', 'is', appId)
+            .where('kind', 'is', kind),
+        ) ?? null,
+    );
+    if (!existing.ok) return fail('database_error', existing.errorMessage);
+    if (existing.data.value) return this.answerExisting(existing.data.value, input.brief);
     const wanted =
       input.cwd !== undefined
         ? input.cwd
@@ -351,17 +359,7 @@ export class Workspaces {
     const cwd = checkedCwd(wanted);
     if (!cwd.ok) return fail('invalid_cwd', cwd.reason);
     const explicit = (input.name ?? '').trim();
-    let name = explicit;
-    if (explicit === '') {
-      const siblings = databaseRead('could not read workspace names', () =>
-        this.deps.db.all(qb.selectFrom('workspaces').select('name').where('app_id', 'is', appId)),
-      );
-      if (!siblings.ok) return fail('database_error', siblings.errorMessage);
-      name = workspaceNameFromCwd(
-        cwd.cwd,
-        siblings.data.value.map(row => row.name),
-      );
-    }
+    const name = explicit === '' ? workspaceNameFromCwd(cwd.cwd) : explicit;
     const actor = this.actor();
     if (!actor.ok) return fail('database_error', actor.errorMessage);
     const order = this.nextOrder(appId);
@@ -413,7 +411,65 @@ export class Workspaces {
     return {
       ok: true,
       resultType: 'save_workspace',
-      data: { id, appId, name, cwd: cwd.cwd, kind, terminalId: opened.data?.id ?? null },
+      data: {
+        id,
+        appId,
+        name,
+        cwd: cwd.cwd,
+        kind,
+        terminalId: opened.data?.id ?? null,
+        created: true,
+      },
+    } satisfies SaveWorkspaceSuccess;
+  }
+
+  /** The ensure half of saveWorkspace: the group's workspace as stored, plus
+   *  a fresh agent tab carrying the brief when there is one. */
+  private async answerExisting(
+    row: {
+      id: string;
+      app_id: string | null;
+      name: string;
+      cwd: string;
+      kind: string | null;
+      created_at: number;
+    },
+    rawBrief: string | undefined,
+  ): Promise<SaveWorkspaceResult> {
+    const id = asWorkspaceId(row.id);
+    const appId = row.app_id as AppId | null;
+    const kind: WorkspaceKind = row.kind === 'build' ? 'build' : null;
+    const brief = rawBrief?.trim() ?? '';
+    let terminalId: TerminalId | null = null;
+    if (brief !== '') {
+      const focus = this.focusEnvByRow({ kind: row.kind, app_id: appId });
+      if (!focus.ok)
+        return {
+          ok: false,
+          resultType: 'save_workspace',
+          errorCode: 'database_error',
+          errorMessage: focus.errorMessage,
+        } satisfies SaveWorkspaceFailure;
+      const opened = await this.openTab(
+        id,
+        row.cwd,
+        undefined,
+        'agent',
+        Math.max(Date.now(), row.created_at + 1),
+        focus.env,
+        brief,
+      );
+      if (!opened.ok)
+        log.warn(
+          `workspace "${row.name}": the briefed agent tab did not start ` +
+            `(${opened.errorCode}: ${opened.errorMessage}) — the tab is there, the first attach retries`,
+        );
+      terminalId = opened.data?.id ?? null;
+    }
+    return {
+      ok: true,
+      resultType: 'save_workspace',
+      data: { id, appId, name: row.name, cwd: row.cwd, kind, terminalId, created: false },
     } satisfies SaveWorkspaceSuccess;
   }
 
@@ -747,61 +803,6 @@ export class Workspaces {
       resultType: 'reorder_terminals',
       data: { workspaceId, order: ordered },
     } satisfies ReorderTerminalsSuccess;
-  }
-
-  /** Persists a full-list reorder of one group: positions become steps of
-   *  10. The plan (same set, each once) is computed by order-plan's pure
-   *  helper. */
-  async reorderWorkspaces(ordered: WorkspaceId[]): Promise<ReorderWorkspacesResult> {
-    const fail = (errorCode: ReorderWorkspacesErrorCode, errorMessage: string) =>
-      ({
-        ok: false,
-        resultType: 'reorder_workspaces',
-        errorCode,
-        errorMessage,
-      }) satisfies ReorderWorkspacesFailure;
-    if (ordered.length === 0) return fail('invalid_order', 'the order is empty');
-    const rows = databaseRead('could not read workspaces', () =>
-      this.deps.db.all(qb.selectFrom('workspaces').select(['id', 'app_id', 'sort_order'])),
-    );
-    if (!rows.ok) return fail('database_error', rows.errorMessage);
-    // The group is the first listed row's parent; every other id must share
-    // it, or orderPlan flags it as not in this group.
-    const parent = rows.data.value.find(w => w.id === ordered[0])?.app_id ?? null;
-    const group = rows.data.value.filter(w => w.app_id === parent);
-    const plan = orderPlan(
-      group.map(w => ({ id: w.id, sortOrder: w.sort_order })),
-      ordered,
-      'workspace',
-      'in this group',
-    );
-    if (!plan.ok) return fail('invalid_order', plan.message);
-    if (plan.updates.length > 0) {
-      const actor = this.actor();
-      if (!actor.ok) return fail('database_error', actor.errorMessage);
-      const now = Date.now();
-      for (const update of plan.updates) {
-        const updated = databaseUpdate('could not save the workspace order', () =>
-          this.deps.db.run(
-            qb
-              .updateTable('workspaces')
-              .set({
-                sort_order: update.sortOrder,
-                updated_at: now,
-                updated_by: actor.username,
-              })
-              .where('id', '=', update.id),
-          ),
-        );
-        if (!updated.ok) return fail('database_error', updated.errorMessage);
-      }
-      log.info(`${plan.updates.length} workspace(s) reordered in their group`);
-    }
-    return {
-      ok: true,
-      resultType: 'reorder_workspaces',
-      data: { order: ordered },
-    } satisfies ReorderWorkspacesSuccess;
   }
 
   /** For the WS attach path, with the workspace cwd for respawns and the

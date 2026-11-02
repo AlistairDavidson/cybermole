@@ -118,7 +118,7 @@ async function login(page: Page): Promise<void> {
       (await page.context().cookies()).find(c => c.name === 'cybermole_session') ?? null;
     if (sessionCookie) writeSharedSessionCookie(`${sessionCookie.name}=${sessionCookie.value}`);
   }
-  await page.waitForSelector('workspace-sidebar .nav');
+  await page.waitForSelector('terminal-tabs:not([view="loading"])');
 }
 
 test.beforeAll(async () => {
@@ -585,12 +585,12 @@ test('the agent drawer: opens from the app page, ensures the operator workspace,
   }
 
   await page.goto(`/apps/${SLUG}/`);
-  // The affordance: the drawer button and the builder link (plain — no
-  // build session exists yet), on the page.
+  // The affordance: the drawer button and the builder link (to the app —
+  // no build session exists yet), on the page.
   await expect(page.locator('agent-console .agent-console-open')).toBeVisible();
   await expect(page.locator('agent-console .agent-console-builder')).toHaveAttribute(
     'href',
-    '/builder',
+    `/builder?app=${SLUG}`,
     { timeout: 10_000 },
   );
 
@@ -671,14 +671,11 @@ test('the drawer\u2019s builder link: deep-links the app\u2019s build workspace 
   await page.locator('agent-terminal:not(.hidden) .terminal-container').click();
   await page.keyboard.type('pwd\n');
   await waitForPaneText(page, 'agent-terminal:not(.hidden)', WORKSPACE, 10_000);
-  await expect
-    .poll(async () => {
-      const active = await page
-        .locator('workspace-sidebar wa-tree-item[data-ws][selected]')
-        .getAttribute('data-ws');
-      return active === firstBuild.id;
-    })
-    .toBe(true);
+  await expect(page.locator(`app-switcher .app-item[value="app:${state.appId}"]`)).toHaveAttribute(
+    'checked',
+  );
+  // One build session beside the operator workspace, never two.
+  expect(fresh.workspaces.filter(w => w.kind === 'build')).toHaveLength(1);
 });
 
 test('the cybermole nav: the app page wears the console side nav and top row, and /apps', async ({

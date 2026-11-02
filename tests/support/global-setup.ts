@@ -102,8 +102,8 @@ export default async function globalSetup(): Promise<void> {
   );
   fs.chmodSync(cmd, 0o755);
 
-  // The fixture tree, through the real domains: one app, two console
-  // workspaces, one app workspace. Rows only; which tabs are live is decided
+  // The fixture tree, through the real domains: one app, and one workspace
+  // per group — the console's and the app's. Rows only; which tabs are live is decided
   // by the tmux sessions below. Each create auto-opens the first tab, so
   // `titles` lists only the extras (scratch's dead-tab fixture).
   const username = (): DatabaseReadResult<string | null> => ({
@@ -141,8 +141,9 @@ export default async function globalSetup(): Promise<void> {
     appId: string | null,
     titles: string[],
   ): Promise<{ cwd: string; terminals: string[] }> => {
+    // An app's fixture workspace is its build session (the builder shows it).
     const ws = await workspaces.saveWorkspace(
-      appId === null ? { name, cwd } : { appId: asAppId(appId), name, cwd },
+      appId === null ? { name, cwd } : { appId: asAppId(appId), name, cwd, kind: 'build' },
     );
     if (!ws.ok) throw new Error(`global-setup: ${ws.errorMessage}`);
     // Read back the auto-opened tab so the list starts with it.
@@ -163,7 +164,6 @@ export default async function globalSetup(): Promise<void> {
     return { cwd, terminals };
   };
   const scratch = await seeded('scratch', dir('scratch'), null, ['build']);
-  const deploy = await seeded('deploy checklist', dir('deploy'), null, []);
   const proj = await seeded('proj', dir('proj'), app.data.id, []);
 
   // Kill a leftover test tmux server before starting the live fixtures, and
@@ -197,7 +197,6 @@ export default async function globalSetup(): Promise<void> {
   const liveFixtures: FixtureSession[] = [];
   for (const [group, index] of [
     [scratch, 0],
-    [deploy, 0],
     [proj, 0],
   ] as const) {
     const id = group.terminals[index];
@@ -220,8 +219,8 @@ export default async function globalSetup(): Promise<void> {
     liveFixtures.push({ session, cwd: group.cwd });
   }
   // e2e.spec's beforeAll heals these against out-of-band death: a fixture
-  // session nothing attaches (deploy's) is never respawned by the app, and
-  // the tab dots' liveness contract would be unrecoverable.
+  // session no page attaches is never respawned by the app, and the tab
+  // dots' liveness contract would be unrecoverable.
   writeFixtureSessions(liveFixtures);
 
   // The server serves dist/ + dist-server/ — build if they're missing.

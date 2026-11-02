@@ -101,7 +101,7 @@ async function login(page: Page): Promise<void> {
       (await page.context().cookies()).find(c => c.name === 'cybermole_session') ?? null;
     if (sessionCookie) writeSharedSessionCookie(`${sessionCookie.name}=${sessionCookie.value}`);
   }
-  await page.waitForSelector('workspace-sidebar .nav');
+  await page.waitForSelector('terminal-tabs:not([view="loading"])');
 }
 
 test.beforeAll(async () => {

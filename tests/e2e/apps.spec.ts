@@ -112,7 +112,7 @@ async function login(page: Page): Promise<void> {
       (await page.context().cookies()).find(c => c.name === 'cybermole_session') ?? null;
     if (sessionCookie) writeSharedSessionCookie(`${sessionCookie.name}=${sessionCookie.value}`);
   }
-  await page.waitForSelector('workspace-sidebar .nav');
+  await page.waitForSelector('terminal-tabs:not([view="loading"])');
 }
 
 /** Register the fixture app via the internal API and reload the host.
@@ -247,17 +247,24 @@ test('the serving flag: /api/state reports the registered app serving, the tree-
   expect(alpha, JSON.stringify(apps)).toBeDefined();
   expect(alpha?.serving).toBe(false);
   expect(typeof alpha?.servingReason).toBe('string');
-  // The sidebar's app group has the open link (dimmed when not serving) —
-  // on the builder page, where the app portfolio lives (the split).
-  await page.goto('/builder');
-  const open = page.locator('workspace-sidebar .ws-group[data-group="app-fixture"] .open-app-btn');
-  // The sidebar's own poll reads the same cached flag; ride out the window.
+  // The builder's switcher offers the current app's open link, labelled
+  // with the reason when not serving.
+  const open = page.locator('app-switcher .app-open');
+  await page.goto('/builder?app=app-fixture');
   await expect(open).toHaveAttribute('href', '/apps/app-fixture/');
-  await expect(open).not.toHaveClass(/not-serving/, { timeout: 30_000 });
-  const alphaOpen = page.locator(
-    'workspace-sidebar .ws-group[data-group="alpha-app"] .open-app-btn',
-  );
-  await expect(alphaOpen).toHaveClass(/not-serving/);
+  // The page reads the same cached flag; ride out the window.
+  await expect
+    .poll(
+      async () => {
+        await page.reload();
+        await page.waitForSelector('terminal-tabs:not([view="loading"])');
+        return (await open.locator('.app-open-label').textContent()) ?? '';
+      },
+      { timeout: 30_000, intervals: [2000] },
+    )
+    .not.toContain('not serving');
+  await page.goto('/builder?app=alpha-app');
+  await expect(open).toContainText('not serving');
 });
 
 test('an unknown slug answers the Result-JSON 404 through the origin', async ({ page }) => {

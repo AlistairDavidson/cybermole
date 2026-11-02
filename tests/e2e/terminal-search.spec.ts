@@ -433,10 +433,17 @@ test('find bar: ctrl+F searches the (backfilled) scrollback, Esc refocuses the t
   await expect(findBar).toHaveClass(/hidden/);
   await expect(pane.locator('.terminal-container .xterm-helper-textarea')).toBeFocused();
 
-  // Not hijacked while a real input (the sidebar filter) has focus.
-  await page.fill('workspace-sidebar wa-input#workspace-search input', 'find');
+  // Not hijacked while a real input has focus (a probe field: the console
+  // page itself carries none outside its dialogs).
+  await page.evaluate(() => {
+    const probe = document.createElement('input');
+    probe.id = 'focus-probe';
+    document.body.append(probe);
+  });
+  await page.fill('#focus-probe', 'find');
   await page.keyboard.press('Control+f');
   await expect(findBar).toHaveClass(/hidden/);
+  await page.evaluate(() => document.getElementById('focus-probe')?.remove());
 
   // The query survives a pane switch (module state, not DOM).
   const second = await api('POST', `/api/workspaces/${ws}/terminals`, {});

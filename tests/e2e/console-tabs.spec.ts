@@ -53,7 +53,7 @@ async function login(page: Page): Promise<void> {
       (await page.context().cookies()).find(c => c.name === 'cybermole_session') ?? null;
     if (sessionCookie) writeSharedSessionCookie(`${sessionCookie.name}=${sessionCookie.value}`);
   }
-  await page.waitForSelector('workspace-sidebar .nav');
+  await page.waitForSelector('terminal-tabs:not([view="loading"])');
 }
 
 async function api(
@@ -76,15 +76,6 @@ Promise<{ status: number; json: any }> {
   );
 }
 
-/** Forces the 15 s poll; raw in-page POSTs don't trigger it. */
-async function refreshState(page: Page): Promise<void> {
-  await page.evaluate(() =>
-    (
-      document.querySelector('console-app') as unknown as { loadState(): Promise<void> }
-    ).loadState(),
-  );
-}
-
 /** The server's persisted terminal order for a workspace — the reorder
  *  write's echo. The bar is optimistic, so a reload must wait on THIS, not
  *  on the DOM (a reload can kill the PUT still in flight). */
@@ -94,22 +85,37 @@ async function persistedOrder(page: Page, ws: string): Promise<string[]> {
   return w.terminals.map((t: { id: string }) => t.id);
 }
 
-/** A fresh console workspace, selected, with titled tabs for stable labels:
+/** Workspace id → the slug of the throwaway app that owns it. */
+const appOfWorkspace = new Map<string, string>();
+
+/** A fresh workspace — a throwaway app's one workspace, opened on the
+ * builder page — with titled tabs for stable labels:
  * [term 1 (the auto-opened agent tab), ...titles]. */
 async function makeWorkspace(page: Page, name: string, titles: string[] = []): Promise<string> {
-  const made = await api(page, 'POST', '/api/workspaces', { name });
+  const suffix = Math.random().toString(36).slice(2, 8);
+  const app = await api(page, 'POST', '/api/apps', { name: `${name} ${suffix}` });
+  expect(app.status, JSON.stringify(app.json)).toBe(200);
+  const made = await api(page, 'POST', '/api/workspaces', {
+    appId: app.json.id,
+    name,
+    kind: 'build',
+  });
   expect(made.status, JSON.stringify(made.json)).toBe(200);
   for (const title of titles) {
     const term = await api(page, 'POST', `/api/workspaces/${made.json.id}/terminals`, { title });
     expect(term.status, JSON.stringify(term.json)).toBe(200);
   }
-  await refreshState(page);
-  await page.click(`workspace-sidebar wa-tree-item[data-ws="${made.json.id}"]`);
+  appOfWorkspace.set(made.json.id as string, app.json.slug as string);
+  await page.goto(`/builder?app=${app.json.slug}`);
+  await page.waitForSelector('terminal-tabs wa-tab');
   return made.json.id as string;
 }
 
+/** Drops the owning app, and its workspace with it. */
 async function deleteWorkspace(page: Page, ws: string): Promise<void> {
-  expect((await api(page, 'DELETE', `/api/workspaces/${ws}`)).status).toBe(200);
+  const slug = appOfWorkspace.get(ws);
+  expect(slug, 'a workspace made by makeWorkspace').toBeDefined();
+  expect((await api(page, 'DELETE', `/api/apps/${slug}`)).status).toBe(200);
 }
 
 /** The visible pane's buffer, searched line by line. */
@@ -145,11 +151,11 @@ async function tabLabels(page: Page): Promise<string[]> {
   return page.locator('terminal-tabs wa-tab .tab-label').allTextContents();
 }
 
-/** Re-selects the workspace after a reload (the first fixture row would
- * otherwise win) and returns once its bar is up. */
+/** After a reload (?app= keeps the workspace's app selected): returns
+ * once its bar is up. */
 async function reselectWorkspace(page: Page, ws: string): Promise<void> {
-  await page.waitForSelector('workspace-sidebar .nav');
-  await page.click(`workspace-sidebar wa-tree-item[data-ws="${ws}"]`);
+  expect(appOfWorkspace.has(ws)).toBe(true);
+  await page.waitForSelector('terminal-tabs:not([view="loading"])');
   await page.waitForSelector('terminal-tabs wa-tab');
 }
 
@@ -265,14 +271,15 @@ test('ctrl-t opens a shell tab and ctrl-shift-t an agent tab; neither fires in a
   await waitForTermText(page, AGENT_MARKER);
 
   // A focused text field keeps the keys: no third tab from the field in the
-  // new-workspace dialog, and the dialog stays open.
-  await page.locator('workspace-sidebar [data-new-ws]').first().click();
-  await page.fill('wa-input#workspace-name input', 'shortcut guard');
+  // new-app dialog, and the dialog stays open.
+  await page.click('app-switcher #app-switch');
+  await page.click('app-switcher .app-new');
+  await page.fill('wa-input#app-name input', 'shortcut guard');
   await page.keyboard.press('Control+t');
   await page.keyboard.press('Control+Shift+t');
   await page.waitForTimeout(500);
   expect(await tabIds(page)).toHaveLength(3);
-  await expect(page.locator('#workspace-dialog')).toHaveAttribute('open', '');
+  await expect(page.locator('#app-dialog')).toHaveAttribute('open', '');
   await page.keyboard.press('Escape');
   await page.waitForTimeout(250);
   expect(await tabIds(page)).toHaveLength(3);
@@ -507,8 +514,8 @@ test('touch drag sends wheel reports when the pane tracks the mouse', async ({ p
 test('an out-of-band build session toasts the builder page', async ({ page }) => {
   test.setTimeout(60_000);
   await login(page);
-  const ws = await makeWorkspace(page, 'handoff toast ws');
-  await waitForTermText(page, AGENT_MARKER);
+  await page.goto('/');
+  await page.waitForSelector('terminal-tabs wa-tab');
 
   const app = await api(page, 'POST', '/api/apps', { name: 'Handoff Toast' });
   expect(app.status, JSON.stringify(app.json)).toBe(200);
@@ -524,7 +531,6 @@ test('an out-of-band build session toasts the builder page', async ({ page }) =>
     { timeout: 15_000 },
   );
 
-  // The app delete cascades the session; the console ws goes too.
+  // The app delete cascades the session.
   expect((await api(page, 'DELETE', `/api/apps/${app.json.slug}`)).status).toBe(200);
-  await deleteWorkspace(page, ws);
 });

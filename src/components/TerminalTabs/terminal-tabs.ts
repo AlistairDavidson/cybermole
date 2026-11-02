@@ -5,7 +5,7 @@
 // and never builds markup. Each tab's <agent-terminal> is stamped into its
 // panel on first activation and stays connected while the panel is
 // hidden. The editor tab (an iframe of the /editor proxy) is pinned after
-// the terminals.
+// the terminals; the builder page's app switcher ends the strip.
 //
 // The group owns the tablist semantics, the panels' visibility and arrow
 // focus (manual activation). Selection stays here: a selection is an
@@ -29,7 +29,7 @@
 // popped tab closes or this tab is clicked.
 //
 // Emits (bubbling, handled by <console-app>): new-terminal {workspaceId,
-// command}, close-terminal {id}, new-workspace {appId}, pop-blocked {id},
+// command}, close-terminal {id}, new-app, pop-blocked {id},
 // reorder-terminals {workspaceId, order}.
 import type { TerminalState, WorkspaceState } from '../../lib/platform/types';
 import type { TerminalId, TmuxSessionName, WorkspaceId } from '@cybermole/app-kit';
@@ -76,6 +76,7 @@ export class TerminalTabs extends HTMLElement {
   private readonly panes = new Map<TerminalId, PaneElement>();
   private group: HTMLElement | null = null;
   private newTabGroup: HTMLElement | null = null;
+  private appSwitcher: HTMLElement | null = null;
   /** Popped tabs' window handles; pagehide or `closed` brings the terminal back. */
   private readonly popped = new Map<TerminalId, Window>();
   private editorTab: HTMLElement | null = null;
@@ -91,6 +92,7 @@ export class TerminalTabs extends HTMLElement {
     if (this.group) return; // listeners on the host survive a re-connect
     this.group = this.querySelector('wa-tab-group');
     this.newTabGroup = this.querySelector('.tab-new-group');
+    this.appSwitcher = this.querySelector('app-switcher');
     this.addEventListener('terminal-pop-out', e => {
       this.popTerminal((e as CustomEvent<{ id: TerminalId }>).detail.id);
     });
@@ -171,7 +173,7 @@ export class TerminalTabs extends HTMLElement {
       this.updateTab(t, i);
     }
     this.appendEditorTab();
-    if (this.newTabGroup) this.group.appendChild(this.newTabGroup);
+    this.pinTrailing();
     const initial =
       initialTab !== undefined && ws.terminals.some(t => t.id === initialTab) ? initialTab : null;
     if (initial !== null) this.selectTerminal(initial);
@@ -236,6 +238,13 @@ export class TerminalTabs extends HTMLElement {
     return this.ws ? this.ws.terminals.map(t => t.id) : [];
   }
 
+  /** New-tab and the app switcher stay after every tab. */
+  private pinTrailing(): void {
+    if (!this.group) return;
+    if (this.newTabGroup) this.group.appendChild(this.newTabGroup);
+    if (this.appSwitcher) this.group.appendChild(this.appSwitcher);
+  }
+
   /** Moves the tabs to the state order and pins editor/new-tab last. Only
    *  the nav-slotted children's relative order matters; panels interleave. */
   private applyDomOrder(): void {
@@ -245,7 +254,7 @@ export class TerminalTabs extends HTMLElement {
       if (tab) this.group.appendChild(tab);
     }
     if (this.editorTab) this.group.appendChild(this.editorTab);
-    if (this.newTabGroup) this.group.appendChild(this.newTabGroup);
+    this.pinTrailing();
   }
 
   /** Optimistic: ws and the strip take the order at once, and the write
@@ -369,7 +378,7 @@ export class TerminalTabs extends HTMLElement {
     if (target.closest('.tab-new')) this.emitNewTerminal('shell');
     else if (target.closest('.empty-new-terminal'))
       this.emit('new-terminal', { workspaceId: this.ws?.id });
-    else if (target.closest('.empty-new-workspace')) this.emit('new-workspace', { appId: null });
+    else if (target.closest('.empty-new-app')) this.emit('new-app', {});
     else if (target.closest('.editor-host .tb-pop-out')) this.popEditor();
     else this.selectTabOf(target);
   }

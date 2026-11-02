@@ -366,11 +366,11 @@ function createRoutes(
     return sendWebResponse(res, jsonResponse(deleted.data, 200));
   }
 
-  /** POST /workspaces: a kind 'build' workspace for the app named by slug,
-   *  with the brief its auto-opened agent tab receives as the opening
-   *  prompt. The same service and mapper as the browser verb, so the body
-   *  is byte-identical apart from the create's extra (terminalId — the
-   *  deep link into the workspace). An unknown slug is a 404, like the
+  /** POST /workspaces: the app's build workspace (created when
+   *  missing), with a fresh agent tab that receives the brief as its
+   *  opening prompt. The same service and mapper as the browser verb, so
+   *  the body is byte-identical apart from the create's extras (terminalId
+   *  — the deep link into the workspace — and created). An unknown slug is a 404, like the
    *  jobs app filter. */
   async function createWorkspace(
     req: http.IncomingMessage,

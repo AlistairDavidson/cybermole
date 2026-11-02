@@ -94,7 +94,7 @@ async function signIn(page: Page, server: PrivateServer): Promise<void> {
   const [name, value] = server.cookie.split('=');
   await page.context().addCookies([{ name: name!, value: value!, url: BASE }]);
   await page.goto(`${BASE}/`);
-  await page.waitForSelector('workspace-sidebar .nav');
+  await page.waitForSelector('terminal-tabs:not([view="loading"])');
 }
 
 test('CYBERMOLE_GRAFANA_URL unset: no logs link anywhere, /logs answers 404', async ({ page }) => {

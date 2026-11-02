@@ -28,14 +28,11 @@ export function appBySlug(
   return state.apps.find(a => a.slug === slug) ?? null;
 }
 
-/** This app's operator workspace (kind NULL, in the app tree): the first
- *  in console order, else null — the drawer then creates one (POST
- *  /api/workspaces {appId} derives the app tree cwd). */
+/** This app's operator workspace (kind NULL, in the app tree; one per app),
+ *  else null — the drawer then creates it (POST /api/workspaces {appId} is
+ *  an ensure that derives the app tree cwd). */
 export function operatorWorkspace(state: ConsoleStateLite, appId: AppId): WorkspaceId | null {
-  const scoped = state.workspaces
-    .filter(w => w.appId === appId && w.kind === null)
-    .sort((a, b) => a.order - b.order);
-  return scoped[0]?.id ?? null;
+  return state.workspaces.find(w => w.appId === appId && w.kind === null)?.id ?? null;
 }
 
 /** The drawer's first terminal of a workspace (its agent tab), else null. */
@@ -49,14 +46,14 @@ export function firstTerminal(
   return sorted[0]?.id ?? null;
 }
 
-/** The builder-page deep link for this app: its first build workspace's
- *  first terminal, else the plain portfolio page. */
+/** The builder-page deep link for this app: its build workspace's first
+ *  terminal, else the app on the builder (which creates that workspace). */
 export function builderLink(state: ConsoleStateLite, appId: AppId, base: string): string {
-  const build = state.workspaces
-    .filter(w => w.appId === appId && w.kind === 'build')
-    .sort((a, b) => a.order - b.order)[0];
+  const build = state.workspaces.find(w => w.appId === appId && w.kind === 'build');
   const terminal = build ? firstTerminal(state, build.id) : null;
-  return terminal ? `${base}/builder?t=${terminal}` : `${base}/builder`;
+  if (terminal) return `${base}/builder?t=${terminal}`;
+  const slug = state.apps.find(a => a.id === appId)?.slug;
+  return slug ? `${base}/builder?app=${encodeURIComponent(slug)}` : `${base}/builder`;
 }
 
 /** One JSON Result off the console's same-origin API, or an error message

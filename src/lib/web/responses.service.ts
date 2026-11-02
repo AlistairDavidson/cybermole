@@ -30,7 +30,6 @@ import type {
   NewTerminalFailure,
   RenameTerminalFailure,
   ReorderTerminalsFailure,
-  ReorderWorkspacesFailure,
   SaveWorkspaceFailure,
 } from '../terminals/workspaces';
 import type {
@@ -203,8 +202,7 @@ export function invalidAppSlugResponse(): Response {
   return jsonResponse({ error: 'invalid app slug', code: 'invalid_app_slug' }, 400);
 }
 
-export type WorkspaceFailure =
-  SaveWorkspaceFailure | DeleteWorkspaceFailure | ReorderWorkspacesFailure;
+export type WorkspaceFailure = SaveWorkspaceFailure | DeleteWorkspaceFailure;
 
 export function workspaceFailureResponse(f: WorkspaceFailure): Response {
   switch (f.errorCode) {
@@ -217,10 +215,6 @@ export function workspaceFailureResponse(f: WorkspaceFailure): Response {
     case 'app_not_found':
     case 'workspace_not_found':
       return jsonResponse({ error: f.errorMessage ?? 'no such workspace', code: f.errorCode }, 404);
-    case 'invalid_order':
-      // The client's list doesn't match the group: stale state, so a
-      // re-read (not a tweak) is the fix.
-      return jsonResponse({ error: f.errorMessage ?? 'invalid order', code: f.errorCode }, 409);
     case 'database_error':
       return jsonResponse({ error: f.errorMessage ?? 'database error', code: f.errorCode }, 500);
     default:

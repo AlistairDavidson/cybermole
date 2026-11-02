@@ -58,21 +58,6 @@ console-app, console-app > .console-main, terminal-tabs, .run-host, main.logs-ma
   display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0;
 }
 
-/* ---- workspace-sidebar: a wa-tree ---- */
-/* Layout only: a tree item's label part is a flex item that won't shrink
-   below its content, and no utility reaches into it. Letting it (and the
-   one wrapper inside) span and shrink puts the actions at the end and
-   truncates long names instead of overflowing the drawer (SideNav's
-   trees take the same rules in app-nav.css). */
-.ws-groups wa-tree-item::part(label) { flex: 1; min-inline-size: 0; }
-.ws-groups .ws-label { flex: 1; min-inline-size: 0; }
-.ws-groups .g-title { min-inline-size: 0; }
-/* The name truncates before the lifecycle chip gives way. */
-.ws-groups .g-chip { flex: none; }
-.ws-groups .open-app-btn.not-serving { opacity: 0.45; }
-.ws-groups wa-tree-item[draggable='true'] { cursor: grab; }
-.ws-groups wa-tree-item.dragging { opacity: 0.45; }
-
 /* ---- terminal-tabs ---- */
 /* The group fills the column and its body flexes, so the active panel's
    terminal can size itself; the panels drop their padding so the terminal
@@ -89,6 +74,9 @@ terminal-tabs wa-tab-panel { --padding: 0; }
 terminal-tabs:not([view="tab"]) > wa-tab-group { flex: none; }
 terminal-tabs:not([view="tab"]) > wa-tab-group::part(body) { display: none; }
 terminal-tabs wa-tab .tab-label { max-inline-size: 18ch; }
+/* The builder's app switcher sits at the strip's far end: the nav is a flex
+   row and no layout utility pushes one slotted child to the end. */
+terminal-tabs app-switcher { margin-inline-start: auto; }
 /* The strip stretches every tab to the tallest (a terminal tab's close
    button), but wa-tab top-aligns its content; centre it, or the shorter
    editor tab's icon and label ride high. */

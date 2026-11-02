@@ -50,7 +50,7 @@ async function login(page: Page): Promise<void> {
     sessionCookie =
       (await page.context().cookies()).find(c => c.name === 'cybermole_session') ?? null;
   }
-  await page.waitForSelector('workspace-sidebar .nav');
+  await page.waitForSelector('terminal-tabs:not([view="loading"])');
 }
 
 test.describe('browser scheme dark', () => {
@@ -288,6 +288,25 @@ async function rmTree(dir: string): Promise<void> {
 test.describe('editor pane (private server, dead upstream)', () => {
   test.use({ colorScheme: 'dark' });
 
+  /** The editor tab is the builder's: an app's one workspace, at `cwd`. */
+  async function appWorkspace(name: string, cwd: string): Promise<{ id: string; slug: string }> {
+    const headers = { cookie: server!.cookie, 'Content-Type': 'application/json' };
+    const app = await fetch(`${BASE}/api/apps`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name }),
+    });
+    expect(app.status).toBe(200);
+    const row = (await app.json()) as { id: string; slug: string };
+    const ws = await fetch(`${BASE}/api/workspaces`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ appId: row.id, name, cwd, kind: 'build' }),
+    });
+    expect(ws.status).toBe(200);
+    return { id: ((await ws.json()) as { id: string }).id, slug: row.slug };
+  }
+
   test('the editor pane opens at the workspace folder, and a mode flip reloads it', async ({
     page,
   }) => {
@@ -299,12 +318,7 @@ test.describe('editor pane (private server, dead upstream)', () => {
     });
 
     // A workspace via the routes (the pane under test is the editor tab).
-    const ws = await fetch(`${BASE}/api/workspaces`, {
-      method: 'POST',
-      headers: { cookie: server!.cookie, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'theme', cwd: server!.dir }),
-    });
-    expect(ws.status).toBe(200);
+    const { slug } = await appWorkspace('theme', server!.dir);
 
     await page.context().addCookies([
       {
@@ -313,8 +327,8 @@ test.describe('editor pane (private server, dead upstream)', () => {
         url: BASE,
       },
     ]);
-    await page.goto(`${BASE}/`);
-    await page.waitForSelector('workspace-sidebar .nav');
+    await page.goto(`${BASE}/builder?app=${slug}`);
+    await page.waitForSelector('terminal-tabs:not([view="loading"])');
 
     await page.click('wa-tab.editor-tab');
     const frame = page.locator('iframe.editor-frame');
@@ -370,13 +384,7 @@ test.describe('editor pane (private server, dead upstream)', () => {
       return route.abort();
     });
 
-    const ws = await fetch(`${BASE}/api/workspaces`, {
-      method: 'POST',
-      headers: { cookie: server!.cookie, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'theme-pop', cwd: server!.dir }),
-    });
-    expect(ws.status).toBe(200);
-    const id = ((await ws.json()) as { id: string }).id;
+    const { id, slug } = await appWorkspace('theme-pop', server!.dir);
 
     await page.context().addCookies([
       {
@@ -385,9 +393,8 @@ test.describe('editor pane (private server, dead upstream)', () => {
         url: BASE,
       },
     ]);
-    await page.goto(`${BASE}/`);
-    await page.waitForSelector('workspace-sidebar .nav');
-    await page.click(`workspace-sidebar wa-tree-item[data-ws="${id}"]`);
+    await page.goto(`${BASE}/builder?app=${slug}`);
+    await page.waitForSelector('terminal-tabs:not([view="loading"])');
 
     await page.click('wa-tab.editor-tab');
     const toolbar = page.locator('.editor-toolbar');

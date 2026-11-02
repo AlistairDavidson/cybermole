@@ -183,9 +183,10 @@ function withDuplicateSlugRecovery(body: unknown): CallToolResult {
 
 // ---------- socket verbs ----------
 
-/** The app hand-off: a build session (a builder workspace, kind 'build',
- *  framed at the app) whose auto-opened agent tab receives the brief as
- *  its opening prompt, plus the deep link the human opens to watch it.
+/** The app hand-off: a build session — a fresh agent tab in the app's build
+ *  workspace (kind 'build', framed at the app; created on first use) that
+ *  receives the brief as its opening prompt — plus the deep link the human
+ *  opens to watch it.
  *  The app must be registered — the row is what the workspace attaches
  *  to. */
 export async function buildSessionTool(
@@ -575,13 +576,12 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
     {
       description:
         'THE hand-off when the user asks for a new app (or a rebuild): open the app’s build ' +
-        'session — a builder workspace on the builder page (kind build, framed at the app with ' +
-        'CYBERMOLE_WORKSPACE_FOCUS) whose auto-opened agent tab takes the brief as its opening ' +
-        'prompt and runs with it. The brief should carry the user’s ask verbatim plus what the ' +
+        'session — a fresh agent tab in the app’s build workspace on the builder page (kind build, ' +
+        'framed at the app with CYBERMOLE_WORKSPACE_FOCUS; the workspace is created on first ' +
+        'use) that takes the brief as its opening prompt and runs with it. The brief should carry the user’s ask verbatim plus what the ' +
         'builder needs to know (the reference app, the check-green loop, anything settled). The ' +
         'app must be REGISTERED first (register + reload). The answer carries the deep link — ' +
-        'send the human there (or to the builder page) and end your turn; the console also ' +
-        'toasts the session’s opening on any open console page.',
+        'send the human there (or to the builder page) and end your turn.',
       inputSchema: {
         slug: AppSlugSchema.describe('the app, by its slug (registered)'),
         brief: z
@@ -595,7 +595,7 @@ export function createAppsMcpServer(deps: AppsMcpDeps): McpServer {
           .string()
           .max(80)
           .optional()
-          .describe('the workspace row’s name; omitted derives one'),
+          .describe('the workspace row’s name when this creates it; omitted derives one'),
       },
     },
     async ({ slug, brief, name }) => buildSessionTool(deps, { slug, brief, name }),

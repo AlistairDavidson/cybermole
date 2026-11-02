@@ -51,7 +51,7 @@ async function login(page: Page): Promise<void> {
       (await page.context().cookies()).find(c => c.name === 'cybermole_session') ?? null;
     if (sessionCookie) writeSharedSessionCookie(`${sessionCookie.name}=${sessionCookie.value}`);
   }
-  await page.waitForSelector('workspace-sidebar .nav');
+  await page.waitForSelector('terminal-tabs:not([view="loading"])');
 }
 
 /** In-page fetch, so the Secure session cookie is sent. */
@@ -75,33 +75,37 @@ Promise<{ status: number; json: any }> {
   );
 }
 
-/** Forces the 15 s poll; raw in-page POSTs don't trigger it. */
-async function refreshState(page: Page): Promise<void> {
-  await page.evaluate(() =>
-    (
-      document.querySelector('console-app') as unknown as { loadState(): Promise<void> }
-    ).loadState(),
-  );
-}
+/** Workspace id → the slug of the throwaway app that owns it. */
+const appOfWorkspace = new Map<string, string>();
 
-/** A fresh console workspace, selected, with one titled terminal whose id
- *  is returned (a stable label and a stable deep-link target). */
+/** A fresh workspace — a throwaway app's one workspace, opened on the
+ *  builder page — with one titled terminal whose id is returned (a stable
+ *  label and a stable deep-link target). */
 async function makeWorkspace(
   page: Page,
   name: string,
   title: string,
 ): Promise<{ ws: string; id: string }> {
-  const made = await api(page, 'POST', '/api/workspaces', { name });
+  const suffix = Math.random().toString(36).slice(2, 8);
+  const app = await api(page, 'POST', '/api/apps', { name: `${name} ${suffix}` });
+  expect(app.status, JSON.stringify(app.json)).toBe(200);
+  const made = await api(page, 'POST', '/api/workspaces', {
+    appId: app.json.id,
+    name,
+    kind: 'build',
+  });
   expect(made.status, JSON.stringify(made.json)).toBe(200);
   const term = await api(page, 'POST', `/api/workspaces/${made.json.id}/terminals`, { title });
   expect(term.status, JSON.stringify(term.json)).toBe(200);
-  await refreshState(page);
-  await page.click(`workspace-sidebar wa-tree-item[data-ws="${made.json.id}"]`);
+  appOfWorkspace.set(made.json.id as string, app.json.slug as string);
+  await page.goto(`/builder?app=${app.json.slug}`);
+  await page.waitForSelector(`terminal-tabs .tab[data-term="${term.json.id}"]`);
   return { ws: made.json.id as string, id: term.json.id as string };
 }
 
+/** Drops the owning app, and its workspace with it. */
 async function deleteWorkspace(page: Page, ws: string): Promise<void> {
-  expect((await api(page, 'DELETE', `/api/workspaces/${ws}`)).status).toBe(200);
+  expect((await api(page, 'DELETE', `/api/apps/${appOfWorkspace.get(ws)}`)).status).toBe(200);
 }
 
 /** 0 = the session exists. */

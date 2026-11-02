@@ -126,9 +126,9 @@ const termRows = (db, workspaceId) =>
       .orderBy('sort_order'),
   );
 
-async function appless(db) {
+async function appless(db, name = 'parent') {
   const a = new Apps({ db, username: () => USERNAME, killSession: async () => true });
-  return (await a.saveApp('parent')).data;
+  return (await a.saveApp(name)).data;
 }
 
 // ---------- id schemas ----------
@@ -164,13 +164,56 @@ test('save_workspace: console (appId null) and app-scoped, cwd defaulting to the
   assert.equal(console1.data.cwd, os.tmpdir());
   assert.equal(console1.data.name, 'scratch');
   assert.match(console1.data.id, UUID_RE);
-  assert.equal(wsRow(db, console1.data.id).sort_order, 10);
-  const console2 = await w.saveWorkspace({ name: 'second', cwd: '/' });
-  assert.equal(wsRow(db, console2.data.id).sort_order, 20); // order is per group
+  assert.equal(console1.data.created, true);
   const app = await appless(db);
   const scoped = await w.saveWorkspace({ appId: app.id, name: 'in app', cwd: '/' });
   assert.equal(scoped.data.appId, app.id);
-  assert.equal(wsRow(db, scoped.data.id).sort_order, 10); // its own group's first
+  assert.equal(scoped.data.created, true);
+});
+
+test('save_workspace is an ensure: a group answers its one workspace unchanged; a brief opens a fresh agent tab in it', async () => {
+  const db = freshDb();
+  const { spawned, spawnSession } = spawner();
+  const w = domain(db, USERNAME, async () => true, os.tmpdir(), spawnSession);
+  const first = (await w.saveWorkspace({ name: 'scratch' })).data;
+  const spawns = spawned.length;
+  // name, cwd (even a bad one) and kind only shape a create
+  const again = await w.saveWorkspace({ name: 'other', cwd: '/no/such/dir' });
+  assert.equal(again.ok, true, again.errorMessage);
+  assert.deepEqual(again.data, {
+    id: first.id,
+    appId: null,
+    name: 'scratch',
+    cwd: os.tmpdir(),
+    kind: null,
+    terminalId: null,
+    created: false,
+  });
+  assert.equal(spawned.length, spawns); // no brief, no tab
+  assert.equal(termRows(db, first.id).length, 1);
+  // a brief: a fresh agent tab carrying it, appended after the first
+  const briefed = await w.saveWorkspace({ brief: 'look at the jobs' });
+  assert.equal(briefed.data.id, first.id);
+  assert.equal(briefed.data.created, false);
+  assert.deepEqual(spawned[spawned.length - 1].command, [
+    ...AGENT_CMD.split(' '),
+    'look at the jobs',
+  ]);
+  const rows = termRows(db, first.id);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[1].id, briefed.data.terminalId);
+  // one row per group and kind: an app's build session and its operator
+  // workspace are separate rows, each ensured on its own
+  const app = await appless(db);
+  const a1 = (await w.saveWorkspace({ appId: app.id, kind: 'build' })).data;
+  const op = (await w.saveWorkspace({ appId: app.id })).data;
+  assert.notEqual(op.id, a1.id);
+  assert.equal(op.kind, null);
+  assert.equal(op.created, true);
+  assert.equal((await w.saveWorkspace({ appId: app.id, kind: 'build' })).data.id, a1.id);
+  assert.equal((await w.saveWorkspace({ appId: app.id })).data.id, op.id);
+  const count = db.db().prepare('SELECT COUNT(*) AS n FROM workspaces').get().n;
+  assert.equal(count, 3);
 });
 
 test('save_workspace: self-naming — an empty (or absent) name derives from the resolved cwd', async () => {
@@ -183,7 +226,7 @@ test('save_workspace: self-naming — an empty (or absent) name derives from the
   assert.equal(first.data.name, path.basename(notes));
   assert.equal(wsRow(db, first.data.id).name, path.basename(notes));
   // whitespace-only is not meaningful either; the default cwd names it
-  const def = await w.saveWorkspace({ name: '   ' });
+  const def = await domain(freshDb()).saveWorkspace({ name: '   ' });
   assert.equal(def.ok, true, def.errorMessage);
   assert.equal(def.data.name, path.basename(os.tmpdir()));
   // the parent app's cwd names an app workspace with neither name nor cwd
@@ -194,45 +237,22 @@ test('save_workspace: self-naming — an empty (or absent) name derives from the
   assert.equal(under.ok, true, under.errorMessage);
   assert.equal(under.data.name, path.basename(dir));
   // kind 'build' always starts at the default — so that names it
-  const build = await w.saveWorkspace({ appId: app.id, kind: 'build' });
+  const other = (await a.saveApp('other app', dir)).data;
+  const build = await w.saveWorkspace({ appId: other.id, kind: 'build' });
   assert.equal(build.ok, true, build.errorMessage);
   assert.equal(build.data.name, path.basename(os.tmpdir()));
   // '/' has no basename worth taking
-  const root = await w.saveWorkspace({ cwd: '/' });
+  const root = await domain(freshDb()).saveWorkspace({ cwd: '/' });
   assert.equal(root.ok, true, root.errorMessage);
   assert.equal(root.data.name, 'workspace');
 });
 
-test('save_workspace: self-naming uniquifies per group; explicit names win verbatim', async () => {
-  const db = freshDb();
-  const w = domain(db);
-  const notes = fs.mkdtempSync(path.join(os.tmpdir(), 'notes-'));
-  const base = path.basename(notes);
-  const app = await appless(db);
-  // same cwd twice in the console group: the second takes -2, a third -3
-  assert.equal((await w.saveWorkspace({ cwd: notes })).data.name, base);
-  assert.equal((await w.saveWorkspace({ cwd: notes })).data.name, `${base}-2`);
-  assert.equal((await w.saveWorkspace({ cwd: `${notes}/` })).data.name, `${base}-3`); // trailing slash
-  // the app group is a separate namespace: no suffix from console siblings
-  assert.equal((await w.saveWorkspace({ appId: app.id, cwd: notes })).data.name, base);
-  // an explicit name never uniquifies, even when it collides
-  assert.equal((await w.saveWorkspace({ cwd: notes, name: base })).data.name, base);
-  assert.equal((await w.saveWorkspace({ name: '  spaced  ' })).data.name, 'spaced');
-});
-
-test('workspaceNameFromCwd: the shared rule — basename, fallback, cap, boring -N suffixes', () => {
+test('workspaceNameFromCwd: basename, fallback, cap', () => {
   assert.equal(workspaceNameFromCwd('/srv/notes'), 'notes');
   assert.equal(workspaceNameFromCwd('/srv/notes/'), 'notes');
   assert.equal(workspaceNameFromCwd('/'), 'workspace');
   assert.equal(workspaceNameFromCwd('/a/..'), 'workspace'); // nothing worth taking
-  assert.equal(workspaceNameFromCwd('/srv/notes', ['notes']), 'notes-2');
-  assert.equal(workspaceNameFromCwd('/srv/notes', ['notes', 'notes-2']), 'notes-3');
-  assert.equal(workspaceNameFromCwd('/srv/notes', ['notes', 'notes-3']), 'notes-2'); // gaps fill from 2
-  // the cap holds with and without a suffix
   assert.equal(workspaceNameFromCwd(`/srv/${'x'.repeat(500)}`).length, 120);
-  const suffixed = workspaceNameFromCwd(`/srv/${'x'.repeat(500)}`, ['x'.repeat(120)]);
-  assert.ok(suffixed.length <= 120);
-  assert.ok(suffixed.startsWith('x') && /-2$/.test(suffixed));
 });
 
 test('save_workspace: invalid_cwd — relative, missing, a file; absolute + existing dir passes', async () => {
@@ -271,15 +291,18 @@ test("save_workspace: the cwd DERIVES — the parent app's cwd, else the configu
   const consoleWs = await w.saveWorkspace({ name: 'console one' });
   assert.equal(consoleWs.data.cwd, defaultDir);
   // an explicit cwd (internal callers only) wins
-  const explicit = await w.saveWorkspace({ appId: placed.id, name: 'explicit', cwd: os.tmpdir() });
+  const placed2 = (await a.saveApp('placed two', dir)).data;
+  const explicit = await w.saveWorkspace({ appId: placed2.id, name: 'explicit', cwd: os.tmpdir() });
   assert.equal(explicit.ok, true, explicit.errorMessage);
   assert.equal(explicit.data.cwd, os.tmpdir());
   // the derived cwd is validated: the app's dir may have gone
-  fs.rmSync(dir, { recursive: true, force: true });
-  const gone = await w.saveWorkspace({ appId: placed.id, name: 'gone' });
+  const goneDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cybermole-app-cwd-'));
+  const doomed = (await a.saveApp('doomed', goneDir)).data;
+  fs.rmSync(goneDir, { recursive: true, force: true });
+  const gone = await w.saveWorkspace({ appId: doomed.id, name: 'gone' });
   assert.equal(gone.ok, false, gone.errorMessage);
   assert.equal(gone.errorCode, 'invalid_cwd');
-  assert.ok(gone.errorMessage.includes(dir), gone.errorMessage);
+  assert.ok(gone.errorMessage.includes(goneDir), gone.errorMessage);
 });
 
 test('save_workspace: app_not_found for a missing parent app', async () => {
@@ -335,8 +358,9 @@ test("save_workspace kind 'build': the default cwd (the parent app's cwd is skip
     CYBERMOLE_WORKSPACE_FOCUS_TREE: path.join(appsRoot, 'bare'),
   });
 
-  // a plain workspace under the same app: cwd still derives from the app, no env
-  const plain = await w.saveWorkspace({ appId: placed.id, name: 'plain under placed' });
+  // a plain workspace under an app: cwd still derives from the app, no env
+  const plainApp = (await a.saveApp('plain', dir)).data;
+  const plain = await w.saveWorkspace({ appId: plainApp.id, name: 'plain under placed' });
   assert.equal(plain.data.cwd, dir);
   assert.equal(plain.data.kind, null);
   assert.equal(wsRow(db, plain.data.id).kind, null);
@@ -361,7 +385,11 @@ test('save_workspace: the brief rides the auto-opened agent tab as one argument,
   assert.equal(rows[0].id, made.data.terminalId);
 
   // no brief (and blank counts as none): the bare command, terminalId still set
-  const bare = await w.saveWorkspace({ appId: app.id, kind: 'build', brief: '   ' });
+  const bare = await w.saveWorkspace({
+    appId: (await appless(db, 'second')).id,
+    kind: 'build',
+    brief: '   ',
+  });
   assert.equal(bare.ok, true, bare.errorMessage);
   assert.deepEqual(spawned[spawned.length - 1].command, AGENT_CMD.split(' '));
   assert.equal(typeof bare.data.terminalId, 'string');
@@ -481,7 +509,9 @@ test('delete_workspace: cascades its terminals, kills their sessions best-effort
   const db = freshDb();
   const { killed, killSession } = recorder();
   const w = domain(db, USERNAME, killSession);
-  const other = (await w.saveWorkspace({ name: 'other', cwd: os.tmpdir() })).data;
+  const other = (
+    await w.saveWorkspace({ appId: (await appless(db)).id, name: 'other', cwd: os.tmpdir() })
+  ).data;
   const otherAuto = termRows(db, other.id)[0].id; // the create's agent tab
   const otherTerm = (await w.newTerminal(other.id, undefined)).data;
   const doomed = (await w.saveWorkspace({ name: 'doomed', cwd: os.tmpdir() })).data;
@@ -810,86 +840,6 @@ test('reorder_terminals: workspace_not_found / database_error', async () => {
   );
 });
 
-// ---------- reorder_workspaces ----------
-
-test('reorder_workspaces: rewrites one group in steps of 10; other groups and a same-order call write nothing', async () => {
-  const db = freshDb();
-  const w = domain(db);
-  const app = await appless(db);
-  // Deterministic created_at: it tiebreaks equal sort_order in the tree.
-  const a = (await w.saveWorkspace({ name: 'a', cwd: os.tmpdir() })).data.id;
-  await new Promise(r => setTimeout(r, 3));
-  const b = (await w.saveWorkspace({ name: 'b', cwd: os.tmpdir() })).data.id;
-  await new Promise(r => setTimeout(r, 3));
-  const c = (await w.saveWorkspace({ appId: app.id, name: 'c', cwd: os.tmpdir() })).data.id;
-  assert.deepEqual(
-    [wsRow(db, a).sort_order, wsRow(db, b).sort_order, wsRow(db, c).sort_order],
-    [10, 20, 10], // each group numbers its own rows
-  );
-
-  const reordered = await w.reorderWorkspaces([b, a]);
-  assert.equal(reordered.ok, true, reordered.errorMessage);
-  assert.equal(reordered.resultType, 'reorder_workspaces');
-  assert.deepEqual(reordered.data, { order: [b, a] });
-  assert.deepEqual(
-    [wsRow(db, b).sort_order, wsRow(db, a).sort_order, wsRow(db, c).sort_order],
-    [10, 20, 10], // the app group is another list entirely
-  );
-
-  // The tree reads the new order (sort_order, then created_at).
-  const tree = (await w.workspaceTree()).data.workspaces;
-  assert.deepEqual(
-    tree.map(x => x.id),
-    [b, c, a],
-  );
-
-  // A same-order reorder is a no-op success (updated_at untouched).
-  const before = wsRow(db, b).updated_at;
-  await new Promise(r => setTimeout(r, 2));
-  const again = await w.reorderWorkspaces([b, a]);
-  assert.equal(again.ok, true, again.errorMessage);
-  assert.equal(wsRow(db, b).updated_at, before);
-});
-
-test('reorder_workspaces: invalid_order on a duplicate, an unknown id, a partial list or mixed groups; the db is untouched', async () => {
-  const db = freshDb();
-  const w = domain(db);
-  const app = await appless(db);
-  const a = (await w.saveWorkspace({ name: 'a', cwd: os.tmpdir() })).data.id;
-  const b = (await w.saveWorkspace({ name: 'b', cwd: os.tmpdir() })).data.id;
-  const c = (await w.saveWorkspace({ appId: app.id, name: 'c', cwd: os.tmpdir() })).data.id;
-
-  for (const order of [
-    [a, a], // duplicate
-    [a, c], // two groups in one order
-    [a], // missing b
-    [a, b, MISSING_WS], // unknown id
-    [], // nothing to reorder
-  ]) {
-    const r = await w.reorderWorkspaces(order);
-    assert.equal(r.ok, false, JSON.stringify(order));
-    assert.equal(r.errorCode, 'invalid_order');
-    assert.equal(r.resultType, 'reorder_workspaces');
-  }
-  assert.deepEqual(
-    [wsRow(db, a).sort_order, wsRow(db, b).sort_order, wsRow(db, c).sort_order],
-    [10, 20, 10],
-    'a refused reorder writes nothing',
-  );
-});
-
-test('reorder_workspaces: an app group reorders too; database_error on a broken db', async () => {
-  const db = freshDb();
-  const w = domain(db);
-  const app = await appless(db);
-  const c = (await w.saveWorkspace({ appId: app.id, name: 'c', cwd: os.tmpdir() })).data.id;
-  const d = (await w.saveWorkspace({ appId: app.id, name: 'd', cwd: os.tmpdir() })).data.id;
-  const r = await w.reorderWorkspaces([d, c]);
-  assert.equal(r.ok, true, r.errorMessage);
-  assert.deepEqual([wsRow(db, d).sort_order, wsRow(db, c).sort_order], [10, 20]);
-  assert.equal((await domain(brokenDb()).reorderWorkspaces([d])).errorCode, 'database_error');
-});
-
 // ---------- close / rename ----------
 
 test('close_terminal: deletes the row and best-effort-kills the derived session name; terminal_not_found after', async () => {
@@ -1032,7 +982,8 @@ test('workspaceTree: flat with appId, terminals in order, live from the tmux nam
 
   const consoleWs = await w.saveWorkspace({ name: 'scratch' }); // appId null
   const appWs = await w.saveWorkspace({ appId: parent.id, name: 'proj' });
-  const orphan = await w.saveWorkspace({ name: 'other' });
+  const other = await appless(db, 'other');
+  const orphan = await w.saveWorkspace({ appId: other.id, name: 'other' });
   // each create auto-opened a tab
   const autoConsole = termRows(db, consoleWs.data.id)[0].id;
   const t1 = await w.newTerminal(consoleWs.data.id, undefined);
@@ -1048,7 +999,7 @@ test('workspaceTree: flat with appId, terminals in order, live from the tmux nam
     [
       [consoleWs.data.id, null],
       [appWs.data.id, parent.id],
-      [orphan.data.id, null],
+      [orphan.data.id, other.id],
     ],
   );
   const scratch = tree.data.workspaces.find(x => x.id === consoleWs.data.id);

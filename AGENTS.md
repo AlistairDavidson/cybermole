@@ -251,31 +251,29 @@ Testing), not just in the SSR HTML.
     (`#ffffff` light, neutral-05 `#101219` dark) — keep those three in step
     if the WA version changes it.
   - **Components:** use the WA component even at the cost of a bespoke
-    nicety. The workspace sidebar is a `wa-tree` (leaf selection: rows
-    select, group headers toggle; the tree owns arrow-key navigation and
-    expand/collapse) rather than a hand-rolled list.
+    nicety. The builder's app switcher is a `wa-dropdown` of checkable
+    `wa-dropdown-item`s (the menu owns keyboard navigation) rather than a
+    hand-rolled list.
   - **Layout:** Web Awesome's layout utilities in the markup (`wa-stack`,
     `wa-cluster`, `wa-split`, `wa-flank`, `wa-gap-*`, `wa-align-*`,
     `wa-justify-*`, the text classes). `console.css` holds only what they
     can't express — the terminal's fill-height chain and its zero pane
     padding (a sanctioned exception), the toolbar overlay, truncation,
-    state cues, and the tree items' label part (layout only) — each with a
-    comment saying why. Mind `wa-page`: its slotted navigation elements are
+    state cues, and the app switcher's push to the strip's end — each with
+    a comment saying why. Mind `wa-page`: its slotted navigation elements are
     flex columns, so `wa-cluster` there doesn't make a row; align a child
     with `wa-align-self-*` instead.
 - `console.css` is unlayered on purpose (it must win over @layer'd Web
   Awesome styles).
-- The workspace sidebar (`src/components/WorkspaceSidebar/`) restamps its
-  tree items from `<template>`s on every state refresh (push events over
-  `/ws/events`, plus a re-sync on socket (re)connect); the filter, the
-  `wa-tree` and + app are SSR'd outside the restamp. Anything inside an
-  item is rebuilt each push, so don't put state there that must outlive
-  one. Its tooltips are moved to `.ws-tips` outside the tree (text inside
-  a tree item joins its accessible name). A nested tree item is only
-  focusable after its parent item renders, so focus restores wait on
-  `updateComplete` — and never steal focus the console has moved on.
-  Reordering (drag, Shift+Arrow) is kept but non-vital: if it fights the
-  tree, drop it rather than bend the tree.
+- Workspaces have no list: one per group and kind, enforced by a unique
+  index — the console's, and per app a build session (`kind: 'build'`)
+  and an operator workspace (NULL, in the app tree, the app page drawer's)
+  — and `POST /api/workspaces` is an ensure. `/` shows the console's (no
+  editor tab); `/builder` shows the build session of the app picked in the
+  app switcher (`src/components/AppSwitcher/`, the last
+  item of the tab strip), remembered in `?app=` and localStorage. The
+  switcher restamps its items from a `<template>` on every state refresh,
+  deferred while its menu is open.
 - A `wa-tooltip` binds its `for` anchor when it connects (or `for`
   changes): stamp it after its anchor is in the document, and give
   anchors in cloned skeletons per-instance ids.

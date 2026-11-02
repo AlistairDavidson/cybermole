@@ -25,7 +25,9 @@ const SCHEMA = `
   );
   -- Leftover pi-session overlay; idempotent.
   DROP TABLE IF EXISTS sessions;
-  -- apps 1—M workspaces 1—M terminals; the console is the NULL app.
+  -- apps 1—M workspaces 1—M terminals; the console is the NULL app. One
+  -- workspace per group and kind (workspaces_one_per_app — migrateToV9):
+  -- the console's, and per app its build session plus its operator one.
   -- Cascades do structural deletes; jobs are only tagged (SET NULL).
   CREATE TABLE IF NOT EXISTS apps (
     id         TEXT PRIMARY KEY,     -- uuid v4 (crypto.randomUUID) → AppId
@@ -42,9 +44,9 @@ const SCHEMA = `
   CREATE TABLE IF NOT EXISTS workspaces (
     id         TEXT PRIMARY KEY,     -- uuid v4 → WorkspaceId
     app_id     TEXT REFERENCES apps(id) ON DELETE CASCADE,  -- NULL = console
-    name       TEXT NOT NULL,        -- free text, sidebar label
+    name       TEXT NOT NULL,        -- free text
     cwd        TEXT NOT NULL,        -- terminal spawn dir + editor folder
-    kind       TEXT,                 -- 'build' = a build session (root cwd, framed at one app); NULL = console/legacy in-tree
+    kind       TEXT,                 -- 'build' = a build session (root cwd, framed at one app); NULL = console, or an app's operator workspace (in-tree)
     sort_order INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
@@ -225,14 +227,63 @@ function migrateToV8(db: DatabaseSync): void {
   addColumnIfMissing(db, 'apps', 'icon', 'TEXT');
 }
 
+/** v9: one workspace per group (an app, or the console) and kind — an app
+ *  keeps a build session and an operator workspace. Extra workspaces fold
+ *  into the first of their group and kind (sort order, then age): their terminals move
+ *  over, appended in order, so no tmux session is orphaned. A NULL command
+ *  is pinned first — its agent-slot derivation reads its own workspace's
+ *  created_at, which the move would lose. Then the unique index holds it. */
+function migrateToV9(db: DatabaseSync): void {
+  migrateToV8(db);
+  const indexed = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'workspaces_one_per_app'")
+    .get();
+  if (indexed) return;
+  const rows = db
+    .prepare(
+      'SELECT id, app_id, kind, created_at FROM workspaces ORDER BY app_id, kind, sort_order, created_at, id',
+    )
+    .all() as { id: string; app_id: string | null; kind: string | null; created_at: number }[];
+  const keepers = new Map<string, string>();
+  db.exec('BEGIN');
+  try {
+    for (const row of rows) {
+      const group = JSON.stringify([row.app_id, row.kind]);
+      const keeper = keepers.get(group);
+      if (keeper === undefined) {
+        keepers.set(group, row.id);
+        continue;
+      }
+      db.prepare(
+        `UPDATE terminals SET command = CASE WHEN created_at = ? THEN 'agent' ELSE 'shell' END
+         WHERE workspace_id = ? AND command IS NULL`,
+      ).run(row.created_at, row.id);
+      const top = db
+        .prepare('SELECT MAX(sort_order) AS top FROM terminals WHERE workspace_id = ?')
+        .get(keeper) as { top: number | null };
+      db.prepare(
+        'UPDATE terminals SET workspace_id = ?, sort_order = sort_order + ? WHERE workspace_id = ?',
+      ).run(keeper, (top.top ?? 0) + 10, row.id);
+      db.prepare('DELETE FROM workspaces WHERE id = ?').run(row.id);
+    }
+    db.exec(
+      "CREATE UNIQUE INDEX workspaces_one_per_app ON workspaces (COALESCE(app_id, ''), COALESCE(kind, ''))",
+    );
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+}
+
 export class StateDb extends SqliteDb {
   constructor(file: string) {
     super(file, {
       schema: SCHEMA,
-      migrate: migrateToV8,
+      migrate: migrateToV9,
       // CREATE IF NOT EXISTS + the migrate chain bring any older db to the
       // current shape.
-      version: 8,
+      version: 9,
       freshMode: 0o600, // it holds the password hash
       label: 'state db',
     });

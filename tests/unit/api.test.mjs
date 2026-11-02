@@ -12,8 +12,6 @@ import {
   appCreateBody,
   appPatchBody,
   workspaceCreateBody,
-  consoleWorkspaceForm,
-  buildSessionForm,
   workspacePatchBody,
   terminalCreateBody,
   terminalPatchBody,
@@ -152,32 +150,6 @@ test('appForm: trimmed non-empty name capped at 80; optional cwd — empty passe
     assert.equal(ok(appForm, bad), false, JSON.stringify(bad));
   }
 });
-
-test('consoleWorkspaceForm: both fields optional — empty means "derive it"', () => {
-  assert.deepEqual(parse(consoleWorkspaceForm, { name: ' scratch ' }), { name: 'scratch' });
-  assert.deepEqual(parse(consoleWorkspaceForm, { name: '', cwd: '' }), { name: '', cwd: '' });
-  assert.deepEqual(parse(consoleWorkspaceForm, { cwd: '/workspace' }), { cwd: '/workspace' });
-  assert.deepEqual(parse(consoleWorkspaceForm, {}), {});
-  assert.equal(
-    issueText(consoleWorkspaceForm, { name: 'x'.repeat(121) }),
-    'name: name is too long (max 120)',
-  );
-  for (const bad of [null, { name: 5 }, { cwd: 5 }]) {
-    assert.equal(ok(consoleWorkspaceForm, bad), false, JSON.stringify(bad));
-  }
-});
-
-test('buildSessionForm: the builder dialog keeps the name required', () => {
-  assert.deepEqual(parse(buildSessionForm, { name: ' build me ' }), { name: 'build me' });
-  assert.equal(issueText(buildSessionForm, { name: '' }), 'name: name is required');
-  // a cwd key is stripped: build sessions are pinned to the root cwd
-  assert.deepEqual(parse(buildSessionForm, { name: 'x', cwd: '/workspace' }), { name: 'x' });
-  for (const bad of [null, {}, { name: 5 }, { name: '' }, { name: '   ' }]) {
-    assert.equal(ok(buildSessionForm, bad), false, JSON.stringify(bad));
-  }
-});
-
-// ---------- apps / workspaces / terminals bodies ----------
 
 test('appCreateBody: any string name (the domain slugs it); cwd optional; over-longs are named 400s', () => {
   assert.deepEqual(parse(appCreateBody, { name: '  My App!' }), { name: '  My App!' });

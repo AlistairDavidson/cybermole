@@ -100,7 +100,7 @@ async function login(page: Page): Promise<void> {
     if (sessionCookie) writeSharedSessionCookie(`${sessionCookie.name}=${sessionCookie.value}`);
     await page.goto('/builder');
   }
-  await page.waitForSelector('workspace-sidebar .nav');
+  await page.waitForSelector('terminal-tabs:not([view="loading"])');
 }
 
 async function refreshState(page: Page): Promise<void> {
@@ -195,7 +195,7 @@ test('scaffold: an explicit icon is validated and baked into app.json; an absent
   expect(fs.existsSync(path.join(APPS_ROOT, 'bad-icon-probe'))).toBe(false);
 });
 
-test('register lands the manifest icon on the row; the sidebar shows it (and the tree\u2019s, unregistered)', async ({
+test('register lands the manifest icon on the row; the switcher shows it (and the tree\u2019s, unregistered)', async ({
   page,
 }) => {
   test.setTimeout(60_000);
@@ -210,17 +210,17 @@ test('register lands the manifest icon on the row; the sidebar shows it (and the
   expect(state.status).toBe(200);
   expect(state.json.apps.find((a: Json) => a.slug === SLUG)?.icon).toBe('robot');
 
-  // The registered app's group header shows the row's icon; the
+  // The registered app's switcher item shows the row's icon; the
   // unregistered tree's shows its manifest's (the status join is cached
   // ~10 s, so poll the page's own refresh until it lands).
-  const group = page.locator('workspace-sidebar .ws-group[data-group="' + SLUG + '"]');
-  await expect(group.locator('.g-icon wa-icon')).toHaveAttribute('name', 'robot');
-  const noteGroup = page.locator(`workspace-sidebar .ws-group[data-group="${NOTE_SLUG}"]`);
+  const item = page.locator(`app-switcher .app-item[data-slug="${SLUG}"]`);
+  await expect(item.locator('wa-icon[slot="icon"]')).toHaveAttribute('name', 'robot');
+  const noteItem = page.locator(`app-switcher .app-item[data-slug="${NOTE_SLUG}"]`);
   await expect
     .poll(
       async () => {
         await refreshState(page);
-        return noteGroup.locator('.g-icon wa-icon').getAttribute('name');
+        return noteItem.locator('wa-icon[slot="icon"]').getAttribute('name');
       },
       { timeout: 25_000, intervals: [500, 1000, 2000, 2000] },
     )
@@ -231,7 +231,9 @@ test('the new-app dialog previews the suggested icon from the name (the shared r
   page,
 }) => {
   await login(page);
-  await page.click('workspace-sidebar #new-app');
+  await page.goto('/builder');
+  await page.click('app-switcher #app-switch');
+  await page.click('app-switcher .app-new');
   await expect(page.locator('#app-icon-name')).toHaveText('suggested icon: cubes (from the name)');
   await page.fill('wa-input#app-name input', 'Dialog Code Probe');
   await expect(page.locator('#app-icon-name')).toHaveText('suggested icon: code (from the name)');
@@ -240,17 +242,19 @@ test('the new-app dialog previews the suggested icon from the name (the shared r
   await page.click('#app-dialog [data-dialog="close"]');
 });
 
-test('the settings page: gear -> change icon, name and cwd; the sidebar shows it; empty name is a field error', async ({
+test('the settings page: the switcher\u2019s settings item -> change icon, name and cwd; the switcher shows it; empty name is a field error', async ({
   page,
 }) => {
   test.setTimeout(60_000);
   await ensureRegistered();
   await login(page);
 
-  // The gear affordance on the row's group links to its settings page.
-  const group = page.locator(`workspace-sidebar .ws-group[data-group="${SLUG}"]`);
-  await expect(group.locator('.app-settings-btn')).toHaveAttribute('href', `/builder/${SLUG}`);
-  await group.locator('.app-settings-btn').click();
+  // The switcher's settings item for the current app links to its page.
+  await page.goto(`/builder?app=${SLUG}`);
+  await page.click('app-switcher #app-switch');
+  const settings = page.locator('app-switcher .app-settings');
+  await expect(settings).toHaveAttribute('href', `/builder/${SLUG}`);
+  await settings.click();
   await page.waitForURL(u => u.pathname === `/builder/${SLUG}`);
 
   // The page prefilled from the row: name, cwd, the picked icon, and the
@@ -296,8 +300,8 @@ test('the settings page: gear -> change icon, name and cwd; the sidebar shows it
   await expect(page.locator('#app-settings-title-name')).toHaveText('Icon Probe Renamed');
   await expect(page.locator('#app-settings-title-icon')).toHaveAttribute('name', 'terminal');
 
-  // The row agrees, and /builder shows it in the group header (the group
-  // key stays the slug — it never changes).
+  // The row agrees, and /builder shows it in the switcher (the item key
+  // stays the slug — it never changes).
   const state = await api(page, 'GET', '/api/state');
   expect(state.json.apps.find((a: Json) => a.slug === SLUG)).toMatchObject({
     name: 'Icon Probe Renamed',
@@ -305,10 +309,10 @@ test('the settings page: gear -> change icon, name and cwd; the sidebar shows it
     cwd: dir,
   });
   await page.goto('/builder');
-  await page.waitForSelector('workspace-sidebar .nav');
-  const renamed = page.locator(`workspace-sidebar .ws-group[data-group="${SLUG}"]`);
-  await expect(renamed.locator('.g-name')).toHaveText('Icon Probe Renamed');
-  await expect(renamed.locator('.g-icon wa-icon')).toHaveAttribute('name', 'terminal');
+  await page.waitForSelector('terminal-tabs:not([view="loading"])');
+  const renamed = page.locator(`app-switcher .app-item[data-slug="${SLUG}"]`);
+  await expect(renamed.locator('.app-item-name')).toHaveText('Icon Probe Renamed');
+  await expect(renamed.locator('wa-icon[slot="icon"]')).toHaveAttribute('name', 'terminal');
 
   // Clearing the cwd returns the app to the server default (the hint's
   // “empty = the server default”: an empty save sends null, not a keep).

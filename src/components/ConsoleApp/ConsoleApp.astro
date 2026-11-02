@@ -1,12 +1,10 @@
 ---
 // The console shell, on both pages: scope "console" (the orchestration
-// page — console workspaces, jobs, settings) or "builder" (the app
-// portfolio — app workspace groups, lifecycle chips, + app). Rendered into
-// Base.astro's wa-page, filling its main area;
-// the page puts the WorkspaceSidebar in Base's navigation column.
-// The dialogs live in <console-app>, outside the sidebar's restamped
-// groups, so their state survives it. The wa-* imports here only SSR;
-// console-app.ts re-imports them client-side (AGENTS.md).
+// page — the console's one workspace, no editor tab) or "builder" (the
+// selected app's build session, the app switcher ending the tab strip, the
+// new-app dialog). Rendered into Base.astro's wa-page, filling its main
+// area. The wa-* imports here only SSR; console-app.ts re-imports them
+// client-side (AGENTS.md).
 import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
 import '@awesome.me/webawesome/dist/components/dialog/dialog.js';
@@ -15,27 +13,23 @@ import '@awesome.me/webawesome/dist/components/toast/toast.js';
 import WaField from '../form/WaField.astro';
 import TerminalTabs from '../TerminalTabs/TerminalTabs.astro';
 import { zodSchemaToHTMLAttributes } from '../../lib/web/zod.service';
-import { appForm, buildSessionForm, consoleWorkspaceForm } from '../../schemas/api';
+import { appForm } from '../../schemas/api';
 
 interface Props {
   scope?: 'console' | 'builder';
 }
 const { scope = 'console' } = Astro.props;
 
-// Native constraints from the dialogs' schemas; the server re-validates anyway.
+// Native constraints from the dialog's schema; the server re-validates anyway.
 const appValidation = zodSchemaToHTMLAttributes(appForm);
-// The console dialog self-names (both fields optional); a build session
-// has no cwd to name from, so the builder dialog keeps the name required.
-const consoleWsValidation = zodSchemaToHTMLAttributes(consoleWorkspaceForm);
-const buildValidation = zodSchemaToHTMLAttributes(buildSessionForm);
-const wsValidation = scope === 'builder' ? buildValidation : consoleWsValidation;
+const builder = scope === 'builder';
 ---
-<!-- wa-page's main area (Base.astro's shell); <console-app> also drives
-     the sidebar, whose events reach it through the document. -->
+<!-- wa-page's main area (Base.astro's shell). -->
 <console-app scope={scope}>
-  <main class="console-main"><TerminalTabs /></main>
+  <main class="console-main"><TerminalTabs appSwitcher={builder} /></main>
   <wa-toast placement="bottom-start"></wa-toast>
 
+  {builder && (
   <wa-dialog id="app-dialog" label="New app" with-footer>
     <validation-enhancer-zod>
       <form id="app-form" class="wa-stack wa-gap-s">
@@ -62,38 +56,7 @@ const wsValidation = scope === 'builder' ? buildValidation : consoleWsValidation
     <wa-button slot="footer" appearance="plain" data-dialog="close">cancel</wa-button>
     <wa-button slot="footer" id="app-save" variant="brand">create</wa-button>
   </wa-dialog>
-
-  <wa-dialog id="workspace-dialog" label="New workspace" with-footer>
-    <validation-enhancer-zod>
-      <form id="workspace-form" class="wa-stack wa-gap-s">
-        {
-          scope === 'console' && (
-            <WaField
-              id="workspace-cwd"
-              name="cwd"
-              label="working directory"
-              hint="an existing folder this workspace's terminals start in; empty starts at the server default"
-              {...consoleWsValidation.cwd}
-            />
-          )
-        }
-        <WaField
-          id="workspace-name"
-          name="name"
-          label="name"
-          hint={
-            scope === 'console'
-              ? 'auto-filled from the directory until you edit it — empty names it after the directory'
-              : undefined
-          }
-          {...wsValidation.name}
-        />
-        <p class="wa-caption-s" id="workspace-start">starts at the server default</p>
-      </form>
-    </validation-enhancer-zod>
-    <wa-button slot="footer" appearance="plain" data-dialog="close">cancel</wa-button>
-    <wa-button slot="footer" id="workspace-save" variant="brand">create</wa-button>
-  </wa-dialog>
+  )}
 
   <wa-dialog id="confirm-delete" label="Delete" with-footer>
     <p id="confirm-delete-text"></p>

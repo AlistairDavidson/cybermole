@@ -114,11 +114,12 @@ deliberately). It is the app's operator console:
 
 - the **agent** button (fixed, bottom-end) opens a drawer with ONE
   terminal — this app's operator workspace's agent tab. The workspace
-  (kind NULL, cwd = this tree) is created on first open through
+  (kind NULL, cwd = this tree; one per app, beside the builder's build
+  workspace) is created on first open through
   `POST /api/workspaces {appId}`; a dead session respawns at the tree;
   closing the drawer detaches (the tmux session keeps running).
 - the **builder** link beside it deep-links to `/builder?t=<this app's
-  first build workspace's first terminal>` — plain `/builder` when the
+  build workspace's first terminal>` — `/builder?app=<slug>` when the
   app has no build session yet.
 
 The drawer talks to the console same-origin (`/api/*`, `/ws`) with the
