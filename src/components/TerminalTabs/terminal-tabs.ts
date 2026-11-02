@@ -11,8 +11,10 @@
 // focus (manual activation). Selection stays here: a selection is an
 // attach, and the run view and the empty states select no tab at all, so
 // markActive() sets every tab's and panel's `active` itself and the group
-// follows (its MutationObserver re-syncs on `active`). The group is hidden
-// while it holds no tab — wa-tab-group can't initialise an empty tablist.
+// follows (its MutationObserver re-syncs on `active`). The strip always
+// shows (it is the page's header row, with the navigation toggles); an
+// inert placeholder tab keeps wa-tab-group's first layout from throwing
+// on an empty tablist, and goes with the first real tab.
 //
 // Tabs reorder by drag (the dragged tab follows the pointer across the
 // tabs' midpoints) or by Shift+Arrow on a focused tab. A reorder is
@@ -136,7 +138,12 @@ export class TerminalTabs extends HTMLElement {
     this.setAttribute('view', view);
     for (const el of this.querySelectorAll<HTMLElement>(':scope > [data-view]'))
       el.classList.toggle('hidden', el.dataset.view !== view);
-    this.group?.classList.toggle('hidden', this.tabs.size === 0 && !this.editorTab);
+    // The strip itself always shows: it is the page's header row.
+    const empty = this.tabs.size === 0 && !this.editorTab;
+    this.newTabGroup?.classList.toggle('hidden', empty);
+    // The group laid out long before the first tab: the placeholder has
+    // done its job.
+    if (!empty) this.group?.querySelector(':scope > .tab-placeholder')?.remove();
   }
 
   private emit(type: string, detail: unknown): void {

@@ -23,8 +23,7 @@ export class SingleView extends HTMLElement {
       const id = asTerminalId(raw);
       pane.attach('terminal', id, `terminal:${id}`);
       // No tab here: pop-out has nowhere to go, close no strip to leave.
-      for (const action of pane.toolbar?.querySelectorAll('.tb-pop-out, .tb-close') ?? [])
-        action.classList.add('hidden');
+      pane.showTabActions(false);
     } else if (kind === 'editor') {
       armEditorThemeReload();
     }

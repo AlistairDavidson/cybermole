@@ -1,18 +1,18 @@
 ---
-// An app page's whole document: the stock Web Awesome theme, one wa-page
-// with the cybermole header in its header slot, and the page's content (a
-// <main>) in its default slot. Every app page renders inside it, so every
-// app carries the same bar as the console. The app bakes
-// `<console base>/apps/<slug>` as its base, which is where the console's
-// base, the brand icons and the header's links come from.
+// An app page's whole document: the stock Web Awesome theme and the
+// console's page shell (AppPage: the common nav in the navigation column,
+// a top row led by the nav toggle), the page's content (a <main>) in its
+// default slot. Every app page renders inside it, so every app carries the
+// same nav as the console. The app bakes `<console base>/apps/<slug>` as
+// its base, which is where the console's base, the brand icons and the
+// nav's links come from.
 //
 // The client half is app-shell.ts, imported FIRST by the page's own client
 // script (`import '@cybermole/app-kit/app-shell'`): Astro can't build a
 // <script> in an .astro outside the app's root, and the kit always is.
 import '@awesome.me/webawesome/dist/styles/webawesome.css';
-import '@awesome.me/webawesome/dist/components/page/page.js';
 import '@awesome.me/webawesome/dist/components/toast/toast.js';
-import AppHeader from '../AppHeader/AppHeader.astro';
+import AppPage from '../AppNav/AppPage.astro';
 import { consoleBaseOf } from '../../app-menu';
 
 interface Props {
@@ -37,10 +37,10 @@ const appBase = import.meta.env.BASE_URL.replace(/\/+$/, '');
     <slot name="head" />
   </head>
   <body>
-    <wa-page class="app-page" disable-navigation-toggle>
-      <AppHeader base={base} current="apps" drawer={false} />
+    <!-- No section is current: side-nav.ts selects this app's own item. -->
+    <AppPage base={base} current={null}>
       <slot />
-    </wa-page>
+    </AppPage>
     <wa-toast placement="top-end"></wa-toast>
   </body>
 </html>

@@ -2,7 +2,7 @@
 // The console shell, on both pages: scope "console" (the orchestration
 // page — console workspaces, jobs, settings) or "builder" (the app
 // portfolio — app workspace groups, lifecycle chips, + app). Rendered into
-// Base.astro's wa-page, filling its navigation footer and its main area;
+// Base.astro's wa-page, filling its main area;
 // the page puts the WorkspaceSidebar in Base's navigation column.
 // The dialogs live in <console-app>, outside the sidebar's restamped
 // groups, so their state survives it. The wa-* imports here only SSR;
@@ -30,24 +30,8 @@ const consoleWsValidation = zodSchemaToHTMLAttributes(consoleWorkspaceForm);
 const buildValidation = zodSchemaToHTMLAttributes(buildSessionForm);
 const wsValidation = scope === 'builder' ? buildValidation : consoleWsValidation;
 ---
-<!-- Two wa-page slots (Base.astro's shell): the drawer column's footer
-     (the desktop collapse control, after SideNavFooter) and the main area,
-     whose <console-app> also drives the sidebar — its events reach it
-     through the document. -->
-<div slot="navigation-footer" class="nav-collapse-bar wa-stack">
-  <wa-button
-    id="nav-collapse"
-    class="nav-collapse wa-align-self-end"
-    appearance="plain"
-    size="s"
-    aria-label="collapse the sidebar"
-    aria-expanded="true"
-  >
-    <wa-icon slot="start" name="chevron-left" class="when-open" label="collapse the sidebar"></wa-icon>
-    <wa-icon slot="start" name="chevron-right" class="when-collapsed" label="expand the sidebar"></wa-icon>
-  </wa-button>
-  <wa-tooltip for="nav-collapse" placement="right">collapse / expand the sidebar</wa-tooltip>
-</div>
+<!-- wa-page's main area (Base.astro's shell); <console-app> also drives
+     the sidebar, whose events reach it through the document. -->
 <console-app scope={scope}>
   <main class="console-main"><TerminalTabs /></main>
   <wa-toast placement="bottom-start"></wa-toast>

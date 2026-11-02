@@ -403,7 +403,7 @@ test.describe('editor pane (private server, dead upstream)', () => {
     await expect(pop).toHaveURL(new RegExp(`/view\\?w=${id}$`));
     await expect(pop).toHaveTitle('cybermole — theme-pop — editor');
     // The single view, not the console.
-    await expect(pop.locator('app-header')).toHaveCount(0);
+    await expect(pop.locator('side-nav')).toHaveCount(0);
     await expect(pop.locator('workspace-sidebar')).toHaveCount(0);
     await expect(pop.locator('terminal-tabs')).toHaveCount(0);
     // ...and it opens the workspace folder through the proxy, like the tab.

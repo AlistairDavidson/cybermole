@@ -1,11 +1,12 @@
 ---
 // The pane's markup, for every host (the console's tab and run panes via
 // TerminalTabs' skeleton, /view's single pane): the xterm box, the overlay
-// toolbar with its find bar, and the status line with one indicator per
+// toolbar (find bar + actions menu), and the status line with one indicator per
 // kind. agent-terminal.ts fills and toggles it; tooltip ids are assigned
 // per instance there, since a skeleton is cloned many times.
 import '@awesome.me/webawesome/dist/components/button/button.js';
-import '@awesome.me/webawesome/dist/components/details/details.js';
+import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
+import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/input/input.js';
 import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
@@ -33,53 +34,40 @@ import '@awesome.me/webawesome/dist/components/divider/divider.js';
       </wa-button>
       <wa-tooltip data-tip="find-close">close (esc)</wa-tooltip>
     </div>
-    <!-- Collapsed to its summary until opened. attach() reveals close and
-         pop-out for 'terminal' mode only: a run pane has no tab. -->
-    <wa-details class="tb-details" appearance="plain" icon-placement="start">
-      <wa-icon slot="summary" name="screwdriver-wrench" label="terminal actions"></wa-icon>
-      <div class="wa-stack wa-gap-2xs wa-align-items-end">
-        <div class="wa-cluster wa-gap-2xs">
-          <wa-button class="tb-close hidden" appearance="plain" variant="neutral" size="xs">
-            <wa-icon slot="start" name="xmark" aria-hidden="true"></wa-icon>close
-          </wa-button>
-          <wa-tooltip data-tip="tb-close">close this terminal — ends its session</wa-tooltip>
-        </div>
-        <div class="wa-cluster wa-gap-2xs">
-          <wa-button class="tb-up" appearance="plain" variant="neutral" size="xs">
-            <wa-icon slot="start" name="arrow-up" aria-hidden="true"></wa-icon>up
-          </wa-button>
-          <wa-tooltip data-tip="tb-up">send the up arrow</wa-tooltip>
-          <wa-button class="tb-down" appearance="plain" variant="neutral" size="xs">
-            <wa-icon slot="start" name="arrow-down" aria-hidden="true"></wa-icon>down
-          </wa-button>
-          <wa-tooltip data-tip="tb-down">send the down arrow</wa-tooltip>
-          <wa-button class="tb-esc" appearance="plain" variant="neutral" size="xs">
-            <wa-icon slot="start" name="arrow-right-from-bracket" aria-hidden="true"></wa-icon>esc
-          </wa-button>
-          <wa-tooltip data-tip="tb-esc">send escape</wa-tooltip>
-        </div>
-        <div class="wa-cluster wa-gap-2xs">
-          <wa-button class="tb-copy-output" appearance="plain" variant="neutral" size="xs">
-            <wa-icon slot="start" name="copy" aria-hidden="true"></wa-icon>copy
-          </wa-button>
-          <wa-tooltip data-tip="tb-copy-output"
-            >copy the terminal's output — scrollback included — as plain text</wa-tooltip
-          >
-          <wa-button class="tb-download-transcript" appearance="plain" variant="neutral" size="xs">
-            <wa-icon slot="start" name="download" aria-hidden="true"></wa-icon>download
-          </wa-button>
-          <wa-tooltip data-tip="tb-download-transcript"
-            >download the transcript — scrollback included, ANSI colors preserved</wa-tooltip
-          >
-          <wa-button class="tb-pop-out hidden" appearance="plain" variant="neutral" size="xs">
-            <wa-icon slot="start" name="arrow-up-right-from-square" aria-hidden="true"></wa-icon>pop out
-          </wa-button>
-          <wa-tooltip data-tip="tb-pop-out"
-            >pop out — move this terminal to its own browser tab (its row here brings it back)</wa-tooltip
-          >
-        </div>
-      </div>
-    </wa-details>
+    <!-- attach() reveals the tab actions for 'terminal' mode only: a run
+         pane has no tab. -->
+    <wa-dropdown class="tb-menu" placement="bottom-end" size="s">
+      <wa-button slot="trigger" class="tb-trigger" appearance="plain" size="xs">
+        <wa-icon name="screwdriver-wrench" label="terminal actions"></wa-icon>
+      </wa-button>
+      <wa-dropdown-item value="up">
+        <wa-icon slot="icon" name="arrow-up" aria-hidden="true"></wa-icon>send up arrow
+      </wa-dropdown-item>
+      <wa-dropdown-item value="down">
+        <wa-icon slot="icon" name="arrow-down" aria-hidden="true"></wa-icon>send down arrow
+      </wa-dropdown-item>
+      <wa-dropdown-item value="esc">
+        <wa-icon slot="icon" name="arrow-right-from-bracket" aria-hidden="true"></wa-icon>send escape
+      </wa-dropdown-item>
+      <wa-divider></wa-divider>
+      <wa-dropdown-item value="copy-output">
+        <wa-icon slot="icon" name="copy" aria-hidden="true"></wa-icon>copy output
+        <span slot="details">plain text</span>
+      </wa-dropdown-item>
+      <wa-dropdown-item value="download-transcript">
+        <wa-icon slot="icon" name="download" aria-hidden="true"></wa-icon>download transcript
+        <span slot="details">ANSI</span>
+      </wa-dropdown-item>
+      <wa-divider class="tb-tab-action hidden"></wa-divider>
+      <wa-dropdown-item value="pop-out" class="tb-tab-action hidden" disabled>
+        <wa-icon slot="icon" name="arrow-up-right-from-square" aria-hidden="true"></wa-icon>pop out to a browser tab
+      </wa-dropdown-item>
+      <wa-dropdown-item value="close" variant="danger" class="tb-tab-action hidden" disabled>
+        <wa-icon slot="icon" name="xmark" aria-hidden="true"></wa-icon>close terminal
+        <span slot="details">ends its session</span>
+      </wa-dropdown-item>
+    </wa-dropdown>
+    <wa-tooltip data-tip="tb-trigger">terminal actions</wa-tooltip>
     <!-- The download's target; never shown, clicked from code. -->
     <a class="tb-download-link hidden" aria-hidden="true" tabindex="-1"></a>
   </div>

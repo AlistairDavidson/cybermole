@@ -18,8 +18,6 @@ html.wa-light { color-scheme: light; }
   /* Page-entry fade for the console shell: 150–250ms reads as arrival
      without lagging navigation. Reduced motion skips it entirely. */
   --cybermole-page-fade: 200ms;
-  /* The desktop nav collapsed to a rail: exactly the expand control. */
-  --cybermole-nav-rail: var(--wa-space-2xl);
 }
 
 .hidden { display: none !important; }
@@ -29,71 +27,45 @@ html.wa-light { color-scheme: light; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
-/* ---- the app shell: Base.astro's wa-page ---- */
-/* The drawer toggle (data-toggle-nav): wa-page hides it on desktop; a page
-   with no drawer column has nothing for it to open. */
-wa-page.app-page:not(:has(> [slot='navigation'])) .nav-drawer-toggle { display: none; }
-
-/* ---- the console pages (a navigation slot) ---- */
+/* ---- the console pages (AppPage's shell; its layout is app-nav.css) ---- */
 /* A quiet arrival: opacity only, so the terminal's ResizeObserver never
    sees an intermediate layout. */
 @keyframes cybermole-page-enter {
   from { opacity: 0; }
 }
-wa-page.app-page:has(> [slot='navigation']) {
-  height: 100dvh; --menu-width: 300px;
+wa-page.app-page {
   animation: cybermole-page-enter var(--cybermole-page-fade) var(--wa-transition-easing);
 }
-/* The shell never scrolls as a page (its panes do), so a touch drag at its
-   edges must not become pull-to-refresh. */
-body:has(> wa-page.app-page > [slot='navigation']) { overscroll-behavior-y: contain; }
-wa-page.app-page[view='mobile'] { --menu-width: auto; }
-/* Definite heights from the viewport down to .terminal-container: Web
-   Awesome only sets min-heights, so otherwise the terminal's rows would
-   drive the page height and the ResizeObserver never sees it shrink. No
-   utility fills remaining height, hence the flex/min-height chain below. */
-wa-page.app-page:has(> [slot='navigation'])::part(base) { height: 100%; min-height: 0; }
-wa-page.app-page:has(> [slot='navigation'])::part(main) { align-self: stretch; }
-wa-page.app-page:has(> [slot='navigation'])::part(main-content) {
+@media (prefers-reduced-motion: reduce) {
+  wa-page.app-page { animation: none; }
+}
+/* The full-viewport pages (the console's tabs, the logs iframe) never
+   scroll as a page (their panes do), so a touch drag at the edges must not
+   become pull-to-refresh. */
+body:has(> wa-page.app-page :is(console-app, main.logs-main)) { overscroll-behavior-y: contain; }
+/* Definite heights from the viewport down to .terminal-container (and the
+   logs iframe): Web Awesome only sets min-heights, so otherwise the
+   terminal's rows would drive the page height and the ResizeObserver never
+   sees it shrink. No utility fills remaining height, hence the
+   flex/min-height chain below. */
+wa-page.app-page:has(console-app, > main.logs-main) { height: 100dvh; }
+wa-page.app-page:has(console-app, > main.logs-main)::part(base) { height: 100%; min-height: 0; }
+wa-page.app-page:has(console-app, > main.logs-main)::part(main) { align-self: stretch; }
+wa-page.app-page:has(console-app, > main.logs-main)::part(main-content) {
   display: flex; flex-direction: column; min-height: 0;
 }
-console-app, console-app > .console-main, terminal-tabs, .run-host {
+console-app, console-app > .console-main, terminal-tabs, .run-host, main.logs-main {
   display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0;
-}
-/* The desktop collapse: one chevron per state, and a rail holding only the
-   expand control. Narrow viewports keep wa-page's own drawer. */
-.nav-collapse wa-icon.when-collapsed { display: none; }
-wa-page[data-nav-collapsed] .nav-collapse wa-icon.when-open { display: none; }
-wa-page[data-nav-collapsed] .nav-collapse wa-icon.when-collapsed { display: block; }
-wa-page[data-nav-collapsed]:not([view='mobile']) { --menu-width: var(--cybermole-nav-rail); }
-wa-page[data-nav-collapsed]:not([view='mobile']) :is(.nav-column, .side-nav-footer) { display: none; }
-wa-page[data-nav-collapsed] .nav-collapse { align-self: center; }
-wa-page.app-page[view='mobile'] .nav-collapse-bar { display: none; }
-/* The navigation column (Base.astro) scrolls as one, so a long app list
-   or tree never spills over the footer (wa-page's body row shrinks; its
-   content doesn't). Its children keep their height. */
-.nav-column { min-height: 0; overflow-y: auto; }
-.nav-column > * { flex-shrink: 0; }
-/* The mobile drawer's footer is an end-justified row; the footer stack
-   spans it to stay start-aligned. */
-.side-nav-footer { flex: 1; }
-wa-page.app-page::part(body) {
-  transition: grid-template-columns var(--wa-transition-normal) var(--wa-transition-easing);
-}
-@media (prefers-reduced-motion: reduce) {
-  wa-page.app-page, wa-page.app-page:has(> [slot='navigation']) { animation: none; }
-  wa-page.app-page::part(body) { transition: none; }
 }
 
 /* ---- workspace-sidebar: a wa-tree ---- */
 /* Layout only: a tree item's label part is a flex item that won't shrink
    below its content, and no utility reaches into it. Letting it (and the
    one wrapper inside) span and shrink puts the actions at the end and
-   truncates long names instead of overflowing the drawer. SideNav's
-   section tree takes the same rules. */
-.ws-groups wa-tree-item::part(label),
-.side-nav-tree wa-tree-item::part(label) { flex: 1; min-inline-size: 0; }
-.ws-groups .ws-label, .side-nav-row { flex: 1; min-inline-size: 0; }
+   truncates long names instead of overflowing the drawer (SideNav's
+   trees take the same rules in app-nav.css). */
+.ws-groups wa-tree-item::part(label) { flex: 1; min-inline-size: 0; }
+.ws-groups .ws-label { flex: 1; min-inline-size: 0; }
 .ws-groups .g-title { min-inline-size: 0; }
 /* The name truncates before the lifecycle chip gives way. */
 .ws-groups .g-chip { flex: none; }
@@ -173,12 +145,9 @@ agent-terminal .terminal-status.err wa-icon { color: var(--wa-color-danger-on-qu
 .schedule-feedback.ok { color: var(--wa-color-success-on-quiet); }
 .schedule-feedback.err { color: var(--wa-color-danger-on-quiet); }
 
-/* ---- logs page: Grafana fills what the sticky header leaves ---- */
+/* ---- logs page: Grafana fills what the top row leaves ---- */
 wa-page.app-page > main.logs-main { padding: 0; }
-.logs-main iframe {
-  display: block; width: 100%; border: 0;
-  height: calc(100dvh - var(--header-height, 0px));
-}
+.logs-main iframe { display: block; width: 100%; flex: 1; min-height: 0; border: 0; }
 
 /* WaField hint slot: the hint, then the message validation-enhancer writes. */
 .field-error { color: var(--wa-color-danger-on-quiet); }

@@ -101,12 +101,12 @@ test('CYBERMOLE_GRAFANA_URL unset: no logs link anywhere, /logs answers 404', as
   const server = await bootServer();
   try {
     await signIn(page, server);
-    // No logs section on any page.
-    await expect(page.locator('app-header wa-button[href$="/logs"]')).toHaveCount(0);
+    // No logs section on any page's side nav.
+    await expect(page.locator('side-nav #nav-logs')).toHaveCount(0);
     await page.goto(`${BASE}/settings`);
-    await expect(page.locator('app-header wa-button[href$="/logs"]')).toHaveCount(0);
-    // The rest of the header still works.
-    await expect(page.locator('app-header wa-button[href$="/jobs"]')).toBeVisible();
+    await expect(page.locator('side-nav #nav-logs')).toHaveCount(0);
+    // The rest of the nav still works.
+    await expect(page.locator('side-nav #nav-jobs a')).toBeVisible();
     const res = await page.goto(`${BASE}/logs`);
     expect(res?.status()).toBe(404);
     expect(await res?.text()).toBe('not found');
@@ -123,17 +123,16 @@ test('CYBERMOLE_GRAFANA_URL set: header link + /logs iframe on Grafana Explore',
   const server = await bootServer({ CYBERMOLE_GRAFANA_URL: GRAFANA });
   try {
     await signIn(page, server);
-    const link = page.locator('app-header wa-button[href$="/logs"]');
+    const link = page.locator('side-nav #nav-logs a');
     await expect(link).toBeVisible();
-    // The nav is icon-only; a wa-tooltip carries the label.
-    await expect(page.locator('wa-tooltip[for="nav-logs"]')).toHaveText('Logs');
+    await expect(link).toHaveAttribute('href', '/logs');
+    await expect(link).toContainText('Logs');
     await expect(link.locator('wa-icon')).toHaveAttribute('name', 'file-lines');
     // The vendored glyph renders (this page's icon is only pinned here).
     await page.waitForFunction(
       () =>
-        document
-          .querySelector('app-header wa-button[href$="/logs"] wa-icon')
-          ?.shadowRoot?.querySelector('svg') != null,
+        document.querySelector('side-nav #nav-logs wa-icon')?.shadowRoot?.querySelector('svg') !=
+        null,
       undefined,
       { timeout: 8000 },
     );
@@ -144,6 +143,13 @@ test('CYBERMOLE_GRAFANA_URL set: header link + /logs iframe on Grafana Explore',
     await expect(iframe).toBeVisible();
     await expect(iframe).toHaveAttribute('title', 'Grafana Explore — cybermole logs');
     await expect(iframe).toHaveAttribute('allow', 'fullscreen');
+    // It fills what the top row leaves: no page scroll.
+    await expect(page.locator('side-nav #nav-logs')).toHaveAttribute('aria-current', 'page');
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollHeight <= document.documentElement.clientHeight,
+      ),
+    ).toBe(true);
     // The Explore URL: v1 panes payload, Loki preselected.
     const src = await iframe.getAttribute('src');
     expect(src).toBeTruthy();
@@ -161,7 +167,7 @@ test('CYBERMOLE_GRAFANA_URL set: header link + /logs iframe on Grafana Explore',
     expect(res?.status()).toBe(200);
     expect(res?.headers()['content-security-policy']).toContain(`frame-src ${GRAFANA}`);
     await page.goto(`${BASE}/jobs`);
-    await expect(page.locator('app-header wa-button[href$="/logs"]')).toBeVisible();
+    await expect(page.locator('side-nav #nav-logs a')).toBeVisible();
     await expect(page.locator('jobs-app')).toBeVisible();
   } finally {
     await stopServer(server);

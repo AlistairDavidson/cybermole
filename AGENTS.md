@@ -206,11 +206,15 @@ Testing), not just in the SSR HTML.
 - **Follow Web Awesome's idioms, not just its components.** Use a
   component the way its docs compose it, and don't rebuild what it already
   does. The page shell is one `wa-page` (`src/layouts/Base.astro`):
-  `AppHeader` is its `header` slot, a page's drawer column fills
-  `navigation-header` / `navigation`, and the content is a `<main>` in its
-  default slot. The mobile drawer opens through `wa-page`'s own
-  `data-toggle-nav` button, and drawer items close it with
-  `data-drawer="close"`. Don't wrap a component in a parallel mechanism
+  The kit's `AppPage` (used by `Base.astro` and the apps' `AppShell`)
+  builds it: the common nav (`SideNav`) heads the navigation column, a
+  page's own drawer content fills `navigation` below it, settings and
+  sign-out sit in `navigation-footer`, and the content is a `<main>` in
+  the default slot. There is no header bar: each page's top row is led by
+  `NavToggle` (the console and builder pages' tab strip carries it —
+  `ownTopRow`). The mobile drawer opens through `wa-page`'s own
+  `data-toggle-nav` button (desktop's twin hides the column), and drawer
+  items close it with `data-drawer="close"`. Don't wrap a component in a parallel mechanism
   (a custom event relay, a hand-rolled header bar beside the shell,
   `title=` instead of `wa-tooltip`). When code fights a component's
   structure, restructure the code.

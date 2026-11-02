@@ -157,12 +157,10 @@ test('the terminal pop-out opens the chrome-free single view and round-trips a k
     await expect(paneStatus(page, '.ok')).toContainText(`attached: t-${id}`);
 
     const popBtn = page.locator(
-      'terminal-tabs agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-toolbar .tb-pop-out',
+      'terminal-tabs agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-toolbar wa-dropdown-item[value="pop-out"]',
     );
     await page
-      .locator(
-        'terminal-tabs agent-terminal:not(wa-tab-panel:not([active]) *) .tb-details wa-icon[slot="summary"]',
-      )
+      .locator('terminal-tabs agent-terminal:not(wa-tab-panel:not([active]) *) .tb-trigger')
       .click();
     await expect(popBtn).toBeVisible();
     const [pop] = await Promise.all([page.waitForEvent('popup'), popBtn.click()]);
@@ -170,7 +168,7 @@ test('the terminal pop-out opens the chrome-free single view and round-trips a k
     await pop.waitForSelector('single-view agent-terminal');
     await expect(pop).toHaveURL(new RegExp(`/view\\?t=${id}$`));
     // The single view, not the console: no header, nav, sidebar, tabs, dialogs.
-    await expect(pop.locator('app-header')).toHaveCount(0);
+    await expect(pop.locator('side-nav')).toHaveCount(0);
     await expect(pop.locator('workspace-sidebar')).toHaveCount(0);
     await expect(pop.locator('terminal-tabs')).toHaveCount(0);
     await expect(pop.locator('wa-dialog')).toHaveCount(0);
@@ -179,7 +177,7 @@ test('the terminal pop-out opens the chrome-free single view and round-trips a k
     await expect(pop).toHaveTitle('cybermole — popview');
     await expect(paneStatus(pop, '.ok')).toContainText(`attached: t-${id}`);
     // Already popped out: the pane's own pop-out button has nowhere to go.
-    await expect(pop.locator('agent-terminal .tb-pop-out')).toBeHidden();
+    await expect(pop.locator('agent-terminal wa-dropdown-item[value="pop-out"]')).toBeHidden();
     await waitForTermText(pop, MARKER);
 
     // A keystroke round-trips through the fixture command.

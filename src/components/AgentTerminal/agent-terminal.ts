@@ -18,7 +18,8 @@ import '@awesome.me/webawesome/dist/components/spinner/spinner.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/input/input.js';
 import '@awesome.me/webawesome/dist/components/button/button.js';
-import '@awesome.me/webawesome/dist/components/details/details.js';
+import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
+import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
 import '@awesome.me/webawesome/dist/components/tooltip/tooltip.js';
 import '@awesome.me/webawesome/dist/components/divider/divider.js';
 // The protocol types come from the kit's terminal-protocol (one definition,
@@ -519,39 +520,39 @@ export class AgentTerminal extends HTMLElement {
     }
     // The move and the close belong to <terminal-tabs>, which catches the
     // bubbled events.
-    const relay = (cls: string, type: string): void => {
-      bar.querySelector(cls)?.addEventListener('click', () => {
-        const id = this.terminalId;
-        if (id === null) return;
-        this.dispatchEvent(
-          new CustomEvent(type, { detail: { id }, bubbles: true, composed: true }),
-        );
-      });
+    const relay = (type: string) => (): void => {
+      const id = this.terminalId;
+      if (id === null) return;
+      this.dispatchEvent(new CustomEvent(type, { detail: { id }, bubbles: true, composed: true }));
     };
-    relay('.tb-pop-out', 'terminal-pop-out');
-    relay('.tb-close', 'terminal-close');
-    bar.querySelector('.tb-copy-output')?.addEventListener('click', () => void this.copyOutput());
-    bar
-      .querySelector('.tb-download-transcript')
-      ?.addEventListener('click', () => this.downloadTranscript());
     // Keys a phone's soft keyboard lacks, and TUIs need (esc backs out of
     // dialogs, arrows walk menus and history).
-    // Focus FIRST, send after: clicking blurs the terminal (xterm emits a
-    // focus-out), and refocusing emits a focus-in — a byte sent between
-    // the two glues onto the focus-in sequence (tmux reads ESC+[I as one
+    // Focus FIRST, send after: refocusing emits a focus-in — a byte sent
+    // before it glues onto the focus-in sequence (tmux reads ESC+[I as one
     // key) and never reaches the pane as the key.
-    const key = (cls: string, data: () => string): void => {
-      bar.querySelector(cls)?.addEventListener('click', () => {
-        this.terminal?.focus();
-        this.send({ type: 'input', data: data() });
-      });
+    const key = (data: () => string) => (): void => {
+      this.terminal?.focus();
+      this.send({ type: 'input', data: data() });
     };
     // Arrows follow the pane's cursor-key mode (DECCKM), as xterm's own keys do.
     const arrow = (final: 'A' | 'B') => (): string =>
       `\u001b${this.terminal?.modes.applicationCursorKeysMode ? 'O' : '['}${final}`;
-    key('.tb-esc', () => '\u001b');
-    key('.tb-up', arrow('A'));
-    key('.tb-down', arrow('B'));
+    const actions: Record<string, () => void> = {
+      up: key(arrow('A')),
+      down: key(arrow('B')),
+      esc: key(() => '\u001b'),
+      'copy-output': () => void this.copyOutput(),
+      'download-transcript': () => this.downloadTranscript(),
+      'pop-out': relay('terminal-pop-out'),
+      close: relay('terminal-close'),
+    };
+    // The dropdown refocuses its trigger right after wa-select, which would
+    // take focus back from the terminal: act on the next task instead.
+    bar.querySelector('.tb-menu')?.addEventListener('wa-select', e => {
+      const value = (e as CustomEvent<{ item: { value: string } }>).detail.item.value;
+      const action = actions[value];
+      if (action) setTimeout(action, 0);
+    });
     const input = bar.querySelector('.terminal-find-input') as
       (HTMLElement & { value: string | null; focus(): void }) | null;
     this.findInput = input;
@@ -577,6 +578,15 @@ export class AgentTerminal extends HTMLElement {
       .querySelector('.find-prev')
       ?.addEventListener('click', () => this.runFind(this.findQuery(), true));
     bar.querySelector('.find-close')?.addEventListener('click', () => this.closeFind());
+  }
+
+  /** Pop-out and close: only a pane with a tab has them. Disabled too, so
+   *  the menu's arrow keys skip them while hidden. */
+  showTabActions(on: boolean): void {
+    for (const el of this.toolbar?.querySelectorAll<HTMLElement>('.tb-tab-action') ?? []) {
+      el.classList.toggle('hidden', !on);
+      if (el.localName === 'wa-dropdown-item') el.toggleAttribute('disabled', !on);
+    }
   }
 
   /** Public for tests. */
@@ -701,8 +711,7 @@ export class AgentTerminal extends HTMLElement {
     this.attachedTarget = null;
     this.terminalId = mode === 'terminal' ? (target as TerminalId) : null;
     // The toolbar is wired before the mode is known; reveal its tab actions here.
-    for (const action of this.toolbar?.querySelectorAll('.tb-pop-out, .tb-close') ?? [])
-      action.classList.toggle('hidden', this.terminalId === null);
+    this.showTabActions(this.terminalId !== null);
     this.ended = true;
     const msg: ClientMsg =
       mode === 'run' ? { type: 'attach', mode, target } : { type: 'attach', mode, id: target };

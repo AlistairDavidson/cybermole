@@ -282,30 +282,35 @@ test('ctrl-t opens a shell tab and ctrl-shift-t an agent tab; neither fires in a
 // ---------- phone affordances ----------
 
 // Soft keyboards have no esc or arrows; TUIs need them (closing dialogs,
-// walking menus and history). The collapsible toolbar sends them; `cat -v`
-// renders ESC as ^[ in the buffer, so each click is observed through the
+// walking menus and history). The toolbar's menu sends them; `cat -v`
+// renders ESC as ^[ in the buffer, so each pick is observed through the
 // pane, not a side channel. Its close asks before ending the terminal.
-test('the toolbar opens to send esc and arrows to the pane, and closes the tab', async ({
-  page,
-}) => {
+test('the toolbar menu sends esc and arrows to the pane, and closes the tab', async ({ page }) => {
   test.setTimeout(60_000);
   await login(page);
   const ws = await makeWorkspace(page, 'esc button ws');
   await waitForTermText(page, AGENT_MARKER);
 
   const bar = page.locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-toolbar');
-  const esc = bar.locator('.tb-esc');
-  // Collapsed: only its summary shows.
-  await expect(esc).toBeHidden();
-  await bar.locator('.tb-details wa-icon[slot="summary"]').click();
-  await expect(esc).toBeVisible();
+  const item = (value: string) => bar.locator(`.tb-menu wa-dropdown-item[value="${value}"]`);
+  // The menu focuses its first item once its show animation ends; a pick
+  // before that would have its focus hand-back stolen.
+  const openMenu = async (): Promise<void> => {
+    await bar.locator('.tb-menu .tb-trigger').click();
+    await expect(item('up')).toBeFocused();
+  };
+  // Closed: only its trigger shows.
+  await expect(item('esc')).toBeHidden();
+  await openMenu();
+  await expect(item('esc')).toBeVisible();
   // The tab strip holds no close of its own; the toolbar's is the one.
   await expect(page.locator('terminal-tabs wa-tab .tab-close')).toHaveCount(0);
   await expect(
     page.locator('terminal-tabs wa-tab:not(.editor-tab) wa-icon[name="terminal"]'),
   ).not.toHaveCount(0);
 
-  // Opening the toolbar took focus; hand it back to the pane.
+  // Opening the menu took focus; an outside click closes it and hands
+  // focus back to the pane.
   await page
     .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-container')
     .click();
@@ -315,15 +320,16 @@ test('the toolbar opens to send esc and arrows to the pane, and closes the tab',
   // then the bytes show in cat's output.
   await page.waitForTimeout(500);
   // One key per line: tmux would read ESC and a quick next key as one
-  // meta key. Each click hands focus back to the pane, so Enter lands in
+  // meta key. Each pick hands focus back to the pane, so Enter lands in
   // it and cat echoes the line.
-  for (const [button, shown] of [
-    ['.tb-esc', 'X^[Y'],
-    ['.tb-up', 'X^[[AY'],
-    ['.tb-down', 'X^[[BY'],
+  for (const [value, shown] of [
+    ['esc', 'X^[Y'],
+    ['up', 'X^[[AY'],
+    ['down', 'X^[[BY'],
   ] as const) {
     await page.keyboard.type('X');
-    await bar.locator(button).click();
+    await openMenu();
+    await item(value).click();
     await page.waitForTimeout(600);
     await page.keyboard.type('Y\n');
     await waitForTermText(page, shown, 10_000);
@@ -332,7 +338,8 @@ test('the toolbar opens to send esc and arrows to the pane, and closes the tab',
 
   const tabs = page.locator('terminal-tabs wa-tab[data-term]:not(.editor-tab)');
   const before = await tabs.count();
-  await bar.locator('.tb-close').click();
+  await openMenu();
+  await item('close').click();
   await page.click('#confirm-delete-ok');
   await expect(tabs).toHaveCount(before - 1);
   await deleteWorkspace(page, ws);

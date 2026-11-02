@@ -24,9 +24,9 @@ ever changes) behind the console's login once it is registered and built.
   install; after scaffold, e.g. `<__APP_SLUG__-ping>`).
 - `src/pages/` — the pages: every page renders inside the kit's
   `<AppShell title="…">` (the document, the stock theme and the cybermole
-  header — the same bar as the console's pages), its content a `<main>`,
+  nav — the same sidebar as the console's pages), its content a `<main>`,
   and its client script imports `@cybermole/app-kit/app-shell` first (the
-  wa-* prelude and the header's enhancer). A page owns only its page-level
+  wa-* prelude and the nav's enhancers). A page owns only its page-level
   wa-* halves (e.g. the card), and its client script imports enhancers,
   nothing else wa-*. The architecture lint fails a page that writes its own
   `<html>` or uses AppShell without its client half. `index.astro` carries three generated marker pairs — ACTION

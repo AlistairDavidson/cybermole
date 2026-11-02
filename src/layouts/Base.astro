@@ -1,24 +1,20 @@
 ---
 import "@awesome.me/webawesome/dist/styles/webawesome.css";
 import "@awesome.me/webawesome/dist/components/toast/toast.js";
-import "@awesome.me/webawesome/dist/components/divider/divider.js";
-import "@awesome.me/webawesome/dist/components/page/page.js";
 import { BASE } from "../base";
-import AppHeader from "@cybermole/app-kit/AppHeader.astro";
-import SideNav from "@cybermole/app-kit/SideNav.astro";
-import SideNavFooter from "@cybermole/app-kit/SideNavFooter.astro";
+import AppPage from "@cybermole/app-kit/AppPage.astro";
 import { assertCybermoleLocals } from "../lib/web/locals";
 
 interface Props {
   title: string;
-  /** Renders the header bar with that section marked current. Omitted on /login and the offline shell. */
+  /** Renders the shell (the common nav) with that section marked current.
+   *  Omitted on /login, /view and the offline shell. */
   header?: "console" | "apps" | "builder" | "jobs" | "logs" | "settings";
-  /** The sections move from the bar into the page's navigation column;
-   *  the page's own navigation fills the "navigation" slot below them. */
-  sideNav?: boolean;
+  /** The content renders its own top row (the console's tab strip). */
+  ownTopRow?: boolean;
 }
 
-const { title, header, sideNav = false } = Astro.props;
+const { title, header, ownTopRow = false } = Astro.props;
 // The logs link only exists when Grafana is configured. Every page with a
 // header has already asserted its locals, so a miss here is a bug.
 const logs = header !== undefined && assertCybermoleLocals(Astro.locals).cybermole.cfg.grafanaExploreUrl !== null;
@@ -68,26 +64,18 @@ const THEME_COLOR_LIGHT = "#ffffff";
   <body>
     {
       header ? (
-        // The app shell is wa-page: the bar is its header slot, and a page's
-        // own children land in its slots directly — a top-level element
-        // carrying slot="navigation" / "navigation-header" fills the drawer
-        // column, the rest (a <main>) is the content. The drawer toggle is
-        // the bar's data-toggle-nav button, which wa-page wires itself;
-        // SSR can't see it, hence disable-navigation-toggle.
-        <wa-page class="app-page" disable-navigation-toggle>
-          <AppHeader base={BASE} current={header} logs={logs} sideNav={sideNav} />
-          {sideNav && (
-            // One navigation column: the sections and apps, then the page's
-            // own navigation (its "navigation" slot), scrolling below.
-            <div slot="navigation" class="nav-column wa-stack wa-gap-s">
-              <SideNav base={BASE} current={header} logs={logs} />
-              {Astro.slots.has("navigation") && <wa-divider />}
-              <slot name="navigation" />
-            </div>
-          )}
-          {sideNav && <SideNavFooter base={BASE} current={header} />}
+        // A page's top-level slot="navigation" element fills the column
+        // under the common nav; the rest (a <main>) is the content.
+        <AppPage
+          base={BASE}
+          current={header}
+          logs={logs}
+          pageNav={Astro.slots.has("navigation")}
+          ownTopRow={ownTopRow}
+        >
+          <slot name="navigation" slot="navigation" />
           <slot />
-        </wa-page>
+        </AppPage>
       ) : (
         <slot />
       )
@@ -102,7 +90,8 @@ const THEME_COLOR_LIGHT = "#ffffff";
       import "@awesome.me/webawesome/dist/components/toast/toast.js";
       import "@awesome.me/webawesome/dist/components/button/button.js";
       import "@awesome.me/webawesome/dist/components/page/page.js";
-      import "@cybermole/app-kit/app-header";
+      import "@awesome.me/webawesome/dist/components/divider/divider.js";
+      import "@cybermole/app-kit/app-nav";
       import { BASE } from "../base";
 
       // Service workers need a secure context (https, or loopback http).

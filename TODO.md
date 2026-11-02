@@ -1,5 +1,15 @@
-## Live testing
-- Need some kind of apps menu
+## Product
+
+No workspaces any more - one workspace per app
+Cybermole page no longer has an editor tab in its workspace - only agent/terminal
+
+
+## Dev
+Docker watch mode
+
+## Quality
+
+Property-based testing
 
 ## Human tasks
 

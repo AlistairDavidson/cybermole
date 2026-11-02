@@ -4,8 +4,9 @@
 // (the empty states, the run host, the new-tab split button) are SSR'd,
 // and the per-terminal structures are inert <template> skeletons it
 // clones and fills by class hooks. Nothing is visible until the console
-// state arrives (view="loading"); the enhancer flips `view` and the
-// .hidden classes from then on.
+// state arrives (view="loading") but the strip, which is the page's
+// top row (Base's ownTopRow) and so always shows the nav toggle; the enhancer flips `view` and the .hidden classes
+// from then on.
 import '@awesome.me/webawesome/dist/components/tab-group/tab-group.js';
 import '@awesome.me/webawesome/dist/components/tab/tab.js';
 import '@awesome.me/webawesome/dist/components/tab-panel/tab-panel.js';
@@ -14,13 +15,21 @@ import '@awesome.me/webawesome/dist/components/button-group/button-group.js';
 import '@awesome.me/webawesome/dist/components/dropdown/dropdown.js';
 import '@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
+import NavToggle from '@cybermole/app-kit/NavToggle.astro';
 import AgentTerminal from '../AgentTerminal/AgentTerminal.astro';
 ---
 <terminal-tabs view="loading">
   <!-- manual activation: arrows walk focus, Enter/Space/click select —
        a selection is an attach, so focus alone must not open a pane. -->
-  <wa-tab-group class="hidden" activation="manual" without-scroll-controls>
-    <wa-button-group slot="nav" class="tab-new-group wa-align-self-center" label="new tab">
+  <wa-tab-group activation="manual" without-scroll-controls>
+    <!-- The page's top row (Base's ownTopRow): the nav toggle leads it;
+         the tabs are appended after. -->
+    <NavToggle slotName="nav" />
+    <!-- The strip shows even with no terminal, and wa-tab-group's first
+         layout activates its first tab (throwing on none): a disabled tab
+         is one it skips. terminal-tabs.ts drops it with the first real tab. -->
+    <wa-tab slot="nav" class="tab-placeholder hidden" disabled aria-hidden="true"></wa-tab>
+    <wa-button-group slot="nav" class="tab-new-group wa-align-self-center hidden" label="new tab">
       <wa-button
         id="tab-new"
         class="tab-new"

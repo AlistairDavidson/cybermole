@@ -1,8 +1,8 @@
 // Console cosmetics: the cybermole product label (title, nav, sidebar
 // heading), the page-entry fade (and its reduced-motion skip), the
-// desktop nav collapse (persisted, rail with the expand control), the
-// mobile drawer toggle in the top bar, the brand glyph's page-current
-// highlight, and the new-app dialog's directory suggestion from the name.
+// desktop sidebar hide (persisted, the hamburger leading the tab strip),
+// the mobile drawer toggle in the same place, the same shell on the pages
+// without tabs, and the new-app dialog's directory suggestion from the name.
 //
 // Apps-spec discipline: one login() via the shared cookie file (env.ts); no
 // afterAll; each test starts from a fresh context (localStorage included),
@@ -63,18 +63,22 @@ function pageEnterAnimation(page: Page): Promise<string> {
 
 // ---------- the product label ----------
 
-test('the product shows as cybermole: page title, nav brand, sidebar group heading', async ({
+test('the product shows as cybermole: page title, nav item, sidebar group heading', async ({
   page,
 }) => {
   await login(page);
   await expect(page).toHaveTitle('cybermole');
-  // The header's brand link (icon button): its name rides the glyph's
-  // label, and a wa-tooltip says it to sighted users.
-  await expect(page.locator('app-header wa-button.app-brand wa-icon')).toHaveAttribute(
-    'label',
-    'Cybermole',
-  );
-  await expect(page.locator('wa-tooltip[for="nav-console"]')).toHaveText('Cybermole');
+  // No header bar (so no brand logo or breadcrumb): the tab strip is the
+  // top row, and the side nav's first item is the product.
+  await expect(page.locator('app-header')).toHaveCount(0);
+  await expect(page.locator('wa-breadcrumb')).toHaveCount(0);
+  const item = page.locator('side-nav #nav-console');
+  await expect(item).toHaveAttribute('aria-current', 'page');
+  await expect(item.locator('.side-nav-row > span')).toHaveText('Cybermole');
+  const glyph = item.locator('.side-nav-row > wa-icon');
+  await expect(glyph).toHaveAttribute('library', 'brand');
+  await expect(glyph).toHaveAttribute('name', 'mole');
+  await expect(glyph).toHaveAttribute('label', 'Cybermole');
   // The / page's single group names the product, not "console".
   const heading = page.locator('workspace-sidebar .ws-group .g-name');
   await expect(heading).toHaveText('cybermole');
@@ -98,21 +102,38 @@ test('console pages fade in; reduced motion skips the animation', async ({ page 
   expect(await pageEnterAnimation(page)).toBe('none');
 });
 
-// ---------- the desktop nav collapse ----------
+// ---------- the navigation toggles ----------
 
-test('the nav collapse toggles a rail and persists across reload', async ({ page }) => {
+/** The shown button of the first displayed control in the tab strip's nav. */
+function firstStripControl(page: Page): Promise<string | null> {
+  return page.evaluate(() => {
+    const group = document.querySelector('terminal-tabs > wa-tab-group')!;
+    const shown = (el: Element): boolean => getComputedStyle(el).display !== 'none';
+    const first = [...group.querySelectorAll(':scope > [slot="nav"]')].find(shown);
+    if (first?.localName !== 'nav-toggle') return null;
+    return [...first.querySelectorAll('wa-button')].find(shown)?.id ?? null;
+  });
+}
+
+test('desktop: the hamburger leads the tab strip, hides the sidebar, and persists', async ({
+  page,
+}) => {
   await login(page);
   const toggle = page.locator('#nav-collapse');
   await expect(toggle).toBeVisible();
+  await expect(page.locator('#nav-drawer-toggle')).toBeHidden();
+  expect(await firstStripControl(page)).toBe('nav-collapse');
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  // The old in-sidebar collapse arrow is gone.
+  await expect(page.locator('[slot="navigation-footer"] wa-icon[name^="chevron"]')).toHaveCount(0);
 
-  // Collapse: the sidebar hides, the expand chevron shows in the rail.
+  // Hide: the whole column goes, the hamburger stays.
   await toggle.click();
   await expect(page.locator('workspace-sidebar')).toBeHidden();
+  await expect(page.locator('side-nav')).toBeHidden();
   await expect(page.locator('wa-page.app-page')).toHaveAttribute('data-nav-collapsed', '');
+  await expect(toggle).toBeVisible();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(toggle.locator('wa-icon.when-collapsed')).toBeVisible();
-  await expect(toggle.locator('wa-icon.when-open')).toBeHidden();
   expect(await page.evaluate(() => localStorage.getItem('cybermole:sidebar-collapsed'))).toBe(
     'true',
   );
@@ -126,7 +147,7 @@ test('the nav collapse toggles a rail and persists across reload', async ({ page
   await page.waitForSelector('console-app');
   await expect(page.locator('workspace-sidebar')).toBeHidden();
 
-  // Expand again: the sidebar is back, and the memory clears.
+  // Show again: the sidebar is back, and the memory clears.
   await toggle.click();
   await expect(page.locator('workspace-sidebar .nav')).toBeVisible();
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -135,29 +156,16 @@ test('the nav collapse toggles a rail and persists across reload', async ({ page
   );
 });
 
-// ---------- the mobile drawer toggle ----------
-
-test('on mobile the drawer toggle sits far left of the top bar and drives the drawer', async ({
-  page,
-}) => {
+test('on mobile the drawer toggle leads the tab strip and drives the drawer', async ({ page }) => {
   await login(page);
-  const toggle = page.locator('app-header #nav-drawer-toggle');
+  const toggle = page.locator('#nav-drawer-toggle');
   const thePage = page.locator('wa-page.app-page');
 
-  // Wide: the sidebar is inline and the toggle is a mobile-only control.
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await expect(thePage).not.toHaveAttribute('view', 'mobile');
-  await expect(toggle).toBeHidden();
-  await expect(page.locator('workspace-sidebar .nav')).toBeVisible();
-
-  // Narrow: wa-page flips to its mobile view, the toggle appears at the
-  // top bar's far left (the first control of the left cluster), and the
-  // stock hamburger's header row is gone.
   await page.setViewportSize({ width: 600, height: 900 });
   await expect(thePage).toHaveAttribute('view', 'mobile');
   await expect(toggle).toBeVisible();
-  const firstClusterControl = page.locator('app-header nav.wa-cluster > :first-child');
-  await expect(firstClusterControl).toHaveAttribute('id', 'nav-drawer-toggle');
+  await expect(page.locator('#nav-collapse')).toBeHidden();
+  expect(await firstStripControl(page)).toBe('nav-drawer-toggle');
 
   // Opening: the drawer carries the sidebar, the button's disclosure
   // semantics follow (icon flips to the close glyph).
@@ -173,45 +181,42 @@ test('on mobile the drawer toggle sits far left of the top bar and drives the dr
   await expect(thePage).not.toHaveAttribute('nav-open', '');
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(toggle.locator('wa-icon')).toHaveAttribute('name', 'bars');
-
-  // Pages without the console drawer never show the toggle.
-  await page.goto('/jobs');
-  await page.waitForSelector('jobs-app');
-  await expect(page.locator('app-header #nav-drawer-toggle')).toBeHidden();
 });
 
-// ---------- the brand glyph's page-current highlight ----------
+// ---------- every page wears the shell ----------
 
-test('the brand glyph is monochrome ink: it takes the current-page colour like its siblings', async ({
+test('pages without tabs get the same side nav and a top row led by the toggle', async ({
   page,
 }) => {
   await login(page);
-  // The button part's colour is what every slotted icon inherits; the
-  // brand-library mole glyph (currentColor) rides the same chain.
-  const colors = () =>
-    page.evaluate(() => {
-      const partColor = (btn: Element): string => {
-        const part = (btn.shadowRoot as ShadowRoot).querySelector('[part~="button"]')!;
-        return getComputedStyle(part).color;
-      };
-      return {
-        glyph: getComputedStyle(document.querySelector('app-header wa-button.app-brand wa-icon')!)
-          .color,
-        current: partColor(document.querySelector("app-header wa-button[aria-current='page']")!),
-        resting: partColor(document.querySelector("app-header wa-button[href$='/jobs']")!),
-      };
-    });
+  for (const [path, section] of [
+    ['/jobs', 'jobs'],
+    ['/settings', 'settings'],
+    ['/apps', 'apps-all'],
+  ] as const) {
+    await page.goto(path);
+    await expect(page.locator('side-nav')).toBeVisible();
+    await expect(page.locator('app-header')).toHaveCount(0);
+    const row = page.locator('wa-page.app-page > .top-row');
+    await expect(row.locator('#nav-collapse')).toBeVisible();
+    await expect(page.locator(`#nav-${section}`)).toHaveAttribute('aria-current', 'page');
+  }
 
-  // Home: the brand owns the highlight.
-  const home = await colors();
-  expect(home.glyph).toBe(home.current);
-  expect(home.current).not.toBe(home.resting);
+  // The hide carries over from page to page.
+  await page.click('#nav-collapse');
+  await expect(page.locator('side-nav')).toBeHidden();
+  await page.goto('/jobs');
+  await expect(page.locator('#nav-collapse')).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('side-nav')).toBeHidden();
+  await page.click('#nav-collapse');
+  await expect(page.locator('side-nav')).toBeVisible();
 
-  // Away: it rests at the same colour as every other non-current icon.
-  await page.goto('/builder');
-  await page.waitForSelector('workspace-sidebar .nav');
-  const away = await colors();
-  expect(away.glyph).toBe(away.resting);
+  // On mobile the same row opens the drawer.
+  await page.setViewportSize({ width: 600, height: 900 });
+  await expect(page.locator('wa-page.app-page')).toHaveAttribute('view', 'mobile');
+  await page.click('#nav-drawer-toggle');
+  await expect(page.locator('wa-page.app-page')).toHaveAttribute('nav-open', '');
+  await expect(page.locator('side-nav #nav-jobs')).toBeVisible();
 });
 
 // ---------- the new-app dialog's directory suggestion ----------

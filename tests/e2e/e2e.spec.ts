@@ -1012,16 +1012,10 @@ test('terminal toolbar: copy output and download transcript capture the terminal
   );
   await expect(toolbar).toBeVisible();
   await openToolbar(page);
-  const copyBtn = toolbar.locator('wa-button.tb-copy-output');
-  const dlBtn = toolbar.locator('wa-button.tb-download-transcript');
-  await expect(copyBtn).toHaveCount(1);
-  await expect(dlBtn).toHaveCount(1);
-  await expect(
-    toolbar.locator(`wa-tooltip[for="${await copyBtn.getAttribute('id')}"]`),
-  ).toContainText('copy');
-  await expect(
-    toolbar.locator(`wa-tooltip[for="${await dlBtn.getAttribute('id')}"]`),
-  ).toContainText('download');
+  const copyBtn = toolbar.locator('wa-dropdown-item[value="copy-output"]');
+  const dlBtn = toolbar.locator('wa-dropdown-item[value="download-transcript"]');
+  await expect(copyBtn).toContainText('copy');
+  await expect(dlBtn).toContainText('download');
 
   // The walk behind both buttons: the screen's content, trailing blank rows trimmed.
   const walked = await page.evaluate(() =>
@@ -1067,13 +1061,14 @@ test('terminal toolbar: copy output and download transcript capture the terminal
 
   // Copy goes to the real clipboard, identical to the walk.
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
-  await copyBtn.click();
+  await copyBtn.click(); // the menu is still open
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(walked);
   await expect(
     page.locator('wa-toast wa-toast-item', { hasText: 'copied the terminal output' }),
   ).toBeVisible();
 
   // The download is named after the session and ANSI-serialized.
+  await openToolbar(page);
   const [download] = await Promise.all([page.waitForEvent('download'), dlBtn.click()]);
   expect(download.suggestedFilename()).toBe(`t-${id}-transcript.ans`);
   const saved = await download.path();
@@ -1110,11 +1105,12 @@ Promise<{ status: number; json: any }> {
   );
 }
 
-/** The visible pane's toolbar starts collapsed; open it. */
+/** The visible pane's actions menu starts closed; open it and wait out its
+ *  show animation (which ends by focusing the first item). */
 async function openToolbar(page: Page): Promise<void> {
-  await page
-    .locator('agent-terminal:not(wa-tab-panel:not([active]) *) .tb-details wa-icon[slot="summary"]')
-    .click();
+  const pane = page.locator('agent-terminal:not(wa-tab-panel:not([active]) *)');
+  await pane.locator('.tb-trigger').click();
+  await expect(pane.locator('wa-dropdown-item[value="up"]')).toBeFocused();
 }
 
 // Pop-out moves the pane to a /view?t=<id> tab (the chrome-free single
@@ -1133,11 +1129,11 @@ test("popping a tab moves the pane to a new tab: main socket down, popped tab at
   await expect(page.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`);
   // Only the active pane has a toolbar (an unactivated tab has no pane).
   const popBtn = page.locator(
-    'terminal-tabs agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-toolbar .tb-pop-out',
+    'terminal-tabs agent-terminal:not(wa-tab-panel:not([active]) *) .terminal-toolbar wa-dropdown-item[value="pop-out"]',
   );
   await openToolbar(page);
   await expect(popBtn).toBeVisible();
-  await expect(page.locator('terminal-tabs .tb-pop-out')).toHaveCount(1);
+  await expect(page.locator('terminal-tabs wa-dropdown-item[value="pop-out"]')).toHaveCount(1);
 
   const [popout] = await Promise.all([page.waitForEvent('popup'), popBtn.click()]);
   await popout.waitForSelector('single-view agent-terminal');
@@ -1174,7 +1170,7 @@ test("popping a tab moves the pane to a new tab: main socket down, popped tab at
   await popout.close(); // its pagehide is a no-op now
 
   // Pop again and close the popped tab: its pagehide re-attaches here unprompted.
-  await openToolbar(page); // the pane is a fresh one, collapsed
+  await openToolbar(page); // the pane is a fresh one, its menu closed
   const [popout2] = await Promise.all([page.waitForEvent('popup'), popBtn.click()]);
   await popout2.waitForSelector('single-view agent-terminal');
   await expect(popout2.locator('.terminal-status.ok')).toContainText(`attached: t-${id}`);
@@ -1842,9 +1838,8 @@ test('settings dashboard shows effective config; update dry-run is check-only', 
   page,
 }) => {
   await login(page);
-  await page.click('app-header #nav-account');
-  await expect(page.locator('app-header #nav-settings')).toBeVisible();
-  await page.click('app-header #nav-settings');
+  // The console page has no header bar: settings sits in the nav footer.
+  await page.click('.side-nav-footer #nav-settings');
   await page.waitForURL(u => u.pathname === '/settings');
 
   const cfg = page.locator('#config');

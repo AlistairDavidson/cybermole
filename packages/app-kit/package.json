@@ -6,8 +6,10 @@
   "sideEffects": [
     "./src/wa-client.ts",
     "./src/agent-console.ts",
-    "./src/components/AppHeader/app-header.ts",
-    "./src/components/AppHeader/side-nav.ts",
+    "./src/components/AppNav/app-nav.ts",
+    "./src/components/AppNav/side-nav.ts",
+    "./src/components/AppNav/nav-toggle.ts",
+    "./src/components/**/*.css",
     "./src/components/AppShell/app-shell.ts",
     "./src/components/**/*.astro"
   ],
@@ -22,10 +24,9 @@
     "./icons": "./src/icons.ts",
     "./app-menu": "./src/app-menu.ts",
     "./AppShell.astro": "./src/components/AppShell/AppShell.astro",
-    "./AppHeader.astro": "./src/components/AppHeader/AppHeader.astro",
-    "./SideNav.astro": "./src/components/AppHeader/SideNav.astro",
-    "./SideNavFooter.astro": "./src/components/AppHeader/SideNavFooter.astro",
-    "./app-header": "./src/components/AppHeader/app-header.ts",
+    "./AppPage.astro": "./src/components/AppNav/AppPage.astro",
+    "./NavToggle.astro": "./src/components/AppNav/NavToggle.astro",
+    "./app-nav": "./src/components/AppNav/app-nav.ts",
     "./app-shell": "./src/components/AppShell/app-shell.ts",
     "./testing": "./src/testing/index.mts"
   },

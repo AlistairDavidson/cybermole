@@ -1,7 +1,6 @@
 // <console-app>: drives the workspace sidebar and terminal tabs, the
 // /ws/events-driven state refresh (subscribeConsoleEvents), the
-// create/delete dialogs, and the desktop nav collapse. The
-// dialogs and the nav-collapse control live here, outside the sidebar's
+// create/delete dialogs. The dialogs live here, outside the sidebar's
 // restamped groups; the sidebar and tabs only emit events.
 // Scope "console" (the / page: console workspaces only) or "builder"
 // (/builder: the app portfolio — app workspace groups, lifecycle chips from
@@ -56,19 +55,6 @@ type PendingDelete =
   | { kind: 'app'; slug: AppSlug; name: string }
   | { kind: 'terminal'; id: TerminalId; name: string };
 
-/** Collapsed desktop nav (the rail), remembered across reloads. Distinct
- *  from the sidebar's group-collapse key (workspace-sidebar.ts). */
-const NAV_RAIL_KEY = 'cybermole:sidebar-collapsed';
-
-/** Read once; an unusable storage just means this load starts expanded. */
-function readNavRail(): boolean {
-  try {
-    return localStorage.getItem(NAV_RAIL_KEY) === 'true';
-  } catch {
-    return false;
-  }
-}
-
 export class ConsoleApp extends HTMLElement {
   private teardownEvents: (() => void) | null = null;
   private state: ConsoleState | null = null;
@@ -82,8 +68,6 @@ export class ConsoleApp extends HTMLElement {
   private pendingDelete: PendingDelete | null = null;
   /** Serializes reorder writes (see the reorder-terminals listener). */
   private reorderQueue: Promise<void> = Promise.resolve();
-  /** Desktop nav collapsed to the rail; see NAV_RAIL_KEY. */
-  private navCollapsed = readNavRail();
   /** True once the user hand-edits the new-app dialog's cwd: the name no
    *  longer re-suggests a directory. Reset when the dialog reopens. */
   private appCwdTouched = false;
@@ -187,21 +171,6 @@ export class ConsoleApp extends HTMLElement {
     (this.querySelector('#workspace-save') as HTMLElement).onclick = () =>
       (this.querySelector('#workspace-form') as HTMLFormElement).requestSubmit();
     (this.querySelector('#confirm-delete-ok') as HTMLElement).onclick = () => void this.runDelete();
-    // The nav collapse control: SSR'd static markup in the nav header,
-    // outside the sidebar.
-    this.applyNavCollapsed();
-    (document.querySelector('#nav-collapse') as HTMLElement | null)?.addEventListener(
-      'click',
-      () => {
-        this.navCollapsed = !this.navCollapsed;
-        try {
-          localStorage.setItem(NAV_RAIL_KEY, String(this.navCollapsed));
-        } catch {
-          /* storage unavailable — this page load only */
-        }
-        this.applyNavCollapsed();
-      },
-    );
     // The new-app dialog suggests a directory derived from the name (the
     // server's own slug rule), until the cwd is hand-edited. The icon
     // preview rides the same name typing through the shared suggestion
@@ -460,7 +429,6 @@ export class ConsoleApp extends HTMLElement {
     const st = this.state;
     if (!st) return;
     const ws = this.selectedWorkspace();
-    this.applyBreadcrumb(st, ws);
     this.sidebar()?.render(st, this.selected, {
       scope: this.scope,
       appsStatus: this.appsStatus,
@@ -473,20 +441,6 @@ export class ConsoleApp extends HTMLElement {
       else tabs.sync(ws);
     } else {
       tabs.setWorkspace(null, st.editor);
-    }
-  }
-
-  /** The header's data-crumb items (AppHeader with sideNav); an empty one hides. */
-  private applyBreadcrumb(st: ConsoleState, ws: WorkspaceState | null): void {
-    const app = ws?.appId ? (st.apps.find(a => a.id === ws.appId)?.name ?? null) : null;
-    for (const [key, text] of [
-      ['app', app],
-      ['workspace', ws?.name ?? null],
-    ] as const) {
-      const crumb = document.querySelector(`app-header [data-crumb="${key}"]`);
-      if (!crumb) continue;
-      crumb.textContent = text ?? '';
-      crumb.toggleAttribute('hidden', text === null);
     }
   }
 
@@ -582,18 +536,6 @@ export class ConsoleApp extends HTMLElement {
       .filter(w => w.appId === this.newWorkspaceAppId)
       .map(w => w.name);
     return workspaceNameFromCwd(typed, siblings);
-  }
-
-  /** Reflects the collapse on the wa-page (console.css owns the look) and
-   *  on the control's semantics. */
-  private applyNavCollapsed(): void {
-    this.closest('wa-page')?.toggleAttribute('data-nav-collapsed', this.navCollapsed);
-    const toggle = document.querySelector('#nav-collapse');
-    if (toggle) {
-      const label = this.navCollapsed ? 'expand the sidebar' : 'collapse the sidebar';
-      toggle.setAttribute('aria-expanded', this.navCollapsed ? 'false' : 'true');
-      toggle.setAttribute('aria-label', label);
-    }
   }
 
   private async createApp(): Promise<void> {

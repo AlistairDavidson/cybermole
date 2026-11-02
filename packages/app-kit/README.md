@@ -60,20 +60,22 @@ the root):
   the rule list. An app's `lint:arch` script runs it over `src` +
   `astro.config.mjs`.
 - **`@cybermole/app-kit/AppShell.astro`** + **`app-shell`** — an app
-  page's whole document: the stock Web Awesome theme, one `wa-page` with
-  the cybermole header (`AppHeader.astro`, the console's own bar) in its
-  header slot, the page's `<main>` in the default slot. `app-shell` is its
-  client half — the wa-* prelude, the console's icon libraries and the
-  header enhancer — imported first by the page's client script (Astro
-  can't build a `<script>` in an `.astro` outside the app's root, which
-  the kit always is). The console's base is derived from the app's baked
-  base.
-- **`@cybermole/app-kit/AppHeader.astro`** + **`app-header`** — the bar
-  itself, shared by the console's `Base.astro` and AppShell: section
-  links, sign-out, and the Apps menu (a `wa-dropdown` stamped from
-  `GET /api/state` on connect and on every open; `app-menu` is its pure
-  half). **`icons`** — `registerCybermoleIcons(base)`, the vendored icon
-  libraries at the console's base.
+  page's whole document: the stock Web Awesome theme and the console's
+  page shell (`AppPage`), the page's `<main>` in the default slot.
+  `app-shell` is its client half — the wa-* prelude, the console's icon
+  libraries and the nav's enhancers — imported first by the page's client
+  script (Astro can't build a `<script>` in an `.astro` outside the app's
+  root, which the kit always is). The console's base is derived from the
+  app's baked base.
+- **`@cybermole/app-kit/AppPage.astro`** + **`app-nav`** — the page shell
+  itself, shared by the console's `Base.astro` and AppShell: a `wa-page`
+  whose navigation column is the common nav (SideNav: the sections, then
+  All apps and the apps stamped from `GET /api/state`; `app-menu` is its
+  pure half), settings and sign-out in its footer, and a top row led by
+  the nav toggle (**`NavToggle.astro`**: the mobile drawer / desktop
+  hide; a page with its own top row, like the console's tab strip,
+  places it there). **`icons`** — `registerCybermoleIcons(base)`, the
+  vendored icon libraries at the console's base.
 - **`@cybermole/app-kit/agent-console`** — the app pages' agent drawer
   (`<agent-console slug=…>`): the wa-drawer + ONE lean xterm over the
   console's /ws bridge, the operator-workspace open flow and the builder

@@ -681,62 +681,64 @@ test('the drawer\u2019s builder link: deep-links the app\u2019s build workspace 
     .toBe(true);
 });
 
-test('the cybermole header: on the app page, its Apps menu from the console and the app, and /apps', async ({
+test('the cybermole nav: the app page wears the console side nav and top row, and /apps', async ({
   page,
 }) => {
   test.setTimeout(60_000);
   await ensureRegisteredAndMounted();
   await login(page);
 
-  // The console page's Apps menu lists the app and navigates to it.
-  const menuItem = page.locator(`app-header wa-dropdown-item.app-item[data-slug="${SLUG}"]`);
-  await expect(menuItem).toHaveCount(1);
-  await page.click('app-header #nav-apps');
-  await expect(menuItem).toBeVisible();
-  await expect(menuItem).toContainText('Notes');
-  await expect(page.locator('app-header .apps-status')).toBeHidden();
-  await menuItem.click();
+  // The console page's side nav lists the app and navigates to it.
+  const appItem = page.locator(`side-nav .app-item[data-slug="${SLUG}"]`);
+  await expect(appItem).toContainText('Notes');
+  await expect(page.locator('side-nav .apps-status')).toBeHidden();
+  await appItem.locator('a').click();
   await page.waitForURL(u => u.pathname === `/apps/${SLUG}/`);
 
-  // The app page is wrapped in the same header: wa-page shell, upgraded
-  // wa-* (DSD only would leave no .href property), Apps marked current,
-  // brand glyph resolved from the console's icon library, no drawer toggle.
-  await expect(page.locator('wa-page.app-page > app-header')).toHaveCount(1);
+  // The app page is wrapped in the same shell: upgraded wa-* (the stamped
+  // item exists only once side-nav.ts ran), this app selected, the brand
+  // glyph resolved from the console's icon library, no Logs (Grafana is
+  // unset here) and no header bar — a top row led by the nav toggle.
   await expect(page.locator('wa-page.app-page main wa-card h1')).toHaveText('Notes');
-  await expect(page.locator('app-header #nav-apps')).toHaveAttribute('aria-current', 'page');
-  await expect(page.locator('app-header #nav-console')).toHaveAttribute('href', '/');
-  await expect(page.locator('app-header #nav-drawer-toggle')).toHaveCount(0);
-  await expect(page.locator('app-header #nav-logs')).toBeHidden();
+  await expect(appItem).toHaveAttribute('selected', '');
+  await expect(page.locator('side-nav #nav-console a')).toHaveAttribute('href', '/');
+  await expect(page.locator('side-nav #nav-logs')).toBeHidden();
+  await expect(page.locator('app-header')).toHaveCount(0);
+  await expect(page.locator('wa-page.app-page > .top-row #nav-collapse')).toBeVisible();
   await expect
     .poll(() =>
       page.evaluate(
         () =>
           (document
-            .querySelector('app-header #nav-console wa-icon')
+            .querySelector('side-nav #nav-console wa-icon')
             ?.shadowRoot?.querySelector('svg') ?? null) !== null,
       ),
     )
     .toBe(true);
-  await expect(page.locator('app-header wa-tooltip[for="nav-apps"]')).toHaveText('Apps');
 
-  // Settings lives in the account menu, beside sign-out.
-  await page.click('app-header #nav-account');
-  await expect(page.locator('app-header #nav-settings')).toBeVisible();
-  await expect(page.locator('app-header #sign-out')).toBeVisible();
-  await page.click('app-header #nav-settings');
+  // The desktop hide works here too.
+  await page.click('#nav-collapse');
+  await expect(page.locator('side-nav')).toBeHidden();
+  await page.click('#nav-collapse');
+  await expect(page.locator('side-nav')).toBeVisible();
+
+  // Settings and sign-out sit in the nav's footer.
+  await expect(page.locator('.side-nav-footer #sign-out')).toBeVisible();
+  await page.click('.side-nav-footer #nav-settings');
   await page.waitForURL(u => u.pathname === '/settings');
-  await expect(page.locator('app-header #nav-account')).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('.side-nav-footer #nav-settings')).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
   await page.goto(`/apps/${SLUG}/`);
 
-  // The app page's menu reads the same state and leads to /apps.
-  await page.click('app-header #nav-apps');
-  await expect(menuItem).toBeVisible();
-  await page.locator('app-header wa-dropdown-item.apps-all').click();
+  // All apps leads to /apps.
+  await page.locator('side-nav #nav-apps-all a').click();
   await page.waitForURL(u => u.pathname === '/apps');
 
   // /apps: one card per app, its Open link into the app.
   const card = page.locator(`main.apps-main wa-card[data-slug="${SLUG}"]`);
   await expect(card).toContainText('Notes');
   await expect(card.locator('wa-button[href]').first()).toHaveAttribute('href', `/apps/${SLUG}/`);
-  await expect(page.locator('app-header #nav-apps')).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('side-nav #nav-apps-all')).toHaveAttribute('aria-current', 'page');
 });
