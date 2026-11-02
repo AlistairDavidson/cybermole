@@ -26,6 +26,7 @@ import {
   editorInstallDefault,
   readEditorMode,
   readJobWebhookUrl,
+  sessionPlatformEnv,
 } from '../src/lib/platform/env';
 import { componentLogger, closeLogger } from '../src/lib/platform/logger';
 import {
@@ -199,6 +200,12 @@ if (tmux.forksServer(tmux.SOCKET)) {
 const sessionEnv: Record<string, string> = {
   HOME: CFG.home,
   PI_CODING_AGENT_DIR: CFG.agentDir,
+  ...sessionPlatformEnv({
+    base: CFG.base,
+    appsRoot: readAppsRoot(),
+    internalSocket: readInternalApiSocket(),
+    appsSocket: readAppsSocket(),
+  }),
 };
 if (PI_SESSION_DIR) {
   sessionEnv.PI_CODING_AGENT_SESSION_DIR = PI_SESSION_DIR;

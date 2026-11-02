@@ -330,3 +330,24 @@ export function readGrafanaUrl(): string | null {
   }
   return `${u.origin}${u.pathname}`.replace(/\/+$/, '');
 }
+
+/**
+ * The platform config the in-session tools (the jobs/apps MCP servers,
+ * cybermole-cli) read, as this server resolved it. Passed into every tmux
+ * session: otherwise they'd see whatever env the long-lived tmux server
+ * started with, which goes stale on a reconfigure (a base or apps-root
+ * move). A null socket is '' — the readers' "off".
+ */
+export function sessionPlatformEnv(cfg: {
+  base: string;
+  appsRoot: string;
+  internalSocket: string | null;
+  appsSocket: string | null;
+}): Record<string, string> {
+  return {
+    CYBERMOLE_BASE: cfg.base,
+    CYBERMOLE_APPS_ROOT: cfg.appsRoot,
+    CYBERMOLE_SOCK: cfg.internalSocket ?? '',
+    CYBERMOLE_APPS_SOCK: cfg.appsSocket ?? '',
+  };
+}

@@ -22,7 +22,8 @@ const { checkApp, buildApp } = await import('../../dist-server/src/lib/apps/apps
 const { joinAppsStatus, inspectTree, collectTrees } =
   await import('../../dist-server/src/lib/apps/apps-status.js');
 const { registerPrecheck, readFocus } = await import('../../dist-server/server/apps-mcp.js');
-const { appsRootDefault } = await import('../../dist-server/src/lib/platform/env.js');
+const { appsRootDefault, sessionPlatformEnv } =
+  await import('../../dist-server/src/lib/platform/env.js');
 const { runChild } = await import('../../dist-server/src/lib/apps/apps-child.js');
 
 const scaffoldDeps = root => ({
@@ -490,6 +491,23 @@ test('appsRootDefault: the workspace volume owns the default; the state dir is t
 });
 
 // ---------- register precheck ----------
+
+test("sessionPlatformEnv: the server's resolved view rides every session; an off socket is ''", () => {
+  assert.deepEqual(
+    sessionPlatformEnv({
+      base: '/cybermole',
+      appsRoot: '/srv/root/apps',
+      internalSocket: '/srv/state/cybermole.sock',
+      appsSocket: null,
+    }),
+    {
+      CYBERMOLE_BASE: '/cybermole',
+      CYBERMOLE_APPS_ROOT: '/srv/root/apps',
+      CYBERMOLE_SOCK: '/srv/state/cybermole.sock',
+      CYBERMOLE_APPS_SOCK: '',
+    },
+  );
+});
 
 test("registerPrecheck: the manifest's name is the registration's name; failures name the tree", async () => {
   const root = fs.mkdtempSync(path.join(dir, 'reg-'));
