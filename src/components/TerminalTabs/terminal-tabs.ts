@@ -565,9 +565,12 @@ export class TerminalTabs extends HTMLElement {
     const label = this.tabLabel(t, index);
     const labelEl = tab.querySelector('.tab-label')!;
     if (labelEl.textContent !== label) labelEl.textContent = label;
+    const icon = t.agent ? 'robot' : 'terminal';
+    const iconEl = tab.querySelector('.tab-icon')!;
+    if (iconEl.getAttribute('name') !== icon) iconEl.setAttribute('name', icon);
     tab.setAttribute(
       'aria-label',
-      `${label}${t.live ? ' (live)' : ''}${this.popped.has(t.id) ? ' (popped out)' : ''}`,
+      `${label}${t.agent ? ' (agent)' : ''}${t.live ? ' (live)' : ''}${this.popped.has(t.id) ? ' (popped out)' : ''}`,
     );
   }
 

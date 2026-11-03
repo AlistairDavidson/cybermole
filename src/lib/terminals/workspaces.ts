@@ -169,6 +169,12 @@ export type WorkspaceTreeResult = WorkspaceTreeSuccess | WorkspaceTreeFailure;
 
 // ---------- helpers ----------
 
+/** The stored command decides; pre-v7 rows (NULL) fall back to the
+ *  created_at agent-slot derivation. */
+function isAgentTab(command: string | null, createdAt: number, wsCreatedAt: number): boolean {
+  return command === 'agent' || (command === null && createdAt === wsCreatedAt);
+}
+
 /** Absolute and an existing directory. Catches typos, not access: the
  *  caller already has a shell at this privilege. */
 export function checkedCwd(cwd: string): { ok: true; cwd: string } | { ok: false; reason: string } {
@@ -878,10 +884,7 @@ export class Workspaces {
         workspaceId: row.workspace_id,
         title: row.title,
         cwd: row.cwd,
-        // The stored command decides; pre-v7 rows (NULL) fall back to the
-        // created_at agent-slot derivation.
-        agent:
-          row.command === 'agent' || (row.command === null && row.created_at === row.ws_created_at),
+        agent: isAgentTab(row.command, row.created_at, row.ws_created_at),
         env,
       },
     } satisfies TerminalForAttachSuccess;
@@ -918,7 +921,7 @@ export class Workspaces {
       this.deps.db.all(
         qb
           .selectFrom('terminals')
-          .select(['id', 'workspace_id', 'title', 'sort_order', 'created_at'])
+          .select(['id', 'workspace_id', 'title', 'sort_order', 'command', 'created_at'])
           .orderBy('sort_order', 'asc')
           .orderBy('created_at', 'asc'),
       ),
@@ -931,7 +934,11 @@ export class Workspaces {
     const appById = new Map(apps.data.value.map(a => [a.id, a] as const));
     const live = await this.deps.liveSessionNames();
     const byWorkspace = new Map<WorkspaceId, WorkspaceState['terminals']>();
-    for (const row of workspaces.data.value) byWorkspace.set(row.id, []);
+    const wsCreatedAt = new Map<WorkspaceId, number>();
+    for (const row of workspaces.data.value) {
+      byWorkspace.set(row.id, []);
+      wsCreatedAt.set(row.id, row.created_at);
+    }
     for (const t of terminals.data.value) {
       const list = byWorkspace.get(t.workspace_id);
       if (list)
@@ -940,6 +947,7 @@ export class Workspaces {
           title: t.title,
           order: t.sort_order,
           live: live.has(terminalSessionName(t.id)),
+          agent: isAgentTab(t.command, t.created_at, wsCreatedAt.get(t.workspace_id)!),
         });
     }
     return {

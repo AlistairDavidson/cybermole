@@ -14,12 +14,6 @@ html.wa-light { color-scheme: light; }
    overlays, truncation and state cues on non-wa elements. Components keep
    their stock look; layout lives in the markup's utility classes. */
 
-:root {
-  /* Page-entry fade for the console shell: 150–250ms reads as arrival
-     without lagging navigation. Reduced motion skips it entirely. */
-  --cybermole-page-fade: 200ms;
-}
-
 .hidden { display: none !important; }
 /* No utility truncates; min-inline-size lets the flex item shrink to it. */
 .truncate {
@@ -27,18 +21,8 @@ html.wa-light { color-scheme: light; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
-/* ---- the console pages (AppPage's shell; its layout is app-nav.css) ---- */
-/* A quiet arrival: opacity only, so the terminal's ResizeObserver never
-   sees an intermediate layout. */
-@keyframes cybermole-page-enter {
-  from { opacity: 0; }
-}
-wa-page.app-page {
-  animation: cybermole-page-enter var(--cybermole-page-fade) var(--wa-transition-easing);
-}
-@media (prefers-reduced-motion: reduce) {
-  wa-page.app-page { animation: none; }
-}
+/* ---- the console pages (AppPage's shell; its layout and page
+   transitions are app-nav.css) ---- */
 /* The full-viewport pages (the console's tabs, the logs iframe) never
    scroll as a page (their panes do), so a touch drag at the edges must not
    become pull-to-refresh. */
@@ -74,9 +58,20 @@ terminal-tabs wa-tab-panel { --padding: 0; }
 terminal-tabs:not([view="tab"]) > wa-tab-group { flex: none; }
 terminal-tabs:not([view="tab"]) > wa-tab-group::part(body) { display: none; }
 terminal-tabs wa-tab .tab-label { max-inline-size: 18ch; }
-/* The builder's app switcher sits at the strip's far end: the nav is a flex
-   row and no layout utility pushes one slotted child to the end. */
-terminal-tabs app-switcher { margin-inline-start: auto; }
+/* Tabs keep their width, so a crowded strip overflows into the group's
+   own nav scroller (scrollbar hidden, swipe/trackpad to scroll) rather
+   than squashing every label. */
+terminal-tabs wa-tab { flex: none; }
+/* The nav toggle and the builder's app switcher stay put while the tabs
+   scroll under them (they share the group's one nav slot, so they sit in
+   the scroller); the surface hides the tabs passing beneath. The switcher
+   sits at the far end: no layout utility pushes one slotted child there. */
+terminal-tabs nav-toggle, terminal-tabs app-switcher {
+  position: sticky; z-index: 1;
+  background-color: var(--wa-color-surface-default);
+}
+terminal-tabs nav-toggle { inset-inline-start: 0; }
+terminal-tabs app-switcher { inset-inline-end: 0; margin-inline-start: auto; }
 /* The strip stretches every tab to the tallest (a terminal tab's close
    button), but wa-tab top-aligns its content; centre it, or the shorter
    editor tab's icon and label ride high. */

@@ -1,5 +1,5 @@
 // Console cosmetics: the cybermole product label (title, nav, sidebar
-// heading), the page-entry fade (and its reduced-motion skip), the
+// heading), the page view transitions (and their reduced-motion skip), the
 // desktop sidebar hide (persisted, the hamburger leading the tab strip),
 // the mobile drawer toggle in the same place, the same shell on the pages
 // without tabs, and the new-app dialog's directory suggestion from the name.
@@ -54,11 +54,19 @@ async function login(page: Page): Promise<void> {
   await page.waitForSelector('terminal-tabs:not([view="loading"])');
 }
 
-/** The shell wa-page's computed animation-name (persists after the run). */
-function pageEnterAnimation(page: Page): Promise<string> {
-  return page.evaluate(
-    () => getComputedStyle(document.querySelector('wa-page.app-page')!).animationName,
-  );
+/** Whether the page arrived through a view transition: pagereveal's
+ *  viewTransition, recorded by an init script before the page's own. */
+async function recordReveal(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    addEventListener('pagereveal', e => {
+      (window as unknown as { revealedWithVT: boolean }).revealedWithVT =
+        (e as Event & { viewTransition: unknown }).viewTransition !== null;
+    });
+  });
+}
+
+function revealedWithVT(page: Page): Promise<boolean | undefined> {
+  return page.evaluate(() => (window as unknown as { revealedWithVT?: boolean }).revealedWithVT);
 }
 
 // ---------- the product label ----------
@@ -79,19 +87,38 @@ test('the product shows as cybermole: page title, nav item', async ({ page }) =>
   await expect(glyph).toHaveAttribute('label', 'Cybermole');
 });
 
-// ---------- the page-entry fade ----------
+// ---------- page transitions ----------
 
-test('console pages fade in; reduced motion skips the animation', async ({ page }) => {
+test('navigations crossfade; reduced motion skips the transition', async ({ page }) => {
   await login(page);
-  expect(await pageEnterAnimation(page)).toBe('cybermole-page-enter');
+  await recordReveal(page);
   await page.goto('/builder');
   await page.waitForSelector('terminal-tabs:not([view="loading"])');
-  expect(await pageEnterAnimation(page)).toBe('cybermole-page-enter');
+  await page.locator('side-nav #nav-console a').click();
+  await page.waitForURL(url => url.pathname === '/');
+  await expect.poll(() => revealedWithVT(page)).toBe(true);
 
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/');
-  await page.waitForSelector('console-app');
-  expect(await pageEnterAnimation(page)).toBe('none');
+  await page.locator('side-nav #nav-builder a').click();
+  await page.waitForURL(url => url.pathname === '/builder');
+  await expect.poll(() => revealedWithVT(page)).toBe(false);
+});
+
+test('mobile: the open drawer is the named element that slides shut', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await login(page);
+  const name = (): Promise<string> =>
+    page.evaluate(() => {
+      const dialog = document
+        .querySelector('wa-page.app-page')!
+        .shadowRoot!.querySelector('wa-drawer')!
+        .shadowRoot!.querySelector('dialog')!;
+      return getComputedStyle(dialog).viewTransitionName;
+    });
+  expect(await name()).toBe('none');
+  await page.locator('#nav-drawer-toggle').click();
+  await expect(page.locator('wa-page.app-page')).toHaveAttribute('nav-open', '');
+  expect(await name()).toBe('app-nav-drawer');
 });
 
 // ---------- the navigation toggles ----------

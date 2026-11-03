@@ -115,8 +115,10 @@ const { appSwitcher = false } = Astro.props;
       draggable="true"
       aria-keyshortcuts="Shift+ArrowLeft Shift+ArrowRight"
     >
-      <wa-icon name="terminal" aria-hidden="true"></wa-icon>
-      <span class="tab-label truncate"></span>
+      <!-- terminal-tabs.ts names it: terminal, or robot for an agent tab. -->
+      <wa-icon class="tab-icon" name="terminal" aria-hidden="true"></wa-icon>
+      <!-- Phones show the icon only; the tab's aria-label carries the name. -->
+      <span class="tab-label truncate wa-desktop-only"></span>
     </wa-tab>
   </template>
   <template data-editor-tab-tip>
@@ -144,9 +146,10 @@ const { appSwitcher = false } = Astro.props;
       panel="editor"
       data-term="editor"
       id="tab-editor"
+      aria-label="editor"
     >
       <wa-icon name="code" aria-hidden="true"></wa-icon>
-      <span class="tab-label">editor</span>
+      <span class="tab-label wa-desktop-only">editor</span>
     </wa-tab>
   </template>
   <template data-editor-panel>

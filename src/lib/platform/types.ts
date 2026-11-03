@@ -37,6 +37,8 @@ export interface TerminalState {
   title: string | null;
   order: number;
   live: boolean;
+  /** It was opened to run the agent command (the strip shows a robot). */
+  agent: boolean;
 }
 
 /** Flat with appId; the sidebar groups client-side. */

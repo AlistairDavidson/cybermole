@@ -244,6 +244,14 @@ test("+ opens a shell tab; the caret menu's agent item opens an agent tab", asyn
   await page.waitForFunction(() => document.querySelectorAll('terminal-tabs wa-tab').length === 3);
   await waitForTermText(page, AGENT_MARKER);
   expect(await tabIds(page)).toHaveLength(3);
+  // The strip tells them apart: a robot on the agent tabs, a prompt on the shell.
+  await expect
+    .poll(() =>
+      page
+        .locator('terminal-tabs wa-tab:not(.editor-tab) .tab-icon')
+        .evaluateAll(icons => icons.map(i => i.getAttribute('name'))),
+    )
+    .toEqual(['robot', 'terminal', 'robot']);
   await deleteWorkspace(page, ws);
 });
 
@@ -313,7 +321,7 @@ test('the toolbar menu sends esc and arrows to the pane, and closes the tab', as
   // The tab strip holds no close of its own; the toolbar's is the one.
   await expect(page.locator('terminal-tabs wa-tab .tab-close')).toHaveCount(0);
   await expect(
-    page.locator('terminal-tabs wa-tab:not(.editor-tab) wa-icon[name="terminal"]'),
+    page.locator('terminal-tabs wa-tab:not(.editor-tab) wa-icon.tab-icon'),
   ).not.toHaveCount(0);
 
   // Opening the menu took focus; an outside click closes it and hands

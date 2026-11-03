@@ -50,3 +50,22 @@ wa-page.app-page::part(body) {
 @media (prefers-reduced-motion: reduce) {
   wa-page.app-page::part(body) { transition: none; }
 }
+
+/* Page navigations on the origin (console and apps alike) are view
+   transitions: the page crossfades, and a mobile drawer left open by a
+   link slides shut the way wa-drawer hides (its reversed
+   show-drawer-from-start, --hide-duration, ease). The drawer is the one
+   named element: the next page has it closed, so only its old image
+   animates. */
+@view-transition { navigation: auto; }
+@media (prefers-reduced-motion: reduce) {
+  @view-transition { navigation: none; }
+}
+::view-transition-group(root) { animation-duration: var(--wa-transition-normal); }
+wa-page.app-page[nav-open]::part(drawer__dialog) { view-transition-name: app-nav-drawer; }
+@keyframes app-nav-drawer-out {
+  to { opacity: 0; translate: -100% 0; }
+}
+::view-transition-old(app-nav-drawer) {
+  animation: app-nav-drawer-out var(--wa-transition-normal) ease forwards;
+}
