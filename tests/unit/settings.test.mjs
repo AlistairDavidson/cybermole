@@ -26,7 +26,7 @@ function withFakeNpm(t, env) {
     `#!/bin/sh
 if [ "$1" = "--version" ]; then echo 10.9.0; exit "\${FAKE_NPM_VERSION_EXIT:-0}"; fi
 sleep "\${FAKE_NPM_SLEEP:-0}"
-echo "installed $2"
+echo "installed $3"
 node -e 'const fs=require("fs");const m=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));m.version=process.env.FAKE_NPM_INSTALLS_TO;fs.writeFileSync(process.argv[1],JSON.stringify(m))' "$FAKE_NPM_MANIFEST"
 exit "\${FAKE_NPM_EXIT:-0}"
 `,
@@ -63,7 +63,10 @@ test('dry run: success proves npm runs; npm_check_failed when it does not', asyn
   withFakeNpm(t, { FAKE_NPM_MANIFEST: manifest, FAKE_NPM_INSTALLS_TO: '9.9.9' });
   const ok = await runPiUpdate(root, true);
   assert.equal(ok.ok, true);
-  assert.match(ok.data.output, /would run `npm install @earendil-works\/pi-coding-agent@latest`/);
+  assert.match(
+    ok.data.output,
+    /would run `npm install --no-save @earendil-works\/pi-coding-agent@latest`/,
+  );
   assert.equal(
     JSON.parse(fs.readFileSync(manifest, 'utf8')).version,
     '1.0.1',

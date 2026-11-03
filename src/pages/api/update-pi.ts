@@ -1,4 +1,4 @@
-// Manual `npm install pi@latest`. Runs up to 10 min; concurrent runs get 409.
+// Manual `npm install --no-save pi@latest`. Runs up to 10 min; concurrent runs get 409.
 // {dryRun:true} only checks that npm runs.
 import type { APIRoute } from 'astro';
 import { assertCybermoleLocals } from '../../lib/web/locals';

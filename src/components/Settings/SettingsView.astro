@@ -177,7 +177,7 @@ const source = (overridden: boolean): string => (overridden ? 'override saved' :
           <span class="wa-caption-2xs" id="pi-declared" data-refresh>
             {state ? `declared ${state.piDeclared} (${state.piPackage})` : 'declared unknown'}
           </span>
-          <span class="wa-caption-2xs">runs <code>npm install @earendil-works/pi-coding-agent@latest</code> in the app's install dir</span>
+          <span class="wa-caption-2xs">runs <code>npm install --no-save @earendil-works/pi-coding-agent@latest</code> in the app's install dir</span>
         </div>
         <wa-button id="update-pi" variant="brand" size="s" {...flag('disabled', npmMissing)}>
           <wa-icon slot="start" name="rotate-right"></wa-icon>

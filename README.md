@@ -1170,10 +1170,12 @@ shape; the host maps it onto the mount.
        not the web container's read-only /opt/cybermole; in single-user
        shapes it stays the in-place npm install described below. -->
 - **Single-user shapes (host install, npm global, the dev profile):**
-  `npm install @earendil-works/pi-coding-agent@latest` in the install
-  dir, or click **update pi** on `/settings` — the server runs that same
-  install in the app's install dir and shows the captured npm output and
-  the resulting version. No restart is needed: pi is exec'd when you run
+  `npm install --no-save @earendil-works/pi-coding-agent@latest` in the
+  install dir, or click **update pi** on `/settings` — the server runs that
+  same install in the app's install dir and shows the captured npm output
+  and the resulting version. `--no-save` keeps it to `node_modules`: the
+  install's `package.json` and lockfile are never rewritten, so a hardened
+  install only needs `node_modules` (and npm's cache) writable. No restart is needed: pi is exec'd when you run
   it; terminals already running it finish on the old one. Concurrent updates are refused;
   npm missing from the server's PATH is reported instead of
   installed-around. (In the **docker dev profile** `node_modules` is a
@@ -1189,7 +1191,7 @@ manual button turns on a daily check — the server checks about a minute
 after boot (or after you flip the switch) and then every 24 h while it
 runs. Unlike the manual button's `@latest`, auto-update always targets the
 **newest version within the range cybermole declares** in its `package.json`
-(e.g. `npm install @earendil-works/pi-coding-agent@^1.0.1` — the range is
+(e.g. `npm install --no-save @earendil-works/pi-coding-agent@^1.0.1` — the range is
 derived from the declaration, never hardcoded), so it can never carry you
 outside that major; a pi you installed by hand *above* the range is left
 alone (latest-in-range < installed means no update — it never downgrades

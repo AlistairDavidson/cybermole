@@ -189,7 +189,7 @@ test('performAutoUpdateCheck: newer in-range version installs via the declared-r
 
   // installed with the declared-range spec, never @latest
   const args = fs.readFileSync(path.join(root, 'install-args.log'), 'utf8').trim();
-  assert.equal(args, `install ${PI}@^1.0.1`);
+  assert.equal(args, `install --no-save ${PI}@^1.0.1`);
   const check = value(lastCheck(db));
   assert.equal(check.outcome, 'installed');
   assert.match(check.detail, /1\.1\.0/);

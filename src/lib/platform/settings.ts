@@ -76,13 +76,15 @@ export type PiUpdateFailure = ResultFailure<'pi_update', PiUpdateData, PiUpdateE
 export type PiUpdateResult = PiUpdateSuccess | PiUpdateFailure;
 
 /** Never rejects. The button installs @latest; the auto-updater passes the
- *  declared range instead, sharing the busy guard. */
+ *  declared range instead, sharing the busy guard. --no-save: an update
+ *  changes node_modules only, never the install's package.json or lock
+ *  (a hardened install keeps those read-only). */
 export async function runPiUpdate(
   appRoot: string,
   dryRun: boolean,
   spec: string = `${PI_PACKAGE}@latest`,
 ) {
-  const args = ['install', spec];
+  const args = ['install', '--no-save', spec];
   const command = `npm ${args.join(' ')}`;
   const before = piInstalled(appRoot);
   const data = (extra: Partial<PiUpdateData> = {}): PiUpdateData => ({
