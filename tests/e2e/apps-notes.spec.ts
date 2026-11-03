@@ -689,8 +689,19 @@ test('the cybermole nav: the app page wears the console side nav and top row, an
   const appItem = page.locator(`side-nav .app-item[data-slug="${SLUG}"]`);
   await expect(appItem).toContainText('Notes');
   await expect(page.locator('side-nav .apps-status')).toBeHidden();
+  // The app is another build: its pages load whole (a window marker dies),
+  // never swapped into the console's document.
+  const markWindow = (): Promise<void> =>
+    page.evaluate(() => {
+      (window as unknown as { marker?: true }).marker = true;
+    });
+  const windowMarked = (): Promise<boolean> =>
+    page.evaluate(() => (window as unknown as { marker?: true }).marker === true);
+  await markWindow();
   await appItem.locator('a').click();
   await page.waitForURL(u => u.pathname === `/apps/${SLUG}/`);
+  await page.waitForLoadState();
+  expect(await windowMarked()).toBe(false);
 
   // The app page is wrapped in the same shell: upgraded wa-* (the stamped
   // item exists only once side-nav.ts ran), this app selected, the brand
@@ -721,8 +732,11 @@ test('the cybermole nav: the app page wears the console side nav and top row, an
 
   // Settings and sign-out sit in the nav's footer.
   await expect(page.locator('.side-nav-footer #sign-out')).toBeVisible();
+  await markWindow();
   await page.click('.side-nav-footer #nav-settings');
   await page.waitForURL(u => u.pathname === '/settings');
+  await page.waitForLoadState();
+  expect(await windowMarked()).toBe(false);
   await expect(page.locator('.side-nav-footer #nav-settings')).toHaveAttribute(
     'aria-current',
     'page',

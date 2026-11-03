@@ -1,4 +1,5 @@
 // The client half of AppPage's navigation: the side nav's trees and
-// footer, and the top row's toggle.
+// footer, the top row's toggle, and the cross-build link rule.
 import './side-nav';
 import './nav-toggle';
+import './page-router';

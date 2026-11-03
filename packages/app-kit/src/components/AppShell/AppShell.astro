@@ -13,6 +13,7 @@
 import '@awesome.me/webawesome/dist/styles/webawesome.css';
 import '@awesome.me/webawesome/dist/components/toast/toast.js';
 import AppPage from '../AppNav/AppPage.astro';
+import PageRouter from '../AppNav/PageRouter.astro';
 import { consoleBaseOf } from '../../app-menu';
 
 interface Props {
@@ -35,6 +36,7 @@ const appBase = import.meta.env.BASE_URL.replace(/\/+$/, '');
     <title>{title}</title>
     <link rel="icon" type="image/svg+xml" href={`${appBase}/favicon.svg`} />
     <slot name="head" />
+    <PageRouter />
   </head>
   <body>
     <!-- No section is current: side-nav.ts selects this app's own item. -->

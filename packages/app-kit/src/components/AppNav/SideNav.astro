@@ -6,6 +6,8 @@
 // wa-trees (the workspace list's look) split by a divider: the sections,
 // then All apps and the apps side-nav.ts stamps from GET /api/state.
 // Separate trees because a tree's children must all be tree items.
+// It persists across ClientRouter swaps (the apps stay stamped); side-nav.ts
+// takes each next page's selection from its SSR'd copy.
 import '@awesome.me/webawesome/dist/components/divider/divider.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/tree/tree.js';
@@ -36,7 +38,7 @@ const allApps: MenuItem = {
   id: 'nav-apps-all',
 };
 ---
-<side-nav data-base={base} {...(logs === undefined ? { 'data-logs-auto': '' } : {})}>
+<side-nav transition:persist="side-nav" data-base={base} {...(logs === undefined ? { 'data-logs-auto': '' } : {})}>
   <nav class="wa-stack wa-gap-s" aria-label="sections">
     <wa-tree class="side-nav-tree" selection="leaf" aria-label="sections">
       {sections.map(s => <SideNavItem item={s} current={current} />)}

@@ -11,4 +11,11 @@
   };
   apply();
   scheme.addEventListener('change', apply);
+  // A ClientRouter swap replaces <html>'s attributes with the next page's
+  // SSR'd ones (no mode class): carry the class over before it lands.
+  document.addEventListener('astro:before-swap', function (e) {
+    var cls = e.newDocument.documentElement.classList;
+    cls.toggle('wa-dark', scheme.matches);
+    cls.toggle('wa-light', !scheme.matches);
+  });
 })();

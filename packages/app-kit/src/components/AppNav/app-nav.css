@@ -51,16 +51,12 @@ wa-page.app-page::part(body) {
   wa-page.app-page::part(body) { transition: none; }
 }
 
-/* Page navigations on the origin (console and apps alike) are view
-   transitions: the page crossfades, and a mobile drawer left open by a
-   link slides shut the way wa-drawer hides (its reversed
-   show-drawer-from-start, --hide-duration, ease). The drawer is the one
-   named element: the next page has it closed, so only its old image
-   animates. */
-@view-transition { navigation: auto; }
-@media (prefers-reduced-motion: reduce) {
-  @view-transition { navigation: none; }
-}
+/* Page navigations within one build (the console's pages, or one app's)
+   are Astro router swaps (page-router.ts sends the rest whole): the
+   page crossfades, and a mobile drawer left open by a link slides shut the
+   way wa-drawer hides (its reversed show-drawer-from-start, ease). The
+   drawer is the one named element: the next page has it closed, so only
+   its old image animates. */
 ::view-transition-group(root) { animation-duration: var(--wa-transition-normal); }
 wa-page.app-page[nav-open]::part(drawer__dialog) { view-transition-name: app-nav-drawer; }
 @keyframes app-nav-drawer-out {
@@ -68,4 +64,16 @@ wa-page.app-page[nav-open]::part(drawer__dialog) { view-transition-name: app-nav
 }
 ::view-transition-old(app-nav-drawer) {
   animation: app-nav-drawer-out var(--wa-transition-normal) ease forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) { animation: none !important; }
+}
+/* The router's live region announcing each new page's title, visually
+   hidden (the rule <ClientRouter /> would have brought). */
+.astro-route-announcer {
+  position: absolute; inset-block-start: 0; inset-inline-start: 0;
+  inline-size: 1px; block-size: 1px;
+  overflow: hidden; white-space: nowrap; clip-path: inset(50%);
 }

@@ -1,5 +1,5 @@
 // Console cosmetics: the cybermole product label (title, nav, sidebar
-// heading), the page view transitions (and their reduced-motion skip), the
+// heading), the in-place page navigations (and their reduced-motion stills), the
 // desktop sidebar hide (persisted, the hamburger leading the tab strip),
 // the mobile drawer toggle in the same place, the same shell on the pages
 // without tabs, and the new-app dialog's directory suggestion from the name.
@@ -54,19 +54,31 @@ async function login(page: Page): Promise<void> {
   await page.waitForSelector('terminal-tabs:not([view="loading"])');
 }
 
-/** Whether the page arrived through a view transition: pagereveal's
- *  viewTransition, recorded by an init script before the page's own. */
-async function recordReveal(page: Page): Promise<void> {
+/** Records, per router navigation, the animations its view transition
+ *  ran (the ::view-transition-* pseudo-elements'), into window.vtAnimations
+ *  — an init script, so it wraps startViewTransition before any page code. */
+async function recordTransitions(page: Page): Promise<void> {
   await page.addInitScript(() => {
-    addEventListener('pagereveal', e => {
-      (window as unknown as { revealedWithVT: boolean }).revealedWithVT =
-        (e as Event & { viewTransition: unknown }).viewTransition !== null;
-    });
+    const w = window as unknown as { vtAnimations: string[][] };
+    w.vtAnimations = [];
+    const start = document.startViewTransition.bind(document);
+    document.startViewTransition = (update?: ViewTransitionUpdateCallback) => {
+      const transition = start(update);
+      void transition.ready.then(() => {
+        w.vtAnimations.push(
+          document
+            .getAnimations()
+            .map(a => (a.effect as KeyframeEffect | null)?.pseudoElement ?? '')
+            .filter(p => p.startsWith('::view-transition')),
+        );
+      });
+      return transition;
+    };
   });
 }
 
-function revealedWithVT(page: Page): Promise<boolean | undefined> {
-  return page.evaluate(() => (window as unknown as { revealedWithVT?: boolean }).revealedWithVT);
+function transitions(page: Page): Promise<string[][]> {
+  return page.evaluate(() => (window as unknown as { vtAnimations: string[][] }).vtAnimations);
 }
 
 // ---------- the product label ----------
@@ -89,19 +101,45 @@ test('the product shows as cybermole: page title, nav item', async ({ page }) =>
 
 // ---------- page transitions ----------
 
-test('navigations crossfade; reduced motion skips the transition', async ({ page }) => {
+test('navigations swap in place and crossfade; reduced motion stills them', async ({ page }) => {
   await login(page);
-  await recordReveal(page);
+  await recordTransitions(page);
   await page.goto('/builder');
   await page.waitForSelector('terminal-tabs:not([view="loading"])');
+  // A marker on the window and the nav element survive only an in-place swap.
+  await page.evaluate(() => {
+    (window as unknown as { marker: Element | null }).marker = document.querySelector('side-nav');
+  });
   await page.locator('side-nav #nav-console a').click();
   await page.waitForURL(url => url.pathname === '/');
-  await expect.poll(() => revealedWithVT(page)).toBe(true);
+  await page.waitForSelector('terminal-tabs:not([view="loading"])');
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { marker: Element | null }).marker ===
+        document.querySelector('side-nav'),
+    ),
+  ).toBe(true);
+  // The persisted nav takes the next page's selection.
+  await expect(page.locator('side-nav #nav-console')).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('side-nav #nav-builder')).not.toHaveAttribute('aria-current', 'page');
+  await expect.poll(async () => (await transitions(page)).length).toBe(1);
+  expect((await transitions(page))[0]).toContain('::view-transition-old(root)');
 
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.locator('side-nav #nav-builder a').click();
   await page.waitForURL(url => url.pathname === '/builder');
-  await expect.poll(() => revealedWithVT(page)).toBe(false);
+  await expect.poll(async () => (await transitions(page)).length).toBe(2);
+  expect((await transitions(page))[1]).toEqual([]);
+
+  // A swap takes <html>'s attributes from the next page, which has no mode
+  // class: theme-boot.js carries it across.
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(page.locator('html')).toHaveClass(/\bwa-dark\b/);
+  await page.locator('side-nav #nav-jobs a').click();
+  await page.waitForURL(url => url.pathname === '/jobs');
+  await expect.poll(async () => (await transitions(page)).length).toBe(3);
+  await expect(page.locator('html')).toHaveClass(/\bwa-dark\b/);
 });
 
 test('mobile: the open drawer is the named element that slides shut', async ({ page }) => {

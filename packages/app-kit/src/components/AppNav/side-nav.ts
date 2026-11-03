@@ -1,7 +1,9 @@
 // <side-nav>: SideNav's trees. Each item's row is a link; the tree owns
 // focus and selection, so Enter/Space and a click beside the link follow
 // it here. The apps tree's items are stamped from GET /api/state on
-// connect. It also wires SideNavFooter's sign-out.
+// connect. It persists across ClientRouter swaps, so it re-marks the
+// selection from the next page's copy. It also wires SideNavFooter's
+// sign-out.
 import '@awesome.me/webawesome/dist/components/divider/divider.js';
 import '@awesome.me/webawesome/dist/components/icon/icon.js';
 import '@awesome.me/webawesome/dist/components/tree/tree.js';
@@ -25,6 +27,7 @@ function stamp(
     const item = fragment.querySelector<HTMLElement>('.app-item');
     if (!item) continue;
     item.dataset.slug = entry.slug;
+    item.dataset.href = entry.href;
     const icon = item.querySelector('wa-icon');
     icon?.setAttribute('name', entry.icon);
     // The disabled look is the visible cue; the name says why.
@@ -82,8 +85,36 @@ defineElement('side-nav', host => {
     },
     { signal: teardown.signal },
   );
-  // SideNavFooter's sign-out sits in the page's navigation footer, outside this element.
-  host.closest('wa-page')?.addEventListener(
+  // The next page's SSR'd nav marks its section (and, on the console, the
+  // Logs item's visibility; an app's keeps what the state read revealed);
+  // the stamped apps go by the next URL.
+  const mirrored = host.hasAttribute('data-logs-auto')
+    ? ['selected', 'aria-current']
+    : ['selected', 'aria-current', 'hidden'];
+  document.addEventListener(
+    'astro:before-swap',
+    e => {
+      const { newDocument, to } = e as Event & { newDocument: Document; to: URL };
+      const next = newDocument.querySelector('side-nav');
+      if (!next) return;
+      for (const item of host.querySelectorAll('wa-tree-item[id]')) {
+        const twin = next.querySelector(`[id="${item.id}"]`);
+        for (const name of mirrored) {
+          const value = twin?.getAttribute(name) ?? null;
+          if (value === null) item.removeAttribute(name);
+          else item.setAttribute(name, value);
+        }
+      }
+      for (const item of host.querySelectorAll<HTMLElement>('.app-item')) {
+        const href = item.dataset.href;
+        item.toggleAttribute('selected', href !== undefined && to.pathname.startsWith(href));
+      }
+    },
+    { signal: teardown.signal },
+  );
+  // SideNavFooter's sign-out sits in the page's navigation footer, outside
+  // this element (and outside the persisted nav, so on the document).
+  document.addEventListener(
     'click',
     e => {
       if (!(e.target as Element).closest('[data-sign-out]')) return;

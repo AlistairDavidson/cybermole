@@ -3,6 +3,7 @@ import "@awesome.me/webawesome/dist/styles/webawesome.css";
 import "@awesome.me/webawesome/dist/components/toast/toast.js";
 import { BASE } from "../base";
 import AppPage from "@cybermole/app-kit/AppPage.astro";
+import PageRouter from "@cybermole/app-kit/PageRouter.astro";
 import { assertCybermoleLocals } from "../lib/web/locals";
 
 interface Props {
@@ -60,6 +61,9 @@ const THEME_COLOR_LIGHT = "#ffffff";
       content="black-translucent"
     />
     <meta name="apple-mobile-web-app-title" content="cybermole" />
+    {/* Shell pages navigate in place; the shell-less ones (login, view,
+        offline) always load whole. */}
+    {header && <PageRouter />}
   </head>
   <body>
     {

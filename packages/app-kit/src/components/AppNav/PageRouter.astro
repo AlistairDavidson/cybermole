@@ -1,0 +1,9 @@
+---
+// Opts a page into Astro's ClientRouter navigation: the router reads these
+// on the current page and on each fetched one (a page without them loads
+// whole). Astro's <ClientRouter /> renders the same tags, but its script
+// and style can't build in an .astro outside an app's root, which the kit
+// always is; page-router.ts (app-nav.ts) is its client half instead.
+---
+<meta name="astro-view-transitions-enabled" content="true" />
+<meta name="astro-view-transitions-fallback" content="animate" />

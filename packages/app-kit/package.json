@@ -9,6 +9,7 @@
     "./src/components/AppNav/app-nav.ts",
     "./src/components/AppNav/side-nav.ts",
     "./src/components/AppNav/nav-toggle.ts",
+    "./src/components/AppNav/page-router.ts",
     "./src/components/**/*.css",
     "./src/components/AppShell/app-shell.ts",
     "./src/components/**/*.astro"
@@ -26,6 +27,7 @@
     "./AppShell.astro": "./src/components/AppShell/AppShell.astro",
     "./AppPage.astro": "./src/components/AppNav/AppPage.astro",
     "./NavToggle.astro": "./src/components/AppNav/NavToggle.astro",
+    "./PageRouter.astro": "./src/components/AppNav/PageRouter.astro",
     "./app-nav": "./src/components/AppNav/app-nav.ts",
     "./app-shell": "./src/components/AppShell/app-shell.ts",
     "./testing": "./src/testing/index.mts"
