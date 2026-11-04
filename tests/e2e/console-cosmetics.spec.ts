@@ -1,5 +1,5 @@
 // Console cosmetics: the cybermole product label (title, nav, sidebar
-// heading), the in-place page navigations (and their reduced-motion stills), the
+// heading), the in-place page navigations (the live shell, the drawer's own close), the
 // desktop sidebar hide (persisted, the hamburger leading the tab strip),
 // the mobile drawer toggle in the same place, the same shell on the pages
 // without tabs, and the new-app dialog's directory suggestion from the name.
@@ -54,31 +54,33 @@ async function login(page: Page): Promise<void> {
   await page.waitForSelector('terminal-tabs:not([view="loading"])');
 }
 
-/** Records, per router navigation, the animations its view transition
- *  ran (the ::view-transition-* pseudo-elements'), into window.vtAnimations
- *  — an init script, so it wraps startViewTransition before any page code. */
-async function recordTransitions(page: Page): Promise<void> {
+/** Counts view transitions started, into window.vtStarted — an init
+ *  script, so it wraps startViewTransition before any page code. */
+async function countViewTransitions(page: Page): Promise<void> {
   await page.addInitScript(() => {
-    const w = window as unknown as { vtAnimations: string[][] };
-    w.vtAnimations = [];
+    const w = window as unknown as { vtStarted: number };
+    w.vtStarted = 0;
     const start = document.startViewTransition.bind(document);
     document.startViewTransition = (update?: ViewTransitionUpdateCallback) => {
-      const transition = start(update);
-      void transition.ready.then(() => {
-        w.vtAnimations.push(
-          document
-            .getAnimations()
-            .map(a => (a.effect as KeyframeEffect | null)?.pseudoElement ?? '')
-            .filter(p => p.startsWith('::view-transition')),
-        );
-      });
-      return transition;
+      w.vtStarted += 1;
+      return start(update);
     };
   });
 }
 
-function transitions(page: Page): Promise<string[][]> {
-  return page.evaluate(() => (window as unknown as { vtAnimations: string[][] }).vtAnimations);
+/** Whether the window and the wa-page shell are the ones marked before. */
+function sameShell(page: Page): Promise<boolean> {
+  return page.evaluate(() => {
+    const w = window as unknown as { shell?: Element | null };
+    return w.shell !== undefined && w.shell === document.querySelector('wa-page.app-page');
+  });
+}
+
+function markShell(page: Page): Promise<void> {
+  return page.evaluate(() => {
+    (window as unknown as { shell: Element | null }).shell =
+      document.querySelector('wa-page.app-page');
+  });
 }
 
 // ---------- the product label ----------
@@ -101,62 +103,83 @@ test('the product shows as cybermole: page title, nav item', async ({ page }) =>
 
 // ---------- page transitions ----------
 
-test('navigations swap in place and crossfade; reduced motion stills them', async ({ page }) => {
+test('navigations swap the content into the live shell, back and forward too', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('console', m => {
+    if (m.type() === 'error') errors.push(m.text());
+  });
   await login(page);
-  await recordTransitions(page);
+  await countViewTransitions(page);
   await page.goto('/builder');
   await page.waitForSelector('terminal-tabs:not([view="loading"])');
-  // A marker on the window and the nav element survive only an in-place swap.
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(page.locator('html')).toHaveClass(/\bwa-dark\b/);
+  // The window, the wa-page and the nav element survive only an in-place swap.
+  await markShell(page);
   await page.evaluate(() => {
-    (window as unknown as { marker: Element | null }).marker = document.querySelector('side-nav');
+    (window as unknown as { nav: Element | null }).nav = document.querySelector('side-nav');
   });
-  await page.locator('side-nav #nav-console a').click();
-  await page.waitForURL(url => url.pathname === '/');
-  await page.waitForSelector('terminal-tabs:not([view="loading"])');
+  await page.locator('side-nav #nav-jobs a').click();
+  await page.waitForURL(url => url.pathname === '/jobs');
+  await expect(page.locator('#jobs-new')).toBeVisible();
+  expect(await sameShell(page)).toBe(true);
   expect(
     await page.evaluate(
       () =>
-        (window as unknown as { marker: Element | null }).marker ===
-        document.querySelector('side-nav'),
+        (window as unknown as { nav: Element | null }).nav === document.querySelector('side-nav'),
     ),
   ).toBe(true);
+  await expect(page).toHaveTitle('cybermole — jobs');
   // The persisted nav takes the next page's selection.
-  await expect(page.locator('side-nav #nav-console')).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('side-nav #nav-jobs')).toHaveAttribute('aria-current', 'page');
   await expect(page.locator('side-nav #nav-builder')).not.toHaveAttribute('aria-current', 'page');
-  await expect.poll(async () => (await transitions(page)).length).toBe(1);
-  expect((await transitions(page))[0]).toContain('::view-transition-old(root)');
+  // The swapped-in wa-* hydrate their SSR'd shadow roots rather than render
+  // a second copy (one button's height, no hydration errors).
+  expect((await page.locator('#jobs-new').boundingBox())?.height).toBeLessThan(50);
+  expect(errors.filter(e => e.includes('root part'))).toEqual([]);
+  // The html element is never swapped: the mode class stays.
+  await expect(page.locator('html')).toHaveClass(/\bwa-dark\b/);
 
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.locator('side-nav #nav-builder a').click();
+  await page.goBack();
   await page.waitForURL(url => url.pathname === '/builder');
-  await expect.poll(async () => (await transitions(page)).length).toBe(2);
-  expect((await transitions(page))[1]).toEqual([]);
-
-  // A swap takes <html>'s attributes from the next page, which has no mode
-  // class: theme-boot.js carries it across.
-  await page.emulateMedia({ colorScheme: 'dark' });
-  await expect(page.locator('html')).toHaveClass(/\bwa-dark\b/);
-  await page.locator('side-nav #nav-jobs a').click();
+  await page.waitForSelector('terminal-tabs:not([view="loading"])');
+  expect(await sameShell(page)).toBe(true);
+  await expect(page.locator('side-nav #nav-builder')).toHaveAttribute('aria-current', 'page');
+  await page.goForward();
   await page.waitForURL(url => url.pathname === '/jobs');
-  await expect.poll(async () => (await transitions(page)).length).toBe(3);
-  await expect(page.locator('html')).toHaveClass(/\bwa-dark\b/);
+  await expect(page.locator('#jobs-new')).toBeVisible();
+  expect(await sameShell(page)).toBe(true);
+  // No view transition freezes the page.
+  expect(await page.evaluate(() => (window as unknown as { vtStarted: number }).vtStarted)).toBe(0);
 });
 
-test('mobile: the open drawer is the named element that slides shut', async ({ page }) => {
+test('mobile: a drawer link swaps the page under the drawer, which shuts as in-page', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await login(page);
-  const name = (): Promise<string> =>
-    page.evaluate(() => {
-      const dialog = document
-        .querySelector('wa-page.app-page')!
-        .shadowRoot!.querySelector('wa-drawer')!
-        .shadowRoot!.querySelector('dialog')!;
-      return getComputedStyle(dialog).viewTransitionName;
-    });
-  expect(await name()).toBe('none');
+  const shell = page.locator('wa-page.app-page');
+  await expect(shell).toHaveAttribute('view', 'mobile');
+  await markShell(page);
   await page.locator('#nav-drawer-toggle').click();
-  await expect(page.locator('wa-page.app-page')).toHaveAttribute('nav-open', '');
-  expect(await name()).toBe('app-nav-drawer');
+  await expect(shell).toHaveAttribute('nav-open', '');
+  // wa-page's own drawer hides (its wa-hide), as a toggle or backdrop tap does.
+  await page.evaluate(() => {
+    const drawer = document
+      .querySelector('wa-page.app-page')!
+      .shadowRoot!.querySelector('wa-drawer')!;
+    drawer.addEventListener('wa-hide', () => {
+      (window as unknown as { hid: string }).hid = location.pathname;
+    });
+  });
+  await page.locator('side-nav #nav-jobs a').click();
+  await page.waitForURL(url => url.pathname === '/jobs');
+  await expect(shell).not.toHaveAttribute('nav-open');
+  expect(await sameShell(page)).toBe(true);
+  // It began shutting once the next page was in.
+  expect(await page.evaluate(() => (window as unknown as { hid?: string }).hid)).toBe('/jobs');
+  await expect(page.locator('#jobs-new')).toBeVisible();
+  await expect(page.locator('#nav-drawer-toggle')).toHaveAttribute('aria-expanded', 'false');
 });
 
 // ---------- the navigation toggles ----------

@@ -1,5 +1,7 @@
 ## Product
 
+Because apps are their own build the app transitions won't work with them
+
 review mcp and skill situation
 
 add pi standard ctrl-commands to drop down

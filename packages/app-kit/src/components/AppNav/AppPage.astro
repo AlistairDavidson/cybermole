@@ -40,4 +40,6 @@ const { base, current, logs, pageNav = false, ownTopRow = false } = Astro.props;
     </div>
   )}
   <slot />
+  <!-- page-router.ts announces each in-place navigation's title here. -->
+  <div class="wa-visually-hidden" aria-live="assertive" aria-atomic="true" data-page-announcer data-page-persist="announcer"></div>
 </wa-page>

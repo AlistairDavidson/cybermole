@@ -1,7 +1,7 @@
 // <side-nav>: SideNav's trees. Each item's row is a link; the tree owns
 // focus and selection, so Enter/Space and a click beside the link follow
 // it here. The apps tree's items are stamped from GET /api/state on
-// connect. It persists across ClientRouter swaps, so it re-marks the
+// connect. It persists across in-place navigations, so it re-marks the
 // selection from the next page's copy. It also wires SideNavFooter's
 // sign-out.
 import '@awesome.me/webawesome/dist/components/divider/divider.js';
@@ -12,6 +12,7 @@ import { defineElement } from '../../element';
 import { appMenuEntries, type AppMenuEntry } from '../../app-menu';
 import { fetchMenuState } from './menu-state';
 import { signOut } from './sign-out';
+import { BEFORE_SWAP, type BeforeSwapDetail } from './page-router';
 
 /** Restamped whole each load: the items hold no state of their own. */
 function stamp(
@@ -92,9 +93,9 @@ defineElement('side-nav', host => {
     ? ['selected', 'aria-current']
     : ['selected', 'aria-current', 'hidden'];
   document.addEventListener(
-    'astro:before-swap',
+    BEFORE_SWAP,
     e => {
-      const { newDocument, to } = e as Event & { newDocument: Document; to: URL };
+      const { newDocument, to } = (e as CustomEvent<BeforeSwapDetail>).detail;
       const next = newDocument.querySelector('side-nav');
       if (!next) return;
       for (const item of host.querySelectorAll('wa-tree-item[id]')) {

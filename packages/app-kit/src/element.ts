@@ -22,8 +22,8 @@ export function defineElement(
         const teardown = setup(this);
         this.#teardown = teardown ?? ((): void => undefined);
       }
-      // An atomic move (moveBefore: a ClientRouter transition:persist) keeps
-      // the element wired rather than tearing down and setting up again.
+      // An atomic move (moveBefore: a persisted element across an in-place
+      // navigation) keeps the element wired rather than set up again.
       connectedMoveCallback(): void {}
       disconnectedCallback(): void {
         this.#teardown?.();
